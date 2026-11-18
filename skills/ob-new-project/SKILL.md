@@ -57,8 +57,8 @@ Then:
    `.wrangler`, `.dev.vars*`, `dist`).
 8. **`AGENTS.md`:** write it to `ob-wire-ob-architect-into-a-repo` step 1's sections. The gate section
    links the standard's gate. The tracker is `ob`, and landing is no-PR via `ob-land`. Also create
-   `repos/<name>/AGENTS.md` in your main repo with the "Browser test runs take the `cpu:browser` lease"
-   section (copy it from an existing `repos/<project>/AGENTS.md`), naming this repo's `test:e2e` and any Storybook
+   `repos/<name>/AGENTS.md` in your OmniSlash checkout with a "Browser test runs take the `cpu:browser` lease"
+   section: every local browser run is `ob lease run cpu:browser -- <command>`, naming this repo's `test:e2e` and any Storybook
    command, so the first local browser run already waits for the machine-wide slot.
 9. `git init -b main`, `git add -A`, first commit.
 

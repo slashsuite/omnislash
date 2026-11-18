@@ -21,6 +21,10 @@ repo:
 So the repo-local work is the **conventions** and the **runtime plugins**, not
 the skills or commands.
 
+The OmniSlash `.opencode/` wiring this skill copies from (`architect-tui.sh`, `plugins/ob-*.ts`,
+`opencode.json`) is not in the public OmniSlash repository yet. Until it is, steps 3 and 4 need a
+checkout that carries it.
+
 ## What is actually missing per repo
 
 1. **No `AGENTS.md`.** The `ob-architect` skill's Step 0 reads the repo's
@@ -61,7 +65,7 @@ Sections that matter, because the architect and every builder read them:
   remote -v` and `gh auth status`. A repo with no remote and no `gh` auth is
   `ob`-only; say so explicitly so nobody reaches for GitHub issues.
 - **Brief format.** On a repo other than OmniSlash `ob spinoff brief` finds no
-  ticket brief file, so it falls back to the ob item's title +
+  `wayfinder/tickets/<ref>-*.md`, so it falls back to the ob item's title +
   body. That fallback IS the mechanism: put the brief in the body with
   `## What to build` / `## Acceptance` / `## Do not`.
 - **The gate.** Exact commands, run from the worktree, plus anything the

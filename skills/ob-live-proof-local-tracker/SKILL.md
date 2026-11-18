@@ -159,7 +159,9 @@ rejected with `Unknown option` on this path (measured), so do not reach for it.
    ```
 
    That prints the COPY rows with no database needed (`pg_restore -l <dump>` lists tables).
-   Then `ob config set <key> '<exact old value>'` and diff the key set
+   Read the snapshot directory from the `db snapshot` entry of `ob --help` and `OMNISLASH_SNAPSHOT_DIR` on the
+   server, never from memory: an older default directory can still hold stale dumps beside the live
+   ones. Then `ob config set <key> '<exact old value>'` and diff the key set
    against the dump to prove nothing else moved.
 
 The cheapest defence is still Rule 2: `ob config get` the keys you are about to write, *before* you write

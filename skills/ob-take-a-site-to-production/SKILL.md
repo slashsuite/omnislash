@@ -7,8 +7,8 @@ description: Take a new website live on its real domain, or audit one already li
 
 A site is **live** when the real domain serves the build you meant, search engines can index it,
 mail to and from the domain works, a flood of traffic cannot turn into a bill, someone hears when it
-breaks, the client owns every account it runs on, and you, working as a contractor, have a
-signed agreement, the owner's written sign-off and your money. This skill gets there and ends on a
+breaks, the client owns every account it runs on, and the contractor running the work has a
+signed agreement, the owner's written sign-off and their money. This skill gets there and ends on a
 **go-live report**: one table, a row per check, each `pass`, `fail`, `n/a` or `needs-contractor` with the evidence.
 
 Written for our stack (TanStack Start on Cloudflare Workers with static assets, Bun). On another
@@ -29,7 +29,7 @@ ends on what can be checked then, and what only the live domain can show is chec
 
 ## 0. The contract and the deposit
 
-The contractor signs, sends, is paid and confirms payment; the agent does none of the four. Your part is to check
+The contractor signs, sends, is paid and confirms payment; you do none of the four. Your part is to check
 what exists, list what is missing as `needs-contractor` rows, and hold the steps that need it. If there
 is no agreement, say so; draft only the scope and price schedule that go into the contractor's template, never
 the agreement itself. Step 0's rows are `n/a` only for our own site. Work for a client, an audit of

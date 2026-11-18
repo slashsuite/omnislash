@@ -70,7 +70,7 @@ As soon as an answer comes back, before the next question:
 
 An answer that asks for an external send or a destructive step is routed like any other: the architect still shows the owner the exact content (or the backup) and asks again before it acts. This skill's answer is never that confirmation.
 
-A new rule the owner gives while answering ("from now on…") goes in a skill or `CLAUDE.md` the same turn, per the standing-rules line: route it to the OmniSlash architect to chart.
+A new rule the owner gives while answering ("from now on…") goes in a skill or `CLAUDE.md` the same turn: route it to the OmniSlash architect to chart.
 
 ## 6. Close
 
