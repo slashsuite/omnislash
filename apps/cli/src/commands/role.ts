@@ -30,7 +30,7 @@ import { storeTeamBackend } from "./t3.ts";
 
 /** Where the runs live: the store on this machine, or the API. The T3 half is the caller's. */
 export interface RoleBackend {
-  team: Pick<TeamBackend, "show" | "registry" | "cwdRepo">;
+  team: Pick<TeamBackend, "show" | "registry" | "cwdRepo" | "dropRow">;
   /** The team's open runs, one role's when `role` is named. An unknown team throws. */
   open(team: string, role?: TeamRole): Promise<RoleRun[]>;
   /** Insert the role's marker and take its lease, or answer the open run (`created` false). */
@@ -56,12 +56,12 @@ const ROLE_RUN_TIER = "complex";
 const ROLE_RUN_MODELS = { ...DEFAULT_TIER_MODELS, [ROLE_RUN_TIER]: `claudeAgent:${DEFAULT_TIER_MODELS[ROLE_RUN_TIER]}` };
 
 /** The first message a new run's thread gets: the role's skill, then one line naming the run. Pure. */
-export function roleRunSeedMessage(team: string, role: TeamRole, runId: number): string {
+function roleRunSeedMessage(team: string, role: TeamRole, runId: number): string {
   return [`/ob-${role}`, "", `Role run ${runId} for team ${team}. The start brief arrives with OS-55.`].join("\n");
 }
 
 /** The refusal for a run another machine's T3 holds. Pure. */
-export function otherHostRefusal(run: Pick<RoleRun, "id" | "t3_host">, local: string): string {
+function otherHostRefusal(run: Pick<RoleRun, "id" | "t3_host">, local: string): string {
   return `run ${run.id} was opened on ${run.t3_host}; this machine's T3 is ${local}`;
 }
 
@@ -133,7 +133,10 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
       return null;
     }
     const touched = await backend.update(team.name, run.id, activityOf(live));
-    await pointSeat(backend.team.registry, team.name, role, run.thread_id, repoPath);
+    // The run stands whatever this does: repointing the seat needs a checkout (the row's worktree), which the cwd may not be.
+    await pointSeat(backend.team.registry, team.name, role, run.thread_id, repoPath).catch((err: unknown) =>
+      warn(`role: ${teamRoleAgentId(team.name, role)} still points elsewhere: ${(err as Error).message}`),
+    );
     return { team: team.name, role, run: touched, thread_id: run.thread_id, created: false, ended, auto_settle_warning: null };
   };
 
@@ -148,7 +151,9 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
   const project = t3ProjectFor(await seam.projects(), cwd);
   if (!project) throw new AppError(`no T3 project is registered for ${cwd}; register the checkout as a T3 project (\`t3 project add ${cwd}\`)`);
   const resolved = await resolveModelAndEffort(seam, project, ROLE_RUN_TIER, ROLE_RUN_MODELS, undefined);
-  if ("refusal" in resolved) throw new AppError(`${resolved.refusal.reason}; ${resolved.refusal.remedy}`);
+  if ("refusal" in resolved) {
+    throw new AppError(`${resolved.refusal.reason}; a role run opens on ${ROLE_RUN_MODELS[ROLE_RUN_TIER]}, which this machine's T3 must list (\`ob t3 doctor\`)`);
+  }
 
   const marked = await backend.mark(team.name, role, local);
   if (!marked.created) {
@@ -175,6 +180,11 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
     throw new AppError(`the launch of run ${run.id} failed (${reason}); the run stays open with no thread. ${noThreadRefusal(run, title)}`);
   }
   const recorded = await backend.update(team.name, run.id, { thread_id: threadId });
+  if (recorded.ended_at) {
+    // The run was ended (`ob role end`) while this launch was in flight: the new thread belongs to nothing, so it goes.
+    await seam.settle(threadId);
+    throw new AppError(`run ${run.id} was ended while its thread was launching; thread ${threadId} was settled. Re-run \`ob role start ${team.name} ${role}\``);
+  }
   await seam.pin(threadId);
   const settle = await teamAutoSettleOff(seam, threadId);
   await pointSeat(backend.team.registry, team.name, role, threadId, async () => cwd);
@@ -200,14 +210,15 @@ export interface RoleStatusEntry {
 async function statusOf(run: RoleRun, local: string, seam: () => Promise<T3Seam>, backend: RoleBackend): Promise<RoleStatusEntry> {
   if (run.t3_host !== local) return { run, thread: "other-host", error: otherHostRefusal(run, local) };
   if (!run.thread_id) return { run, thread: "launching", error: null };
+  let header: Awaited<ReturnType<typeof readThreadHeader>>;
   try {
-    const header = await readThreadHeader(await seam(), run.thread_id);
-    const thread = header.archived ? "archived" : header.settled ? "settled" : header.status;
-    return { run: await backend.update(run.team, run.id, activityOf(header)), thread, error: null };
+    header = await readThreadHeader(await seam(), run.thread_id);
   } catch (err) {
     if (err instanceof T3Error && err.kind === "refused") return { run, thread: "gone", error: null };
     return { run, thread: "unread", error: `could not read thread ${run.thread_id}: ${(err as Error).message}` };
   }
+  const thread = header.archived ? "archived" : header.settled ? "settled" : header.status;
+  return { run: await backend.update(run.team, run.id, activityOf(header)), thread, error: null };
 }
 
 function renderStatus(team: string, entries: readonly RoleStatusEntry[], mode: Mode): string {
@@ -244,7 +255,11 @@ async function end(backend: RoleBackend, teamName: string, role: TeamRole, reaso
       warn(`role: thread ${run.thread_id} is settled but still pinned: ${(err as Error).message}`);
     }
   }
-  return backend.update(team.name, run.id, { end_reason: reason });
+  const ended = await backend.update(team.name, run.id, { end_reason: reason });
+  // A seat left on the settled thread would keep catching handoff notes (a sentinel outranks the architect).
+  const seat = teamRoleAgentId(team.name, role);
+  if (run.thread_id && (await backend.team.registry.read(seat))?.session_id === run.thread_id) await backend.team.dropRow(seat);
+  return ended;
 }
 
 /** `ob role start <team> <role>`, `ob role status <team> [<role>]`, `ob role end <team> <role> [--reason <r>]`. */

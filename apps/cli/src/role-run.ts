@@ -34,11 +34,11 @@ export interface RoleRun {
   end_reason: RoleRunEndReason | null;
 }
 
-export const ROLE_RUN_END_REASONS = ["idle", "context", "gone", "manual", "superseded"] as const;
+const ROLE_RUN_END_REASONS = ["idle", "context", "gone", "manual", "superseded"] as const;
 export type RoleRunEndReason = (typeof ROLE_RUN_END_REASONS)[number];
 
 /** The lease TTL: a day, a backstop for a run whose end was never recorded. */
-export const ROLE_RUN_LEASE_TTL_S = 86_400;
+const ROLE_RUN_LEASE_TTL_S = 86_400;
 
 /** `role:<team>:<role>`. Pure. */
 export function roleRunLeaseKey(team: string, role: TeamRole): string {
@@ -46,7 +46,7 @@ export function roleRunLeaseKey(team: string, role: TeamRole): string {
 }
 
 /** `role-run-<id>`. Pure. */
-export function roleRunHolder(id: number): string {
+function roleRunHolder(id: number): string {
   return `role-run-${id}`;
 }
 
@@ -111,7 +111,9 @@ export async function markRoleRun(
   let lease = await acquireLease(s, key, holder, ROLE_RUN_LEASE_TTL_S);
   if (!lease.ok) {
     const heldBy = runIdOfHolder(lease.holder);
-    const stale = heldBy !== null && (await runById(s, input.team, heldBy))?.ended_at != null;
+    // The holder's run ended without releasing it, or is gone (a team removed with --force drops its runs).
+    const held = heldBy === null ? null : await runById(s, input.team, heldBy);
+    const stale = heldBy !== null && (held === null || held.ended_at !== null);
     if (stale) {
       await releaseLease(s, key, lease.holder, true);
       lease = await acquireLease(s, key, holder, ROLE_RUN_LEASE_TTL_S);

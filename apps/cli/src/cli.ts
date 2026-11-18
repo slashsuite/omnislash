@@ -1156,8 +1156,9 @@ T3 Code (1102), the execution-plane seam:
                             archived, gone, launching), item count, started and last activity. Refreshes item_count
                             and last_activity_at from the thread header. Exit 1 when a thread could not be read.
   role end <team> <role> [--reason idle|context|gone|manual|superseded]
-                            settle and unpin the run's thread, set ended_at and end_reason (default manual), and
-                            release 'role:<team>:<role>'.
+                            settle and unpin the run's thread, set ended_at and end_reason (default manual), release
+                            'role:<team>:<role>', and drop the '<role>-<team>' agent row when it points at that thread
+                            (so a settled sentinel stops catching handoff notes).
                             A run opened on another machine's T3 makes start, status and end refuse by name ('run <id>
                             was opened on <host>; this machine's T3 is <local>') and is never ended as gone.
                             SPLIT: the T3 calls run here; the runs go over the API on a client

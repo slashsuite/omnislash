@@ -10,7 +10,7 @@ import { __setT3Seam, storeAgentRegistry, t3Seam, worktreeRepoOf } from "../../.
 import { t3BaseUrl, T3_BASE_URL_ENV } from "../../../apps/cli/src/t3/client.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { teamHandoffTarget } from "../../../apps/cli/src/team.ts";
-import { openRoleRuns, type RoleRun } from "../../../apps/cli/src/role-run.ts";
+import { openRoleRuns, updateRoleRun, type RoleRun } from "../../../apps/cli/src/role-run.ts";
 import { openStore, sqliteStoreFor, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseStatus } from "../../cli-coord/src/lease.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -270,6 +270,59 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
         team: "t",
         runs: [{ thread: "idle", run: { id: 1, role: "architect", item_count: 42, last_activity_at: "2026-11-18T10:00:00.000Z", context_tokens: null } }],
       });
+    },
+  ],
+  [
+    "a run ended while its launch was in flight settles the new thread instead of keeping it",
+    async (h) => {
+      const f = t3();
+      const seam = await t3Seam();
+      const restore = __setT3Seam({
+        ...seam,
+        launch: async (input) => {
+          const launched = await seam.launch(input);
+          await updateRoleRun(h.store, "t", 1, { end_reason: "manual" });
+          return launched;
+        },
+      });
+      let res: CliResult;
+      try {
+        res = await h.run(["role", "start", "t", "architect"]);
+      } finally {
+        restore();
+      }
+      expect(res.code).toBe(1);
+      expect(res.err).toContain("run 1 was ended while its thread was launching; thread t3-1 was settled");
+      expect(f.threads[0]!.settled).toBe(true);
+      expect(f.pinned).toEqual([]);
+      expect(await openRoleRuns(h.store, "t")).toEqual([]);
+    },
+  ],
+  [
+    "end drops the seat that points at the run's thread, so handoffs fall back to the architect",
+    async (h) => {
+      t3();
+      expect((await h.run(["role", "start", "t", "architect"])).code).toBe(0);
+      expect((await h.run(["role", "start", "t", "sentinel"])).code).toBe(0);
+      const registry = storeAgentRegistry(h.store);
+      const route = () => teamHandoffTarget({ ticket: "X-1", projectOf: async () => "p", teamOf: async () => "t", registry });
+      expect(await route()).toMatchObject({ kind: "team", target: { agentId: "sentinel-t" } });
+      expect((await h.run(["role", "end", "t", "sentinel"])).code).toBe(0);
+      expect(await registry.read("sentinel-t")).toBeNull();
+      expect(await route()).toMatchObject({ kind: "team", target: { agentId: "architect-t" } });
+    },
+  ],
+  [
+    "a team removed with --force and added again can start a run (its old lease does not block)",
+    async (h) => {
+      t3();
+      expect((await h.run(["role", "start", "t", "architect"])).code).toBe(0);
+      expect((await h.run(["t3", "team", "rm", "t", "--force"])).code).toBe(0);
+      expect((await h.run(["t3", "team", "add", "t"])).code).toBe(0);
+      const again = await h.run(["role", "start", "t", "architect"]);
+      expect(again.code).toBe(0);
+      expect(again.out).toContain("run 2 opened");
+      expect(await leaseHolder(h.store, "role:t:architect")).toBe("role-run-2");
     },
   ],
   [
