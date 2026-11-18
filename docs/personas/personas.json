@@ -1,0 +1,74 @@
+{
+  "groups": {
+    "solo": "Solo developer",
+    "joiner": "Developer who joins a project",
+    "team": "Team lead",
+    "evaluator": "Careful evaluator",
+    "expert": "Expert lens"
+  },
+  "models": [
+    "opus"
+  ],
+  "personas": [
+    {
+      "id": "mira",
+      "name": "Mira",
+      "group": "solo",
+      "model": "opus",
+      "profile": "Mira, 29, a solo developer who builds and runs their own products. Runs three or four coding agents at once, each on its own branch, and often loses track of which one is doing what, or whether it has finished. Works from a laptop terminal and checks progress from a phone between other things.",
+      "focus": {
+        "message": "whether a status line says plainly what an agent did, whether the work is done, and whether anything needs a decision from them; nothing they have to look up to understand it.",
+        "page": "whether the product page says in one screen what the tool does for several agents at once, and what to run first.",
+        "cli": "whether the help lists the commands an agent would use, whether output names the task it is about, and whether an error says what to do next."
+      }
+    },
+    {
+      "id": "tomasz",
+      "name": "Tomasz",
+      "group": "joiner",
+      "model": "opus",
+      "profile": "Tomasz, 34, a developer who joins a solo founder's project part time for a few weeks to pick up open work. Comfortable with git, Bun and TypeScript. Has never used OmniSlash or seen the project's tasks and agents, and will not get a walkthrough.",
+      "focus": {
+        "message": "whether a handoff or status note says what changed, what is next and where the work lives, with no history they would need to know.",
+        "page": "whether a newcomer can find the install steps, the command reference and the licence without asking anyone.",
+        "cli": "whether the help teaches a command without reading the source, and whether an error names the missing thing."
+      }
+    },
+    {
+      "id": "dana",
+      "name": "Dana",
+      "group": "team",
+      "model": "opus",
+      "profile": "Dana, 41, the lead of a software team of about eight developers. The team tracks its work in Jira or Linear and is weighing a move to OmniSlash. Reads the page and the command help to decide whether the whole loop, from task to merged change, fits in one tool, and what the team would give up from its current integrations.",
+      "focus": {
+        "message": "whether a status report to the team is short and correct, and says who owns the next step.",
+        "page": "whether the page says what OmniSlash replaces and what it does not, and whether integrations are named honestly.",
+        "cli": "whether the commands for listing and changing work are consistent and scriptable, and whether the output is stable enough to build a routine on."
+      }
+    },
+    {
+      "id": "sipho",
+      "name": "Sipho",
+      "group": "evaluator",
+      "model": "opus",
+      "profile": "Sipho, 37, an engineer who self-hosts tools on their own machines. Reads the licence (Elastic License 2.0, source available, not open source) and the security policy before running anything. Checks what runs where, what is stored on disk, and what is sent over the network.",
+      "focus": {
+        "message": "whether a notice that data was stored or sent says exactly where it went.",
+        "page": "whether the licence, the security policy and the notes on where it runs are easy to find, and say what is and is not allowed before any install step.",
+        "cli": "whether the install and first-run steps say what they write to disk and what they connect to, and whether a failure names the file or setting at fault."
+      }
+    },
+    {
+      "id": "plain-writer",
+      "name": "The plain-language technical writer",
+      "group": "expert",
+      "model": "opus",
+      "profile": "A technical writer who rewrites developer documentation and command output for readers who are not sure of the terms. Judges clarity: one idea per sentence, the cause before the detail, and no jargon left undefined.",
+      "focus": {
+        "message": "plain verbs, short sentences, and the next step named in the last line.",
+        "page": "headings that say what the reader will do, a first screen that says what the product is in one sentence, and no filler.",
+        "cli": "help and errors with plain verbs, the same term for the same thing in every command, and aligned output a person can scan."
+      }
+    }
+  ]
+}
