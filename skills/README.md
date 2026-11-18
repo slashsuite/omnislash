@@ -55,8 +55,9 @@ Run either from the root of your OmniSlash checkout. A linked skill follows the 
 | `ob-wire-ob-architect-into-a-repo` | Sets up another repo so the architect, its plugins and `ob agents` work in it |
 | `ob-live-proof-local-tracker` | Runs a real end-to-end `ob` proof against a throwaway tracker, never the live one |
 | `ob-take-a-site-to-production` | Takes a website live on its real domain, or audits one that is, ending on a go-live report |
+| `ob-architect` | Primes a thread as a team's architect: plans, drills and dispatches every build, then gates and merges |
 
-Some skills refer to others (`ob-architect`, `ob-infra` and more) that are not in this folder yet. More skills follow.
+Two skills that others refer to, `ob-infra` and `ob-deploy-a-worker-on-a-subdomain-of-a-live-zone`, are not in this folder.
 
 ## Credits
 
