@@ -48,8 +48,15 @@ Run either from the root of your OmniSlash checkout. A linked skill follows the 
 | `ob-skeptical-review` | Read-only reader legs that presume every changed line is wrong until shown right |
 | `ob-leaving-pr-comments` | Leaves a GitHub comment on the owner's behalf, only after they confirm the exact text |
 | `ob-ui-testing` | How UI tests are written, configured and run in every repo, with evals |
+| `ob-sentinel` | Primes a team's sentinel thread, the skeptic that verifies, merges and deploys every PR |
+| `ob-good-morning` | Morning catch-up: one digest across every architect, then each open item asked and routed back |
+| `ob-marketing-copy` | Writes marketing site copy from agreed facts, through an approved outline, drafts and a persona knockout |
+| `ob-new-project` | Scaffolds a new project on the standard stack, with the stack's standard and template |
+| `ob-wire-ob-architect-into-a-repo` | Sets up another repo so the architect, its plugins and `ob agents` work in it |
+| `ob-live-proof-local-tracker` | Runs a real end-to-end `ob` proof against a throwaway tracker, never the live one |
+| `ob-take-a-site-to-production` | Takes a website live on its real domain, or audits one that is, ending on a go-live report |
 
-Some skills refer to others (`ob-architect`, `ob-new-project` and more) that are not in this folder yet. More skills follow.
+Some skills refer to others (`ob-architect`, `ob-infra` and more) that are not in this folder yet. More skills follow.
 
 ## Credits
 
