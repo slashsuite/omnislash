@@ -1442,6 +1442,32 @@ async function route(
     if (segments.length === 2 && method === "DELETE") {
       return json(await h.teamRemove(store, second, queryBool(url.searchParams, "force") === true));
     }
+    // Role runs (`ob role`).
+    if (third === "runs") {
+      if (segments.length === 3 && method === "GET") return json(await h.roleRunsOpen(store, second, url.searchParams.get("role")));
+      if (segments.length === 3 && method === "POST") {
+        const body = await readJson(req);
+        const res = await h.roleRunMark(store, second, { role: reqString(body, "role"), t3_host: reqString(body, "t3_host") });
+        return json(res, res.created ? 201 : 200);
+      }
+      if (segments.length === 4 && method === "POST") {
+        const id = Number(segments[3]);
+        if (!Number.isInteger(id) || id <= 0) throw new ApiFault("invalid_request", 400, `run id '${segments[3]}' is not a positive integer`);
+        const body = await readJson(req);
+        const threadId = optString(body, "thread_id");
+        const itemCount = optNullableInt(body, "item_count");
+        const lastActivity = optString(body, "last_activity_at");
+        const endReason = optString(body, "end_reason");
+        return json(
+          await h.roleRunUpdate(store, second, id, {
+            ...(threadId === undefined ? {} : { thread_id: threadId }),
+            ...(itemCount === undefined ? {} : { item_count: itemCount }),
+            ...(lastActivity === undefined ? {} : { last_activity_at: lastActivity }),
+            ...(endReason === undefined ? {} : { end_reason: endReason }),
+          }),
+        );
+      }
+    }
     // OB-2257: a role thread's handoff for `ob t3 team restart`.
     if (third === "handoffs") {
       if (segments.length === 3 && method === "POST") {

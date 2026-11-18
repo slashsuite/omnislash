@@ -148,6 +148,10 @@ type SpinoffsQuery,
   type TeamLeaveResponse,
   type TeamRemoveResponse,
   type TeamHandoffResponse,
+  type RoleRunMarkRequest,
+  type RoleRunResponse,
+  type RoleRunsResponse,
+  type RoleRunUpdateRequest,
   type ProjectRenameRequest,
   type ProjectRenameResponse,
   type BriefResponse,
@@ -1182,6 +1186,20 @@ export class ApiClient {
 
 	teamHandoffConsume(name: string, id: number, newThreadId: string): Promise<TeamHandoffResponse> {
 		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/handoffs/${id}/consume`, { new_thread_id: newThreadId });
+	}
+
+	// --- role runs (`ob role`) ---
+
+	roleRuns(name: string, role?: string): Promise<RoleRunsResponse> {
+		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/runs${queryString({ role })}`);
+	}
+
+	roleRunMark(name: string, body: RoleRunMarkRequest): Promise<RoleRunResponse> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/runs`, body);
+	}
+
+	roleRunUpdate(name: string, id: number, body: RoleRunUpdateRequest): Promise<RoleRunResponse> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/runs/${id}`, body);
 	}
 
 	brief(query: { q?: string; in_flight?: boolean } = {}): Promise<BriefResponse> {

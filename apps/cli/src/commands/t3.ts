@@ -482,7 +482,7 @@ function warnQuietDiagnostics(view: T3ReadView, mode: Mode): void {
 }
 
 /** The store-backed `TeamBackend` (OB-2255): the teams, the role rows and the cwd's checkout, on this machine. */
-function storeTeamBackend(store: Ctx["db"] | NonNullable<Ctx["store"]>): TeamBackend {
+export function storeTeamBackend(store: Ctx["db"] | NonNullable<Ctx["store"]>): TeamBackend {
   const view = async (name: string) => {
     const t = await getTeam(store, name);
     return t ? teamView(store, t) : null;
