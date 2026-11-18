@@ -651,7 +651,7 @@ async function withdrawHeldReadyNotes(ctx: ApiCtx, itemId: string, rows: Spinoff
 }
 
 /** OB-2255: the API-backed `TeamBackend`: teams and role rows over the wire, the cwd's checkout resolved here. */
-export function apiTeamBackend(ctx: ApiCtx): TeamBackend {
+function apiTeamBackend(ctx: ApiCtx): TeamBackend {
 	const { client } = ctx;
 	const orNull = async <T>(run: () => Promise<T>): Promise<T | null> => {
 		try {

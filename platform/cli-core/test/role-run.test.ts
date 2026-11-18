@@ -7,7 +7,7 @@ import { installFakeT3, type FakeT3Install } from "../../../apps/cli/test/fake-t
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { run as runOb } from "../../../apps/cli/src/cli.ts";
 import { __setT3Seam, storeAgentRegistry, t3Seam, worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
-import { t3BaseUrl, T3_BASE_URL_ENV } from "../../../apps/cli/src/t3/client.ts";
+import { t3BaseUrl, T3Error, T3_BASE_URL_ENV } from "../../../apps/cli/src/t3/client.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { teamHandoffTarget } from "../../../apps/cli/src/team.ts";
 import { openRoleRuns, updateRoleRun, type RoleRun } from "../../../apps/cli/src/role-run.ts";
@@ -296,6 +296,37 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       expect(f.threads[0]!.settled).toBe(true);
       expect(f.pinned).toEqual([]);
       expect(await openRoleRuns(h.store, "t")).toEqual([]);
+    },
+  ],
+  [
+    "a launch T3 refuses ends the marker and frees the role; a launch that may have reached T3 keeps it",
+    async (h) => {
+      const f = t3();
+      const seam = await t3Seam();
+      let fail: T3Error | null = new T3Error("refused", "t3_thread_launch: no");
+      const restore = __setT3Seam({
+        ...seam,
+        launch: async (input) => {
+          if (fail) throw fail;
+          return seam.launch(input);
+        },
+      });
+      try {
+        const refused = await h.run(["role", "start", "t", "architect"]);
+        expect(refused.code).toBe(1);
+        expect(refused.err).toContain("no thread was made, so the run was ended");
+        expect(await leaseHolder(h.store, "role:t:architect")).toBeNull();
+        fail = new T3Error("unreachable", "T3 did not answer the command within 30000ms");
+        const timedOut = await h.run(["role", "start", "t", "architect"]);
+        expect(timedOut.code).toBe(1);
+        expect(timedOut.err).toContain("the run stays open with no thread");
+        fail = null;
+        expect((await h.run(["role", "start", "t", "architect"])).err).toContain("run 2 for t architect has no thread yet");
+      } finally {
+        restore();
+      }
+      expect(f.launches).toHaveLength(0);
+      expect((await runs(h.store)).map((r) => [r.id, r.end_reason])).toEqual([[1, "gone"], [2, null]]);
     },
   ],
   [

@@ -84,7 +84,7 @@ async function pointSeat(registry: AgentRegistry, team: string, role: TeamRole, 
 }
 
 /** What `start` did: reused the open run, or opened a new one (`ended` is the run it replaced). */
-export interface RoleStartOutcome {
+interface RoleStartOutcome {
   team: string;
   role: TeamRole;
   run: RoleRun;
@@ -177,6 +177,12 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
     threadId = launched.threadId;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
+    // T3 answered with a refusal, or was never asked (no usable credential): no thread exists, so the run ends and the
+    // next start is free. `unreachable` also covers a request that timed out in flight, so a thread may exist: kept.
+    if (err instanceof T3Error && (err.kind === "refused" || err.kind.startsWith("credential_"))) {
+      await backend.update(team.name, run.id, { end_reason: "gone" });
+      throw new AppError(`the launch of run ${run.id} failed (${reason}); no thread was made, so the run was ended`);
+    }
     throw new AppError(`the launch of run ${run.id} failed (${reason}); the run stays open with no thread. ${noThreadRefusal(run, title)}`);
   }
   const recorded = await backend.update(team.name, run.id, { thread_id: threadId });
@@ -200,7 +206,7 @@ function activityOf(thread: { itemCount?: number; updatedAt?: string }): RoleRun
 }
 
 /** One run in `status`: the record, and what its thread reads as now. */
-export interface RoleStatusEntry {
+interface RoleStatusEntry {
   run: RoleRun;
   /** T3's status word, `settled`, `archived`, `gone` (T3 no longer knows it), `launching` (no thread yet), or `other-host`. */
   thread: string;
