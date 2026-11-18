@@ -42,7 +42,7 @@ ROLE and the execution DISCIPLINE below are repo-agnostic; the TRACKER + convent
   what shipped with `git -C <root> …` / `git log main`, and treat the worktree's own HEAD as stale.
 - Orient to that substrate's current priorities before choosing work.
 - **Owed reviews:** run **Owed reviews** below, and report any owed task left open.
-- **Check any other repo against the standard stack** (`skills/ob-new-project/STANDARD-STACK.md` in this repo):
+- **Check any other repo against the standard stack** (`skills/ob-new-project/STANDARD-STACK.md` in your OmniSlash checkout):
   file each deviation as a ticket on that repo's `ob` project unless one is already open. Do not fix it here.
   A **new** project (repo or app in your main repo) is created with the `ob-new-project` skill, which scaffolds it on that standard.
 
@@ -116,7 +116,7 @@ only picks which transcript reader the row is stamped with, not the model.
 Always interactive: the owner steers; the owner hands it off (`ob spinoff handoff` / `/ob-spinoff-handoff`; the old `ob spinoff ready` / `/ob-spinoff-done` still work).
 `ob agent register` is a registry write, not a launch. Never `ob spinoff --agent`.
 
-`ob spinoff <ref>` launches in the same invocation: it prints the thread id, or refuses by name and leaves no pending row when another session holds the ticket's `ticket:`/`worktree:` lease. There is no drain daemon to wait for. Name the dispatched ticket in `--note` only. `ob spinoff` takes the item's ref, its legacy number or an alias, and names the row, branch, worktree and builder by the ref (the ref for the row, its lowercase form for the branch), so the lease is `ticket:<ref>`. `--ticket` on this architect row claims `ticket:<n>`, and `ob spinoff` refuses under that hold unless you pass `--holder architect-<team>`. After `ob spinoff`, register with `--no-lease` and release `ticket:<n>` if this row already holds it. A later register that omits `--ticket` keeps the recorded ticket and claims it again, so `--no-lease` stays on this row until the builder holds the lease. A gate is the exception: hold `ticket:<n>` only while you are landing it, and dispatch under it with `ob spinoff <ref> --holder architect-<team>`. Done when `ob spinoff show <n>` is building and `ob lease status` does not show `ticket:<n>` held by this architect.
+`ob spinoff <ref>` launches in the same invocation: it prints the thread id, or refuses by name and leaves no pending row when another session holds the ticket's `ticket:`/`worktree:` lease. There is no drain daemon to wait for. Name the dispatched ticket in `--note` only. `ob spinoff` takes the item's ref, its legacy number or an alias, and names the row, branch, worktree and builder by the ref (the ref, or its lowercase form), so the lease is `ticket:<ref>`. `--ticket` on this architect row claims `ticket:<n>`, and `ob spinoff` refuses under that hold unless you pass `--holder architect-<team>`. After `ob spinoff`, register with `--no-lease` and release `ticket:<n>` if this row already holds it. A later register that omits `--ticket` keeps the recorded ticket and claims it again, so `--no-lease` stays on this row until the builder holds the lease. A gate is the exception: hold `ticket:<n>` only while you are landing it, and dispatch under it with `ob spinoff <ref> --holder architect-<team>`. Done when `ob spinoff show <n>` is building and `ob lease status` does not show `ticket:<n>` held by this architect.
 
 ## An architect thread past 1,000 items is relaunched
 
@@ -130,7 +130,7 @@ No planning thread should run to a thousand messages or more: past that, prompt 
 
 ## An architect thread past 200k context is relaunched too
 
-A daily usage review (`skills/ob-usage-review`) found architect sessions were the largest share of a day's spend, most of it cache reads (the whole context re-read on every call), so a 200k context ceiling was adopted.
+A daily usage review (`skills/ob-usage-review`) found architect sessions were a large share of a day's spend, and cache reads (the whole context re-read on every call) were most of that day's spend, so a 200k context ceiling was adopted.
 
 - **Check the context** on each queue pass, beside the item count: the context meter T3 shows for the thread, or your session's peak context in `ob usage day`. Past 200k the thread is due a relaunch, whatever its item count.
 - **The relaunch is the same `ob t3 team restart <team> --role architect`** as above, run at a quiet point from a terminal or another thread (ask the owner with the question tool), with the same handoff. The map, the tickets and the handoff carry the state; nothing in the old context needs to survive.
@@ -149,7 +149,7 @@ All the repos you work on have personas, and the planner knows about them: five,
 - **Use them while planning:** a ticket that changes what someone sees or does names the persona it is for and what they gain, in `## Drilled`. A taste or design choice between options is settled by a persona vote (the knockout method), and the owner still has the final say.
 - **A repo with none, or not five,** gets a ticket on its own tracker before its next UI ticket is dispatched.
 
-## Picking the next ticket, in one place (every architect, every repo)
+## Picking the next ticket, in one place
 
 The rules below are spread over this skill; this is their order, for every repo's architect.
 
@@ -159,7 +159,7 @@ The rules below are spread over this skill; this is their order, for every repo'
 4. **An urgent ticket builds on Opus:** `ob spinoff <ref> --tier complex`. `ob spinoff` raises any lower tier for an urgent itself, so the flag is a statement, not the guard.
 5. Every dispatch still needs `## Drilled`, `## Done when` and a `go` from `ob spinoff check` (below).
 
-## Claude usage pacing: ahead of the week means high and above only (every architect)
+## Claude usage pacing: ahead of the week means high and above only
 
 Monitor the Claude subscription's usage: if the week is running ahead, so tokens would burn too quickly, flag it to the owner and stop tasks that use a lot of tokens and are not high or urgent.
 
@@ -169,7 +169,7 @@ Monitor the Claude subscription's usage: if the week is running ahead, so tokens
 - **Back to normal** when `usedPercent` is back within 10 points of the week gone, or the week resets. No second push for the same week unless the owner asks.
 - **Who checks.** Every architect's hourly watchdog, and every architect before each `ob spinoff`.
 
-## "Every project" means the ob projects, nothing else (every architect)
+## "Every project" means the ob projects, nothing else
 
 When the owner asks for changes across projects, only the `ob` projects count; random experiments do not.
 
@@ -178,7 +178,7 @@ When the owner asks for changes across projects, only the `ob` projects count; r
 - **A repo that should count is registered first** (`ob project add`), and only on the owner's say. Do not register one to widen a rollout.
 - **A project missing a fact the change needs** (no GitHub remote recorded, no checkout) is named to the owner, not guessed around.
 
-## A consumer bump is for a new 0.x minor, not a patch, unless the project needs it (every architect)
+## A consumer bump is for a new 0.x minor, not a patch, unless the project needs it
 
 Bump projects onto a new 0.x minor, not a patch version, unless that project needs the patch.
 
@@ -186,7 +186,7 @@ Bump projects onto a new 0.x minor, not a patch version, unless that project nee
 - A bump ticket names the range as the new minor (`^0.12.0`, or the patch that is current when it is drilled), and nothing more.
 - **The exception: a project that needs the patch.** When a patch carries a fix or a part that one consumer is waiting on, that consumer gets a ticket to take it (raise its range's floor to that patch and refresh the lockfile), and its body names what it needs from the patch. The other consumers still get none.
 
-## A dependency takes the priority of what depends on it (every architect)
+## A dependency takes the priority of what depends on it
 
 If a high task depends on a medium task, that medium task becomes high.
 
@@ -194,7 +194,7 @@ If a high task depends on a medium task, that medium task becomes high.
 - It applies down the whole chain: a dependency of a raised ticket is raised too.
 - The architect does it when it sees the link: on capture, on a drill, and on a watchdog run. So the usage pacing rule above never holds back work a high ticket is waiting on.
 
-## A pause is the window for changes across every repo (every architect)
+## A pause is the window for changes across every repo
 
 On a pause, every planner finishes every task it is working on and starts no other. The pause is there so that a cross-cutting change can be made without affecting other work, and every repo gets back onto a common state.
 
@@ -203,7 +203,7 @@ On a pause, every planner finishes every task it is working on and starts no oth
 - **Nothing else starts until the owner lifts the pause.** An urgent PixelSlash failure or a flake still goes to the front as usual.
 - **None is in force.** A new pause is written here when the owner calls one, and removed by a `docs(skill)` PR when they lift it.
 
-## Bot pull requests merge themselves on green (every repo)
+## Bot pull requests merge themselves on green
 
 A bot PR auto-merges on green.
 
@@ -228,11 +228,11 @@ The sentinel and the muse are there to take load off the architect, which a sing
 
 **A thought is not work until the owner says it is complete** (an architect must not go and implement things while the owner is still rambling or getting their thoughts together). Before a design reaches the architect as a plan, or is ticketed for building, the muse (or the architect, in a team with no muse) asks the owner with the question tool whether the thought is complete. Capturing a raw idea as a ticket stays fine; dispatching it does not.
 
-## Dependabot pull requests are the sentinel thread's (every repo)
+## Dependabot pull requests are the sentinel thread's
 
 The gating thread is responsible for Dependabot merges in every repo of its team. It follows handoff routing, so it moves with teams.
 
-- **Who.** The thread a builder's handoff goes to also gates and merges the Dependabot PRs of every repo it covers: the team's sentinel (`sentinel-<team>`) when one is bound, else its architect. Nobody else merges them, and a thread that finds one outside its team's repos hands it to the owner.
+- **Who.** The thread a builder's handoff goes to also gates and merges the Dependabot PRs of every repo it covers: the team's sentinel (`sentinel-<team>`) when one is bound, else its architect. Nobody else merges them, and a thread that finds one outside its team's repos hands it to the team whose repo it is.
 - **Gate.** The repo's required check (its `main` branch protection, else the check its `AGENTS.md` names) is green on the PR head SHA. A run under an old job name does not count: `gh pr update-branch <n>` reruns CI on a branch that merges cleanly.
 - **Merge.** `gh pr merge <n> --squash --delete-branch --subject "build(deps): <what> (#<n>)"`, then the same thread runs the repo's post-merge deploy from its `repos/<project>/AGENTS.md`.
 - **Conflicts.** The gating thread resolves them itself, as for any PR it gates: rebase it or merge `origin/main` into it, resolve the conflicts (`ob-resolving-merge-conflicts`), push, and re-gate the new head; for a lockfile, regenerate it with the repo's install rather than hand-merging it. Dependabot stops rebasing a branch someone else pushed to, which does not matter since it merges next. No `@dependabot rebase` comment is needed.
@@ -250,11 +250,11 @@ Whenever a flaky test is found it becomes the highest priority in the project: i
 - **A flake fix does not count towards the one-builder limit.** Dispatch it at once, unless an urgent ticket is queued ahead of it, beside the regular builder already running; it does not wait for that builder to land and does not hold up the next regular dispatch. Why: a flake fix takes long to find and touches little code, so it rarely conflicts. **One flake fix at a time on the whole machine, in its own box:** not one flake per planner, one flake in total, with dedicated, enforced CPUs and memory. Across every architect and repo, one flake builder runs at a time, holding the `flake:slot` lease. **`ob spinoff` takes and releases it itself:** dispatching a `flake` ticket claims `flake:slot` for its builder in the same transaction as `ticket:` and `worktree:` (6 hour TTL, kept alive by the builder's `ob agent heartbeat`), and the handoff, `ob close`, `ob spinoff abandon` or a failed launch frees it. A dispatch that finds it held by another builder exits 1 (`flake:slot held by <holder> for <ref>; one flake fix at a time`) and queues nothing, so the flake waits its turn. `--no-flake-slot '<why>'` launches without it, on the trail, only with the owner's go. Every test or reproduction that builder runs goes through an isolated box with dedicated CPUs and memory and no swap, kept apart from the CPUs everything else uses, so it can loop a test without touching anything else. A flake fix still runs beside the one regular builder and does not count towards that limit. Do not take `flake:slot` by hand: dispatch the flake, and if it is refused because the slot is held, it waits its turn (the watchdog retries) and the next one in the whole machine's line goes when the slot is released. The launch prompt of a `flake` row already carries the box paragraph.
 - **The watchdog carries it.** Each watchdog run checks for an open ticket at priority `flake` and dispatches it before the next queued ticket, unless that ticket is an urgent.
 
-## Browser test runs take the `cpu:browser` lease (every architect, every repo)
+## Browser test runs take the `cpu:browser` lease
 
 All Storybook and end-to-end runners require a lease: the CPU is overwhelmed otherwise, so one runs only when the other is done. Every local Storybook or Playwright command on this desktop, an architect's gate or visual check included, runs as `ob lease run cpu:browser -- <command>`, never bare. It waits for the one machine-wide slot (a line on stderr names the holder), runs the command, heartbeats, and always releases it. Wrap the whole command that starts the browsers; a moon gate with an e2e task is wrapped whole. Each `repos/<project>/AGENTS.md` lists that repo's commands, and `ob project rules` serves it into every builder's launch prompt. The public repos carry nothing of ob, so the rule is not in their `package.json`. CI is out of scope. **Marketing sites are exempt** (their tests are quick compared to monorepos with thousands of tests): marketing site projects run their Storybook and Playwright commands bare, with no lease. The Slash products, Hack Cove and your main repo keep the lease.
 
-## Every project has a stage, and the stage sets the breaking-change rule (every architect, every repo)
+## Every project has a stage, and the stage sets the breaking-change rule
 
 Every project carries a stage: alpha, beta, release candidate or stable. Alpha allows any breaking change at any time, with no backwards compatibility owed. Beta allows breaking changes, flagged. A release candidate is strict: the impact of a break is understood first. Stable allows no breaking change until the next version of the product, unless explicitly allowed. The architect applies this while doing the tasks.
 
@@ -276,7 +276,7 @@ A **breaking change** is anything that makes an existing user, caller, config, s
 - **The public label follows the stage.** Each product's docs and marketing site shows its stage as Alpha, Beta, Release candidate or Stable, with one sentence on what it means for a user; Planned is for a product with nothing built. A stage change updates that label too, through a ticket on the product's tracker.
 - **Data safety is not a stage rule.** Your main repo's additive-migration rule, backups before a destructive step, and never losing real user data on a live server hold at every stage, alpha included.
 
-## A PixelSlash failure goes to the PixelSlash architect, urgent (every architect, every repo)
+## A PixelSlash failure goes to the PixelSlash architect, urgent
 
 While PixelSlash is being made stable, any time it fails, in Hack Cove or any other project, it is raised to the PixelSlash planner for investigation, as urgent.
 
@@ -286,7 +286,7 @@ While PixelSlash is being made stable, any time it fails, in Hack Cove or any ot
 - **PixelSlash's architect** treats it like a flake (above): it goes to the front of its queue, and fixed means the cause is found from a reproduction.
 - **Your own work** carries on where the failure does not block it. Where it does (a gate that needs the PixelSlash check), the PR waits; it is not merged past a PixelSlash failure without the owner's go for that PR.
 
-## Marketing copy goes through `ob-marketing-copy` (every architect)
+## Marketing copy goes through `ob-marketing-copy`
 
 Copy on any marketing site of an ob project is written by that skill: facts, an outline the owner approves in a Claude Doc, several Opus drafts, a persona knockout, the owner's pick, then a builder ticket that transcribes the approved text word for word. A brief never asks a builder to write or reword marketing copy, and a feature ticket that would change a site's words leaves them as they are and gets a copy ticket instead.
 
