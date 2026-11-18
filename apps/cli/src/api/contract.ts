@@ -48,6 +48,7 @@ import type { AgendaRow } from "../../../../platform/cli-sources/src/ingest/cale
 import type { Project } from "../project.ts";
 import type { Team, TeamView } from "../team.ts";
 import type { TeamHandoff } from "../team-handoff.ts";
+import type { RoleRun } from "../role-run.ts";
 import type { JournalEntry, JournalType } from "../commands/log.ts";
 import type { JobHealth } from "../jobs.ts";
 import type { Alert } from "../commands/alerts.ts";
@@ -306,6 +307,9 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/teams/:name/handoffs", what: "record a role thread's handoff for `ob t3 team restart` (OB-2257); from_thread_id names the writer (OB-2275)" },
   { method: "GET", path: "/teams/:name/handoffs/latest", what: "a role's newest handoff (?role=; ?from=<thread> keeps that thread's, ?created_before=<iso> those recorded by then, OB-2275), or null" },
   { method: "POST", path: "/teams/:name/handoffs/:id/consume", what: "mark a handoff seeded into its replacement thread" },
+  { method: "GET", path: "/teams/:name/runs", what: "the team's open role runs (?role= keeps one role's)" },
+  { method: "POST", path: "/teams/:name/runs", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
+  { method: "POST", path: "/teams/:name/runs/:id", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
   { method: "GET", path: "/brief", what: "work-state brief (?q= id, or ?in_flight=true)" },
   { method: "GET", path: "/log", what: "standup journal entries (?type=&since=)" },
   { method: "POST", path: "/log", what: "capture a journal entry (kudos|suggestion|comment)" },
@@ -1767,6 +1771,29 @@ export interface TeamHandoffConsumeRequest {
 
 export interface TeamHandoffResponse {
   handoff: TeamHandoff | null;
+}
+
+// Role runs: one run per team role (`ob role`).
+export interface RoleRunMarkRequest {
+  role: string;
+  t3_host: string;
+}
+
+export interface RoleRunUpdateRequest {
+  thread_id?: string;
+  item_count?: number | null;
+  last_activity_at?: string;
+  end_reason?: string;
+}
+
+export interface RoleRunResponse {
+  run: RoleRun;
+  /** On a mark: false when the role already had an open run, which is the run answered. */
+  created?: boolean;
+}
+
+export interface RoleRunsResponse {
+  runs: RoleRun[];
 }
 
 export interface TeamRemoveResponse {

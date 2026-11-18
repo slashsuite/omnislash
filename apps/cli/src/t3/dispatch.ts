@@ -881,7 +881,7 @@ interface LaunchRefusal {
  * the pre-enqueue check of `--effort` cannot disagree. A refusal is returned, never thrown, because the
  * launch ends it with "re-run the drain" and the pre-enqueue check with "nothing was queued".
  */
-async function resolveModelAndEffort(
+export async function resolveModelAndEffort(
   seam: T3Seam,
   project: T3Project,
   tier: SpinoffTier,
@@ -1156,7 +1156,7 @@ export interface TeamThreadOutcome {
  * A team thread is a long-lived seat, so T3's inactivity sweep must not settle it (OB-1845). Builders keep the
  * sweep as their backstop. A failure here is reported, never thrown: the title already stands.
  */
-async function teamAutoSettleOff(seam: T3Seam, threadId: string): Promise<Pick<TeamThreadOutcome, "autoSettleOff" | "autoSettleWarning">> {
+export async function teamAutoSettleOff(seam: T3Seam, threadId: string): Promise<Pick<TeamThreadOutcome, "autoSettleOff" | "autoSettleWarning">> {
   try {
     await seam.disableAutoSettle(threadId);
     return { autoSettleOff: true, autoSettleWarning: null };
@@ -1390,7 +1390,7 @@ export async function ensureTeamThread(
  * longer knows (T3 refusing the read, whatever its wording) is null, which lets the caller replace it; any
  * OTHER failure (an unreachable server, a rejected credential) is rethrown unchanged.
  */
-async function readTeamThread(seam: T3Seam, threadId: string): Promise<T3Thread | null> {
+export async function readTeamThread(seam: T3Seam, threadId: string): Promise<T3Thread | null> {
   try {
     const thread = await readThreadHeader(seam, threadId);
     return thread.settled || thread.archived ? null : thread;

@@ -122,6 +122,30 @@ export const teamHandoff = sqliteTable("team_handoff", {
 	index("idx_team_handoff_role").on(table.team, table.role, table.id),
 ]);
 
+// One role run per team role: a T3 thread opened (or reused) by `ob role start <team> <role>`. The row is the
+// run's record (when it started, its last activity, why it ended); the partial unique index on (team, role)
+// where `ended_at` IS NULL is the one-open-run rule. `thread_id` is null only while the launch is in flight.
+// `t3_host` is the T3 base URL the run was opened on, so another machine never judges it gone. Removing a
+// team (`t3 team rm --force`) drops its runs with it.
+export const roleRun = sqliteTable("role_run", {
+	id: integer().primaryKey({ autoIncrement: true }),
+	team: text().notNull().references(() => team.name, { onDelete: "cascade" }),
+	role: text().notNull(),
+	thread_id: text("thread_id"),
+	t3_host: text("t3_host").notNull(),
+	started_at: text("started_at").notNull(),
+	last_activity_at: text("last_activity_at").notNull(),
+	item_count: integer("item_count"),
+	context_tokens: integer("context_tokens"),
+	ended_at: text("ended_at"),
+	end_reason: text("end_reason"),
+},
+(table) => [
+	uniqueIndex("idx_role_run_open")
+		.on(table.team, table.role)
+		.where(sql`ended_at IS NULL`),
+]);
+
 // OB-2271: persona tournaments. A tournament compares candidates (themes, grounds, designs) by matches; each
 // match is a set of reader calls (a persona on a model, in one order) scoring both sides 1 to 5 per criterion.
 // The runner (OB-2273, or a repo's own script) writes a match file and `ob tournament record` stores it; ob

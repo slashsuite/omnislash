@@ -129,6 +129,7 @@ import {
   removeTeam,
 } from "../team.ts";
 import { consumeTeamHandoff, latestTeamHandoff, parseTeamRole, recordTeamHandoff, type HandoffFilter } from "../team-handoff.ts";
+import { markRoleRun, openRoleRuns, parseEndReason, updateRoleRun } from "../role-run.ts";
 import { clearCredentialCheck, defaultMasterKey, getSecret, listSecrets, masterKeyForWrite, removeSecret, setSecret, type MasterKey } from "../secrets.ts";
 import {
   DEFAULT_SCOPES,
@@ -286,6 +287,10 @@ import type {
   TeamRemoveResponse,
   TeamHandoffRequest,
   TeamHandoffConsumeRequest,
+  RoleRunMarkRequest,
+  RoleRunResponse,
+  RoleRunsResponse,
+  RoleRunUpdateRequest,
   TeamHandoffResponse,
   ProjectRenameResponse,
   BriefResponse,
@@ -1924,6 +1929,29 @@ export async function teamHandoffConsume(store: Store, name: string, id: number,
   const h = await consumeTeamHandoff(store, name, id, req.new_thread_id);
   if (!h) throw new ApiFault("not_found", 404, `no handoff ${id} for team '${name}'`);
   return { handoff: h };
+}
+
+// --- role runs (`ob role`) -----------------------------------------------------------------------------
+
+export async function roleRunsOpen(store: Store, name: string, role: string | null): Promise<RoleRunsResponse> {
+  return { runs: await teamFault(async () => openRoleRuns(store, name, role === null ? undefined : parseTeamRole(role, "'role'"))) };
+}
+
+export async function roleRunMark(store: Store, name: string, req: RoleRunMarkRequest): Promise<RoleRunResponse> {
+  return teamFault(() => markRoleRun(store, { team: name, role: parseTeamRole(req.role, "'role'"), t3Host: req.t3_host }));
+}
+
+export async function roleRunUpdate(store: Store, name: string, id: number, req: RoleRunUpdateRequest): Promise<RoleRunResponse> {
+  return {
+    run: await teamFault(() =>
+      updateRoleRun(store, name, id, {
+        ...(req.thread_id === undefined ? {} : { thread_id: req.thread_id }),
+        ...(req.item_count === undefined ? {} : { item_count: req.item_count }),
+        ...(req.last_activity_at === undefined ? {} : { last_activity_at: req.last_activity_at }),
+        ...(req.end_reason === undefined ? {} : { end_reason: parseEndReason(req.end_reason, "'end_reason'") }),
+      }),
+    ),
+  };
 }
 
 export async function briefRead(store: Store, q: string | null, inFlight: boolean): Promise<BriefResponse> {

@@ -78,6 +78,7 @@ import { cmdSecret } from "./commands/secret.ts";
 import { cmdCreds } from "./commands/creds.ts";
 import { cmdVision, expandVisionPairFlags } from "./commands/vision.ts";
 import { cmdT3 } from "./commands/t3.ts";
+import { cmdRole } from "./commands/role.ts";
 import { cmdTriage } from "./commands/triage.ts";
 import { cmdIssue } from "./commands/issue.ts";
 import { cmdJobs } from "./commands/jobs.ts";
@@ -486,6 +487,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   creds: cmdCreds,
   vision: cmdVision,
   t3: cmdT3,
+  role: cmdRole,
 };
 
 export const HELP = `ob — OmniSlash personal task tracker
@@ -1139,6 +1141,28 @@ T3 Code (1102), the execution-plane seam:
                             '<project> is in no team: ob t3 team join <team> <project>, or ob t3 architect in its
                             checkout'; the stamp stands either way.
                             Every 'ob t3' subcommand refuses a flag it does not read with exit 2, before any T3 call.
+  role start <team> <role>   ONE RUN PER TEAM ROLE (architect, sentinel, muse), recorded in role_run. Reuses the open run
+                            while its thread is live and prints it ('run <id> is open, thread <id>; nothing launched').
+                            Otherwise opens a new T3 thread in the cwd's checkout on claude-opus-5-5 at the model's
+                            default effort (no options sent), seeded with '/ob-<role>' and one line naming the run,
+                            pinned, auto-settle off. A thread that is settled, archived or gone ends its run with reason
+                            'gone' first. Two starts at once launch once: the partial unique index on (team, role)
+                            keeps one open run, and lease 'role:<team>:<role>' (holder 'role-run-<id>', TTL a day) is
+                            taken with it. Points the 'agent <role>-<team>' row at the run's thread, so handoff notes
+                            reach the live run. An unreachable T3 changes nothing. A run with no thread yet (another
+                            start is launching, or a launch died) refuses by name. -q prints the thread id.
+  role status <team> [<role>] [--json|-q]
+                            the team's open runs: run id, thread, what T3 reads it as now (its status, settled,
+                            archived, gone, launching), item count, started and last activity. Refreshes item_count
+                            and last_activity_at from the thread header. Exit 1 when a thread could not be read.
+  role end <team> <role> [--reason idle|context|gone|manual|superseded]
+                            settle and unpin the run's thread, set ended_at and end_reason (default manual), release
+                            'role:<team>:<role>', and drop the '<role>-<team>' agent row when it points at that thread
+                            (so a settled sentinel stops catching handoff notes).
+                            A run opened on another machine's T3 makes start, status and end refuse by name ('run <id>
+                            was opened on <host>; this machine's T3 is <local>') and is never ended as gone.
+                            SPLIT: the T3 calls run here; the runs go over the API on a client
+                            (GET|POST /teams/:name/runs, POST /teams/:name/runs/:id).
   t3 broadcast architects <message> [--message-file <path>] [--dry-run] [--json|-q]
   t3 broadcast threads <message> [--message-file <path>] [--dry-run] [--json|-q]
                             send one message to every ACTIVE architect, or to every active T3 thread

@@ -135,6 +135,9 @@ export const API_ROUTED_COMMANDS: ReadonlySet<string> = new Set([
 	// credential file and run here inside the handler; a team (OB-2255) and its role rows cross the wire,
 	// while a role's thread is opened, pinned and titled here, where T3 is.
 	"t3",
+	// `role` is SPLIT like `t3`: the runs and the team cross the wire, the run's thread is read, launched and
+	// settled here, where T3 is.
+	"role",
 ]);
 
 export function isApiRouted(command: string): boolean {

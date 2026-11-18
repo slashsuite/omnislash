@@ -733,6 +733,21 @@ async function apiT3(ctx: ApiCtx): Promise<void> {
 	ctx.exit = local.exit;
 }
 
+/** `ob role` over the API: the runs and the team cross the wire, the thread is read, launched and settled here. */
+async function apiRole(ctx: ApiCtx): Promise<void> {
+	const { runRoleCommand } = await import("../commands/role.ts");
+	const { client } = ctx;
+	await runRoleCommand(ctx, {
+		team: apiTeamBackend(ctx),
+		open: async (team, role) => (await client.roleRuns(team, role)).runs,
+		mark: async (team, role, t3Host) => {
+			const res = await client.roleRunMark(team, { role, t3_host: t3Host });
+			return { run: res.run, created: res.created === true };
+		},
+		update: async (team, id, patch) => (await client.roleRunUpdate(team, id, patch)).run,
+	});
+}
+
 async function apiReopen(ctx: ApiCtx): Promise<void> {
 	const id = requireId(ctx, "reopen");
 	refuseDryRun(ctx, "reopen");
@@ -2609,6 +2624,7 @@ export const API_HANDLERS: Record<string, (ctx: ApiCtx) => Promise<void>> = {
 	spinoff: apiSpinoff,
 	// 1120: `t3` is SPLIT -- doctor/login run here, the architect's thread is opened here, its row is served.
 	t3: apiT3,
+	role: apiRole,
 	// 366: `whatsapp` is SPLIT -- all served (OB-1809) but `bridge run|start|stop`, which refuse by name inside.
 	whatsapp: apiWhatsapp,
 	// 415: gmail/cal/agenda are served (sync runs on the host).
