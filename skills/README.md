@@ -11,13 +11,15 @@ The skills assume `ob` is on your `PATH`.
 Link one skill into your personal skills folder:
 
 ```bash
-ln -s "$PWD/skills/<name>" ~/.claude/skills/<name>
+mkdir -p ~/.claude/skills
+ln -sfn "$PWD/skills/<name>" ~/.claude/skills/<name>
 ```
 
 Or link every skill in this folder:
 
 ```bash
-for s in skills/*/; do ln -s "$PWD/$s" ~/.claude/skills/; done
+mkdir -p ~/.claude/skills
+for s in skills/*/; do ln -sfn "$PWD/${s%/}" ~/.claude/skills/; done
 ```
 
 Run either from the root of your OmniSlash checkout. A linked skill follows the checkout, so a `git pull` updates it.

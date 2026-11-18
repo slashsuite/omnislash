@@ -1,6 +1,6 @@
 ---
 name: ob-usage-review
-description: The daily Claude token review. Reads `ob usage day --compare`, names at most three levers that would cut the most dollars, asks the owner about each, and turns each adopted lever into a rule or a ticket the same day. Use when the owner asks what they can do better with their tokens, why usage is high, for the token or usage review, or when the daily 07:00 review fires.
+description: The daily Claude token review. Reads `ob usage day --compare`, names at most three levers that would cut the most dollars, asks the owner about each, and turns each adopted lever into a rule or a ticket the same day. Use when the owner asks what they can do better with their tokens, why usage is high, for the token or usage review, or when a scheduled daily review fires.
 ---
 
 # ob-usage-review
@@ -23,7 +23,7 @@ The review itself must be cheap. Run it in a fresh thread, start no subagents, a
 4. **Ask the owner about each lever** through the question tool (`AskUserQuestion`, `skills/ob-ask-one-by-one`), one question per lever: adopt, change, or skip. Put your recommendation first.
 5. **Make each adopted lever real the same day.**
    - A rule for agents goes into the skill or `CLAUDE.md` that the affected thread reads, on a branch and its PR (`docs(skill): …`).
-   - Code (a loop in `ob`, a default tier) becomes a ticket: `ob add "<title>" --project <project> --body "<lever, figure, dollars>"`.
+   - Code (a loop in `ob`, a default tier) becomes a ticket: `ob add "<title>" --project <project> --body "<lever, figure, dollars>"`, on the project whose code it changes (OmniSlash's own for a change to `ob`).
 6. **Log it.** Append one entry per lever (adopted or skipped) to the levers log, in the same PR when there is one:
 
    ```
