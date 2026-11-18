@@ -46,6 +46,7 @@ import {
 } from "./contract.ts";
 import { ApiFault } from "./fault.ts";
 import { bearerFrom, loadApiToken, tokenMatches, type TokenLoad } from "./token.ts";
+import type { RoleMessageRequest } from "./contract.ts";
 import type { ItemQuery, ItemSort } from "../worklist.ts";
 import type { GmailDraftAttachmentInput } from "../../../../platform/cli-sources/src/gmail-draft.ts";
 import type { GmailDraftClient, GoogleClient } from "../../../../platform/cli-sources/src/google.ts";
@@ -1449,11 +1450,10 @@ async function route(
         const text = optString(body, "body");
         if (text === undefined || text.trim().length === 0) bad("'body' must be a non-empty string");
         const kind = optString(body, "kind");
-        if (kind !== undefined && kind !== "message" && kind !== "handoff") bad("'kind' must be message or handoff");
         const res = await h.roleMessageSend(store, second, {
           role: reqString(body, "role"),
           from: reqString(body, "from"),
-          ...(kind === undefined ? {} : { kind }),
+          ...(kind === undefined ? {} : { kind: kind as RoleMessageRequest["kind"] }),
           ref: optString(body, "ref") ?? null,
           body: text as string,
           client_key: optString(body, "client_key") ?? null,

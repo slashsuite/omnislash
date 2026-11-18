@@ -67,7 +67,10 @@ export async function runInbox(ctx: InboxCtx, backend: InboxBackend): Promise<vo
     const marked = await backend.read(team, role, ids, by);
     if (ctx.mode === "json") print(JSON.stringify(marked, null, 2));
     else if (ctx.mode === "quiet") print(marked.map((m) => m.id).join("\n"));
-    else print(`${team} ${role}: marked ${marked.map((m) => `#${m.id}`).join(", ")} read by ${by}`);
+    else {
+      // A message read before keeps its first reader, so each line names the reader that is stored.
+      print(marked.map((m) => (m.read_by === by ? `${team} ${role}: #${m.id} marked read by ${by}` : `${team} ${role}: #${m.id} was already read by ${m.read_by}`)).join("\n"));
+    }
     return;
   }
   if (ctx.args.length > 2) throw new UsageError(`inbox takes <team> <role>, got: ${ctx.args.join(" ")}`);

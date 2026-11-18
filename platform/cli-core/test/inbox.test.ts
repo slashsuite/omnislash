@@ -124,6 +124,10 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       expect(all.map((m) => String(m.id))).toEqual([id, other]);
       expect(all[0]).toMatchObject({ read_by: "r1" });
       expect(all[0]!.read_at).not.toBeNull();
+      // A second reader is not recorded, and the output names the reader that is stored.
+      const again = await h.run(["inbox", "t", "sentinel", "--read", id, "--by", "r2"]);
+      expect(again.out).toContain(`#${id} was already read by r1`);
+      expect((await inbox(h, ["--all"]))[0]).toMatchObject({ read_by: "r1" });
       // An id that is not in this inbox marks nothing.
       const bad = await h.run(["inbox", "t", "sentinel", "--read", other, "999", "--by", "r2"]);
       expect(bad.code).not.toBe(0);

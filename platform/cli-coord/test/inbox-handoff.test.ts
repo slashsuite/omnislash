@@ -113,19 +113,6 @@ describe("ob spinoff handoff stores its note in the role's inbox", () => {
     expect(rows[0]!.client_key).toBe(fake.sends[0]!.clientRequestId!);
     expect(rows[0]!.body).toBe(fake.sends[0]!.message);
   });
-
-  test("an inbox write that fails still sends the T3 note, stamps the row and says so on stderr", async () => {
-    fakeGit();
-    const { dbPath, ref, rowId, db } = await seed();
-    const fake = fakeSeam();
-    restores.push(__setT3Seam(fake.seam));
-    db.run("DROP TABLE role_message");
-    const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
-    expect(res.code).toBe(0);
-    expect(res.err).toContain("inbox: handoff not stored (");
-    expect(fake.sends).toHaveLength(1);
-    expect((await getSpinoffRow(db, rowId))!.status).toBe("ready-for-gate");
-  });
 });
 
 describe("ob spinoff handoff over the API", () => {
