@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: fix-flaky-dashboard-spec
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The fix removes the cause: no fixed sleeps or networkidle, a hydration marker the app sets and one open helper that waits on it, role or label locators, each test creating its own uniquely named data, no serial describe or cleanup test, and the create response waited on. It does not raise a timeout or add retries, and it reports the flake rather than retrying past it.

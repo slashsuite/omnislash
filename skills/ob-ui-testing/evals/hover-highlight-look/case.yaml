@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: hover-highlight-look
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The hover link is proved by a Testing Library test that asserts an accessible state on the row and box, not a class or style, and the highlighted look gets a Storybook story that renders it from args alone so PixelSlash shoots it. Nothing hovers in a browser to take or compare a picture.

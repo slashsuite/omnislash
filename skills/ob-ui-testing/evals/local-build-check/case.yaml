@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: local-build-check
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The local-build check is placed with the integration or e2e tests that run in the gate, not in the smoke suite that targets the deployed host, and the reply says smoke means the deployed build only.

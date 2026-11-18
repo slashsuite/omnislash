@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""pr-wait: watch one GitHub pull request and print one line per real event.
+
+  pr-wait <pr> [--repo owner/name] [--until ready|green|any-change] [--gate gate] [--interval 20]
+
+Adapted from t3dotgg/tstack (babysit-pr/scripts/pr-wait) for OmniSlash. OmniSlash runs no review bots, so the
+signals are the gate check on the PR head (`gate`, from .github/workflows/ci.yml; --gate renames it) plus the
+merge state. Greptile, Macroscope and CodeRabbit are not read.
+
+--until
+  green       the gate check passed on the current head
+  ready       gate green and the PR mergeable (default)
+  any-change  stop on the first event
+
+Exit codes
+  0  the --until condition is met, or the PR merged
+  1  it needs action: the gate failed, the branch conflicts (DIRTY) or is BEHIND, or the PR closed
+  2  bad arguments, unknown PR, or another pr-wait already watches this PR
+
+Events, one line each on stdout: gate failed or passed; merged or closed; DIRTY or BEHIND; a comment,
+review or inline review comment from someone other than the PR author or the gh user. Bot logins and
+edits are not events. State lives in ~/.local/state/pr-wait/: a restarted watcher reports what arrived
+since it last ran, and the first run records what already exists and reports nothing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
+MERGEABLE = {"CLEAN", "HAS_HOOKS", "UNSTABLE"}
+FAILED = {"fail", "cancel"}
+MAX_FAILED_POLLS = 10
+
+
+class GhError(Exception):
+    pass
+
+
+def fail(message: str, code: int = 2) -> None:
+    # Fatal messages go to stdout so a monitor shows the agent why the watcher stopped.
+    print(f"pr-wait: {message}", flush=True)
+    sys.exit(code)
+
+
+def gh(args: list[str], ok: tuple[int, ...] = (0,)) -> str:
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if proc.returncode not in ok:
+        lines = proc.stderr.strip().splitlines()
+        raise GhError(lines[-1] if lines else f"gh exited {proc.returncode}")
+    return proc.stdout
+
+
+def snippet(text: str, limit: int = 100) -> str:
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= limit else flat[: limit - 3] + "..."
+
+
+def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
+    if not raw:
+        fail("missing PR number. Usage: pr-wait <pr> [--repo owner/name]")
+    if raw.startswith("https://github.com/"):
+        parts = raw.split("?")[0].split("#")[0].rstrip("/").split("/")
+        if len(parts) != 8 or parts[6] != "pull" or not parts[7].isdigit():
+            fail(f"'{raw}' is not a GitHub PR URL")
+        repo = repo or f"{parts[3]}/{parts[4]}"
+        pr = int(parts[7])
+    elif raw.lstrip("#").isdigit():
+        pr = int(raw.lstrip("#"))
+    else:
+        fail(f"'{raw}' is not a PR number or PR URL")
+    if not repo:
+        try:
+            repo = gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
+        except GhError as error:
+            fail(f"no --repo given and the current directory has no GitHub repo ({error})")
+    try:
+        gh(["pr", "view", str(pr), "-R", repo, "--json", "number"])
+    except GhError as error:
+        fail(f"cannot read {repo}#{pr}: {error}")
+    return repo, pr
+
+
+def lock(repo: str, pr: int):
+    """Hold a per-PR lock for the life of the process. The OS drops it on exit."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(STATE_DIR / f"{repo.replace('/', '__')}__{pr}.lock", "a+")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.seek(0)
+        pid = handle.read().strip() or "unknown"
+        fail(f"pid {pid} already watches {repo}#{pr}. If no events reach you from it, run `kill {pid}` and start again.")
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+class Watcher:
+    def __init__(self, repo: str, pr: int, until: str, interval: int, gate: str) -> None:
+        self.repo, self.pr, self.until, self.interval, self.gate = repo, pr, until, interval, gate
+        self.path = STATE_DIR / f"{repo.replace('/', '__')}__{pr}.json"
+        self.state = self.load()
+        self.baseline = self.state is None
+        self.state = self.state or {"reported": []}
+        self.reported: set[str] = set(self.state["reported"])
+        self.me = gh(["api", "user", "--jq", ".login"]).strip()
+        self.failed_polls = 0
+        self.new_events = False
+
+    def load(self) -> dict | None:
+        try:
+            return json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    def save(self) -> None:
+        self.state["reported"] = sorted(self.reported)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.state))
+        tmp.replace(self.path)
+
+    def emit(self, key: str, line: str) -> bool:
+        """Print an event once per PR, across restarts. Returns True when it is printed."""
+        if key in self.reported:
+            return False
+        self.reported.add(key)
+        if self.baseline:
+            return False
+        self.new_events = True
+        print(f"#{self.pr} {line}", flush=True)
+        return True
+
+    def finish(self, code: int, line: str | None = None) -> None:
+        if line:
+            print(f"#{self.pr} {line}", flush=True)
+        self.save()
+        sys.exit(code)
+
+    def checks(self) -> dict[str, dict]:
+        # gh pr checks exits 1 when a check failed and 8 while checks are pending: states, not errors.
+        out = gh(["pr", "checks", str(self.pr), "-R", self.repo, "--json", "name,bucket,link"], ok=(0, 1, 8))
+        return {row["name"]: row for row in json.loads(out or "[]")}
+
+    def others_comments(self, author: str) -> list[tuple[str, str, str]]:
+        """Comments, reviews and inline comments from people other than the author and the gh user."""
+        base = f"repos/{self.repo}"
+        jq = '.[] | [.id, .user.login, .html_url, (.body // "" | gsub("\\\\s+"; " ") | .[0:100])] | @tsv'
+        found: list[tuple[str, str, str]] = []
+        for path in (f"{base}/issues/{self.pr}/comments", f"{base}/pulls/{self.pr}/comments"):
+            found += [tuple(r.split("\t", 3)) for r in gh(["api", path, "--paginate", "--jq", jq]).splitlines() if r]
+        reviews = f"{base}/pulls/{self.pr}/reviews"
+        found += [tuple(r.split("\t", 3)) for r in gh(["api", reviews, "--paginate", "--jq", jq]).splitlines() if r]
+        return [f for f in found if f[1] not in (author, self.me) and not f[1].endswith("[bot]")]
+
+    def poll(self) -> None:
+        pr = json.loads(gh(["pr", "view", str(self.pr), "-R", self.repo,
+                            "--json", "state,headRefOid,mergeStateStatus,author,url"]))
+        url = pr["url"]
+        if pr["state"] == "MERGED":
+            self.finish(0, f"merged: {url}")
+        if pr["state"] == "CLOSED":
+            self.finish(1, f"closed without merging: {url}")
+
+        head, short = pr["headRefOid"], pr["headRefOid"][:7]
+        gate = self.checks().get(self.gate)
+        bucket = gate["bucket"] if gate else "pending"  # no gate check yet is pending, never green
+        if bucket in FAILED:
+            link = gate["link"]
+            self.finish(1, f"gate failed on {short}: {link}")
+
+        merge = pr["mergeStateStatus"]
+        if merge == "DIRTY":
+            self.finish(1, "branch conflicts with its base: back to the builder to rebase")
+        if merge == "BEHIND":
+            line = "branch is BEHIND its base: back to the builder to update it"
+            if self.until == "ready":
+                self.finish(1, line)
+            self.emit(f"behind:{head}", line)
+
+        done = bucket == "pass" and (self.until == "green" or (self.until == "ready" and merge in MERGEABLE))
+        if bucket == "pass" and not done:
+            self.emit(f"pass:{head}", f"gate passed on {short}")
+        for cid, login, link, body in self.others_comments(pr["author"]["login"]):
+            self.emit(f"c:{cid}", f"comment from {login}: {snippet(body)} {link}")
+
+        if done and self.until == "green":
+            self.finish(0, f"green on {short}")
+        if done:
+            self.finish(0, f"ready on {short}: gate green, {merge.lower()}")
+        if self.until == "any-change" and self.new_events:
+            self.finish(0)
+
+    def run(self) -> None:
+        while True:
+            self.new_events = False
+            try:
+                self.poll()
+                self.failed_polls = 0
+            except GhError as error:
+                self.failed_polls += 1
+                print(f"pr-wait: poll failed ({self.failed_polls}/{MAX_FAILED_POLLS}): {error}", file=sys.stderr, flush=True)
+                if self.failed_polls >= MAX_FAILED_POLLS:
+                    self.finish(1, f"pr-wait stopped: GitHub unreachable for {self.failed_polls} polls: {error}")
+            self.save()
+            self.baseline = False
+            time.sleep(self.interval)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="pr-wait", description="Watch a GitHub PR and print one line per real event.")
+    parser.add_argument("pr", nargs="?", help="PR number or URL")
+    parser.add_argument("--repo", help="owner/name (default: from the URL or the current checkout)")
+    parser.add_argument("--until", choices=("green", "ready", "any-change"), default="ready")
+    parser.add_argument("--gate", default="gate", help="name of the gate check on the PR head (default: gate)")
+    parser.add_argument("--interval", type=int, default=20, help="seconds between polls (default 20, min 5)")
+    args = parser.parse_args()
+    repo, pr = parse_target(args.pr, args.repo)
+    _lock = lock(repo, pr)
+    Watcher(repo, pr, args.until, max(args.interval, 5), args.gate).run()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: homepage-presence-test
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The run does not write a presence inventory. It explains that listing what is on a page is not a behaviour test (look is visual snapshot review), and offers or writes instead the page-loop check (the page loads and is ready, axe passes) and any real behaviour of the home page, asking the user if needed.

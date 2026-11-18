@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: e2e-create-project-with-edge-cases
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  One Playwright happy-path test drives creation through the UI and waits on the create response; the name-rule boundaries go to a unit table and the screen's reactions (an error message, the 409, the 500) to integration tests, not e2e. Role-based locators, no sleeps, data unique per test, and the config fixed to retries 0, trace retain-on-failure, reuseExistingServer false.

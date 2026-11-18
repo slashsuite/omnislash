@@ -1,0 +1,573 @@
+#!/usr/bin/env bun
+// Run ONE skeptical-review leg under a read-only tool profile.
+//
+//   bun review-leg.ts <opus|deepseek|luna|<a reader from `ob review readers`>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
+//
+// The brief arrives on stdin; the reader's findings go to stdout. Readers used to be read-only by
+// instruction only: in one review a reader leg shell-executed `ob spinoff cleanup` through an
+// unescaped backtick, and in another a reader left edits in six files. `delegate_task` cannot pick a
+// tool profile (T3 runs every OpenCode child on the `build` agent with a session-wide allow in
+// full-access, and gives a Claude child no tool list), so the legs launch here instead:
+//   - OpenCode legs run the `ob-reviewer` agent (ob-reviewer.md beside this file): every tool denied
+//     but read/grep/glob and a read-only shell allowlist, with shell metacharacters denied.
+//   - The Opus leg (once `sonnet`) runs `claude -p --restricted` (no user/project settings, no MCP) in `dontAsk`
+//     mode with only Read/Grep/Glob/Bash, Bash narrowed to the same allowlist.
+
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_REVIEW_MODELS, activeProfile, canonicalLeg, reviewModelFor, loadModelsFile, splitTierModel, type ModelsFile } from "../../apps/cli/src/models-file.ts";
+import { creditErrorOf, profileOrder, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
+import { parseReviewReaders, type ReviewReaders } from "../../apps/cli/src/review-readers.ts";
+import { appendLegRecord, claudeSessionTokens, diffSize, variantOf, type DiffSize, type LegRecord, type LegTokens } from "../../apps/cli/src/review-legs.ts";
+
+/** The read-only shell commands a reader may run (prefixes; arguments allowed). */
+export const READ_COMMANDS = [
+  "git log",
+  "git show",
+  "git diff",
+  "git status",
+  "git blame",
+  "git rev-parse",
+  "git merge-base",
+  "git ls-files",
+  "cat",
+  "grep",
+  "ls",
+  "head",
+  "tail",
+  "wc",
+  "ob show",
+  "ob status",
+] as const;
+
+/** Mutating commands named outright, on top of everything outside READ_COMMANDS being denied. */
+export const DENIED_COMMANDS = [
+  "ob spinoff",
+  "ob close",
+  "ob lease",
+  "ob agent",
+  "ob deploy",
+  "ob secret",
+  "wt",
+  "git commit",
+  "git checkout",
+  "git reset",
+  "git worktree",
+  "git branch",
+  "rm",
+] as const;
+
+/**
+ * The turn cap on a leg: the claude leg's `--max-turns`, and the `steps:` in ob-reviewer.md's
+ * frontmatter for the OpenCode legs (keep the two equal). A normal review fits well inside it;
+ * a reader wandering the filesystem (101 calls on one PR) does not.
+ */
+export const MAX_TURNS = 40;
+
+/** A leg's wall-clock limit per attempt, in seconds: OB_REVIEW_LEG_TIMEOUT_S overrides it. */
+export const DEFAULT_LEG_TIMEOUT_S = 900;
+/** How long a timed-out child gets between SIGTERM and SIGKILL. */
+export const KILL_GRACE_MS = 10_000;
+/** The exit code of a leg that ran out of time: `timeout(1)`'s. */
+export const TIMEOUT_EXIT = 124;
+
+/** The longest timeout setTimeout can hold (2^31 - 1 ms); a larger delay would fire at once. */
+const MAX_TIMEOUT_S = 2_147_483;
+
+/**
+ * The per-attempt timeout in seconds: OB_REVIEW_LEG_TIMEOUT_S when it is a positive number (capped at what a
+ * timer can hold), else the default.
+ */
+export function legTimeoutS(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.OB_REVIEW_LEG_TIMEOUT_S?.trim();
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, MAX_TIMEOUT_S) : DEFAULT_LEG_TIMEOUT_S;
+}
+
+export const PROFILE_PATH = join(import.meta.dir, "ob-reviewer.md");
+export const AGENT = "ob-reviewer";
+
+/**
+ * The named legs. A Claude leg runs at the model's default effort: no `--effort` flag at all
+ * (Opus at its default, higher only on the owner's explicit ask).
+ */
+type LegSpec = { kind: "claude" | "opencode"; model: string };
+
+export const LEGS = {
+  opus: { kind: "claude", model: DEFAULT_REVIEW_MODELS.opus },
+  deepseek: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.deepseek },
+  luna: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.luna },
+} as const satisfies Record<string, LegSpec>;
+
+export type LegCommand = { argv: string[]; env: Record<string, string> };
+
+type ResolvedLeg = LegSpec;
+
+/** An `opencode/` or `opencode-go/` id runs through opencode, anything else through claude. */
+function isOpencodeModel(model: string): boolean {
+  return model.startsWith("opencode/") || model.startsWith("opencode-go/");
+}
+
+/** The model review_readers gives `leg` (or its old name), when the setting is stored and names it. */
+function readerModel(readers: ReviewReaders | null, leg: string): string | undefined {
+  if (!readers) return undefined;
+  const model = readers.readers[leg]?.model ?? readers.readers[canonicalLeg(leg)]?.model;
+  return model === undefined ? undefined : (splitTierModel(model)?.model ?? model);
+}
+
+/** What runs `ob review readers --json`: exit code and stdout. A seam so tests need no ob. */
+export type ReadersRunner = () => { code: number; out: string };
+
+const OB_ENTRY = join(import.meta.dir, "..", "..", "apps", "cli", "src", "index.ts");
+
+function runObReaders(): { code: number; out: string } {
+  const r = Bun.spawnSync(["bun", OB_ENTRY, "review", "readers", "--json"], { stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+  return { code: r.exitCode ?? 1, out: r.stdout.toString() };
+}
+
+/**
+ * The stored review_readers setting, read once per leg run through `ob review readers --json`
+ * (local store or the API, whichever this machine uses). Null when it is unset (the models file and the
+ * built-in table decide, as before) and when it cannot be read: then one stderr line says so and the leg
+ * falls back to the models file. OB_REVIEW_READERS_SKIP=1 skips the read (the test preload sets it).
+ */
+export function loadReaderSetting(
+  run: ReadersRunner = runObReaders,
+  log: (line: string) => void = (l) => console.error(l),
+  env: Record<string, string | undefined> = process.env,
+): ReviewReaders | null {
+  // The test preload sets this, so a spawned leg in a test never starts an `ob` of its own.
+  if (env.OB_REVIEW_READERS_SKIP === "1") return null;
+  try {
+    const { code, out } = run();
+    if (code !== 0) throw new Error(`ob review readers exited ${code}`);
+    const parsed = JSON.parse(out) as { stored?: boolean };
+    if (!parsed.stored) return null;
+    return parseReviewReaders(out);
+  } catch (e) {
+    log(`review-leg: could not read review_readers (${e instanceof Error ? e.message : String(e)}); using the models file`);
+    return null;
+  }
+}
+
+/**
+ * The model and runner for `leg`. A named leg (`opus`, `deepseek`, `luna`; `sonnet` is read as `opus`) takes its model from
+ * the active profile's `review` map in the machine's models file (`ob models show`), else from LEGS; the kind
+ * follows the value, so a profile may move a leg between providers. A raw `opencode/<model>` id is its own
+ * model. A models file that does not parse throws: no silent fallback to the table. Undefined when `leg` is
+ * neither a known leg nor an opencode id.
+ */
+export function resolveLeg(
+  leg: string,
+  env: Record<string, string | undefined> = process.env,
+  profile?: string,
+  readers: ReviewReaders | null = null,
+): ResolvedLeg | undefined {
+  // A reader the owner set in review_readers (the Reviewers page) wins over the machine's file.
+  const fromSetting = readerModel(readers, leg);
+  if (fromSetting !== undefined) return { kind: isOpencodeModel(fromSetting) ? "opencode" : "claude", model: fromSetting };
+  const known = (LEGS as Record<string, LegSpec>)[canonicalLeg(leg)];
+  const file = loadModelsFile(env);
+  const fromFile = reviewModelFor((profile !== undefined ? file?.profiles[profile] : activeProfile(file))?.review, leg);
+  const value = fromFile ?? known?.model ?? (isOpencodeModel(leg) ? leg : undefined);
+  if (value === undefined) return undefined;
+  // A `<provider>:<model>` value (the form builder tiers use) names the model after the colon here.
+  const model = splitTierModel(value)?.model ?? value;
+  return { kind: isOpencodeModel(model) ? "opencode" : "claude", model };
+}
+
+/**
+ * The command that runs `leg` read-only. `configDir` is the OpenCode config dir holding the
+ * `ob-reviewer` agent; it travels with the launch (OPENCODE_CONFIG_DIR) so the profile applies in
+ * any repo under review, not only one whose checkout carries it.
+ */
+export function legCommand(
+  leg: string,
+  configDir: string,
+  env: Record<string, string | undefined> = process.env,
+  profile?: string,
+  readers: ReviewReaders | null = null,
+): LegCommand {
+  const resolved = resolveLeg(leg, env, profile, readers);
+  if (resolved === undefined) throw new Error(`unknown leg '${leg}': use a reader from \`ob review readers\`, opus (or its old name sonnet), deepseek, luna or an opencode/<model>[#variant] id`);
+  if (resolved.kind === "claude") {
+    return {
+      argv: [
+        "claude",
+        "-p",
+        "--model",
+        resolved.model,
+        "--restricted",
+        "--strict-mcp-config",
+        "--permission-mode",
+        "dontAsk",
+        "--permission-prompts",
+        "none",
+        "--max-turns",
+        String(MAX_TURNS),
+        "--tools",
+        "Read,Grep,Glob,Bash",
+        "--allowedTools",
+        ...READ_COMMANDS.map((c) => `Bash(${c}:*)`),
+        "--disallowedTools",
+        "Edit",
+        "Write",
+        "NotebookEdit",
+        ...DENIED_COMMANDS.map((c) => `Bash(${c}:*)`),
+        // `git diff --output=<file>` writes; the OpenCode profile denies it by pattern too.
+        "Bash(git * --output*)",
+      ],
+      env: {},
+    };
+  }
+  return {
+    // No message argument: `opencode run` reads the brief from stdin, so its size is not capped by
+    // the kernel's 128 KiB limit on one argv string (E2BIG), and a brief opening with `---` is never a flag.
+    argv: ["opencode", "run", "--standalone", "--agent", AGENT, "-m", resolved.model],
+    env: { OPENCODE_CONFIG_DIR: configDir },
+  };
+}
+
+/**
+ * What to spawn for `brief`: the leg's argv as it is and the brief as stdin, for every leg. The
+ * brief never goes in argv, where Linux caps one string at 128 KiB and a larger brief fails with E2BIG.
+ */
+export function legSpawn(argv: string[], brief: string): { cmd: string[]; stdin: string } {
+  return { cmd: argv, stdin: brief };
+}
+
+/**
+ * The profiles a leg tries, in order: the active one, then `fallback`, each kept only when it
+ * gives the leg a model not already in the list (the same model on the same account would hit the same
+ * empty balance). `[undefined]` with no models file: the one built-in model.
+ */
+export function legProfiles(leg: string, env: Record<string, string | undefined> = process.env, readers: ReviewReaders | null = null): Array<string | undefined> {
+  // A leg whose model comes from review_readers gets one attempt; there is no other profile to try.
+  if (readerModel(readers, leg) !== undefined) return [undefined];
+  const file: ModelsFile | null = loadModelsFile(env);
+  if (!file) return [undefined];
+  const seen = new Set<string>();
+  const out: Array<string | undefined> = [];
+  for (const profile of profileOrder(file)) {
+    const model = resolveLeg(leg, env, profile)?.model;
+    if (model === undefined || seen.has(model)) continue;
+    seen.add(model);
+    out.push(profile);
+  }
+  return out.length > 0 ? out : [undefined];
+}
+
+export interface LegRun {
+  code: number;
+  /** What the run printed. It has already been passed through; these copies are only read for the error. */
+  out: string;
+  err: string;
+  /** The signal that ended the child, when one did. */
+  signal?: string | null;
+  /** Tokens, when the leg's tool left them somewhere readable without changing what it prints. */
+  tokens?: LegTokens | null;
+  /** The attempt ran past the wall-clock limit and was killed. */
+  timedOut?: boolean;
+}
+
+/** How much of the end of stdout the turn-cap check reads: the cap's notice is in the reader's last message. */
+const CAP_TAIL = 4000;
+
+/**
+ * Whether a finished attempt stopped on its turn cap. The claude leg ends `Error: Reached max turns (N)`
+ * with exit 1. OpenCode (v2.3.0) at `steps` turns the tools off and tells the model, in a system message, to say
+ * "maximum steps for this agent have been reached" in its final answer, then exits 0, so that sentence near the
+ * end of stdout is the only mark. Best effort: a model that does not say it reads as a normal finish.
+ */
+export function capStopOf(kind: "claude" | "opencode" | null, out: string): "steps" | "max-turns" | null {
+  const tail = out.slice(-CAP_TAIL);
+  if (kind === "claude") return /Error: Reached max turns \(\d+\)/.test(tail) ? "max-turns" : null;
+  if (kind === "opencode") return /maximum steps[^\n]{0,40}(?:been )?reached/i.test(tail) ? "steps" : null;
+  return null;
+}
+
+/** How much of the end of stdout the credit check reads: the error is at the end, a quoted diff is not. */
+const STDOUT_TAIL = 600;
+
+/** What a record knows before the attempt ends. */
+export type InFlightRecord = Pick<LegRecord, "leg" | "kind" | "model" | "variant" | "profile" | "cwd" | "start" | "diff" | "brief_bytes">;
+
+/**
+ * The attempt running now, so a SIGTERM or SIGINT on this script (a caller's timeout) can still write its
+ * record (`onLegSignal`). Set before each attempt, cleared once its record is written.
+ */
+let inFlight: InFlightRecord | null = null;
+/** Bytes the in-flight attempt has printed so far, so a signal record carries the partial output's size. */
+const inFlightBytes = { out: 0, err: 0 };
+/** Count `bytes` printed by the attempt in flight on `stream` (the tee calls it as each chunk passes). */
+export function countOutput(stream: "out" | "err", bytes: number): void {
+  inFlightBytes[stream] += bytes;
+}
+/** Test seam: the attempt in flight. */
+export function inFlightRecord(): InFlightRecord | null {
+  return inFlight;
+}
+
+export interface RecordOptions {
+  /** Where a record goes (default: one line in review-legs.jsonl beside the models file). */
+  record?: (r: LegRecord) => void;
+  /** The leg's cwd (default: process.cwd()). */
+  cwd?: string;
+  /** The diff size (default: `git diff --shortstat origin/main...HEAD` in cwd, read once here). */
+  diff?: DiffSize | null;
+  /** The brief's size in bytes. */
+  briefBytes?: number;
+  /** The clock (tests). */
+  now?: () => Date;
+  /** The stored review_readers setting, so the record names the model the leg ran on. */
+  readers?: ReviewReaders | null;
+}
+
+/** Write a record, never throwing: a record that cannot be written is one stderr line, the leg goes on. */
+function safeRecord(record: (r: LegRecord) => void, r: LegRecord, log: (line: string) => void): void {
+  try {
+    record(r);
+  } catch (e) {
+    log(`review-leg: could not write the leg record: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+function finish(
+  base: InFlightRecord,
+  end: Date,
+  rest: Pick<LegRecord, "exit_code" | "signal" | "out_bytes" | "err_bytes" | "tokens" | "credit"> & Partial<Pick<LegRecord, "stop">>,
+): LegRecord {
+  return { v: 1, ...base, end: end.toISOString(), wall_s: Math.max(0, (end.getTime() - Date.parse(base.start)) / 1000), stop: null, ...rest };
+}
+
+/**
+ * Run a leg on each profile in turn until one does not end on a credit or quota error. Any other
+ * failure, or a success, is the result. Each credit hit is recorded. Only stderr and the tail of stdout are
+ * read, so a transcript that merely quotes a credit error does not count as one. Every attempt writes one
+ * leg record, a thrown spawn included. An attempt that timed out is recorded with
+ * `signal: "timeout"`, says so on stderr and returns TIMEOUT_EXIT without trying another profile: the profiles
+ * exist for an empty balance, and a leg that used its whole time has had its run.
+ */
+export async function runAcrossProfiles(
+  leg: string,
+  profiles: ReadonlyArray<string | undefined>,
+  run: (profile: string | undefined) => Promise<LegRun>,
+  log: (line: string) => void = (l) => console.error(l),
+  env: Record<string, string | undefined> = process.env,
+  opts: RecordOptions = {},
+): Promise<{ code: number; profile: string | undefined }> {
+  const record = opts.record ?? ((r: LegRecord) => appendLegRecord(r, env));
+  const now = opts.now ?? (() => new Date());
+  const cwd = opts.cwd ?? process.cwd();
+  const diff = opts.diff !== undefined ? opts.diff : diffSize(cwd, env);
+  for (let i = 0; i < profiles.length; i++) {
+    const profile = profiles[i];
+    let resolved: ResolvedLeg | undefined;
+    try {
+      resolved = resolveLeg(leg, env, profile, opts.readers ?? null);
+    } catch {
+      resolved = undefined;
+    }
+    const base: InFlightRecord = {
+      leg,
+      kind: resolved?.kind ?? null,
+      model: resolved?.model ?? null,
+      variant: variantOf(resolved?.model),
+      profile: profile ?? null,
+      cwd,
+      start: now().toISOString(),
+      diff,
+      brief_bytes: opts.briefBytes ?? 0,
+    };
+    inFlight = base;
+    inFlightBytes.out = 0;
+    inFlightBytes.err = 0;
+    let result: LegRun;
+    try {
+      result = await run(profile);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      safeRecord(record, finish(base, now(), { exit_code: null, signal: `spawn-error: ${message}`, out_bytes: 0, err_bytes: 0, tokens: null, credit: false }), log);
+      inFlight = null;
+      throw e;
+    }
+    if (result.timedOut) {
+      safeRecord(
+        record,
+        finish(base, now(), {
+          exit_code: null,
+          signal: "timeout",
+          out_bytes: Buffer.byteLength(result.out),
+          err_bytes: Buffer.byteLength(result.err),
+          tokens: result.tokens ?? null,
+          credit: false,
+        }),
+        log,
+      );
+      inFlight = null;
+      log(`review-leg: ${leg} timed out after ${legTimeoutS(env)}s; partial output above`);
+      return { code: TIMEOUT_EXIT, profile };
+    }
+    const stop = capStopOf(base.kind, `${result.err}\n${result.out}`);
+    if (stop) log(`review-leg: ${leg} stopped at its turn cap (${stop === "steps" ? "steps" : "--max-turns"} ${MAX_TURNS}); its findings may be incomplete`);
+    const credit = result.code !== 0 ? creditErrorOf({ message: `${result.err}\n${result.out.slice(-STDOUT_TAIL)}` }) : null;
+    safeRecord(
+      record,
+      finish(base, now(), {
+        exit_code: result.code,
+        signal: result.signal ?? null,
+        out_bytes: Buffer.byteLength(result.out),
+        err_bytes: Buffer.byteLength(result.err),
+        tokens: result.tokens ?? null,
+        credit: credit !== null,
+        stop,
+      }),
+      log,
+    );
+    inFlight = null;
+    if (!credit) return { code: result.code, profile };
+    if (profile !== undefined) recordCreditHit(profile, new Date(), env);
+    const next = profiles[i + 1];
+    if (next !== undefined) {
+      log(`review-leg: ${leg}: ${profile ?? "built-in model"} out of credits (${credit.match}), retrying on ${next}`);
+      continue;
+    }
+    log(`review-leg: ${leg}: out of credits on every profile tried (${profiles.filter((p) => p !== undefined).join(", ") || "built-in model"})`);
+    return { code: result.code, profile };
+  }
+  throw new Error(`review-leg: ${leg}: no profile to run on`);
+}
+
+const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15 } as const;
+
+/**
+ * This script got `signal` (a caller's timeout): write the in-flight attempt's record with that signal and
+ * return the exit code to leave with, 128 plus the signal number.
+ */
+export function onLegSignal(
+  signal: keyof typeof SIGNAL_NUMBERS,
+  record: (r: LegRecord) => void = (r) => appendLegRecord(r),
+  log: (line: string) => void = (l) => console.error(l),
+  now: Date = new Date(),
+): number {
+  const base = inFlight;
+  if (base) {
+    safeRecord(record, finish(base, now, { exit_code: null, signal, out_bytes: inFlightBytes.out, err_bytes: inFlightBytes.err, tokens: null, credit: false }), log);
+    inFlight = null;
+  }
+  return 128 + SIGNAL_NUMBERS[signal];
+}
+
+/**
+ * Pass a stream through to `to` as it arrives, and return all of it. A killed leg keeps its partial output.
+ * `sink.text` holds what has passed so far, so a caller that stops waiting (a timed-out leg whose grandchild
+ * still holds the pipe) can still read it.
+ */
+async function tee(stream: ReadableStream<Uint8Array>, to: NodeJS.WriteStream, which: "out" | "err", sink: { text: string } = { text: "" }): Promise<string> {
+  const decoder = new TextDecoder();
+  for await (const chunk of stream) {
+    to.write(chunk);
+    countOutput(which, chunk.byteLength);
+    sink.text += decoder.decode(chunk, { stream: true });
+  }
+  sink.text += decoder.decode();
+  return sink.text;
+}
+
+/** After a timed-out child exits, how long its streams get to drain before the leg stops waiting on them. */
+const DRAIN_MS = 2_000;
+
+/**
+ * Spawn one attempt, stream its output through, and kill it once `timeoutS` has passed: SIGTERM, then
+ * SIGKILL after `graceMs` if it is still alive. The output printed before the kill stays printed and is returned.
+ */
+export async function spawnLeg(
+  cmd: string[],
+  stdin: string,
+  opts: { env?: Record<string, string | undefined>; timeoutS: number; graceMs?: number; onChild?: (child: { kill: (signal?: number | NodeJS.Signals) => void } | null) => void },
+): Promise<LegRun> {
+  const proc = Bun.spawn(cmd, { env: opts.env, stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" });
+  opts.onChild?.(proc);
+  let timedOut = false;
+  let killer: ReturnType<typeof setTimeout> | undefined;
+  const timer = setTimeout(() => {
+    // A child that already exited (its output still draining) finished inside its time: not a timeout.
+    if (proc.exitCode !== null || proc.signalCode !== null) return;
+    timedOut = true;
+    proc.kill("SIGTERM");
+    killer = setTimeout(() => proc.kill("SIGKILL"), opts.graceMs ?? KILL_GRACE_MS);
+  }, opts.timeoutS * 1000);
+  const out = { text: "" };
+  const err = { text: "" };
+  const streams = Promise.all([tee(proc.stdout, process.stdout, "out", out), tee(proc.stderr, process.stderr, "err", err)]);
+  try {
+    const code = await proc.exited;
+    // A killed child's grandchild can keep the pipe open; a timed-out leg does not wait on it past DRAIN_MS.
+    if (timedOut) await Promise.race([streams, new Promise((r) => setTimeout(r, DRAIN_MS))]);
+    else await streams;
+    return { code, out: out.text, err: err.text, signal: proc.signalCode ?? null, timedOut };
+  } finally {
+    clearTimeout(timer);
+    clearTimeout(killer);
+    opts.onChild?.(null);
+  }
+}
+
+/** A throwaway OpenCode config dir holding only the reviewer agent. */
+export function reviewerConfigDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ob-reviewer-"));
+  mkdirSync(join(dir, "agents"));
+  writeFileSync(join(dir, "agents", `${AGENT}.md`), readFileSync(PROFILE_PATH, "utf8"));
+  return dir;
+}
+
+if (import.meta.main) {
+  const leg = process.argv[2];
+  if (!leg) {
+    console.error("usage: bun review-leg.ts <opus|deepseek|luna|<a reader from `ob review readers`>|opencode/<model>[#variant]> < brief.md");
+    process.exit(2);
+  }
+  // The readers the owner chose (review_readers), read once for this leg.
+  const readers = loadReaderSetting();
+  const fromSetting = readerModel(readers, leg);
+  if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review_readers)`);
+  const brief = await Bun.stdin.text();
+  if (brief.trim() === "") {
+    console.error("review-leg: empty brief on stdin");
+    process.exit(2);
+  }
+  const configDir = reviewerConfigDir();
+  // A caller's timeout still leaves a record of the attempt it cut short, and the child goes with it.
+  let child: { kill: (signal?: number | NodeJS.Signals) => void } | null = null;
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.on(sig, () => {
+      const code = onLegSignal(sig);
+      child?.kill(sig);
+      rmSync(configDir, { recursive: true, force: true });
+      process.exit(code);
+    });
+  }
+  // A leg that fails on a credit or quota error retries on the next profile's model for that leg.
+  // Output streams through as it comes and a copy is kept so the error can be read.
+  const result = await runAcrossProfiles(
+    leg,
+    legProfiles(leg, process.env, readers),
+    async (profile) => {
+      const { argv, env } = legCommand(leg, configDir, process.env, profile, readers);
+      // A fixed session id lets the Claude leg's token use be read from its transcript afterwards,
+      // without changing what it prints. Standalone OpenCode leaves no usage on disk, so its tokens stay null.
+      const sessionId = argv[0] === "claude" ? crypto.randomUUID() : null;
+      const spawn = legSpawn(sessionId ? [...argv, "--session-id", sessionId] : argv, brief);
+      // Each attempt has a wall-clock limit, so a wandering leg ends instead of running until killed.
+      const run = await spawnLeg(spawn.cmd, spawn.stdin, { env: { ...process.env, ...env }, timeoutS: legTimeoutS(), onChild: (c) => (child = c) });
+      return { ...run, tokens: sessionId ? claudeSessionTokens(sessionId) : null };
+    },
+    undefined,
+    process.env,
+    { briefBytes: Buffer.byteLength(brief), readers },
+  );
+  const code = result.code;
+  rmSync(configDir, { recursive: true, force: true });
+  process.exit(code);
+}

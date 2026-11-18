@@ -42,5 +42,15 @@ Run either from the root of your OmniSlash checkout. A linked skill follows the 
 | `ob-vision-understand` | Reads screenshots and images with a local vision model |
 | `ob-slack-triage` | Finds unanswered Slack messages and drafts replies from `ob` state |
 | `ob-verify-an-auth-gated-page-without-oauth` | Verifies a signed-in page locally when OAuth cannot be completed |
+| `ob-spinoff` | The builder's procedure: build in a worktree, gate, commit, open a PR, hand off and stop |
+| `ob-land` | Lands a ticket through its PR: the builder opens it, the architect gates, merges, deploys and closes |
+| `ob-babysit-pr` | The architect's watch on a handed-off PR, with a `pr-wait` script for waiting by hand |
+| `ob-skeptical-review` | Read-only reader legs that presume every changed line is wrong until shown right |
+| `ob-leaving-pr-comments` | Leaves a GitHub comment on the owner's behalf, only after they confirm the exact text |
+| `ob-ui-testing` | How UI tests are written, configured and run in every repo, with evals |
 
-Some skills refer to others (`ob-spinoff`, `ob-land`, `ob-architect` and more) that are not in this folder yet. More skills follow.
+Some skills refer to others (`ob-architect` and more) that are not in this folder yet. More skills follow.
+
+## Credits
+
+`ob-babysit-pr` (and its `pr-wait` script) and `ob-leaving-pr-comments` are adapted from [t3dotgg/tstack](https://github.com/t3dotgg/tstack)'s `babysit-pr` and `leaving-pr-comments`.

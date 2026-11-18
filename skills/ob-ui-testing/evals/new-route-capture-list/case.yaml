@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: new-route-capture-list
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The new /archive route is added to the PixelSlash capture list and to the page list the page loop reads, its behaviour gets an integration test, no spec lists what is on the page, and the reply says the visual check must be run and its result reported.
