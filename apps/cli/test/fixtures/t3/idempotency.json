@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_launch",
+  "result": {
+    "clientRequestId": "p0.2-probe-idempotency",
+    "title": "P0.2 probe · idempotency",
+    "first": {
+      "ok": true,
+      "threadId": "mcp:0321be06-8342-4503-84f4-5d162af5bb41",
+      "status": null
+    },
+    "second": {
+      "ok": true,
+      "threadId": "mcp:d8edaf49-6f80-4626-91b8-91486657ee3c",
+      "status": null
+    },
+    "threadsCreated": 2
+  }
+}

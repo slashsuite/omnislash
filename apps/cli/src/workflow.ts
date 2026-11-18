@@ -1,0 +1,355 @@
+import type { Database } from "bun:sqlite";
+import { and, desc, eq, isNotNull, like, sql } from "drizzle-orm";
+import { AppError } from "./errors.ts";
+import { clearBlock, clearTriage, editItem, getItem, queryItems, setBlocked, setStatus } from "./items.ts";
+import { getFocusProject } from "./config.ts";
+import { compareWithinBand } from "./worklist.ts";
+import { effectivePriority } from "./priority.ts";
+import { DECISION_SOURCE, DECISION_TYPE, recordDecision, type DecisionOpts } from "./decisions.ts";
+import { nowIso } from "./db.ts";
+import { parsePayload, type EventRow } from "./events.ts";
+import { asStore, readNumber, type Store } from "./db/store.ts";
+import { item } from "./db/schema.ts";
+import { canTransition, isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
+
+// The single validated-transition core. The CLI workflow commands (`ob start/ready/close/reopen/block/
+// today`) and the dashboard's transitionItem server fn BOTH go through here — no state logic is
+// duplicated, and every path respects the per-type/kind status model (status.ts). An invalid move
+// throws AppError; the caller (CLI or drawer) surfaces the message rather than silently no-op'ing.
+
+/** The named actions the dashboard drawer + CLI expose (block carries a reason; reopen re-opens a done item). */
+export type WorkflowAction = "start" | "ready" | "block" | "close" | "reopen";
+
+async function requireItem(db: Database | Store, id: string) {
+  const it = await getItem(db, id);
+  if (!it) throw new AppError(`no item with id '${id}'`);
+  return it;
+}
+
+/** OB-2004: a reference document is not work, so no workflow move applies to it. */
+function refuseReference(it: { id: string; type: string }): void {
+  if (it.type === "reference") {
+    throw new AppError(`item '${it.id}' is a reference document, not a task: it has no status to move (see 'ob doc')`);
+  }
+}
+
+/**
+ * The validation half of a transition, with no write, so a `--dry-run` preview fails on exactly the
+ * moves the real transition would reject instead of promising something impossible.
+ */
+export async function assertTransition(db: Database | Store, id: string, to: string): Promise<void> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  refuseReference(it);
+  const kind = it.project_kind as Kind | null;
+  if (!isValidStatus(to, it.type, kind)) {
+    throw new AppError(`status '${to}' is not valid for this item (type=${it.type}, kind=${kind ?? "none"})`);
+  }
+  if (!canTransition(it.status, to, it.type, kind)) {
+    throw new AppError(`cannot transition from '${it.status}' to '${to}'`);
+  }
+}
+
+/** Validated status move: rejects a status the type/kind can't hold, and an edge the model forbids. */
+export async function transitionTo(db: Database | Store, id: string, to: string, decision: DecisionOpts = {}): Promise<void> {
+  id = (await requireItem(db, id)).id;
+  await assertTransition(db, id, to);
+  const from = (await requireItem(db, id)).status;
+  await setStatus(db, id, to);
+  // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
+  // so a refused close leaves the flag set.
+  if (to === "done") await clearTriage(db, id);
+  // 1515: a move to the status it is already in (a retried `close`) is not a decision, and recording it
+  // would turn every idempotent re-run into a `done -> done` line on the trail.
+  if (from !== to) await recordDecision(db, id, from, to, decision);
+}
+
+export async function startItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
+  await transitionTo(db, id, "in_progress", decision);
+}
+
+export async function readyItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
+  await transitionTo(db, id, "ready", decision);
+}
+
+/** OB-1928: closing a blocked item is an unblock to `done`, so the block fields do not outlive the block. */
+export async function closeItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
+  const it = await requireItem(db, id);
+  if (it.status === "blocked") await unblockItem(db, it.id, decision, { to: "done" });
+  else await transitionTo(db, it.id, "done", decision);
+}
+
+/** The validation half of a reopen (a reopen also requires the item to actually be closed). No write. */
+export async function assertReopen(db: Database | Store, id: string): Promise<void> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  refuseReference(it);
+  if (it.status !== "done") throw new AppError(`item '${id}' is not closed`);
+  await assertTransition(db, id, "open");
+}
+
+export async function reopenItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
+  id = (await requireItem(db, id)).id;
+  await assertReopen(db, id);
+  await setStatus(db, id, "open");
+  await recordDecision(db, id, "done", "open", decision);
+}
+
+/**
+ * `reason` is the block's own text (kept on the item); `decision.note` is the note on the transition.
+ * OB-1928: refused when the item is already blocked (no silent reason overwrite), done, or of a type/kind
+ * whose vocabulary has no `blocked` (roadmap, decision, learning).
+ */
+export async function blockItem(
+  db: Database | Store,
+  id: string,
+  reason: string | null,
+  owner: string | null,
+  decision: DecisionOpts = {},
+): Promise<void> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
+  await assertTransition(db, id, "blocked");
+  await setBlocked(db, id, reason, owner);
+  await recordDecision(db, id, it.status, "blocked", { ...decision, note: decision.note ?? reason });
+}
+
+/**
+ * The status the item was in when it was last blocked: the `from` of the newest trail decision whose `to`
+ * is `blocked` (OB-1928). A direct query, not `decisionsForItem` and its 50-row window, so a long-blocked
+ * busy item still finds it. Null when the trail has none.
+ */
+async function statusBeforeBlock(db: Database | Store, id: string): Promise<string | null> {
+  const s = asStore(db);
+  // The payload is JSON text on both engines; the LIKE narrows to candidate rows and the parse below is
+  // the real check (a note can never match, since its quotes are escaped in the JSON).
+  const rows = (await s.q
+    .select()
+    .from(s.t.event)
+    .where(
+      and(
+        eq(s.t.event.item_id, id),
+        eq(s.t.event.source, DECISION_SOURCE),
+        eq(s.t.event.type, DECISION_TYPE),
+        like(s.t.event.payload, '%"to":"blocked"%'),
+      ),
+    )
+    .orderBy(desc(s.t.event.ts), desc(s.t.event.id))) as EventRow[];
+  for (const r of rows) {
+    const p = parsePayload<{ from?: unknown; to?: unknown }>(r);
+    if (p.to === "blocked" && typeof p.from === "string") return p.from;
+  }
+  return null;
+}
+
+/**
+ * The unblock half (OB-1928): refuses an item that is not blocked. With `to`, moves there (validated);
+ * without it, restores the status the item was blocked from, falling back to `open` when the trail has
+ * none, when the table has no edge back to it from `blocked` (`merged`, `qa` and the like), or when it
+ * is `done` (restoring a legacy `done -> blocked` would skip the close's side effects). The fallback is
+ * validated too, so a type with no `open` is refused rather than written outside its vocabulary. Clears the block fields, keeps closed_at in step
+ * with the status, and records `blocked -> <target>`.
+ */
+export async function unblockItem(
+  db: Database | Store,
+  id: string,
+  decision: DecisionOpts = {},
+  opts: { to?: string } = {},
+): Promise<void> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  if (it.status !== "blocked") throw new AppError(`item '${id}' is not blocked`);
+  const kind = it.project_kind as Kind | null;
+  let target: string;
+  if (opts.to !== undefined) {
+    target = opts.to;
+    await assertTransition(db, id, target);
+  } else {
+    const prior = await statusBeforeBlock(db, id);
+    target =
+      prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
+        ? prior
+        : "open";
+    // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
+    await assertTransition(db, id, target);
+  }
+  await clearBlock(db, id, target);
+  if (target === "done") await clearTriage(db, id);
+  await recordDecision(db, id, "blocked", target, decision);
+}
+
+export type MoveResult = "blocked" | "unblocked" | "reopened" | "moved";
+
+/**
+ * The one generic move (OB-1928) that `ob state <id> <to>` and the API `/state` `set` action share, so
+ * neither has its own branches: a block goes through `blockItem`, any move off `blocked` through
+ * `unblockItem`, `done -> open` through `reopenItem`, and the rest through `transitionTo`. Returns which
+ * door it took, so the caller can run the side effect that door owes (the reopen mirror).
+ */
+export async function moveItem(
+  db: Database | Store,
+  id: string,
+  to: string,
+  opts: { reason?: string | null; owner?: string | null; decision?: DecisionOpts } = {},
+): Promise<MoveResult> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  const decision = opts.decision ?? {};
+  if (to === "blocked") {
+    await blockItem(db, id, opts.reason ?? null, opts.owner ?? null, decision);
+    return "blocked";
+  }
+  if (it.status === "blocked") {
+    await unblockItem(db, id, decision, { to });
+    return "unblocked";
+  }
+  if (it.status === "done" && to === "open") {
+    await reopenItem(db, id, decision);
+    return "reopened";
+  }
+  await transitionTo(db, id, to, decision);
+  return "moved";
+}
+
+/** Set a today-rank: an explicit rank, or the next slot (MAX(today_rank)+1) when omitted. Returns the rank. */
+export async function setTodayRank(db: Database | Store, id: string, rank?: number): Promise<number> {
+  const s = asStore(db);
+  id = (await requireItem(s, id)).id;
+  let n: number;
+  if (rank !== undefined) {
+    if (!Number.isInteger(rank)) throw new AppError(`invalid rank '${rank}'`);
+    n = rank;
+  } else {
+    // COALESCE, not IFNULL (337): IFNULL is a SQLite builtin Postgres does not have. readNumber because
+    // MAX over an integer arrives from Postgres as a string, and `"3" + 1` is "31", not 4 -- which would
+    // hand out a today-rank of 31 with no error anywhere.
+    const rows = (await s.q
+      .select({ n: sql<number>`COALESCE(MAX(${s.t.item.today_rank}), 0) + 1` })
+      .from(s.t.item)
+      .limit(1)) as Array<{ n: number }>;
+    n = readNumber(rows[0]?.n);
+  }
+  await s.q.update(s.t.item).set({ today_rank: n, updated_at: nowIso() }).where(eq(s.t.item.id, id));
+  return n;
+}
+
+/** Clear the today-rank on one item, or (id omitted) on every ranked item. */
+export async function clearTodayRank(db: Database | Store, id?: string): Promise<void> {
+  const s = asStore(db);
+  if (id === undefined) {
+    await s.q.update(s.t.item).set({ today_rank: null, updated_at: nowIso() }).where(isNotNull(s.t.item.today_rank));
+    return;
+  }
+  id = (await requireItem(s, id)).id;
+  await s.q.update(s.t.item).set({ today_rank: null, updated_at: nowIso() }).where(eq(s.t.item.id, id));
+}
+
+/** Where `setQueueOrder` puts an item. `top` may name the band to put it first in; `before` / `after` take it from the target. */
+export type QueueMove =
+  | { top: true; priority?: number }
+  | { before: string }
+  | { after: string };
+
+export interface QueueOrderResult {
+  id: string;
+  /** The item's effective priority after the move (its band). */
+  priority: number;
+  /** True when the move crossed into another band and wrote the item's priority. */
+  priorityChanged: boolean;
+  /** The item's queue rank after the move (1 is next). */
+  rank: number;
+}
+
+/**
+ * OB-2083: place one open item in its project's execution queue, the one core `ob order`, `POST
+ * /items/:id/order` and the board call. The queue is a set of priority bands; inside a band the order is
+ * `queue_rank` ascending. A move next to an item of ANOTHER band moves the item into that band (its
+ * priority is set to the target's effective priority, through `editItem` like `ob edit --priority`); a
+ * move inside the band never writes the priority, so an unset item stays unset. The band is then
+ * renumbered 1..n in one transaction, dense and with no gap arithmetic; other bands are untouched. Today's
+ * rank is not read and never written.
+ */
+export async function setQueueOrder(db: Database | Store, id: string, move: QueueMove): Promise<QueueOrderResult> {
+  const s = asStore(db);
+  const moved = await requireItem(s, id);
+  id = moved.id;
+  if (!moved.project_id) throw new AppError(`${moved.ref ?? id} has no project: a queue is per project (ob edit ${moved.ref ?? id} --project <slug>)`);
+  const projectId = moved.project_id;
+  // One transaction for the reads, the priority write and the renumber. On sqlite BEGIN IMMEDIATE already
+  // serialises writers; on Postgres (READ COMMITTED) the project row lock makes two orders in one project queue
+  // up instead of both numbering the band from the same stale read.
+  return s.txn("order the queue", async (tx) => {
+    if (tx.kind === "postgres") {
+      await (tx.q as unknown as { select: (f: unknown) => { from: (t: unknown) => { where: (w: unknown) => { for: (m: string) => Promise<unknown> } } } })
+        .select({ id: tx.t.project.id })
+        .from(tx.t.project)
+        .where(eq(tx.t.project.id, projectId))
+        .for("update");
+    }
+    const focusProject = await getFocusProject(tx);
+    const effOf = (r: { priority: number | null; project_id: string | null }) =>
+      effectivePriority({ priority: r.priority, projectId: r.project_id, focusProject });
+    // `open` is "not done", which still admits an archived roadmap or an accepted decision: those are closed.
+    const open = (await queryItems(tx, { open: true, projectId })).filter((r) => !isClosedStatus(r.type, r.status));
+    const me = open.find((r) => r.id === id);
+    if (!me) throw new AppError(`${moved.ref ?? id} is not open: only an open item has a place in the queue`);
+
+    let band = effOf(me);
+    let anchor: { id: string; after: boolean } | null = null;
+    let explicit = false;
+    if ("top" in move) {
+      if (move.priority !== undefined) {
+        band = move.priority;
+        explicit = true;
+      }
+    } else {
+      const targetRef = "before" in move ? move.before : move.after;
+      const target = await requireItem(tx, targetRef);
+      const label = target.ref ?? target.id;
+      if (target.id === id) throw new AppError(`cannot order ${label} relative to itself`);
+      if (target.project_id !== projectId) {
+        throw new AppError(`${label} is in project ${target.project_id ?? "-"}, not ${projectId}: a queue is per project`);
+      }
+      const t = open.find((r) => r.id === target.id);
+      if (!t) throw new AppError(`${label} is not open: order relative to an open item`);
+      band = effOf(t);
+      anchor = { id: target.id, after: "after" in move };
+    }
+
+    // The priority becomes the band's, set explicitly, when the move crosses into another band, or when
+    // --top --priority names a priority the item does not store yet (an unset item in the focus project already
+    // sits in the high band, but --priority high asks for it to be written). A plain same-band move writes nothing.
+    const priorityChanged = band !== effOf(me) || (explicit && me.priority !== band);
+    if (priorityChanged) await editItem(tx, id, { priority: band });
+
+    const rows = open.filter((r) => effOf(r) === band || r.id === id);
+    rows.sort(compareWithinBand);
+    const order = rows.filter((r) => r.id !== id).map((r) => r.id);
+    let at = 0;
+    if (anchor) {
+      const i = order.indexOf(anchor.id);
+      at = anchor.after ? i + 1 : i;
+    }
+    order.splice(at, 0, id);
+
+    // Only queue_rank is written (and updated_at on the moved item): a neighbour that shifts down a place has
+    // not been edited, so its recency (`ob list`, `ob show`) stays as it was.
+    const current = new Map(rows.map((r) => [r.id, r.queue_rank]));
+    for (let i = 0; i < order.length; i++) {
+      const rowId = order[i]!;
+      if (rowId === id) {
+        await tx.q.update(tx.t.item).set({ queue_rank: i + 1, updated_at: nowIso() }).where(eq(tx.t.item.id, rowId));
+      } else if (current.get(rowId) !== i + 1) {
+        await tx.q.update(tx.t.item).set({ queue_rank: i + 1 }).where(eq(tx.t.item.id, rowId));
+      }
+    }
+    return { id, priority: band, priorityChanged, rank: at + 1 };
+  });
+}
+
+/** The valid next statuses for an item (excluding its current one) — drives which drawer buttons enable. */
+export function validNextStatuses(type: string, kind: Kind | null, from: string): string[] {
+  // statusVocab is the universe of statuses this type/kind can hold; canTransition gates each edge.
+  return statusVocab(type, kind).filter((s) => s !== from && canTransition(from, s, type, kind));
+}

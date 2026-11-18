@@ -1,0 +1,13 @@
+#!/bin/sh
+# ob 1666: refuse a commit whose subject is not a Conventional Commit. The rule lives in
+# platform/cli-coord/src/conventional-commit.ts, shared with the land guard.
+# Installed by `bun scripts/install-git-hooks.ts` (runs from `bun install`). Bypass: `git commit --no-verify`;
+# the land guard still checks the squash subject.
+root=$(git rev-parse --show-toplevel) || exit 0
+script="$root/platform/cli-coord/src/conventional-commit.ts"
+[ -f "$script" ] || exit 0
+if ! command -v bun >/dev/null 2>&1; then
+  echo "commit-msg: bun not on PATH, subject not checked" >&2
+  exit 0
+fi
+exec bun "$script" "$1"

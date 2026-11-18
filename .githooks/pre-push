@@ -1,0 +1,36 @@
+#!/bin/sh
+# ob 1703: run the land guard (1657) on every push to main, not only inside ob-land. A push that skips ob-land
+# skipped the guard, which is how 945cad09 (1636) reached main. Git feeds one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# Only a push onto refs/heads/main is checked. Fail closed (OB-1925): exit 1 (the guard refused) and exit 2
+# (the guard could not check) both refuse the push, and so does a missing bun on a push to main. "Unknown" is
+# not "fine" (skills/ob-land). Since OB-1686 nobody should push to main from a checkout at all, so failing
+# closed costs nothing. The deliberate escape is `git push --no-verify`. Pushes to any other branch are never
+# checked. Not covered here: a missing land-guard.ts file still exits 0 (a gap, see the OB-1925 PR).
+# Since OB-1670 (#80) the normal land is a GitHub PR squash, which never pushes main from a checkout, so this
+# hook does not see it: the merger (the architect since OB-1686, #82) runs the guard by hand before `gh pr merge` (skills/ob-land).
+root=$(git rev-parse --show-toplevel) || exit 0
+guard="$root/platform/cli-coord/src/land-guard.ts"
+[ -f "$guard" ] || exit 0
+refuse=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  # Deleting main, or main not yet on the remote: nothing for the guard to compare against.
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  case "$remote_sha" in *[!0]*) ;; *) continue ;; esac
+  if ! command -v bun >/dev/null 2>&1; then
+    echo "pre-push: bun not on PATH, so the land guard could not run for $local_ref -> main (OB-1925: refused, unknown is not fine)." >&2
+    refuse=1
+    continue
+  fi
+  bun "$guard" --repo "$root" --head "$local_sha" --against "$remote_sha" </dev/null
+  status=$?
+  case "$status" in
+    0) ;;
+    1) refuse=1 ;;
+    *) echo "pre-push: land guard could not check $local_ref -> main (exit $status); refusing (OB-1925: unknown is not fine)." >&2
+       refuse=1 ;;
+  esac
+done
+[ "$refuse" -eq 0 ] || { echo "pre-push: push to main refused by the land guard (1703). Land through a PR (ob-land), or git push --no-verify if the change is intended." >&2; exit 1; }
+exit 0

@@ -1,0 +1,94 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_organize",
+  "result": {
+    "settle": {
+      "sequence": 51377
+    },
+    "archive": {
+      "sequence": 51378
+    },
+    "afterSettle": {
+      "threadId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+      "projectId": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+      "title": "P0.2 probe · title stability",
+      "createdBy": "agent",
+      "creationSource": "mcp",
+      "status": "completed",
+      "latestRunId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+      "activeRunId": null,
+      "providerInstanceId": "opencode",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "linkedPullRequest": null,
+      "titleRegeneration": {
+        "requestId": "command:mcp:client%3Adb0f8702-f7cb-4d2e-826b-ba3676ca9905:thread-update:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:regenerate_title:d7400219-6b92-41d6-bf80-c611e7bb065a",
+        "startedAt": "2026-10-17T21:21:57.243Z"
+      },
+      "branch": "p02-probe",
+      "worktreePath": "/home/owner/dev/acme.p02-probe",
+      "parentThreadId": null,
+      "relationshipToParent": null,
+      "runCount": 1,
+      "itemCount": 4,
+      "pendingRequestCount": 0,
+      "archived": false,
+      "settled": true,
+      "settledAt": "2026-10-17T21:21:59.267Z",
+      "snoozed": false,
+      "snoozedUntil": null,
+      "createdAt": "2026-10-17T21:21:55.349Z",
+      "updatedAt": "2026-10-17T21:21:59.267Z"
+    },
+    "afterArchive": {
+      "threadId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+      "projectId": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+      "title": "P0.2 probe · title stability",
+      "createdBy": "agent",
+      "creationSource": "mcp",
+      "status": "completed",
+      "latestRunId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+      "activeRunId": null,
+      "providerInstanceId": "opencode",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "linkedPullRequest": null,
+      "titleRegeneration": null,
+      "branch": "p02-probe",
+      "worktreePath": "/home/owner/dev/acme.p02-probe",
+      "parentThreadId": null,
+      "relationshipToParent": null,
+      "runCount": 1,
+      "itemCount": 4,
+      "pendingRequestCount": 0,
+      "archived": true,
+      "settled": true,
+      "settledAt": "2026-10-17T21:21:59.267Z",
+      "snoozed": false,
+      "snoozedUntil": null,
+      "createdAt": "2026-10-17T21:21:55.349Z",
+      "updatedAt": "2026-10-17T21:21:59.281Z"
+    },
+    "worktreeOnDiskAfter": true,
+    "autoSettle": {
+      "sidebarAutoSettleAfterDays": {
+        "key": "sidebarAutoSettleAfterDays",
+        "in": "(unset — the app's own default applies)"
+      },
+      "sidebarAutoSettleOnMerge": {
+        "key": "sidebarAutoSettleOnMerge",
+        "in": "(unset — the app's own default applies)"
+      },
+      "sidebarAutoSettleKeepPullRequests": {
+        "key": "sidebarAutoSettleKeepPullRequests",
+        "value": true,
+        "in": "settings.json"
+      }
+    }
+  }
+}

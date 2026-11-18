@@ -1,0 +1,8 @@
+[test]
+# Runs before any test module loads. `moon run cli:test` / `moon run cli-core:test` run `bun test` with a project cwd, and bun reads only
+# its cwd's bunfig, so the repo-root one never reaches this suite (measured: a probe test under apps/cli
+# printed OMNISLASH_DB=undefined while the root preload was setting it). This is therefore the one place that
+# can keep the suite's state out of state the whole machine shares: a per-run scratch $TMPDIR instead of the
+# shared one (152).
+# See test/preload.ts.
+preload = ["./test/preload.ts"]

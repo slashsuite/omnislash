@@ -1,0 +1,12 @@
+$schema: '../../.moon/cache/schemas/project.json'
+
+# OB-2204: what both dashboard apps use (the item drawer, the realtime hook, the PWA parts, the snapshot
+# types, the same-origin guard and the guarded ob writes). Source only, imported by path.
+tags: ['ob-ts']
+dependsOn: ['cli', 'cli-whatsapp']
+
+tasks:
+  test:
+    script: 'bun test ./test ${OB_TEST_REPORT_DIR:+--reporter=junit --reporter-outfile=$OB_TEST_REPORT_DIR/dashboard-kit.xml} && bun --bun vitest run ${OB_TEST_REPORT_DIR:+--reporter=default --reporter=junit --outputFile.junit=$OB_TEST_REPORT_DIR/dashboard-kit-vitest.xml}'
+  typecheck:
+    command: 'bunx tsc --noEmit'

@@ -1,0 +1,34 @@
+# Inherited by the projects tagged `ob-ts`: the ob CLI, the dashboard, the platform test shards and
+# the domain modules (OB-2033). They import each other's files by relative path (the shards test
+# apps/cli, apps/cli imports platform/* and domains/*, the dashboard imports apps/cli), which no
+# project dependency captures, so each of their tasks hashes the whole tree. A change anywhere in it
+# re-runs them all; an untouched tree is a cache hit.
+#
+# The WHOLE repo, not a list of directories (OB-2043). The tests read far more than the source they
+# import: skills/, ops/, docs/, repos/, .githooks/, AGENTS.md, CLAUDE.md and
+# opencode.json all get read and asserted on. A hand-kept list of trees goes stale the first time a
+# test reads a new root path, and that bug shipped: an edit to skills/ob-skeptical-review/SKILL.md,
+# which platform/cli-core/test/skeptical-review-readonly-1620.test.ts asserts on, was a cache hit, so
+# CI's gate went green without running the test that reads it. Hashing everything costs a re-run of
+# the gate (about 4 minutes on our own runner) on a chart-only or ops-only PR; a wrong green costs
+# more.
+#
+# Gitignored files are NOT hashed (OB-2121). moon walks this workspace-level glob on the file system
+# and does not read .gitignore, so a dashboard:build writing apps/dashboard/dist, or any ignored
+# scratch file, re-ran every task here. .moon/workspace.yml's hasher.ignorePatterns mirrors every
+# tracked .gitignore, and ops/ci/moon-hash-ignore.test.ts keeps the two in step. Tracked files are
+# all still hashed. The two negations below only stop the walk descending into trees that are big
+# or rewritten on every run; the ignore list covers them too.
+$schema: '../cache/schemas/tasks.json'
+
+inheritedBy:
+  tags: ['ob-ts']
+
+implicitInputs:
+  - '/**/*'
+  # node_modules is gitignored, but a workspace package's node_modules holds symlinks that the glob
+  # still walks, and moon warns on each one it cannot hash as a file.
+  - '!/**/node_modules/**'
+  # moon's own cache: every run writes its hash manifests there, so hashing it would make every run
+  # a miss (and the cache would chase its own tail).
+  - '!/.moon/cache/**'

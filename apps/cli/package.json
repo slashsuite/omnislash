@@ -1,0 +1,33 @@
+{
+  "name": "omnislash",
+  "version": "1.0.0",
+  "description": "Personal task tracker CLI (ob) — unified, prioritized worklist across side projects, home, admin, and learning.",
+  "type": "module",
+  "bin": {
+    "ob": "src/index.ts"
+  },
+  "scripts": {
+    "ob": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test --ignore-pattern 'test/fixtures/**'",
+    "build": "bun build --compile src/index.ts --outfile out/ob"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.34.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8.42.0"
+  },
+  "dependencies": {
+    "@sentry/bun": "11.9.0",
+    "drizzle-orm": "^0.45.2"
+  },
+  "optionalDependencies": {
+    "@embedded-postgres/darwin-arm64": "17.10.0-beta.17",
+    "@embedded-postgres/darwin-x64": "17.10.0-beta.17",
+    "@embedded-postgres/linux-arm64": "17.10.0-beta.17",
+    "@embedded-postgres/linux-x64": "17.10.0-beta.17"
+  }
+}

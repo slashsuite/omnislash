@@ -1,0 +1,11 @@
+[install]
+# Isolated linker + global virtual store (ob 1506, decision 71): packages are extracted once into
+# ~/.bun/install/cache/links and symlinked into node_modules/.bun, so every wt / land worktree install
+# is one symlink per package. A package importing an undeclared dependency fails: declare it, or list
+# the package in trustedDependencies (package.json) to keep it project-local. Fallback: globalStore = false.
+linker = "isolated"
+globalStore = true
+
+[test]
+# Runs before any test module loads: points the store at a per-run scratch TMPDIR and a temp DB.
+preload = ["./apps/cli/test/preload.ts"]

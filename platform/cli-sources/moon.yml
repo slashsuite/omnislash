@@ -1,0 +1,10 @@
+$schema: '../../.moon/cache/schemas/project.json'
+
+tags: ['ob-ts']
+dependsOn: ['cli', 'cli-db']
+
+tasks:
+  test:
+    script: 'bun test ${OB_TEST_REPORT_DIR:+--reporter=junit --reporter-outfile=$OB_TEST_REPORT_DIR/cli-sources.xml}'
+  typecheck:
+    command: 'bunx tsc --noEmit'

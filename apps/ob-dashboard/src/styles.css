@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* The same theme as apps/dashboard (Catppuccin Mocha from @hackcove/themes). Must come after the tailwind import. */
+@import "@hackcove/themes/catppuccin-mocha.css";
+
+/* Tailwind skips node_modules, so scan the @hackcove/ui-react build for the utilities its components use. */
+@source "../node_modules/@hackcove/ui-react/dist";
+
+/* The parts both dashboard apps share live in platform/dashboard-kit (OB-2204), outside this app, so Tailwind
+   does not see them on its own (PwaRegister's callout, IosStatusBarBand's strip). */
+@source "../../../platform/dashboard-kit/src";

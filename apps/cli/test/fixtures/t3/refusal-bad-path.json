@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_launch",
+  "result": {
+    "ok": false,
+    "error": "refused: t3_thread_launch: worktreePath must be one of the project's git worktrees. t3_worktree_list shows them. → check the arguments the tool documented"
+  }
+}

@@ -1,0 +1,15 @@
+$schema: '../../.moon/cache/schemas/project.json'
+
+tags: ['ob-ts']
+
+tasks:
+  test:
+    script: 'bun test ${OB_TEST_REPORT_DIR:+--reporter=junit --reporter-outfile=$OB_TEST_REPORT_DIR/cli.xml}'
+  typecheck:
+    command: 'bunx tsc --noEmit'
+  lint:
+    script: "bunx eslint src test --ignore-pattern 'test/fixtures/**'"
+  ob:
+    command: 'bun run src/index.ts'
+    options:
+      cache: false

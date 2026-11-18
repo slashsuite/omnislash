@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_launch",
+  "result": {
+    "ok": true,
+    "threadId": "mcp:b4748dae-1245-4125-a05b-adfa807a3154",
+    "status": null
+  }
+}

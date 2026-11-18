@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_project_list",
+  "result": {
+    "id": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+    "title": "acme",
+    "workspaceRoot": "/home/owner/dev/acme",
+    "repositoryIdentity": null,
+    "faviconPath": null,
+    "projectIcon": null,
+    "defaultModelSelection": {
+      "instanceId": "opencode",
+      "model": "opencode-go/deepseek-v4.1-flash"
+    },
+    "defaultThreadEnvMode": null,
+    "autoPull": false,
+    "scripts": [],
+    "createdAt": "2026-10-17T13:11:38.690Z",
+    "updatedAt": "2026-10-17T18:39:12.321Z",
+    "deletedAt": null
+  }
+}

@@ -1,0 +1,40 @@
+# moon workspace. Projects are listed, not globbed.
+#
+# No toolchain is declared (no .moon/toolchains.yml): every task runs on the `system` toolchain,
+# so moon runs our bun commands as they are and never downloads Bun or runs `bun install`.
+# The local cache lives in .moon/cache (gitignored). No remote cache is configured.
+$schema: './cache/schemas/workspace.json'
+
+projects:
+  cli: 'apps/cli'
+  ob-dashboard: 'apps/ob-dashboard'
+  cli-coord: 'platform/cli-coord'
+  cli-core: 'platform/cli-core'
+  cli-db: 'platform/cli-db'
+  cli-sources: 'platform/cli-sources'
+  cli-whatsapp: 'platform/cli-whatsapp'
+  dashboard-kit: 'platform/dashboard-kit'
+
+vcs:
+  client: 'git'
+  defaultBranch: 'main'
+
+pipeline:
+  installDependencies: false
+
+telemetry: false
+
+# Gitignored files are never hashed. The ob-ts tasks take the workspace-level input '/**/*'
+# (.moon/tasks/ob-ts.yml), and moon walks a workspace-level glob on the file system, not through
+# git, so it does not read .gitignore. Each rule of every tracked .gitignore is mirrored here.
+hasher:
+  ignorePatterns:
+    # .gitignore (root): a name without a slash matches at any depth.
+    - '**/{node_modules,*.sqlite,*.sqlite-shm,*.sqlite-wal,*.db,*.db-shm,*.db-wal,.DS_Store,.env.local,.local.env}'
+    - '**/{node_modules,*.sqlite,*.sqlite-shm,*.sqlite-wal,*.db,*.db-shm,*.db-wal,.DS_Store,.env.local,.local.env}/**/*'
+    - '**/{out,dist,storybook-static,.nx}/**/*'
+    - '.moon/{cache,docker}/**/*'
+    - 'apps/*/.output/**/*'
+    # apps/ob-dashboard/.gitignore
+    - 'apps/ob-dashboard/**/{routeTree.gen.ts,.output,.nitro,.tanstack,dist,*.log}'
+    - 'apps/ob-dashboard/**/{routeTree.gen.ts,.output,.nitro,.tanstack,dist,*.log}/**/*'

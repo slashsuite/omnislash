@@ -1,0 +1,3 @@
+[test]
+# The cli scratch-TMPDIR preload, as the platform shards have: the serve test opens a temp DB through apps/cli.
+preload = ["../../apps/cli/test/preload.ts"]

@@ -1,0 +1,76 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_read",
+  "args": {
+    "threadId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+    "limit": 10
+  },
+  "result": {
+    "thread": {
+      "threadId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+      "projectId": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+      "title": "P0.2 probe · worktree bind",
+      "createdBy": "agent",
+      "creationSource": "mcp",
+      "status": "starting",
+      "latestRunId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+      "activeRunId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+      "providerInstanceId": "opencode",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "linkedPullRequest": null,
+      "titleRegeneration": null,
+      "branch": "p02-probe",
+      "worktreePath": "/home/owner/dev/acme.p02-probe",
+      "parentThreadId": null,
+      "relationshipToParent": null,
+      "runCount": 1,
+      "itemCount": 2,
+      "pendingRequestCount": 0,
+      "archived": false,
+      "settled": false,
+      "settledAt": null,
+      "snoozed": false,
+      "snoozedUntil": null,
+      "createdAt": "2026-10-17T21:21:55.349Z",
+      "updatedAt": "2026-10-17T21:21:55.402Z"
+    },
+    "recentRuns": [
+      {
+        "runId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+        "ordinal": 1,
+        "status": "starting",
+        "providerInstanceId": "opencode",
+        "model": "opencode-go/deepseek-v4.1-flash",
+        "requestedAt": "2026-10-17T21:21:55.362Z",
+        "startedAt": null,
+        "completedAt": null
+      }
+    ],
+    "items": [
+      {
+        "position": 0,
+        "visibility": "local",
+        "sourceThreadId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+        "itemId": "turn-item:message:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b",
+        "runId": "run:thread:mcp%3A77729955-2fb1-42e8-8acf-bdf214719c6b:ordinal:1",
+        "messageId": "mcp:77729955-2fb1-42e8-8acf-bdf214719c6b",
+        "createdBy": "agent",
+        "creationSource": "mcp",
+        "type": "user_message",
+        "status": "completed",
+        "title": null,
+        "text": "Reply with exactly BIND-OK. Do not edit any files.",
+        "textTruncated": false,
+        "nextTextOffset": null,
+        "updatedAt": "2026-10-17T21:21:55.362Z"
+      }
+    ],
+    "nextPosition": 0,
+    "hasMore": false
+  }
+}

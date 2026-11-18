@@ -1,0 +1,32 @@
+$schema: '../../.moon/cache/schemas/project.json'
+
+# OB-2205 (OB-2199 step 3): the OB dashboard, a second TanStack Start app beside apps/dashboard. Same
+# task shapes as the dashboard's moon.yml.
+tags: ['ob-ts']
+
+tasks:
+  dev:
+    command: 'bun run dev'
+    preset: 'server'
+  build:
+    command: 'bun run build'
+    deps: ['^:build']
+    # OB-2261: the build bakes BUILD_COMMIT into every page's <meta name="build-commit">, so it is part of the
+    # hash: a commit with an unchanged tree would otherwise replay a dist naming the older SHA. The deploy, CI
+    # and the dev push all set it, so a push to main and its deploy still share the hash.
+    inputs: ['$BUILD_COMMIT']
+    outputs: ['dist']
+  # Writes the gitignored src/routeTree.gen.ts, so it is never cached: a hit would skip the write.
+  generate-routes:
+    command: 'bun run generate-routes'
+    options:
+      cache: false
+  # The serve test drives the BUILT app (dist/server/server.js behind serve-handler.ts), so it builds first.
+  # OB-2208: `bun test` also runs the Tokens helpers' *.test.ts under src, then vitest runs the happy-dom
+  # route tests (src/route-tests/*.vitest.tsx), the same two runners as apps/dashboard/moon.yml.
+  test:
+    script: 'bun test ./test ./src ${OB_TEST_REPORT_DIR:+--reporter=junit --reporter-outfile=$OB_TEST_REPORT_DIR/ob-dashboard.xml} && bun --bun vitest run ${OB_TEST_REPORT_DIR:+--reporter=default --reporter=junit --outputFile.junit=$OB_TEST_REPORT_DIR/ob-dashboard-vitest.xml}'
+    deps: ['build']
+  typecheck:
+    command: 'bunx tsc --noEmit'
+    deps: ['generate-routes']

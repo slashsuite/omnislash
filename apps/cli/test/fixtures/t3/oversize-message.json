@@ -1,0 +1,14 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_launch",
+  "result": {
+    "chars": 120001,
+    "result": {
+      "ok": false,
+      "error": "protocol: t3_thread_launch: Invalid parameters for tool 't3_thread_launch': Expected a value with a length of at most 120000\n  at [\"message\"] → check the tool name/arguments"
+    }
+  }
+}

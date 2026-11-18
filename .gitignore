@@ -1,0 +1,26 @@
+node_modules/
+out/
+dist/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.DS_Store
+
+# monorepo build outputs
+storybook-static/
+dist/
+.nx/
+.moon/cache/
+.moon/docker/
+apps/*/dist/
+apps/*/.output/
+node_modules
+
+# app SQLite DBs: never commit DBs
+*.db
+*.db-shm
+*.db-wal
+
+# Bun reads these local overrides from the root; keep any secret-bearing one out of git (ob 1373)
+.env.local
+.local.env

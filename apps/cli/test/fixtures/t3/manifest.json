@@ -1,0 +1,33 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "worktree": "/home/owner/dev/acme.p02-probe",
+  "branch": "p02-probe",
+  "fixtures": [
+    "attachment.json",
+    "auto-settle-settings.json",
+    "capabilities.json",
+    "failed-run.json",
+    "grouping.json",
+    "idempotency.json",
+    "launch-result.json",
+    "launched-thread.json",
+    "opencode-session.json",
+    "oversize-message.json",
+    "pending-request.json",
+    "plan-mode.json",
+    "architect-bootstrap.json",
+    "project.json",
+    "refusal-already-bound.json",
+    "refusal-bad-path.json",
+    "refusal-branch-mismatch.json",
+    "refusal-dirty-tree.json",
+    "settle-archive.json",
+    "settle-live-run.json",
+    "settled-thread.json",
+    "title-regeneration.json",
+    "tool-schemas.json"
+  ]
+}

@@ -1,0 +1,2 @@
+{"type": "assistant", "timestamp": "2026-11-17T14:00:00Z", "message": {"id": "msg_f", "model": "claude-sonnet-5-5", "usage": {"input_tokens": 100}}, "cwd": "/home/u/other"}
+not json at all

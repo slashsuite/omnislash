@@ -1,0 +1,11 @@
+{
+  "name": "@omnislash/cli-whatsapp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+  }
+}

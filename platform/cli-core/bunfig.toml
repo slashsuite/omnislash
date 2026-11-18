@@ -1,0 +1,2 @@
+[test]
+preload = ["../../apps/cli/test/preload.ts", "../../apps/cli/test/pg/warm.ts"]

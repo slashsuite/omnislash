@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_attachment_prepare_upload + t3_thread_launch",
+  "result": {
+    "prepare": {
+      "attachmentId": "pending-ef0ea8de-2d19-4e3b-baa2-1a97f502f4e6",
+      "relativeUrl": "/api/attachments/upload/eyJ2ZXJzaW9uIjoxLCJraW5kIjoiYXR0YWNobWVudC11cGxvYWQiLCJ0eXBlIjoiaW1hZ2UiLCJhdHRhY2htZW50SWQiOiJwZW5kaW5nLWVmMGVhOGRlLTJkMTktNGUzYi1iYWEyLTFhOTdmNTAyZjRlNiIsIm5hbWUiOiJkZXNpZ24ucG5nIiwibWltZVR5cGUiOiJpbWFnZS9wbmciLCJzaXplQnl0ZXMiOjcwLCJleHBpcmVzQXQiOjE3OTIyNzI3MzgzNDV9.CageBrRezchz4RcmuT07Fzk1_jh4iUr79AYu2xZe9eg",
+      "expiresAt": 1792272738345
+    },
+    "uploadStatus": 204,
+    "withImage": {
+      "ok": true,
+      "threadId": "mcp:af35b003-e639-4d80-85ca-75360c9c301c",
+      "status": "preparing"
+    },
+    "runStatus": "completed",
+    "reply": "IMAGE-OK 1x1"
+  }
+}

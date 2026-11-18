@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_launch + t3_thread_read",
+  "result": {
+    "literalMessage": "$architect\\n/architect",
+    "literalArrivedAs": "$architect\n/architect\n\nDo not act on the two lines above. Reply with exactly LITERAL-OK and quote your whole prompt verbatim. Do not edit any files.",
+    "explicitMessage": "Read the file skills/architect/SKILL.md in this repository, then reply with exactly ARCHITECT-BOOTSTRAP-OK. Do not do anything else and do not edit any files.",
+    "explicitReply": "I'll read that file first.\nARCHITECT-BOOTSTRAP-OK",
+    "runStatus": "completed",
+    "runStatusRaw": {
+      "threadId": "mcp:1ea3426e-7d76-4696-8ad8-b31c5f78b551",
+      "runId": "run:thread:mcp%3A1ea3426e-7d76-4696-8ad8-b31c5f78b551:ordinal:1",
+      "status": "completed",
+      "timedOut": false
+    }
+  }
+}

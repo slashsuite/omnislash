@@ -1,0 +1,39 @@
+{
+  "name": "ob-dashboard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --bun vite dev --host --strictPort --port ${PORT:?set PORT from ob ports next}",
+    "build": "bun --bun vite build",
+    "serve": "bun serve.ts",
+    "generate-routes": "tsr generate",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test ./test ./src && bun --bun vitest run"
+  },
+  "dependencies": {
+    "@hackcove/themes": "^0.3.1",
+    "@hackcove/ui-react": "^0.11.2",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-start": "latest",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/router-cli": "^1.132.0",
+    "@tanstack/router-plugin": "^1.132.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "happy-dom": "^21.0.4",
+    "seroval": "^1.6.7",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.5"
+  }
+}

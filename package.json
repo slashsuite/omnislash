@@ -1,0 +1,21 @@
+{
+  "name": "omnislash",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "platform/*"
+  ],
+  "devDependencies": {
+    "@moonrepo/cli": "2.6.5",
+    "@types/bun": "^1.4.0",
+    "bun-types": "^1.4.0",
+    "typescript": "^5"
+  },
+  "trustedDependencies": [
+    "@moonrepo/cli",
+    "bun-types",
+    "storybook"
+  ]
+}

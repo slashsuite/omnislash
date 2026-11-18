@@ -1,0 +1,184 @@
+{
+  "capturedAt": "2026-10-17T21:22:27.223Z",
+  "build": "0.1.0",
+  "ticket": "1103",
+  "probe": "apps/cli/src/t3/surface-probe.ts",
+  "tool": "t3_thread_read + t3_thread_read(activity)",
+  "result": {
+    "launched": {
+      "ok": true,
+      "threadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+      "status": "preparing"
+    },
+    "waited": {
+      "threadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+      "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+      "status": "failed",
+      "timedOut": false
+    },
+    "read": {
+      "thread": {
+        "threadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+        "projectId": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+        "title": "P0.2 probe · failed run",
+        "createdBy": "agent",
+        "creationSource": "mcp",
+        "status": "failed",
+        "latestRunId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+        "activeRunId": null,
+        "providerInstanceId": "opencode",
+        "model": "opencode-go/model-that-does-not-exist",
+        "runtimeMode": "full-access",
+        "interactionMode": "default",
+        "linkedPullRequest": null,
+        "titleRegeneration": null,
+        "branch": null,
+        "worktreePath": null,
+        "parentThreadId": null,
+        "relationshipToParent": null,
+        "runCount": 1,
+        "itemCount": 3,
+        "pendingRequestCount": 0,
+        "archived": false,
+        "settled": false,
+        "settledAt": null,
+        "snoozed": false,
+        "snoozedUntil": null,
+        "createdAt": "2026-10-17T21:22:26.099Z",
+        "updatedAt": "2026-10-17T21:22:26.696Z"
+      },
+      "recentRuns": [
+        {
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "ordinal": 1,
+          "status": "failed",
+          "providerInstanceId": "opencode",
+          "model": "opencode-go/model-that-does-not-exist",
+          "requestedAt": "2026-10-17T21:22:26.117Z",
+          "startedAt": "2026-10-17T21:22:26.223Z",
+          "completedAt": "2026-10-17T21:22:26.696Z"
+        }
+      ],
+      "items": [
+        {
+          "position": 0,
+          "visibility": "local",
+          "sourceThreadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "itemId": "turn-item:message:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "messageId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "createdBy": "agent",
+          "creationSource": "mcp",
+          "type": "user_message",
+          "status": "completed",
+          "title": null,
+          "text": "Reply with exactly NEVER-OK.",
+          "textTruncated": false,
+          "nextTextOffset": null,
+          "updatedAt": "2026-10-17T21:22:26.117Z"
+        }
+      ],
+      "nextPosition": 0,
+      "hasMore": false
+    },
+    "activity": {
+      "thread": {
+        "threadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+        "projectId": "e2c179e8-8c86-4f93-9720-a4e4c53324ef",
+        "title": "P0.2 probe · failed run",
+        "createdBy": "agent",
+        "creationSource": "mcp",
+        "status": "failed",
+        "latestRunId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+        "activeRunId": null,
+        "providerInstanceId": "opencode",
+        "model": "opencode-go/model-that-does-not-exist",
+        "runtimeMode": "full-access",
+        "interactionMode": "default",
+        "linkedPullRequest": null,
+        "titleRegeneration": null,
+        "branch": null,
+        "worktreePath": null,
+        "parentThreadId": null,
+        "relationshipToParent": null,
+        "runCount": 1,
+        "itemCount": 3,
+        "pendingRequestCount": 0,
+        "archived": false,
+        "settled": false,
+        "settledAt": null,
+        "snoozed": false,
+        "snoozedUntil": null,
+        "createdAt": "2026-10-17T21:22:26.099Z",
+        "updatedAt": "2026-10-17T21:22:26.696Z"
+      },
+      "recentRuns": [
+        {
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "ordinal": 1,
+          "status": "failed",
+          "providerInstanceId": "opencode",
+          "model": "opencode-go/model-that-does-not-exist",
+          "requestedAt": "2026-10-17T21:22:26.117Z",
+          "startedAt": "2026-10-17T21:22:26.223Z",
+          "completedAt": "2026-10-17T21:22:26.696Z"
+        }
+      ],
+      "items": [
+        {
+          "position": 0,
+          "visibility": "local",
+          "sourceThreadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "itemId": "turn-item:message:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "messageId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "createdBy": "agent",
+          "creationSource": "mcp",
+          "type": "user_message",
+          "status": "completed",
+          "title": null,
+          "text": "Reply with exactly NEVER-OK.",
+          "textTruncated": false,
+          "nextTextOffset": null,
+          "updatedAt": "2026-10-17T21:22:26.117Z"
+        },
+        {
+          "position": 1,
+          "visibility": "local",
+          "sourceThreadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "itemId": "turn-item:provider:opencode:native-item:workspace-preparation%3Arun%3Athread%3Amcp%253A21bd2ea4-2f81-4f69-bb62-1668d6299f14%3Aordinal%3A1",
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "messageId": null,
+          "createdBy": null,
+          "creationSource": null,
+          "type": "command_execution",
+          "status": "completed",
+          "title": "Workspace ready",
+          "text": "$ Preparing workspace\nWorkspace preparation completed.",
+          "textTruncated": false,
+          "nextTextOffset": null,
+          "updatedAt": "2026-10-17T21:22:26.164Z"
+        },
+        {
+          "position": 2,
+          "visibility": "local",
+          "sourceThreadId": "mcp:21bd2ea4-2f81-4f69-bb62-1668d6299f14",
+          "itemId": "turn-item:provider:opencode:native-item:terminal-failure%3Aprovider-turn%3Aprovider%3Aopencode%3Anative-turn%3Ases_eb44160eaffes53oJgrXXW1J0m%253Aattempt%253Arun-attempt%253Arun%253Arun%25253Athread%25253Amcp%2525253A21bd2ea4-2f81-4f69-bb62-1668d6299f14%25253Aordinal%25253A1%253Aattempt%253A1",
+          "runId": "run:thread:mcp%3A21bd2ea4-2f81-4f69-bb62-1668d6299f14:ordinal:1",
+          "messageId": null,
+          "createdBy": null,
+          "creationSource": null,
+          "type": "error",
+          "status": "failed",
+          "title": "Provider error",
+          "text": "Model unavailable: opencode-go/model-that-does-not-exist",
+          "textTruncated": false,
+          "nextTextOffset": null,
+          "updatedAt": "2026-10-17T21:22:26.695Z"
+        }
+      ],
+      "nextPosition": 2,
+      "hasMore": false
+    }
+  }
+}

@@ -1,0 +1,3 @@
+[test]
+# The cli scratch-TMPDIR preload, as every shard has: the guard tests import apps/cli modules.
+preload = ["../../apps/cli/test/preload.ts"]
