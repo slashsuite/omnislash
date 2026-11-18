@@ -13,11 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Full history: in a pull request moon diffs the head against the base branch before any task
+      # runs, and a shallow checkout has no `main`, so the gate died with "ambiguous argument 'main'".
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       - run: bunx moon run --concurrency 3 :typecheck :test
+        env:
+          MOON_BASE: origin/main
       - run: bun scripts/check-workflows.ts .github/workflows/*.yml
       - run: bun test scripts
