@@ -49,7 +49,7 @@ Run either from the root of your OmniSlash checkout. A linked skill follows the 
 | `ob-leaving-pr-comments` | Leaves a GitHub comment on the owner's behalf, only after they confirm the exact text |
 | `ob-ui-testing` | How UI tests are written, configured and run in every repo, with evals |
 
-Some skills refer to others (`ob-architect` and more) that are not in this folder yet. More skills follow.
+Some skills refer to others (`ob-architect`, `ob-new-project` and more) that are not in this folder yet. More skills follow.
 
 ## Credits
 
