@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: smoke-after-deploy
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  A separate smoke config and folder that run against SMOKE_BASE_URL as a dedicated smoke account (credentials from the environment or a secret, never in the repo), whose rows are marked as smoke (is_smoke) and excluded from billing and counts, reusing names so repeat runs do not accumulate, with nothing sent to a real recipient; it does not duplicate the e2e edge cases and it names what the app must add (the smoke flag, the exclusion).

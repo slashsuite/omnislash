@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: github-import-journey
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  One happy-path test with test.step stages; sign-in comes from a setup project with storageState or a seeded session, never real Google; the GitHub connection is arranged through the back door (a seeded token) and api.github.com is a local stub, so no request leaves localhost; the import waits on the import response started before the click and checks the project appears in the list; config brought to shape.

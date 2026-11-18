@@ -1,0 +1,2 @@
+# acme-app
+React app with its own API (`src/api.ts`) on a local SQLite store; `src/test/store.ts` gives a test a fresh one. `bun run test` runs Vitest (happy-dom, Testing Library). `bun run test:e2e` runs Playwright against the production build; `e2e/pages.spec.ts` loops `src/pages.ts`. `bun run visual` has PixelSlash shoot the routes in `pixelslash.config.json` in light and dark, desktop and phone, and compare them with main; a change reports the result as a `Visual:` line.

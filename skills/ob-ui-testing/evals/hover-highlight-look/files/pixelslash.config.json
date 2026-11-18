@@ -1,0 +1,2 @@
+{ "storybook": "http://127.0.0.1:6006",
+  "variants": [ { "name": "light", "theme": "light" }, { "name": "dark", "theme": "dark" } ] }

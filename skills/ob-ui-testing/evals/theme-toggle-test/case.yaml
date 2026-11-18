@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: theme-toggle-test
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The toggle exposes its state accessibly (aria-pressed on a stable name, or a radio group), and the test asserts that state and that it survives a reload; it does not assert the html.dark class or any colour.

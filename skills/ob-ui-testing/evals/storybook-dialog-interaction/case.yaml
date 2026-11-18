@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: storybook-dialog-interaction
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  A play function on the story drives the dialog with userEvent and role queries (the Open settings button, the Settings dialog by its name, the Close button), checks it opens, closes on Escape and on Close, and that focus returns to the opener, with no class, style or screenshot assertions and no sleeps; it says the browser run goes under the shared machine's browser lease (cpu:browser) and that look is PixelSlash's.

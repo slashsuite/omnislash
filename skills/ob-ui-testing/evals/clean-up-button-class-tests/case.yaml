@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: clean-up-button-class-tests
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Class, className, markup and tone-colour assertions are removed; pressed is asserted through aria-pressed, disabled through toBeDisabled and a click that does nothing, the click through a role query and userEvent; the run says the look moves to visual review.

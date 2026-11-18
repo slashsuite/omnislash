@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: slider-and-sticky-rail
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The slider is proved by an integration test on the range's value and label; nothing asserts computed opacity, position or scroll offsets, no drag or scroll is driven to check a look, and the reply says plainly that the fade and the stickiness are not proved to paint right.

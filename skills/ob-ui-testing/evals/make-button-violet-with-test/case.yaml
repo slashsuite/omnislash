@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: make-button-violet-with-test
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The colour change is made, and no class, computed-style or screenshot assertion is added; the run explains that look regressions are caught by visual snapshot review (PixelSlash) and names the shot to approve, adding at most a behaviour test.

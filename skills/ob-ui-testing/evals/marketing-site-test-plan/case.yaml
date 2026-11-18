@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: marketing-site-test-plan
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Built-output checks in Vitest against a fresh build (page list constant, meta, canonical, OG, robots and sitemap, internal links, the redirect table), one Playwright page loop over the page list on desktop and phone (200, no sideways scroll, axe per theme, no request leaving the origin), one test per real behaviour (theme toggle state across reload, the waitlist submit to a stub), smoke for the live 404, the 301s, robots.txt and sitemap.xml content types, sitemap locs answering 200 with matching canonicals, run after every production deploy, and look left to visual snapshots by a separate tool rather than geometry or presence specs.

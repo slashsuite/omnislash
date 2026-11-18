@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: searchbox-integration-tests
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  Vitest and Testing Library tests, one per reaction (results, empty, loading, error), driven by userEvent, queried by role, with the search function stubbed and the loading state held by an unresolved promise; time is controlled by fake timers or by waiting with findBy, never a real setTimeout sleep.

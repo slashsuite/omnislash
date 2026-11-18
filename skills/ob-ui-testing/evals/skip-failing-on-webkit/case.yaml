@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: skip-failing-on-webkit
+context:
+  scaffold_script: place-files.sh
+expected_outcome: |
+  The run scopes the test off the phone project with a reason naming a ticket (an AC-<n> placeholder it asks the user to fill or says must be filed), either through testIgnore on the project or test.skip(condition, 'why, AC-n'); it notes this is a consistent failure, not a flake, and probably a real touch bug (dragTo uses mouse events; a phone user cannot reorder), and it leaves retries at 0.
