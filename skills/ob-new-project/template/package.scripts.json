@@ -1,0 +1,15 @@
+{
+  "dev": "vite dev --port ${PORT:-5173} --strictPort",
+  "build": "vite build",
+  "preview": "vite preview",
+  "typecheck": "tsr generate && tsc --noEmit",
+  "lint": "oxlint --type-aware --deny-warnings && bun scripts/check-slop.ts",
+  "format": "oxfmt",
+  "format:check": "oxfmt --check",
+  "test": "vitest run",
+  "test:e2e": "playwright test",
+  "test:smoke": "playwright test --config playwright.smoke.config.ts",
+  "db:generate": "drizzle-kit generate",
+  "deploy": "bun run build && wrangler deploy",
+  "cf-typegen": "wrangler types"
+}
