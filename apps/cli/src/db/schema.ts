@@ -146,6 +146,30 @@ export const roleRun = sqliteTable("role_run", {
 		.where(sql`ended_at IS NULL`),
 ]);
 
+// A team role's inbox (`ob send`, `ob inbox`): one row per message to a role, kept on the server so any machine
+// reads it and a message to a replaced thread is not lost. `kind` is `message` (sent by hand) or `handoff` (a
+// builder's readying note, keyed by `client_key` so a second handoff of one commit adds no row). `read_at` and
+// `read_by` (a run or agent id, plain text) mark what a run read; `withdrawn_at` hides a handoff whose ticket
+// closed. Removing a team drops its messages with it.
+export const roleMessage = sqliteTable("role_message", {
+	id: integer().primaryKey({ autoIncrement: true }),
+	team: text().notNull().references(() => team.name, { onDelete: "cascade" }),
+	role: text().notNull(),
+	from_actor: text("from_actor").notNull(),
+	kind: text().notNull(),
+	ref: text(),
+	body: text().notNull(),
+	client_key: text("client_key"),
+	created_at: text("created_at").notNull(),
+	read_at: text("read_at"),
+	read_by: text("read_by"),
+	withdrawn_at: text("withdrawn_at"),
+},
+(table) => [
+	uniqueIndex("idx_role_message_client_key").on(table.client_key),
+	index("idx_role_message_unread").on(table.team, table.role, table.read_at, table.id),
+]);
+
 // OB-2271: persona tournaments. A tournament compares candidates (themes, grounds, designs) by matches; each
 // match is a set of reader calls (a persona on a model, in one order) scoring both sides 1 to 5 per criterion.
 // The runner (OB-2273, or a repo's own script) writes a match file and `ob tournament record` stores it; ob

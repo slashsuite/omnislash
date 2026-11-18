@@ -1442,6 +1442,34 @@ async function route(
     if (segments.length === 2 && method === "DELETE") {
       return json(await h.teamRemove(store, second, queryBool(url.searchParams, "force") === true));
     }
+    // A team role's inbox (`ob send`, `ob inbox`).
+    if (third === "inbox") {
+      if (segments.length === 3 && method === "POST") {
+        const body = await readJson(req);
+        const text = optString(body, "body");
+        if (text === undefined || text.trim().length === 0) bad("'body' must be a non-empty string");
+        const kind = optString(body, "kind");
+        if (kind !== undefined && kind !== "message" && kind !== "handoff") bad("'kind' must be message or handoff");
+        const res = await h.roleMessageSend(store, second, {
+          role: reqString(body, "role"),
+          from: reqString(body, "from"),
+          ...(kind === undefined ? {} : { kind }),
+          ref: optString(body, "ref") ?? null,
+          body: text as string,
+          client_key: optString(body, "client_key") ?? null,
+        });
+        return json(res, res.created ? 201 : 200);
+      }
+      if (segments.length === 3 && method === "GET") {
+        return json(await h.roleMessagesList(store, second, url.searchParams.get("role"), queryBool(url.searchParams, "unread") !== false));
+      }
+      if (segments.length === 4 && segments[3] === "read" && method === "POST") {
+        const body = await readJson(req);
+        const ids = body.ids;
+        if (!Array.isArray(ids) || ids.length === 0 || ids.some((x) => !Number.isInteger(x) || (x as number) <= 0)) bad("'ids' must be a non-empty array of positive integers");
+        return json(await h.roleMessagesRead(store, second, { role: reqString(body, "role"), ids: ids as number[], by: reqString(body, "by") }));
+      }
+    }
     // Role runs (`ob role`).
     if (third === "runs") {
       if (segments.length === 3 && method === "GET") return json(await h.roleRunsOpen(store, second, url.searchParams.get("role")));

@@ -79,6 +79,7 @@ import { cmdCreds } from "./commands/creds.ts";
 import { cmdVision, expandVisionPairFlags } from "./commands/vision.ts";
 import { cmdT3 } from "./commands/t3.ts";
 import { cmdRole } from "./commands/role.ts";
+import { cmdInbox, cmdSend } from "./commands/inbox.ts";
 import { cmdTriage } from "./commands/triage.ts";
 import { cmdIssue } from "./commands/issue.ts";
 import { cmdJobs } from "./commands/jobs.ts";
@@ -412,6 +413,8 @@ export const FLAGS = {
   access: { type: "string" },
   // 1124: `ob t3 tree --subagents` includes T3's delegated child threads (excluded by default).
   subagents: { type: "boolean" },
+  // `ob inbox <team> <role> --read <id>... --by <run|agent id>`: the first id; more follow as positionals.
+  read: { type: "string" },
 } as const;
 
 export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
@@ -488,6 +491,8 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   vision: cmdVision,
   t3: cmdT3,
   role: cmdRole,
+  send: cmdSend,
+  inbox: cmdInbox,
 };
 
 export const HELP = `ob — OmniSlash personal task tracker
@@ -1163,6 +1168,22 @@ T3 Code (1102), the execution-plane seam:
                             was opened on <host>; this machine's T3 is <local>') and is never ended as gone.
                             SPLIT: the T3 calls run here; the runs go over the API on a client
                             (GET|POST /teams/:name/runs, POST /teams/:name/runs/:id).
+  send <team> <role> "<text>" [--body-file <path>] [--from <id>] [--json|-q]
+                            store a message in a team role's inbox (architect, sentinel or muse) on the server, so any
+                            machine reaches it and a message to a replaced thread is kept. The role must be the
+                            architect or one bound on the team ('ob t3 team show <team>'), else it is refused by name
+                            and nothing is stored. --from names the sender (default 'owner'). -q prints the message id.
+                            'ob spinoff handoff' also stores its readying note here (kind 'handoff', one row per
+                            commit); if that store fails the T3 note still goes and one stderr line says
+                            'inbox: handoff not stored (<reason>)'. 'ob close' withdraws the ticket's unread handoffs.
+  inbox <team> <role> [--all] [--json|-q]
+                            the role's unread messages that are not withdrawn, oldest first; --all lists every one,
+                            read and withdrawn included. -q prints the ids.
+  inbox <team> <role> --read <id> [<id>...] --by <run|agent id>
+                            mark messages read by that run or agent, so they leave the unread list (a message read
+                            before keeps its first reader). An id not in that inbox refuses and marks nothing.
+                            Over the API: POST /teams/:name/inbox, GET /teams/:name/inbox?role=&unread=,
+                            POST /teams/:name/inbox/read.
   t3 broadcast architects <message> [--message-file <path>] [--dry-run] [--json|-q]
   t3 broadcast threads <message> [--message-file <path>] [--dry-run] [--json|-q]
                             send one message to every ACTIVE architect, or to every active T3 thread
