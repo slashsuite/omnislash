@@ -180,7 +180,12 @@ const staleBuilder = async (h: Harness) => {
 
   const second = await h.run(["role", "tick"]);
   expect(second.code).toBe(0);
-  expect(second.out.trim()).toBe("role tick t: nothing new");
+  // OS-57: the end pass reads the open run (no context db under this HOME) and keeps it, mid-turn.
+  expect(second.out.trim().split("\n")).toEqual([
+    "role tick t: nothing new",
+    "role tick t architect: context unknown for t3-1",
+    "role tick t architect: kept (it has a run in flight (running))",
+  ]);
   expect(await messages(h.store)).toHaveLength(1);
   expect(f.launches).toHaveLength(1);
   expect(f.sends).toHaveLength(0);

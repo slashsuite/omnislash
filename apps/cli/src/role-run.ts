@@ -28,7 +28,7 @@ export interface RoleRun {
   started_at: string;
   last_activity_at: string;
   item_count: number | null;
-  /** Always null for now: T3 reports an item count, not tokens. */
+  /** OS-57: the context tokens the last `ob role tick` read from T3's state db; null when never read or unknown. */
   context_tokens: number | null;
   ended_at: string | null;
   end_reason: RoleRunEndReason | null;
@@ -135,6 +135,8 @@ export async function markRoleRun(
 export interface RoleRunPatch {
   thread_id?: string;
   item_count?: number | null;
+  /** OS-57: the context size the tick read (null when it could not be read). */
+  context_tokens?: number | null;
   last_activity_at?: string;
   end_reason?: RoleRunEndReason;
 }
@@ -152,6 +154,7 @@ export async function updateRoleRun(db: Database | Store, team: string, id: numb
   const set: Partial<RoleRun> = {};
   if (patch.thread_id !== undefined) set.thread_id = patch.thread_id;
   if (patch.item_count !== undefined) set.item_count = patch.item_count;
+  if (patch.context_tokens !== undefined) set.context_tokens = patch.context_tokens;
   if (patch.last_activity_at !== undefined) set.last_activity_at = patch.last_activity_at;
   if (patch.end_reason !== undefined) {
     set.ended_at = nowIso();

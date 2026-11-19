@@ -1163,8 +1163,9 @@ T3 Code (1102), the execution-plane seam:
                             the brief shows) is marked read by 'role-run-<id>' once the run is recorded.
   role status <team> [<role>] [--json|-q]
                             the team's open runs: run id, thread, what T3 reads it as now (its status, settled,
-                            archived, gone, launching), item count, started and last activity. Refreshes item_count
-                            and last_activity_at from the thread header. Exit 1 when a thread could not be read.
+                            archived, gone, launching), item count, the context tokens the last 'role tick' read,
+                            started and last activity. Refreshes item_count and last_activity_at from the thread
+                            header. Exit 1 when a thread could not be read.
   role end <team> <role> [--reason idle|context|gone|manual|superseded]
                             settle and unpin the run's thread, set ended_at and end_reason (default manual), release
                             'role:<team>:<role>', and drop the '<role>-<team>' agent row when it points at that thread
@@ -1204,6 +1205,18 @@ T3 Code (1102), the execution-plane seam:
                             checkout. No unread messages prints 'role tick <team>: nothing new', makes no T3 call
                             and starts no run. While ~/.cache/ob-good-night holds a future time it writes the
                             findings but starts and sends nothing. A failed team exits 1 and the next still runs.
+                            Then, on every tick (OS-57), it ENDS the team's open role runs (architect, sentinel,
+                            muse) on this machine's T3 that are done: a run is kept while its thread has a turn in
+                            flight, a question pending for the owner or a message in its T3 queue; one whose context
+                            (the newest turn's usedTokens in ~/.t3/userdata/statev2.sqlite) is 200,000 tokens or more
+                            ends at that quiet point; otherwise unread inbox rows keep it (not under the night lock),
+                            and it ends 15 minutes after its last turn completed (else after its start). Each run due
+                            to end is asked (queued) to write its note with 'role note', the pass waits up to 10
+                            minutes in total for the notes, then settles, unpins and ends each run that wrote one
+                            (end_reason idle or context, lease released). One line per run: 'kept (<reason>)',
+                            'run <id> ended (idle|context), note <n> lines', 'no note within 10m, run kept', or
+                            'skip <team> <role>: run on <host>' for a run on another machine's T3. A context size it
+                            cannot read prints 'context unknown for <thread>' and never ends a run on context.
                             Over the API the findings come from GET /teams/:name/tick.
   send <team> <role> "<text>" [--body-file <path>] [--from <id>] [--no-deliver] [--json|-q]
                             store a message in a team role's inbox (architect, sentinel or muse) on the server, so any
