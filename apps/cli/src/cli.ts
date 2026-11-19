@@ -1202,11 +1202,11 @@ T3 Code (1102), the execution-plane seam:
                             over 60 minutes old), flake (an open flake item with no live spinoff row) and idle-repo
                             (a member project with no live spinoff row whose first non-blocked item would dispatch
                             today). Then it delivers the unread messages as 'send' does, into a run opened in that
-                            checkout. No unread messages prints 'role tick <team>: nothing new', makes no T3 call
-                            and starts no run. While ~/.cache/ob-good-night holds a future time it writes the
+                            checkout. No unread messages prints 'role tick <team>: nothing new', delivers nothing
+                            and starts no run (the end pass below still reads each open run's thread). While ~/.cache/ob-good-night holds a future time it writes the
                             findings but starts and sends nothing. A failed team exits 1 and the next still runs.
                             Then, on every tick (OS-57), it ENDS the team's open role runs (architect, sentinel,
-                            muse) on this machine's T3 that are done: a run is kept while its thread has a turn in
+                            muse) on this machine's T3 that are done (a run this pass just delivered into is kept): a run is kept while its thread has a turn in
                             flight, a question pending for the owner or a message in its T3 queue; one whose context
                             (the newest turn's usedTokens in ~/.t3/userdata/statev2.sqlite) is 200,000 tokens or more
                             ends at that quiet point; otherwise unread inbox rows keep it (not under the night lock),

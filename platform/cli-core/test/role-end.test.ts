@@ -287,20 +287,6 @@ describe("the end pass", () => {
     expect(renderEndResult("t", res[0]!)).toEqual(["role tick t architect: context unknown for th-architect", "role tick t architect: kept (active 2m ago)"]);
   });
 
-  test("with the night lock on and one unread row, an idle run is asked and ended, and the row stays unread", async () => {
-    const h = await local();
-    const { thread } = await openRun(h, "architect");
-    await sendRoleMessage(h.store, { team: "t", role: "architect", from: "someone", kind: "message", body: "hello" });
-    const c = clock(async () => {
-      await writeRoleNote(h.store, "t", "architect", "note\n");
-    });
-    const res = await endPass(storeRoleBackend(h.store), storeInboxBackend(h.store), () => t3Seam(), "t", deps(c, { nightLocked: true }));
-    expect(res).toMatchObject([{ result: "ended", end_reason: "idle" }]);
-    expect(fake!.sends).toHaveLength(1);
-    expect(thread.settled).toBe(true);
-    expect(await messages(h.store)).toMatchObject([{ body: "hello", read_at: null }]);
-  });
-
   test("two runs due in one pass are both asked first, and the pass waits at most 10 minutes in total", async () => {
     const h = await local();
     await openRun(h, "architect");

@@ -20,11 +20,11 @@ import type { T3Seam } from "./t3/dispatch.ts";
 import type { TeamRole } from "./team.ts";
 
 /** A run with nothing for this long, after its last turn completed, ends. */
-export const ROLE_IDLE_END_MS = 15 * 60_000;
+const ROLE_IDLE_END_MS = 15 * 60_000;
 /** A run whose context reaches this many tokens ends at its next quiet point. */
-export const ROLE_CONTEXT_END_TOKENS = 200_000;
+const ROLE_CONTEXT_END_TOKENS = 200_000;
 /** How long one pass waits, in total, for the notes it asked for. */
-export const ROLE_NOTE_WAIT_MS = 10 * 60_000;
+const ROLE_NOTE_WAIT_MS = 10 * 60_000;
 const ROLE_NOTE_POLL_MS = 5_000;
 /** How long the pass lets a run finish its note turn before the settle (as `restartTeamRole`). */
 const ROLE_END_IDLE_WAIT_MS = 5 * 60_000;
@@ -65,7 +65,7 @@ export function endCheck(input: EndCheckInput, now: Date): EndVerdict {
 }
 
 /** The newest `completedAt` among a thread's recent runs, or null. Pure. */
-export function newestCompletedAt(runs: readonly T3ThreadRun[]): string | null {
+function newestCompletedAt(runs: readonly T3ThreadRun[]): string | null {
   let best: string | null = null;
   for (const r of runs) {
     if (r.completedAt && (best === null || Date.parse(r.completedAt) > Date.parse(best))) best = r.completedAt;
@@ -74,7 +74,7 @@ export function newestCompletedAt(runs: readonly T3ThreadRun[]): string | null {
 }
 
 /** T3's own state db, where each provider turn records its token usage. */
-export function t3StateDbPath(home: string = process.env.HOME || homedir()): string {
+function t3StateDbPath(home: string = process.env.HOME || homedir()): string {
   return join(home, ".t3", "userdata", "statev2.sqlite");
 }
 
@@ -141,6 +141,8 @@ export interface EndPassDeps {
   nightLocked: boolean;
   noteWaitMs?: number;
   pollMs?: number;
+  /** Runs this pass's delivery just queued into: kept without a check, since T3 may not show the new turn yet. */
+  justDelivered?: ReadonlySet<number>;
 }
 
 function oneLine(err: unknown): string {
@@ -186,6 +188,10 @@ export async function endPass(
     }
     if (!run.thread_id) {
       r.reason = "its thread is still launching";
+      continue;
+    }
+    if (deps.justDelivered?.has(run.id)) {
+      r.reason = "messages were just delivered to it";
       continue;
     }
     try {
@@ -266,18 +272,17 @@ export async function endPass(
   }
 
   for (const d of due) {
-    const cur = noted.get(d.run.id);
-    if (!cur) {
-      d.result.result = "no-note";
-      d.result.reason = `no note within ${Math.round(waitMs / 60_000)}m, run kept`;
-      continue;
-    }
+    if (noted.has(d.run.id)) continue;
+    d.result.result = "no-note";
+    d.result.reason = `no note within ${Math.round(waitMs / 60_000)}m, run kept`;
+  }
+  const ending = due.filter((d) => noted.has(d.run.id));
+  // Let every noted run finish its note turn, together (not one after another), before the settles.
+  await Promise.all(ending.map((d) => s!.wait(d.run.thread_id!, ROLE_END_IDLE_WAIT_MS).catch(() => null)));
+  for (const d of ending) {
+    const cur = noted.get(d.run.id)!;
     try {
-      try {
-        await s!.wait(d.run.thread_id!, ROLE_END_IDLE_WAIT_MS);
-      } catch {
-        // the settle below retries on the run ending, and says why when it cannot
-      }
+      // the settle retries on the run ending, and says why when it cannot
       await endRoleRun(backend, team, cur, d.reason, s, { retrySettle: true });
       d.result.result = "ended";
       d.result.end_reason = d.reason;

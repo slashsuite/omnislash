@@ -135,7 +135,9 @@ export async function runRoleTick(
       }
       // The end pass runs on every tick, whatever delivery did; the night lock is when ending runs matters most.
       try {
-        r.ended = await endPass(backend.role, backend.inbox, seam, name, { ...endDeps, nightLocked: nightLockedUntil() !== null });
+        const d = r.delivery;
+        const justDelivered = new Set(d && (d.kind === "queued" || d.kind === "started") ? [d.run.id] : []);
+        r.ended = await endPass(backend.role, backend.inbox, seam, name, { ...endDeps, nightLocked: nightLockedUntil() !== null, justDelivered });
       } catch (err) {
         r.error = [r.error, `end pass: ${oneLine(err)}`].filter(Boolean).join("; ");
       }
