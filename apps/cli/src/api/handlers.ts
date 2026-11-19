@@ -1957,6 +1957,7 @@ export async function roleRunUpdate(store: Store, name: string, id: number, req:
       updateRoleRun(store, name, id, {
         ...(req.thread_id === undefined ? {} : { thread_id: req.thread_id }),
         ...(req.item_count === undefined ? {} : { item_count: req.item_count }),
+        ...(req.context_tokens === undefined ? {} : { context_tokens: req.context_tokens }),
         ...(req.last_activity_at === undefined ? {} : { last_activity_at: req.last_activity_at }),
         ...(req.end_reason === undefined ? {} : { end_reason: parseEndReason(req.end_reason, "'end_reason'") }),
       }),

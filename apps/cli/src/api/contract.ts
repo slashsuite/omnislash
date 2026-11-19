@@ -1792,6 +1792,7 @@ export interface RoleRunMarkRequest {
 export interface RoleRunUpdateRequest {
   thread_id?: string;
   item_count?: number | null;
+  context_tokens?: number | null;
   last_activity_at?: string;
   end_reason?: string;
 }

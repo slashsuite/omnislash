@@ -172,6 +172,8 @@ const staleBuilder = async (h: Harness) => {
   expect(first.code).toBe(0);
   expect(first.out).toContain("role tick t: wrote #1 stale-builder TP-1");
   expect(first.out).toContain("role tick t architect: run 1 opened, thread t3-1, with 1 message in its start brief");
+  // OS-57: the run delivery just opened is not end-checked in the same pass.
+  expect(first.out).toContain("role tick t architect: kept (messages were just delivered to it)");
   const rows = await messages(h.store);
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ from_actor: "tick", ref: "TP-1", client_key: `tick:t:stale-builder:TP-1:building@${heartbeat}`, read_by: "role-run-1" });
@@ -180,7 +182,12 @@ const staleBuilder = async (h: Harness) => {
 
   const second = await h.run(["role", "tick"]);
   expect(second.code).toBe(0);
-  expect(second.out.trim()).toBe("role tick t: nothing new");
+  // OS-57: the end pass reads the open run (no context db under this HOME) and keeps it, mid-turn.
+  expect(second.out.trim().split("\n")).toEqual([
+    "role tick t: nothing new",
+    "role tick t architect: context unknown for t3-1",
+    "role tick t architect: kept (it has a run in flight (running))",
+  ]);
   expect(await messages(h.store)).toHaveLength(1);
   expect(f.launches).toHaveLength(1);
   expect(f.sends).toHaveLength(0);

@@ -1500,12 +1500,14 @@ async function route(
         const body = await readJson(req);
         const threadId = optString(body, "thread_id");
         const itemCount = optNullableInt(body, "item_count");
+        const contextTokens = optNullableInt(body, "context_tokens");
         const lastActivity = optString(body, "last_activity_at");
         const endReason = optString(body, "end_reason");
         return json(
           await h.roleRunUpdate(store, second, id, {
             ...(threadId === undefined ? {} : { thread_id: threadId }),
             ...(itemCount === undefined ? {} : { item_count: itemCount }),
+            ...(contextTokens === undefined ? {} : { context_tokens: contextTokens }),
             ...(lastActivity === undefined ? {} : { last_activity_at: lastActivity }),
             ...(endReason === undefined ? {} : { end_reason: endReason }),
           }),

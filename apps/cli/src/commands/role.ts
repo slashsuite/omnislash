@@ -18,6 +18,7 @@ import {
   updateRoleRun,
   writeRoleNote,
   type RoleRun,
+  type RoleRunEndReason,
   type RoleRunPatch,
 } from "../role-run.ts";
 import { gatherRoleBrief, readPacing, renderRoleBrief, roleBriefStoreFacts, type BriefRow, type RoleBriefFacts, type RoleBriefStoreFacts } from "../role-brief.ts";
@@ -36,6 +37,7 @@ import {
   readTeamThread,
   readThreadHeader,
   resolveModelAndEffort,
+  settleThreadWithRetry,
   t3ProjectFor,
   t3Seam,
   teamAutoSettleOff,
@@ -323,7 +325,8 @@ function renderStatus(team: string, entries: readonly RoleStatusEntry[], mode: M
     .map((e) => {
       const r = e.run;
       const items = r.item_count === null ? "" : `, ${r.item_count} items`;
-      return `${team} ${r.role}: run ${r.id}, thread ${r.thread_id ?? "(none)"} ${e.thread}${items}; started ${r.started_at}, last activity ${r.last_activity_at}`;
+      const context = r.context_tokens === null ? "" : `, ${r.context_tokens} context tokens`;
+      return `${team} ${r.role}: run ${r.id}, thread ${r.thread_id ?? "(none)"} ${e.thread}${items}${context}; started ${r.started_at}, last activity ${r.last_activity_at}`;
     })
     .join("\n");
 }
@@ -335,13 +338,33 @@ async function end(backend: RoleBackend, teamName: string, role: TeamRole, reaso
   if (!run) throw new AppError(`${team.name} ${role} has no open run`);
   const local = t3BaseUrl();
   if (run.t3_host !== local) throw new AppError(otherHostRefusal(run, local));
-  if (run.thread_id) {
-    const s = await seam();
-    try {
-      await s.settle(run.thread_id);
-    } catch (err) {
-      // A thread T3 no longer knows needs no settle; anything else (T3 unreachable) changes nothing.
-      if (!(err instanceof T3Error && err.kind === "refused")) throw err;
+  return endRoleRun(backend, team.name, run, reason, run.thread_id ? await seam() : null);
+}
+
+/**
+ * End one open run on this machine's T3: settle and unpin its thread, record the end (which releases the lease), and
+ * drop the role's seat when it still points at the thread. `retrySettle` (the tick, OS-57) settles through
+ * `settleThreadWithRetry`, so a run that is just finishing its turn does not fail the settle; `ob role end` settles once.
+ */
+export async function endRoleRun(
+  backend: RoleBackend,
+  team: string,
+  run: RoleRun,
+  reason: RoleRunEndReason,
+  s: T3Seam | null,
+  opts: { retrySettle?: boolean } = {},
+): Promise<RoleRun> {
+  if (run.thread_id && s) {
+    if (opts.retrySettle) {
+      const settled = await settleThreadWithRetry(s, run.thread_id);
+      if (!settled.settled) throw new AppError(`thread ${run.thread_id} would not settle (${settled.error}); run ${run.id} stays open`);
+    } else {
+      try {
+        await s.settle(run.thread_id);
+      } catch (err) {
+        // A thread T3 no longer knows needs no settle; anything else (T3 unreachable) changes nothing.
+        if (!(err instanceof T3Error && err.kind === "refused")) throw err;
+      }
     }
     try {
       await s.unpin(run.thread_id);
@@ -349,9 +372,9 @@ async function end(backend: RoleBackend, teamName: string, role: TeamRole, reaso
       warn(`role: thread ${run.thread_id} is settled but still pinned: ${(err as Error).message}`);
     }
   }
-  const ended = await backend.update(team.name, run.id, { end_reason: reason });
+  const ended = await backend.update(team, run.id, { end_reason: reason });
   // A seat left on the settled thread would keep catching handoff notes (a sentinel outranks the architect).
-  const seat = teamRoleAgentId(team.name, role);
+  const seat = teamRoleAgentId(team, run.role);
   if (run.thread_id && (await backend.team.registry.read(seat))?.session_id === run.thread_id) await backend.team.dropRow(seat);
   return ended;
 }
