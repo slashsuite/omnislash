@@ -82,7 +82,7 @@ export type Pacing =
 export interface GateEntry {
   ref: string;
   branch: string;
-  /** The `State:` line (or the recorded verdict), null when none was read. */
+  /** The `State:` text with its label (a recorded verdict adds a `Gate:` line), null when none was read. */
   state: string | null;
   missing: boolean;
 }
@@ -246,7 +246,8 @@ export function renderRoleBrief(f: RoleBriefFacts): string {
   );
   section(
     "PRs to gate",
-    capped(f.gate, (g) => `${g.ref} ${g.branch}: ${g.missing ? "worktree missing" : g.state ? `State: ${g.state}` : "no State line"}`),
+    // `state` already carries its `State:` label, and a recorded verdict adds a `Gate:` line: keep the first line only.
+    capped(f.gate, (g) => `${g.ref} ${g.branch}: ${g.missing ? "worktree missing" : (g.state?.split("\n")[0] ?? "no State line")}`),
   );
   section("Unread inbox", capped(f.inbox, (m) => `#${m.id} from ${m.from_actor} (${m.kind}): ${inboxFirstLine(m.body)}`));
   section("Open asks for the owner", capped(f.asks, (a) => `${a.id}: ${a.note?.trim() || "(no note)"}`));

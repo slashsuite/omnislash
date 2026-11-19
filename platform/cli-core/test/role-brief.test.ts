@@ -101,7 +101,7 @@ function maximalFacts(): RoleBriefFacts {
     next_total: 40,
     note: { run_id: 7, note_at: "2026-11-19T00:00:00.000Z", body: n(40).map((i) => `note line ${i} ${"y".repeat(90)}`).join("\n") },
     pacing: { known: true, used_percent: 44, elapsed_percent: 22, resets_at: "2026-11-24T00:00:00Z", ahead: true },
-    gate: n(18).map((i) => ({ ref: `PS-${i}`, branch: `ps-${i}`, state: "landable", missing: false })),
+    gate: n(18).map((i) => ({ ref: `PS-${i}`, branch: `ps-${i}`, state: "State: landable\nGate: green", missing: false })),
   };
 }
 
@@ -110,7 +110,7 @@ describe("renderRoleBrief", () => {
     const f = maximalFacts();
     f.rows = f.rows.slice(0, 2);
     f.gate = [
-      { ref: "PS-1", branch: "ps-1", state: "landable", missing: false },
+      { ref: "PS-1", branch: "ps-1", state: "State: landable\nGate: green", missing: false },
       { ref: "PS-2", branch: "ps-2", state: null, missing: true },
     ];
     f.inbox = [message(3, "first line\nsecond line")];
