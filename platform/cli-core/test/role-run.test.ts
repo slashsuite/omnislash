@@ -190,7 +190,9 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       expect(launch.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-opus-5-5" });
       expect("options" in launch.modelSelection).toBe(false);
       expect(launch.workspaceStrategy).toEqual({ type: "root" });
-      expect(launch.message!.startsWith("/ob-sentinel")).toBe(true);
+      // OS-55: the role's skill, a blank line, then the start brief.
+      expect(launch.message!.startsWith("/ob-sentinel\n\n# Brief for t sentinel\n")).toBe(true);
+      expect(launch.message).toContain("## Note from the last run");
       expect(f.pinned).toEqual(["t3-1"]);
       expect(f.autoSettleOff).toEqual(["t3-1"]);
     },

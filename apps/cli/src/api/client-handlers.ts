@@ -745,6 +745,12 @@ async function apiRole(ctx: ApiCtx): Promise<void> {
 			return { run: res.run, created: res.created === true };
 		},
 		update: async (team, id, patch) => (await client.roleRunUpdate(team, id, patch)).run,
+		// OS-55: the brief's store facts and the note live on the server; pacing and gate facts are read here.
+		briefFacts: async (team, role) => (await client.roleBrief(team, role)).facts,
+		noteShown: async (team, runId) => {
+			await client.roleNoteShown(team, runId);
+		},
+		note: async (team, role, body) => (await client.roleNote(team, { role, body })).run,
 	});
 }
 

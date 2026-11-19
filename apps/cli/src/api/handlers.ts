@@ -129,7 +129,8 @@ import {
   removeTeam,
 } from "../team.ts";
 import { consumeTeamHandoff, latestTeamHandoff, parseTeamRole, recordTeamHandoff, type HandoffFilter } from "../team-handoff.ts";
-import { markRoleRun, openRoleRuns, parseEndReason, updateRoleRun } from "../role-run.ts";
+import { markRoleNoteShown, markRoleRun, openRoleRuns, parseEndReason, updateRoleRun, writeRoleNote } from "../role-run.ts";
+import { roleBriefStoreFacts } from "../role-brief.ts";
 import { listRoleMessages, markRoleMessagesRead, sendRoleMessage, ROLE_MESSAGE_KINDS, type RoleMessageKind } from "../inbox.ts";
 import { clearCredentialCheck, defaultMasterKey, getSecret, listSecrets, masterKeyForWrite, removeSecret, setSecret, type MasterKey } from "../secrets.ts";
 import {
@@ -292,6 +293,8 @@ import type {
   RoleRunResponse,
   RoleRunsResponse,
   RoleRunUpdateRequest,
+  RoleBriefResponse,
+  RoleNoteRequest,
   RoleMessageRequest,
   RoleMessageResponse,
   RoleMessagesResponse,
@@ -1957,6 +1960,21 @@ export async function roleRunUpdate(store: Store, name: string, id: number, req:
       }),
     ),
   };
+}
+
+// --- a role's start brief and successor note (`ob role brief`, `ob role note`, OS-55) ----------------------
+
+export async function roleBriefFacts(store: Store, name: string, role: string | null): Promise<RoleBriefResponse> {
+  return { facts: await teamFault(() => roleBriefStoreFacts(store, name, parseTeamRole(role, "'role'"))) };
+}
+
+export async function roleNoteWrite(store: Store, name: string, req: RoleNoteRequest): Promise<RoleRunResponse> {
+  return { run: await teamFault(() => writeRoleNote(store, name, parseTeamRole(req.role, "'role'"), req.body)) };
+}
+
+export async function roleNoteShown(store: Store, name: string, runId: number): Promise<{ ok: true }> {
+  await teamFault(() => markRoleNoteShown(store, name, runId));
+  return { ok: true };
 }
 
 // --- a team role's inbox (`ob send`, `ob inbox`) ---------------------------------------------------------

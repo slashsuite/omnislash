@@ -1470,6 +1470,19 @@ async function route(
         return json(await h.roleMessagesRead(store, second, { role: reqString(body, "role"), ids: ids as number[], by: reqString(body, "by") }));
       }
     }
+    // A role's start brief and successor note (`ob role brief`, `ob role note`, OS-55).
+    if (third === "brief" && segments.length === 3 && method === "GET") {
+      return json(await h.roleBriefFacts(store, second, url.searchParams.get("role")));
+    }
+    if (third === "notes" && segments.length === 3 && method === "POST") {
+      const body = await readJson(req);
+      return json(await h.roleNoteWrite(store, second, { role: reqString(body, "role"), body: reqString(body, "body") }));
+    }
+    if (third === "runs" && segments.length === 5 && segments[4] === "note-shown" && method === "POST") {
+      const id = Number(segments[3]);
+      if (!Number.isInteger(id) || id <= 0) throw new ApiFault("invalid_request", 400, `run id '${segments[3]}' is not a positive integer`);
+      return json(await h.roleNoteShown(store, second, id));
+    }
     // Role runs (`ob role`).
     if (third === "runs") {
       if (segments.length === 3 && method === "GET") return json(await h.roleRunsOpen(store, second, url.searchParams.get("role")));

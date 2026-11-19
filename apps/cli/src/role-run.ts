@@ -9,7 +9,7 @@
 // `role-run-<id>` so any ob process can release it, is the start mutex `ob lease status` shows; its long TTL is only a
 // backstop, since nothing runs in a T3 thread to heartbeat it, so it is never read as liveness.
 import type { Database } from "bun:sqlite";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { asStore, type Store } from "./db/store.ts";
 import { AppError, UsageError } from "./errors.ts";
@@ -32,6 +32,11 @@ export interface RoleRun {
   context_tokens: number | null;
   ended_at: string | null;
   end_reason: RoleRunEndReason | null;
+  /** OS-55: the note this run leaves its successor (`ob role note`); null when none was written. */
+  successor_note: string | null;
+  note_at: string | null;
+  /** When a brief printed the note; null while it waits for the next run. */
+  note_shown_at: string | null;
 }
 
 const ROLE_RUN_END_REASONS = ["idle", "context", "gone", "manual", "superseded"] as const;
@@ -157,4 +162,80 @@ export async function updateRoleRun(db: Database | Store, team: string, id: numb
   const rows = (await s.q.update(t).set(set).where(and(eq(t.id, id), isNull(t.ended_at))).returning()) as RoleRun[];
   if (patch.end_reason !== undefined) await releaseLease(s, roleRunLeaseKey(team, run.role), roleRunHolder(id));
   return rows[0] ?? (await runById(s, team, id))!;
+}
+
+// --- the successor note (OS-55) ---------------------------------------------------------------------------
+
+/** A successor note's caps: a note over either is refused whole, never cut, so the writer trims it. */
+const ROLE_NOTE_MAX_LINES = 40;
+const ROLE_NOTE_MAX_CHARS = 4000;
+
+/** The note's line count: a trailing newline does not start another line. Pure. */
+export function roleNoteLines(body: string): number {
+  const trimmed = body.endsWith("\n") ? body.slice(0, -1) : body;
+  return trimmed.length === 0 ? 0 : trimmed.split("\n").length;
+}
+
+/** Refuse an empty note, or one over either cap, naming both counts and both limits. Pure. */
+export function checkRoleNote(body: string): void {
+  if (!body.trim()) throw new UsageError("the note is empty");
+  const lines = roleNoteLines(body);
+  const chars = body.length;
+  if (lines > ROLE_NOTE_MAX_LINES || chars > ROLE_NOTE_MAX_CHARS) {
+    throw new UsageError(
+      `the note is ${lines} lines and ${chars} characters; the limit is ${ROLE_NOTE_MAX_LINES} lines and ${ROLE_NOTE_MAX_CHARS} characters, so nothing was stored (trim it and write it again)`,
+    );
+  }
+}
+
+/** A note waiting for the next run: the run that wrote it, the text, and when. */
+export interface RoleNote {
+  run_id: number;
+  body: string;
+  note_at: string;
+}
+
+/**
+ * Store the successor note on the role's open run, else on its most recently ended run. A second note on the same
+ * run replaces the first and waits to be shown again. A role with no run at all refuses by name.
+ */
+export async function writeRoleNote(db: Database | Store, team: string, role: TeamRole, body: string): Promise<RoleRun> {
+  checkRoleNote(body);
+  const s = asStore(db);
+  await requireTeam(s, team);
+  const t = s.t.roleRun;
+  const [open] = await openRoleRuns(s, team, role);
+  const target =
+    open ??
+    ((await s.q.select().from(t).where(and(eq(t.team, team), eq(t.role, role))).orderBy(desc(t.ended_at), desc(t.id)).limit(1)) as RoleRun[])[0];
+  if (!target) throw new AppError(`${team} ${role} has no run to leave a note on (start one with \`ob role start ${team} ${role}\`)`);
+  const rows = (await s.q
+    .update(t)
+    .set({ successor_note: body, note_at: nowIso(), note_shown_at: null })
+    .where(eq(t.id, target.id))
+    .returning()) as RoleRun[];
+  return rows[0]!;
+}
+
+/** The newest note on (team, role) that no brief has shown yet, or null. */
+export async function pendingRoleNote(db: Database | Store, team: string, role: TeamRole): Promise<RoleNote | null> {
+  const s = asStore(db);
+  await requireTeam(s, team);
+  const t = s.t.roleRun;
+  const rows = (await s.q
+    .select()
+    .from(t)
+    .where(and(eq(t.team, team), eq(t.role, role), isNotNull(t.successor_note), isNull(t.note_shown_at)))
+    .orderBy(desc(t.note_at), desc(t.id))
+    .limit(1)) as RoleRun[];
+  const run = rows[0];
+  return run ? { run_id: run.id, body: run.successor_note!, note_at: run.note_at! } : null;
+}
+
+/** Mark a run's note shown, so the next brief prints `none`. A note already shown keeps its first time. */
+export async function markRoleNoteShown(db: Database | Store, team: string, runId: number): Promise<void> {
+  const s = asStore(db);
+  await requireTeam(s, team);
+  const t = s.t.roleRun;
+  await s.q.update(t).set({ note_shown_at: nowIso() }).where(and(eq(t.id, runId), eq(t.team, team), isNull(t.note_shown_at)));
 }
