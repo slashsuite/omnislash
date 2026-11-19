@@ -48,6 +48,11 @@ import {
 import { refuseUnreadFlags } from "./capture.ts";
 import type { TeamBackend } from "./t3-team.ts";
 import { storeTeamBackend } from "./t3.ts";
+import { runRoleTick, type TickBackend } from "./role-tick.ts";
+import { storeInboxBackend } from "./inbox.ts";
+import { tickFindings } from "../role-tick.ts";
+import { parseJsonMap } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { settingFor } from "../settings.ts";
 
 /** Where the runs live: the store on this machine, or the API. The T3 half is the caller's. */
 export interface RoleBackend {
@@ -75,7 +80,7 @@ export interface RoleRunCtx {
   exit?: number;
 }
 
-const ROLE_SUBCOMMANDS = "start|status|end|brief|note";
+const ROLE_SUBCOMMANDS = "start|status|end|brief|note|tick";
 
 /**
  * The model a role run opens on: the complex tier at the model's default effort (no options sent). The provider is
@@ -122,6 +127,7 @@ function flagsFor(sub: string): string[] {
   if (sub === "end") return ["reason"];
   if (sub === "brief") return ["peek"];
   if (sub === "note") return ["body", "body-file"];
+  if (sub === "tick") return ["team"];
   return [];
 }
 
@@ -350,17 +356,26 @@ async function end(backend: RoleBackend, teamName: string, role: TeamRole, reaso
   return ended;
 }
 
-/** `ob role start <team> <role>`, `ob role status <team> [<role>]`, `ob role end <team> <role> [--reason <r>]`. */
-export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam?: T3Seam): Promise<void> {
+/**
+ * `ob role start <team> <role>`, `ob role status <team> [<role>]`, `ob role end <team> <role> [--reason <r>]`, and
+ * `ob role tick [--team <t>]` (OS-67), which needs `tick`: its findings and inbox.
+ */
+export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam?: T3Seam, tick?: TickBackend): Promise<void> {
   const sub = ctx.args[0];
   if (!sub) throw new UsageError(`role needs a subcommand: ${ROLE_SUBCOMMANDS}`);
-  if (!["start", "status", "end", "brief", "note"].includes(sub)) throw new UsageError(`unknown role subcommand '${sub}' (${ROLE_SUBCOMMANDS})`);
+  if (!["start", "status", "end", "brief", "note", "tick"].includes(sub)) throw new UsageError(`unknown role subcommand '${sub}' (${ROLE_SUBCOMMANDS})`);
   refuseUnreadFlags(`ob role ${sub}`, ctx.flags, flagsFor(sub));
+  const lazySeam = async () => seam ?? (await t3Seam());
+  if (sub === "tick") {
+    if (ctx.args.length > 1) throw new UsageError(`role tick takes no arguments (name teams with --team), got: ${ctx.args.slice(1).join(" ")}`);
+    if (!tick) throw new AppError("role tick has no findings source here");
+    await runRoleTick(ctx, tick, lazySeam);
+    return;
+  }
   const team = ctx.args[1];
   if (!team) throw new UsageError(`role ${sub} requires a <team>`);
   const roleArg = ctx.args[2];
   if (ctx.args.length > 3) throw new UsageError(`role ${sub} takes <team> <role>, got: ${ctx.args.slice(1).join(" ")}`);
-  const lazySeam = async () => seam ?? (await t3Seam());
 
   if (sub === "status") {
     const role = roleArg === undefined ? undefined : parseTeamRole(roleArg, "<role>");
@@ -432,7 +447,20 @@ export function storeRoleBackend(store: Database | Store): RoleBackend {
   };
 }
 
+/** `ob role tick` on this machine: the teams, the findings and the inbox from the store. */
+export function storeTickBackend(store: Database | Store): TickBackend {
+  const team = storeTeamBackend(store);
+  return {
+    role: storeRoleBackend(store),
+    inbox: storeInboxBackend(store),
+    teams: () => team.list(),
+    checkouts: async () => parseJsonMap(await settingFor(store, "repo_checkouts")),
+    findings: (name) => tickFindings(store, name),
+  };
+}
+
 /** `ob role` on this machine: the runs and the team from the store. */
 export async function cmdRole(ctx: Ctx): Promise<void> {
-  await runRoleCommand(ctx, storeRoleBackend(ctx.store ?? ctx.db));
+  const store = ctx.store ?? ctx.db;
+  await runRoleCommand(ctx, storeRoleBackend(store), undefined, storeTickBackend(store));
 }

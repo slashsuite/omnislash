@@ -153,6 +153,7 @@ type SpinoffsQuery,
   type RoleRunsResponse,
   type RoleRunUpdateRequest,
   type RoleBriefResponse,
+  type RoleTickResponse,
   type RoleNoteRequest,
   type RoleMessageRequest,
   type RoleMessageResponse,
@@ -1208,6 +1209,10 @@ export class ApiClient {
 	}
 
 	// --- a role's start brief and successor note (`ob role brief`, `ob role note`) ---
+
+	roleTick(name: string): Promise<RoleTickResponse> {
+		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/tick`);
+	}
 
 	roleBrief(name: string, role: string): Promise<RoleBriefResponse> {
 		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/brief${queryString({ role })}`);

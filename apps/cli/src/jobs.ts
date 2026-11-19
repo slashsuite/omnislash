@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { readNumber, type Store } from "./db/store.ts";
 import { settingFor, settingNumFor } from "./settings.ts";
-import { daemonJobs, type PlistOpts } from "../../../platform/cli-coord/src/commands/coord.ts";
+import { daemonJobs, isClientJob, type PlistOpts } from "../../../platform/cli-coord/src/commands/coord.ts";
 import { isSplitInvocation } from "./remote.ts";
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,8 @@ export function declaredJobs(): DeclaredJob[] {
       positionals,
       flags,
       cadence_s: cadenceSeconds(j.opts),
-      trackable: !isSplitInvocation(positionals[0] ?? "", positionals.slice(1)),
+      // OS-67: a client job (`role-tick`) runs on a laptop or desktop, so this database never sees its runs.
+      trackable: !isSplitInvocation(positionals[0] ?? "", positionals.slice(1)) && !isClientJob(j.job),
     };
   });
 }

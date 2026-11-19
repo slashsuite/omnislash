@@ -6,6 +6,9 @@
 //
 // The store half (rows, runs) goes through the backends, so the same procedure serves the store and the API client;
 // T3 is always the caller's own.
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { InboxBackend } from "./commands/inbox.ts";
 import type { RoleBackend } from "./commands/role.ts";
 import type { RoleMessage } from "./inbox.ts";
@@ -87,4 +90,27 @@ export function renderDelivery(d: DeliverOutcome): string {
   const n = `${d.ids.length} message${d.ids.length === 1 ? "" : "s"}`;
   if (d.kind === "started") return `run ${d.run.id} opened, thread ${d.thread_id}, with ${n} in its start brief, marked read by ${roleRunHolder(d.run.id)}`;
   return `${n} queued into run ${d.run.id}, thread ${d.thread_id}, marked read by ${roleRunHolder(d.run.id)}`;
+}
+
+/** The good-night lock file under a home directory (skills/ob-good-night): one ISO timestamp, the lock's end. Pure. */
+function nightLockPath(home: string): string {
+  return join(home, ".cache", "ob-good-night");
+}
+
+/**
+ * When the good-night lock ends, while it holds: read at call time from `$HOME/.cache/ob-good-night`. A missing,
+ * empty or unparseable file, or a time not in the future, is unlocked (null). `ob role tick` writes findings under the
+ * lock but starts and sends nothing; `ob send` does not read it.
+ */
+export function nightLockedUntil(now: Date = new Date(), home: string = process.env.HOME || homedir()): string | null {
+  let raw: string;
+  try {
+    raw = readFileSync(nightLockPath(home), "utf8").trim();
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  const until = Date.parse(raw);
+  if (!Number.isFinite(until) || until <= now.getTime()) return null;
+  return raw;
 }

@@ -50,6 +50,7 @@ import type { Team, TeamView } from "../team.ts";
 import type { TeamHandoff } from "../team-handoff.ts";
 import type { RoleRun } from "../role-run.ts";
 import type { RoleBriefStoreFacts } from "../role-brief.ts";
+import type { TickFinding } from "../role-tick.ts";
 import type { RoleMessage } from "../inbox.ts";
 import type { JournalEntry, JournalType } from "../commands/log.ts";
 import type { JobHealth } from "../jobs.ts";
@@ -312,6 +313,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/teams/:name/runs", what: "the team's open role runs (?role= keeps one role's)" },
   { method: "POST", path: "/teams/:name/runs", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
   { method: "POST", path: "/teams/:name/runs/:id", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
+  { method: "GET", path: "/teams/:name/tick", what: "what needs the team's architect, from the store (`ob role tick`, OS-67): stale builders, unfixed flakes, idle projects; each with its stamp" },
   { method: "GET", path: "/teams/:name/brief", what: "the store facts of a role's start brief (?role=); a read, so the waiting note stays until note-shown" },
   { method: "POST", path: "/teams/:name/notes", what: "store a role's successor note on its open run, else its last ended one ({role, body}; 40 lines, 4000 characters)" },
   { method: "POST", path: "/teams/:name/runs/:id/note-shown", what: "mark a run's successor note shown (after `ob role brief` printed it or `ob role start` delivered it)" },
@@ -1792,6 +1794,11 @@ export interface RoleRunUpdateRequest {
   item_count?: number | null;
   last_activity_at?: string;
   end_reason?: string;
+}
+
+// `ob role tick`'s findings (OS-67), read on the server where the store is.
+export interface RoleTickResponse {
+  findings: TickFinding[];
 }
 
 // A role's start brief and successor note (`ob role brief`, `ob role note`, OS-55).

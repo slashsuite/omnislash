@@ -1471,6 +1471,9 @@ async function route(
       }
     }
     // A role's start brief and successor note (`ob role brief`, `ob role note`, OS-55).
+    if (third === "tick" && segments.length === 3 && method === "GET") {
+      return json(await h.roleTickFindings(store, second));
+    }
     if (third === "brief" && segments.length === 3 && method === "GET") {
       return json(await h.roleBriefFacts(store, second, url.searchParams.get("role")));
     }

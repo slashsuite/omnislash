@@ -169,8 +169,9 @@ describe("routing: one data path, or a loud refusal (353, map decision D2/D3)", 
 		const s = stub({});
 		const r = await runCli(freshDbPath(), ["daemon", "status"], api(s));
 		expect(r.code).toBe(0);
-		// No client job remains (1589), so the answer is the named "nothing here", never a server unit.
-		expect(r.out).toContain("no client jobs remain");
+		// The one client job is role-tick (OS-67), so the answer is its local unit, never a server unit.
+		expect(r.out).toContain("role-tick");
+		expect(r.out).toContain("role tick");
 		expect(r.out).not.toContain("omnislash-sync");
 		expect(r.out).not.toContain("com.omnislash.sync");
 		expect(s.calls).toEqual([]);
