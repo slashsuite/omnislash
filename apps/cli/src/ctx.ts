@@ -47,6 +47,8 @@ export interface Flags {
   max?: string;
   "updated-after"?: string;
   by?: string;
+  /** `ob inbox --read <id>`: the first message id to mark read. */
+  read?: string;
   limit?: string;
   remote?: string;
   /** OB-2116: `project add|edit --icon <emoji>`; '' clears on edit. */

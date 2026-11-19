@@ -152,6 +152,9 @@ type SpinoffsQuery,
   type RoleRunResponse,
   type RoleRunsResponse,
   type RoleRunUpdateRequest,
+  type RoleMessageRequest,
+  type RoleMessageResponse,
+  type RoleMessagesResponse,
   type ProjectRenameRequest,
   type ProjectRenameResponse,
   type BriefResponse,
@@ -1200,6 +1203,20 @@ export class ApiClient {
 
 	roleRunUpdate(name: string, id: number, body: RoleRunUpdateRequest): Promise<RoleRunResponse> {
 		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/runs/${id}`, body);
+	}
+
+	// --- a team role's inbox (`ob send`, `ob inbox`) ---
+
+	roleMessageSend(name: string, body: RoleMessageRequest): Promise<RoleMessageResponse> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/inbox`, body);
+	}
+
+	roleMessages(name: string, role: string, unread: boolean): Promise<RoleMessagesResponse> {
+		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/inbox${queryString({ role, unread: unread ? "true" : "false" })}`);
+	}
+
+	roleMessagesRead(name: string, role: string, ids: number[], by: string): Promise<RoleMessagesResponse> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/inbox/read`, { role, ids, by });
 	}
 
 	brief(query: { q?: string; in_flight?: boolean } = {}): Promise<BriefResponse> {

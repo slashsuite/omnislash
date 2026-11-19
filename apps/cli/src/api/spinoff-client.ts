@@ -647,6 +647,8 @@ async function composeReadyOverApi(
     spike,
     spikeCommitted: spikeDoc?.committed ?? false,
     prUrl: spikeDoc?.prUrl ?? null,
+    inbox: (msg) =>
+      ctx.client.roleMessageSend(msg.team, { role: msg.role, from: builderIdOf(row), kind: "handoff", ref: msg.ref, body: msg.body, client_key: msg.clientKey }),
   });
 }
 

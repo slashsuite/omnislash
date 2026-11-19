@@ -748,6 +748,36 @@ async function apiRole(ctx: ApiCtx): Promise<void> {
 	});
 }
 
+/** `ob send` / `ob inbox` over the API: the messages live on the server, so any machine reaches them. */
+function apiInboxBackend(ctx: ApiCtx): import("../commands/inbox.ts").InboxBackend {
+	const { client } = ctx;
+	return {
+		send: async (input) => {
+			const res = await client.roleMessageSend(input.team, {
+				role: input.role,
+				from: input.from,
+				kind: input.kind,
+				ref: input.ref ?? null,
+				body: input.body,
+				client_key: input.clientKey ?? null,
+			});
+			return { message: res.message, created: res.created };
+		},
+		list: async (team, role, all) => (await client.roleMessages(team, role, !all)).messages,
+		read: async (team, role, ids, by) => (await client.roleMessagesRead(team, role, ids, by)).messages,
+	};
+}
+
+async function apiSend(ctx: ApiCtx): Promise<void> {
+	const { runSend } = await import("../commands/inbox.ts");
+	await runSend(ctx, apiInboxBackend(ctx));
+}
+
+async function apiInbox(ctx: ApiCtx): Promise<void> {
+	const { runInbox } = await import("../commands/inbox.ts");
+	await runInbox(ctx, apiInboxBackend(ctx));
+}
+
 async function apiReopen(ctx: ApiCtx): Promise<void> {
 	const id = requireId(ctx, "reopen");
 	refuseDryRun(ctx, "reopen");
@@ -2625,6 +2655,8 @@ export const API_HANDLERS: Record<string, (ctx: ApiCtx) => Promise<void>> = {
 	// 1120: `t3` is SPLIT -- doctor/login run here, the architect's thread is opened here, its row is served.
 	t3: apiT3,
 	role: apiRole,
+	send: apiSend,
+	inbox: apiInbox,
 	// 366: `whatsapp` is SPLIT -- all served (OB-1809) but `bridge run|start|stop`, which refuse by name inside.
 	whatsapp: apiWhatsapp,
 	// 415: gmail/cal/agenda are served (sync runs on the host).

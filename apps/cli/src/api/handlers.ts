@@ -130,6 +130,7 @@ import {
 } from "../team.ts";
 import { consumeTeamHandoff, latestTeamHandoff, parseTeamRole, recordTeamHandoff, type HandoffFilter } from "../team-handoff.ts";
 import { markRoleRun, openRoleRuns, parseEndReason, updateRoleRun } from "../role-run.ts";
+import { listRoleMessages, markRoleMessagesRead, sendRoleMessage, ROLE_MESSAGE_KINDS, type RoleMessageKind } from "../inbox.ts";
 import { clearCredentialCheck, defaultMasterKey, getSecret, listSecrets, masterKeyForWrite, removeSecret, setSecret, type MasterKey } from "../secrets.ts";
 import {
   DEFAULT_SCOPES,
@@ -291,6 +292,10 @@ import type {
   RoleRunResponse,
   RoleRunsResponse,
   RoleRunUpdateRequest,
+  RoleMessageRequest,
+  RoleMessageResponse,
+  RoleMessagesResponse,
+  RoleMessagesReadRequest,
   TeamHandoffResponse,
   ProjectRenameResponse,
   BriefResponse,
@@ -1952,6 +1957,32 @@ export async function roleRunUpdate(store: Store, name: string, id: number, req:
       }),
     ),
   };
+}
+
+// --- a team role's inbox (`ob send`, `ob inbox`) ---------------------------------------------------------
+
+export async function roleMessageSend(store: Store, name: string, req: RoleMessageRequest): Promise<RoleMessageResponse> {
+  const kind = req.kind ?? "message";
+  if (!(ROLE_MESSAGE_KINDS as readonly string[]).includes(kind)) throw new ApiFault("invalid_request", 400, `'kind' must be one of ${ROLE_MESSAGE_KINDS.join("|")}`);
+  return teamFault(() =>
+    sendRoleMessage(store, {
+      team: name,
+      role: parseTeamRole(req.role, "'role'"),
+      from: req.from,
+      kind: kind as RoleMessageKind,
+      ref: req.ref ?? null,
+      body: req.body,
+      clientKey: req.client_key ?? null,
+    }),
+  );
+}
+
+export async function roleMessagesList(store: Store, name: string, role: string | null, unread: boolean): Promise<RoleMessagesResponse> {
+  return { messages: await teamFault(() => listRoleMessages(store, name, parseTeamRole(role, "'role'"), { all: !unread })) };
+}
+
+export async function roleMessagesRead(store: Store, name: string, req: RoleMessagesReadRequest): Promise<RoleMessagesResponse> {
+  return { messages: await teamFault(() => markRoleMessagesRead(store, name, parseTeamRole(req.role, "'role'"), req.ids, req.by)) };
 }
 
 export async function briefRead(store: Store, q: string | null, inFlight: boolean): Promise<BriefResponse> {

@@ -2,6 +2,9 @@ import type { Database } from "bun:sqlite";
 import type { DecisionOpts } from "./decisions.ts";
 import type { Store } from "./db/store.ts";
 import { closeItem } from "./workflow.ts";
+import { getItem } from "./items.ts";
+import { withdrawHandoffs } from "./inbox.ts";
+import { warn } from "./output.ts";
 import type { TokenUsage } from "../../../platform/cli-coord/src/spinoff-tokens.ts";
 import { landClosedItemSpinoffs } from "../../../platform/cli-coord/src/commands/spinoff.ts";
 
@@ -22,5 +25,13 @@ export async function closeAndLand(
   tokensById: Record<number, TokenUsage> = {},
 ): Promise<CloseAndLandResult> {
   await closeItem(db, id, decision);
-  return landClosedItemSpinoffs(db, id, decision, tokensById);
+  const result = await landClosedItemSpinoffs(db, id, decision, tokensById);
+  // The ticket's unread handoffs in any role's inbox are moot now. Best effort: the close stands whatever happens.
+  try {
+    const item = await getItem(db, id);
+    await withdrawHandoffs(db, [id, item?.id ?? "", item?.ref ?? "", ...result.landed, ...result.ended]);
+  } catch (err) {
+    warn(`inbox: ${id} closed, but its unread handoffs were not withdrawn: ${(err as Error).message}`);
+  }
+  return result;
 }

@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, writeSync
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError } from "../../../../apps/cli/src/errors.ts";
+import { sendRoleMessage } from "../../../../apps/cli/src/inbox.ts";
 import { print, warn } from "../../../../apps/cli/src/output.ts";
 import { nowIso } from "../../../../apps/cli/src/db.ts";
 import { getConfig, setConfig } from "../../../../apps/cli/src/config.ts";
@@ -4053,6 +4054,7 @@ async function announceReadyForRow(
     spike,
     spikeCommitted: spikeDoc?.committed ?? false,
     prUrl: spikeDoc?.prUrl ?? null,
+    inbox: (msg) => sendRoleMessage(store, { ...msg, from: builderIdOf(row), kind: "handoff" }),
   });
   return recordReadyNoteOutcome(store, row.id, outcome);
 }

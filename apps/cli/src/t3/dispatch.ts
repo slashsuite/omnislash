@@ -39,7 +39,8 @@ import { UsageError } from "../errors.ts";
 import { SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
 import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
-import { isTeamRoleAgent, teamRoleAgentId, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
+import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
+import { storeHandoffQuietly, type HandoffMessage } from "../inbox.ts";
 import { itemDispatchRefs, spinoffRowsServingItem, type ServingRows } from "../../../../platform/cli-coord/src/spinoff-item.ts";
 import { NEEDS_YOU_MARKER, stateDisplayLines } from "../../../../platform/cli-coord/src/spinoff-state-reason.ts";
 import { spinoffStatusWord } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
@@ -2285,6 +2286,11 @@ export interface ReadyNoteInput {
   seam?: T3Seam;
   /** OB-2172: the sleep before the one retry; a test passes a fake to see the wait. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Store the note in the target role's inbox too (a `handoff` row), where the caller's store or API is. Its failure
+   * never stops the T3 note: it is one stderr line (`inbox: handoff not stored (<reason>)`).
+   */
+  inbox?: (msg: Omit<HandoffMessage, "from">) => Promise<unknown>;
 }
 
 /** OB-2172: how long a failed readying note waits before its one retry. A guess: the first try may already have waited 15 s. */
@@ -2325,19 +2331,8 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
   if (route.kind === "skip") return skipped(route.reason);
   if (route.kind === "failed") return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: route.reason };
   const target = route.target;
-  let targetRow: { session_id: string | null; launcher: string | null } | null;
-  try {
-    targetRow = await registry.read(target.agentId);
-  } catch (err) {
-    return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: `could not read the registry row ${target.agentId}: ${(err as Error).message}` };
-  }
-  const threadId = teamThreadIdOf(targetRow);
-  if (!threadId) {
-    return skipped(`no ${target.label} thread: run \`ob t3 architect ${target.team}\``);
-  }
 
-  // Read HERE, one line above the compose, so the timestamp is the composition and not an earlier
-  // moment in the caller (the architect lookup and the seam build happen before this).
+  // Composed before the thread is looked up, so the role's inbox gets the note even when no thread is bound now.
   const composedAt = new Date().toISOString();
   const note = input.spike
     ? spikeAnsweredNote({
@@ -2363,6 +2358,22 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
         ...(row.repo !== undefined ? { repo: row.repo } : {}),
       });
   const clientRequestId = readyNoteRequestId(row.id, input.headSha ?? null, input.state);
+  const role = teamRoleOf(target.agentId);
+  if (input.inbox && role) {
+    const write = input.inbox;
+    await storeHandoffQuietly(() => write({ team: target.team, role, ref: row.ticket_ref, body: note, clientKey: clientRequestId }), warn);
+  }
+
+  let targetRow: { session_id: string | null; launcher: string | null } | null;
+  try {
+    targetRow = await registry.read(target.agentId);
+  } catch (err) {
+    return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: `could not read the registry row ${target.agentId}: ${(err as Error).message}` };
+  }
+  const threadId = teamThreadIdOf(targetRow);
+  if (!threadId) {
+    return skipped(`no ${target.label} thread: run \`ob t3 architect ${target.team}\``);
+  }
   // One try: the reason it failed, or null when T3 took the note.
   // `permanent` is a missing, expired or rejected credential: a retry 5 s later cannot fix it, so it is not tried.
   let permanent = false;

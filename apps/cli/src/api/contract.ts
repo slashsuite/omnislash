@@ -49,6 +49,7 @@ import type { Project } from "../project.ts";
 import type { Team, TeamView } from "../team.ts";
 import type { TeamHandoff } from "../team-handoff.ts";
 import type { RoleRun } from "../role-run.ts";
+import type { RoleMessage } from "../inbox.ts";
 import type { JournalEntry, JournalType } from "../commands/log.ts";
 import type { JobHealth } from "../jobs.ts";
 import type { Alert } from "../commands/alerts.ts";
@@ -310,6 +311,9 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/teams/:name/runs", what: "the team's open role runs (?role= keeps one role's)" },
   { method: "POST", path: "/teams/:name/runs", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
   { method: "POST", path: "/teams/:name/runs/:id", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
+  { method: "POST", path: "/teams/:name/inbox", what: "store a message for a team role (`ob send`); a handoff's client_key stores it once" },
+  { method: "GET", path: "/teams/:name/inbox", what: "a team role's messages, oldest first (?role=; unread and not withdrawn unless ?unread=false)" },
+  { method: "POST", path: "/teams/:name/inbox/read", what: "mark a role's messages read by a run or agent ({role, ids, by})" },
   { method: "GET", path: "/brief", what: "work-state brief (?q= id, or ?in_flight=true)" },
   { method: "GET", path: "/log", what: "standup journal entries (?type=&since=)" },
   { method: "POST", path: "/log", what: "capture a journal entry (kudos|suggestion|comment)" },
@@ -1794,6 +1798,32 @@ export interface RoleRunResponse {
 
 export interface RoleRunsResponse {
   runs: RoleRun[];
+}
+
+// A team role's inbox (`ob send`, `ob inbox`).
+export interface RoleMessageRequest {
+  role: string;
+  from: string;
+  kind?: "message" | "handoff";
+  ref?: string | null;
+  body: string;
+  client_key?: string | null;
+}
+
+export interface RoleMessageResponse {
+  message: RoleMessage;
+  /** False when a message with the same client_key was already stored, which is the one answered. */
+  created: boolean;
+}
+
+export interface RoleMessagesResponse {
+  messages: RoleMessage[];
+}
+
+export interface RoleMessagesReadRequest {
+  role: string;
+  ids: number[];
+  by: string;
 }
 
 export interface TeamRemoveResponse {

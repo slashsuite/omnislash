@@ -15,6 +15,13 @@
       "when": 1795011663445,
       "tag": "0001_role_run",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795013821081,
+      "tag": "0002_role_message",
+      "breakpoints": true
     }
   ]
 }
