@@ -10,6 +10,7 @@
 //     unchanged: one note, exactly one.
 //   * `ob close` withdraws a readying note the architect is still HOLDING for the ticket it just landed,
 //     which is the same 1188 guard (never announce landed work) applied to the queued vehicle.
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -182,7 +183,7 @@ function fakeSeam(held: Record<string, T3QueuedMessage[]> = {}): FakeArchitect {
     projects: unimplemented("projects") as T3Seam["projects"],
     capabilities: unimplemented("capabilities") as T3Seam["capabilities"],
     list: unimplemented("list") as T3Seam["list"],
-    read: unimplemented("read") as T3Seam["read"],
+    read: liveRead,
     launch: unimplemented("launch") as T3Seam["launch"],
     rename: unimplemented("rename") as T3Seam["rename"],
     settle: async (threadId) => {
@@ -548,18 +549,18 @@ describe("ob spinoff ready --no-note (1205)", () => {
     fakeGit();
     await seedReadyable(db);
     await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+    await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1205"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain(`note:      queued on ${ARCHITECT_THREAD}`);
+    expect(res.out).toContain(`note:      omnislash architect: 1 message queued into run 1, thread ${ARCHITECT_THREAD}`);
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.message).toContain(readyNoteOpening("1205"));
-    // A repeat is STILL one note (1133's retry key): the flag changes nothing about that.
+    // A repeat is STILL one note (OS-56: it stores no new handoff, so nothing new is delivered): the flag changes nothing about that.
     expect((await runCli(dbPath, ["spinoff", "ready", "1205"])).code).toBe(0);
-    expect(fake.sends).toHaveLength(2);
-    expect(fake.sends[0]!.clientRequestId).toBe(fake.sends[1]!.clientRequestId);
+    expect(fake.sends).toHaveLength(1);
   });
 });
 

@@ -4,7 +4,12 @@
 import type { Ctx, Flags } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { listRoleMessages, markRoleMessagesRead, parseMessageIds, sendRoleMessage, type RoleMessage, type RoleMessageInput } from "../inbox.ts";
-import { print, type Mode } from "../output.ts";
+import { print, warn, type Mode } from "../output.ts";
+import type { Database } from "bun:sqlite";
+import type { Store } from "../db/store.ts";
+import { deliverToRole, renderDelivery, type DeliverOutcome } from "../role-deliver.ts";
+import { t3Seam } from "../t3/dispatch.ts";
+import { storeRoleBackend } from "./role.ts";
 import { parseTeamRole } from "../team-handoff.ts";
 import type { TeamRole } from "../team.ts";
 import { refuseUnreadFlags } from "./capture.ts";
@@ -21,7 +26,11 @@ export interface InboxCtx {
   mode: Mode;
   flags: Flags;
   args: string[];
+  exit?: number;
 }
+
+/** OS-56: deliver the role's unread messages into its run (see ../role-deliver.ts). */
+export type Deliver = (team: string, role: TeamRole) => Promise<DeliverOutcome>;
 
 /** The sender when `--from` is not given. */
 const DEFAULT_FROM = "owner";
@@ -39,9 +48,12 @@ function renderMessage(m: RoleMessage): string {
   return [`#${m.id} ${m.kind}${ref} from ${m.from_actor} at ${m.created_at}${read}${withdrawn}`, ...m.body.split("\n").map((l) => `  ${l}`)].join("\n");
 }
 
-/** `ob send <team> <role> "<body>" [--body-file <path>] [--from <id>]`. */
-export async function runSend(ctx: InboxCtx, backend: InboxBackend): Promise<void> {
-  refuseUnreadFlags("ob send", ctx.flags, ["body-file", "from"]);
+/**
+ * `ob send <team> <role> "<body>" [--body-file <path>] [--from <id>] [--no-deliver]`. The message is stored first, then
+ * delivered into the role's run (OS-56); a delivery that fails leaves it stored and unread, and exits 1.
+ */
+export async function runSend(ctx: InboxCtx, backend: InboxBackend, deliver: Deliver): Promise<void> {
+  refuseUnreadFlags("ob send", ctx.flags, ["body-file", "from", "no-deliver"]);
   const { team, role } = teamAndRole("send", ctx.args);
   const inline = ctx.args.slice(2);
   const fromFile = bodyFromFlags({ "body-file": ctx.flags["body-file"] });
@@ -50,9 +62,26 @@ export async function runSend(ctx: InboxCtx, backend: InboxBackend): Promise<voi
   if (!body.trim()) throw new UsageError(`send needs a message: ob send ${team} ${role} "<text>" (or --body-file <path>)`);
   const from = ctx.flags.from?.trim() || DEFAULT_FROM;
   const { message } = await backend.send({ team, role, from, kind: "message", body });
-  if (ctx.mode === "json") print(JSON.stringify(message, null, 2));
+  let delivery: DeliverOutcome | null = null;
+  let failure: string | null = null;
+  if (ctx.flags["no-deliver"] !== true) {
+    try {
+      delivery = await deliver(team, role);
+    } catch (err) {
+      failure = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").trim();
+    }
+  }
+  if (ctx.mode === "json") print(JSON.stringify({ ...message, delivery, delivery_error: failure }, null, 2));
   else if (ctx.mode === "quiet") print(String(message.id));
-  else print(`${team} ${role}: message #${message.id} stored`);
+  else print(`${team} ${role}: message #${message.id} stored${delivery ? `; ${renderDelivery(delivery)}` : ""}`);
+  if (delivery?.kind === "started" && delivery.auto_settle_warning) {
+    warn(delivery.auto_settle_warning);
+    ctx.exit = 1;
+  }
+  if (failure !== null) {
+    warn(`send: message #${message.id} is stored and unread, but was not delivered (${failure})`);
+    ctx.exit = 1;
+  }
 }
 
 /** `ob inbox <team> <role> [--all] [--json|-q]`, or `--read <id>... --by <run|agent id>`. */
@@ -81,8 +110,8 @@ export async function runInbox(ctx: InboxCtx, backend: InboxBackend): Promise<vo
   else print(messages.map(renderMessage).join("\n"));
 }
 
-function storeBackend(ctx: Ctx): InboxBackend {
-  const store = ctx.store ?? ctx.db;
+/** The inbox on this machine's store. */
+export function storeInboxBackend(store: Database | Store): InboxBackend {
   return {
     send: (input) => sendRoleMessage(store, input),
     list: (team, role, all) => listRoleMessages(store, team, role, { all }),
@@ -91,9 +120,11 @@ function storeBackend(ctx: Ctx): InboxBackend {
 }
 
 export async function cmdSend(ctx: Ctx): Promise<void> {
-  await runSend(ctx, storeBackend(ctx));
+  const store = ctx.store ?? ctx.db;
+  const inbox = storeInboxBackend(store);
+  await runSend(ctx, inbox, (team, role) => deliverToRole(storeRoleBackend(store), inbox, () => t3Seam(), team, role));
 }
 
 export async function cmdInbox(ctx: Ctx): Promise<void> {
-  await runInbox(ctx, storeBackend(ctx));
+  await runInbox(ctx, storeInboxBackend(ctx.store ?? ctx.db));
 }

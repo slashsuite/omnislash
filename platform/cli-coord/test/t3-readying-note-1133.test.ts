@@ -5,6 +5,10 @@
 // message ob sends, so "the architect is told" and "the builder is told it landed" are checkable without a
 // server, and the two properties that matter most are pinned explicitly — a headless row sends nothing,
 // and a failed send never rolls back the stamp.
+import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
+import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
+import { worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -70,7 +74,7 @@ function fakeSeam(): FakeSeam {
     projects: unimplemented("projects") as T3Seam["projects"],
     capabilities: unimplemented("capabilities") as T3Seam["capabilities"],
     list: unimplemented("list") as T3Seam["list"],
-    read: unimplemented("read") as T3Seam["read"],
+    read: liveRead,
     launch: unimplemented("launch") as T3Seam["launch"],
     rename: unimplemented("rename") as T3Seam["rename"],
     settle: async (threadId) => {
@@ -470,6 +474,9 @@ async function seedReadyable(db: ReturnType<typeof freshDb>, launcher: string, t
   });
 }
 
+/** OS-56: the checkout a started role run opens in, as `ob role start` resolves it. */
+const CWD_REPO = worktreeRepoOf(checkoutOf(process.cwd())) ?? checkoutOf(process.cwd());
+
 describe("ob spinoff ready tells the architect (1133)", () => {
   test("the note goes to the pinned architect thread and the stamp is unchanged", async () => {
     const dbPath = freshDbPath();
@@ -477,13 +484,14 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
     await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(0);
     expect(res.out).toContain("1133 handed off");
-    expect(res.out).toContain("note:      queued on architect-thread-1");
+    expect(res.out).toContain("note:      omnislash architect: 1 message queued into run 1, thread architect-thread-1");
     expect(res.out).not.toContain("told");
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.message).toContain("gate:      nx typecheck clean; skeptical-review: 3 cut, 0 open");
@@ -493,33 +501,35 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     expect(db.query("SELECT status FROM spinoff WHERE ticket_ref = '1133'").get()).toMatchObject({ status: "ready-for-gate" });
   });
 
-  test("ready twice is one note: the retry key is identical, so T3 keeps one message", async () => {
+  test("ready twice is one note: the second stores no new handoff, so nothing new is delivered (OS-56)", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
     await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
     expect((await runCli(dbPath, ["spinoff", "ready", "1133"])).code).toBe(0);
     expect((await runCli(dbPath, ["spinoff", "ready", "1133"])).code).toBe(0);
-    expect(fake.sends).toHaveLength(2);
-    expect(fake.sends[0]!.clientRequestId).toBe(fake.sends[1]!.clientRequestId);
+    expect(fake.sends).toHaveLength(1);
+    expect(fake.sends[0]!.clientRequestId).toBe("ob-role-msg-1");
   });
 
-  test("no architect thread: the named skip, exit 0, and the stamp still applied", async () => {
+  test("no architect thread: the handoff starts the architect's run (OS-56), exit 0, and the stamp still applied", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
-    const fake = fakeSeam();
-    restores.push(__setT3Seam(fake.seam));
+    const t3 = installFakeT3([CWD_REPO]);
+    restores.push(t3.restore);
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain("no omnislash architect thread: run `ob t3 architect omnislash`");
-    expect(fake.sends).toHaveLength(0);
+    expect(res.out).toContain("note:      omnislash architect: run 1 opened, thread t3-1, with 1 message in its start brief");
+    expect(t3.launches).toHaveLength(1);
+    expect(t3.sends).toHaveLength(0);
     expect(db.query("SELECT status FROM spinoff WHERE ticket_ref = '1133'").get()).toMatchObject({ status: "ready-for-gate" });
   });
 
@@ -529,6 +539,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
     await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await openRunsOnSeats(db);
     const fake = fakeSeam();
     fake.failSend = true;
     restores.push(__setT3Seam(fake.seam));
@@ -560,6 +571,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
     await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 

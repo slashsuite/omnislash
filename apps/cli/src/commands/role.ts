@@ -13,6 +13,7 @@ import {
   openRoleRuns,
   parseEndReason,
   roleNoteLines,
+  roleRunHolder,
   roleRunLeaseKey,
   updateRoleRun,
   writeRoleNote,
@@ -21,6 +22,9 @@ import {
 } from "../role-run.ts";
 import { gatherRoleBrief, readPacing, renderRoleBrief, roleBriefStoreFacts, type BriefRow, type RoleBriefFacts, type RoleBriefStoreFacts } from "../role-brief.ts";
 import { bodyFromFlags } from "./doc.ts";
+import type { Database } from "bun:sqlite";
+import type { Store } from "../db/store.ts";
+import { markRoleMessagesRead } from "../inbox.ts";
 import { t3Cache } from "./usage.ts";
 import { existsSync } from "node:fs";
 import { rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
@@ -59,6 +63,8 @@ export interface RoleBackend {
   noteShown(team: string, runId: number): Promise<void>;
   /** OS-55: store the successor note on the role's open run, else its last ended one. */
   note(team: string, role: TeamRole, body: string): Promise<RoleRun>;
+  /** OS-56: mark inbox messages read by a run, once its start brief listed them. */
+  readMessages(team: string, role: TeamRole, ids: number[], by: string): Promise<unknown>;
 }
 
 export interface RoleRunCtx {
@@ -95,14 +101,15 @@ function briefSeams(backend: RoleBackend) {
 /**
  * The brief a new run is seeded with (its note is marked shown once the launch went through). A brief that cannot be built never blocks the start: the seed says so and names the command.
  */
-async function seedBrief(backend: RoleBackend, team: string, role: TeamRole): Promise<{ text: string; noteRun: number | null }> {
+async function seedBrief(backend: RoleBackend, team: string, role: TeamRole): Promise<{ text: string; noteRun: number | null; inboxIds: number[] }> {
   try {
     const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date());
-    return { text: renderRoleBrief(facts), noteRun: facts.note?.run_id ?? null };
+    // Every unread message, not only the ones the rendered list shows: the run reads the rest with `ob inbox`.
+    return { text: renderRoleBrief(facts), noteRun: facts.note?.run_id ?? null, inboxIds: facts.inbox.map((m) => m.id) };
   } catch (err) {
     const reason = (err as Error).message;
     warn(`role: the start brief could not be built (${reason})`);
-    return { text: `The start brief could not be built (${reason}); run \`ob role brief ${team} ${role}\`.`, noteRun: null };
+    return { text: `The start brief could not be built (${reason}); run \`ob role brief ${team} ${role}\`.`, noteRun: null, inboxIds: [] };
   }
 }
 
@@ -142,6 +149,8 @@ interface RoleStartOutcome {
   /** The run ended as gone on the way, when its thread was no longer live. */
   ended: RoleRun | null;
   auto_settle_warning: string | null;
+  /** OS-56: the inbox messages a new run's start brief listed, marked read by `role-run-<id>`; empty on a reuse. */
+  inbox_ids: number[];
 }
 
 function renderStart(o: RoleStartOutcome, mode: Mode): string {
@@ -165,7 +174,8 @@ function noThreadRefusal(run: RoleRun, title: string): string {
   );
 }
 
-async function start(backend: RoleBackend, teamName: string, role: TeamRole, seam: T3Seam): Promise<RoleStartOutcome> {
+/** `ob role start`: reuse the role's open run while its thread is live, else open one. Also the delivery path (OS-56). */
+export async function startRoleRun(backend: RoleBackend, teamName: string, role: TeamRole, seam: T3Seam): Promise<RoleStartOutcome> {
   const team = await requireTeam(backend, teamName);
   const local = t3BaseUrl();
   const title = teamThreadTitle(team, role);
@@ -186,7 +196,7 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
     await pointSeat(backend.team.registry, team.name, role, run.thread_id, repoPath).catch((err: unknown) =>
       warn(`role: ${teamRoleAgentId(team.name, role)} still points elsewhere: ${(err as Error).message}`),
     );
-    return { team: team.name, role, run: touched, thread_id: run.thread_id, created: false, ended, auto_settle_warning: null };
+    return { team: team.name, role, run: touched, thread_id: run.thread_id, created: false, ended, auto_settle_warning: null, inbox_ids: [] };
   };
 
   const [open] = await backend.open(team.name, role);
@@ -244,10 +254,29 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
   if (brief.noteRun !== null) {
     await backend.noteShown(team.name, brief.noteRun).catch((err: unknown) => warn(`role: the note was delivered but not marked shown: ${(err as Error).message}`));
   }
-  await seam.pin(threadId);
+  if (brief.inboxIds.length > 0) {
+    // A failed mark leaves the messages unread: a later delivery queues them into this run, so none is lost.
+    await backend
+      .readMessages(team.name, role, brief.inboxIds, roleRunHolder(run.id))
+      .catch((err: unknown) => warn(`role: the start brief listed the inbox but it was not marked read: ${(err as Error).message}`));
+  }
+  // The run is recorded and its brief delivered (and marked read), so nothing after this fails the start: a refused pin
+  // or seat is a warning, as on the reuse path.
+  await seam.pin(threadId).catch((err: unknown) => warn(`role: thread ${threadId} is not pinned: ${(err as Error).message}`));
   const settle = await teamAutoSettleOff(seam, threadId);
-  await pointSeat(backend.team.registry, team.name, role, threadId, async () => cwd);
-  return { team: team.name, role, run: recorded, thread_id: threadId, created: true, ended, auto_settle_warning: settle.autoSettleWarning };
+  await pointSeat(backend.team.registry, team.name, role, threadId, async () => cwd).catch((err: unknown) =>
+    warn(`role: ${teamRoleAgentId(team.name, role)} still points elsewhere: ${(err as Error).message}`),
+  );
+  return {
+    team: team.name,
+    role,
+    run: recorded,
+    thread_id: threadId,
+    created: true,
+    ended,
+    auto_settle_warning: settle.autoSettleWarning,
+    inbox_ids: brief.inboxIds,
+  };
 }
 
 /** The activity a thread header reports: its item count and when it last changed. Pure. */
@@ -367,7 +396,7 @@ export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam
     return;
   }
   if (sub === "start") {
-    const outcome = await start(backend, team, role, await lazySeam());
+    const outcome = await startRoleRun(backend, team, role, await lazySeam());
     print(renderStart(outcome, ctx.mode));
     if (outcome.auto_settle_warning) {
       warn(outcome.auto_settle_warning);
@@ -389,10 +418,9 @@ function renderBriefOutput(facts: RoleBriefFacts, mode: Mode): string {
   return renderRoleBrief(facts);
 }
 
-/** `ob role` on this machine: the runs and the team from the store. */
-export async function cmdRole(ctx: Ctx): Promise<void> {
-  const store = ctx.store ?? ctx.db;
-  await runRoleCommand(ctx, {
+/** The role backend on this machine: the runs, the team and the inbox from the store. */
+export function storeRoleBackend(store: Database | Store): RoleBackend {
+  return {
     team: storeTeamBackend(store),
     open: (team, role) => openRoleRuns(store, team, role),
     mark: (team, role, t3Host) => markRoleRun(store, { team, role, t3Host }),
@@ -400,5 +428,11 @@ export async function cmdRole(ctx: Ctx): Promise<void> {
     briefFacts: (team, role) => roleBriefStoreFacts(store, team, role),
     noteShown: (team, runId) => markRoleNoteShown(store, team, runId),
     note: (team, role, body) => writeRoleNote(store, team, role, body),
-  });
+    readMessages: (team, role, ids, by) => markRoleMessagesRead(store, team, role, ids, by),
+  };
+}
+
+/** `ob role` on this machine: the runs and the team from the store. */
+export async function cmdRole(ctx: Ctx): Promise<void> {
+  await runRoleCommand(ctx, storeRoleBackend(ctx.store ?? ctx.db));
 }

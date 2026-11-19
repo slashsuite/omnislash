@@ -41,6 +41,7 @@ import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
 import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
 import { storeHandoffQuietly, type HandoffMessage } from "../inbox.ts";
+import { renderDelivery, type DeliverOutcome } from "../role-deliver.ts";
 import { itemDispatchRefs, spinoffRowsServingItem, type ServingRows } from "../../../../platform/cli-coord/src/spinoff-item.ts";
 import { NEEDS_YOU_MARKER, stateDisplayLines } from "../../../../platform/cli-coord/src/spinoff-state-reason.ts";
 import { spinoffStatusWord } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
@@ -2257,6 +2258,8 @@ export interface ReadyNoteOutcome {
   recordedOn?: number;
   /** OB-2172: the row's `note_error` could not be written (or cleared), and why; printed as its own warning. */
   recordError?: string;
+  /** OS-56: what the delivery into the role's run did, printed instead of the seat send's line. */
+  via?: string;
 }
 
 export interface ReadyNoteInput {
@@ -2291,6 +2294,11 @@ export interface ReadyNoteInput {
    * never stops the T3 note: it is one stderr line (`inbox: handoff not stored (<reason>)`).
    */
   inbox?: (msg: Omit<HandoffMessage, "from">) => Promise<unknown>;
+  /**
+   * OS-56: deliver the role's inbox into its run (`deliverToRole`), starting one if none is open. Used instead of the
+   * seat send whenever the inbox write took; a write that failed keeps the seat send, so no note is lost.
+   */
+  deliver?: (team: string, role: TeamRole, seam: () => Promise<T3Seam>) => Promise<DeliverOutcome>;
 }
 
 /** OB-2172: how long a failed readying note waits before its one retry. A guess: the first try may already have waited 15 s. */
@@ -2359,9 +2367,47 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
       });
   const clientRequestId = readyNoteRequestId(row.id, input.headSha ?? null, input.state);
   const role = teamRoleOf(target.agentId);
+  let stored = false;
   if (input.inbox && role) {
     const write = input.inbox;
-    await storeHandoffQuietly(() => write({ team: target.team, role, ref: row.ticket_ref, body: note, clientKey: clientRequestId }), warn);
+    stored = await storeHandoffQuietly(() => write({ team: target.team, role, ref: row.ticket_ref, body: note, clientKey: clientRequestId }), warn);
+  }
+  if (stored && role && input.deliver) {
+    const label = `${target.team} ${role}`;
+    const deliver = input.deliver;
+    const once = () => deliver(target.team, role, async () => input.seam ?? (await t3Seam()));
+    try {
+      let d: DeliverOutcome;
+      try {
+        d = await once();
+      } catch (err) {
+        // OB-2172's one retry: a credential problem cannot clear in 5 s; anything else may. Messages T3 took are already
+        // marked read, so the retry sends only the rest, under the same request ids.
+        // Only a T3 error is retried: a refusal from the run's start (an AppError) would only refuse again.
+        const permanent = !(err instanceof T3Error) || err.kind === "credential_missing" || err.kind === "credential_expired" || err.kind === "credential_rejected";
+        if (permanent) throw err;
+        await (input.sleep ?? defaultSleep)(readyNoteRetryMs);
+        d = await once();
+      }
+      if (d.kind === "other-host") return skipped(`${label}: ${renderDelivery(d)}`);
+      if (d.kind === "started" && d.auto_settle_warning) warn(d.auto_settle_warning);
+      // `idle` is a handoff already read by a run (stored on an earlier handoff, delivered then or by a later send): it
+      // reached the role, so it counts as sent and clears any note failure the row still records.
+      if (d.kind === "idle") {
+        return { ticket: row.ticket_ref, threadId: null, outcome: "sent", reason: null, via: `${label}: nothing unread to deliver; this handoff was already given to its run` };
+      }
+      return {
+        ticket: row.ticket_ref,
+        threadId: d.thread_id,
+        outcome: "sent",
+        reason: null,
+        headSha: input.headSha ?? null,
+        repeat: input.repeat === true,
+        via: `${label}: ${renderDelivery(d)}`,
+      };
+    } catch (err) {
+      return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: t3Reason(`the ${label} run was not reached (the handoff is stored, unread)`, err) };
+    }
   }
 
   let targetRow: { session_id: string | null; launcher: string | null } | null;
@@ -2798,6 +2844,7 @@ export function renderReadyNoteOutcome(outcome: ReadyNoteOutcome): { line: strin
 }
 
 function renderReadyNoteLine(outcome: ReadyNoteOutcome): { line: string; warning: boolean } {
+  if (outcome.outcome === "sent" && outcome.via) return { line: `  note:      ${outcome.via}`, warning: false };
   if (outcome.outcome === "sent") {
     // OB-1805: T3 answers a deduplicated send exactly like a fresh one, so "told" is a claim ob cannot make.
     const at = outcome.headSha ? ` for ${outcome.headSha.slice(0, 7)}` : "";

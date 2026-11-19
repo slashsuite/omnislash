@@ -230,6 +230,8 @@ export interface Flags {
   /** ob 1683: `whatsapp send --file <path>` (repeatable). */
   file?: string[];
   "no-github"?: boolean;
+  /** OS-56: `ob send` stores the message and delivers nothing. */
+  "no-deliver"?: boolean;
   book?: string;
   "external-id"?: string;
   // ob 165 — person identity number + attached documents. `reveal` is the explicit opt-in that prints

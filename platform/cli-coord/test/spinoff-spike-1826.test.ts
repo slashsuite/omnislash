@@ -5,6 +5,7 @@
 // documentation, and a close that retires the row without calling it a landing.
 // In-process against a fresh SQLite database, a fake T3 and a fake shell: no network, no live store. Tests
 // cannot show a real spike passing through; the architect runs one after the land (the ticket's live Done-when item).
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -182,6 +183,7 @@ async function seedSpikeRow(s: Seeded, repo = "/r/omnislash"): Promise<{ wt: str
   await registerAgent(db, { id: s.spike, ticket: s.spike, branch: "spike-branch", worktree: wt, status: "working", ttlS: 900 });
   omnislashTeamFor(db, s.spike);
   await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+  await openRunsOnSeats(db);
   db.close();
   return { wt, rowId: row.id };
 }
@@ -204,7 +206,7 @@ function fakeSeam(): { seam: T3Seam; sends: T3SendInput[]; settled: string[] } {
     projects: unimplemented("projects") as T3Seam["projects"],
     capabilities: unimplemented("capabilities") as T3Seam["capabilities"],
     list: unimplemented("list") as T3Seam["list"],
-    read: unimplemented("read") as T3Seam["read"],
+    read: liveRead,
     launch: unimplemented("launch") as T3Seam["launch"],
     rename: unimplemented("rename") as T3Seam["rename"],
     settle: async (threadId) => {

@@ -2,6 +2,7 @@
 // fake `gh`: no network, no GitHub, no live DB. The guard itself is driven with fixtures for each rollup shape;
 // the local command (`ob spinoff handoff` through runCli) is driven end to end. The API client path is driven
 // in platform/cli-core/test/api-spinoff-360.test.ts, where its stubbed transport lives.
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -305,6 +306,7 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
     await registerAgent(db, { id: "ob-2044", ticket: itemId, branch: "ob-2044", worktree: wt, status: "readying", note: "moon clean; skeptical-review: 0 cut, 0 open", ttlS: 900 });
     omnislashTeamFor(db, itemId);
     await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await openRunsOnSeats(db);
     db.close();
     const sends: T3SendInput[] = [];
     const unused = (name: string) => async () => {
@@ -316,7 +318,7 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
         projects: unused("projects"),
         capabilities: unused("capabilities"),
         list: unused("list"),
-        read: unused("read"),
+        read: liveRead,
         launch: unused("launch"),
         rename: unused("rename"),
         settle: async () => {},

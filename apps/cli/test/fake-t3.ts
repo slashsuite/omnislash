@@ -1,4 +1,4 @@
-import { T3Error, type T3LaunchInput, type T3Thread } from "../src/t3/client.ts";
+import { T3Error, type T3LaunchInput, type T3SendInput, type T3Thread } from "../src/t3/client.ts";
 import { __setT3Seam, type T3Seam } from "../src/t3/dispatch.ts";
 
 /**
@@ -20,6 +20,8 @@ export interface FakeT3Install {
   /** Every thread id `disableAutoSettle` was called with (OB-1845). */
   autoSettleOff: string[];
   threads: T3Thread[];
+  /** Every send, in order (OS-56: a delivery into a role's run). */
+  sends: T3SendInput[];
   restore: () => void;
 }
 
@@ -43,6 +45,7 @@ export function installFakeT3(
   const renamed: Array<{ threadId: string; title: string }> = [];
   const autoSettleOff: string[] = [];
   const threads: T3Thread[] = [];
+  const sends: T3SendInput[] = [];
   const projects = repoPaths.map((workspaceRoot, i) => ({
     id: `proj-${i}`,
     title: `repo-${i}`,
@@ -125,7 +128,9 @@ export function installFakeT3(
       const t = threads.find((x) => x.threadId === threadId);
       if (t) t.settled = true;
     },
-    send: async () => {},
+    send: async (input) => {
+      sends.push(input);
+    },
     wait: async () => ({ runId: null, status: "idle", timedOut: false }),
     queue: async () => ({ items: [], complete: true }),
     pin: async (threadId) => {
@@ -140,5 +145,5 @@ export function installFakeT3(
     queueCancel: async () => {},
   };
   const restore = __setT3Seam(seam);
-  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, restore };
+  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, sends, restore };
 }
