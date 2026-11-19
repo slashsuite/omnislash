@@ -9,7 +9,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { freshDbPath, runCli, type CliResult } from "../../../apps/cli/test/helpers.ts";
 import { installFakeT3, type FakeT3Install } from "../../../apps/cli/test/fake-t3.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { __setT3Seam, t3Seam, worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
+import { __setT3Seam, storeAgentRegistry, t3Seam, worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
 import { T3_BASE_URL_ENV } from "../../../apps/cli/src/t3/client.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { sendRoleMessage, type RoleMessage } from "../../../apps/cli/src/inbox.ts";
@@ -98,7 +98,44 @@ async function runs(store: Store): Promise<RoleRun[]> {
   return (await store.q.select().from(t).orderBy(t.id)) as RoleRun[];
 }
 
+
+/** OS-82: a live thread `seat-1` in the fake T3, bound as the role's seat the way `ob t3 architect --thread` binds it. */
+async function bindSeat(store: Store, f: FakeT3Install, role = "architect", threadId = "seat-1"): Promise<void> {
+  f.threads.push({
+    threadId,
+    projectId: "proj-0",
+    title: `t · ${role}`,
+    status: "idle",
+    worktreePath: null,
+    branch: null,
+    settled: false,
+    archived: false,
+    model: "claude-opus-5-5",
+    providerInstanceId: "claudeAgent",
+    activeRunId: null,
+    latestRunId: null,
+  });
+  await storeAgentRegistry(store).register({ id: `${role}-t`, worktree: REPO, status: "planning", launcher: "t3", sessionId: threadId, ttlS: 3600 });
+}
+
 const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
+  [
+    "OS-82: with a live seat and no run, send queues one message into the seat, marks it read by the seat, opens no run",
+    async (h) => {
+      const f = t3();
+      await bindSeat(h.store, f);
+      const res = await h.run(["send", "t", "architect", "x"]);
+      expect(res.err).toBe("");
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("t architect: message #1 stored; 1 message queued into seat thread seat-1");
+      expect(f.launches).toHaveLength(0);
+      expect(f.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["seat-1", "queue", "ob-role-msg-1"]]);
+      expect(f.sends[0]!.message).toBe("x\n\n(inbox #1 from owner, message; marked read by this seat)");
+      expect((await messages(h.store))[0]).toMatchObject({ read_by: "seat:architect-t" });
+      expect(await runs(h.store)).toEqual([]);
+      expect((await storeAgentRegistry(h.store).read("architect-t"))?.session_id).toBe("seat-1");
+    },
+  ],
   [
     "send with no open run starts one run whose brief lists the message, and marks it read by the run",
     async (h) => {

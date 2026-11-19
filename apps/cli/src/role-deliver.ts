@@ -1,8 +1,9 @@
 // Delivery into a role's run (OS-56): what `ob send` and a builder's handoff do once the message is stored.
 //
 // The role's unread messages go into its open run on this machine's T3 (queued, so a busy thread finishes its turn
-// first). With no open run, `ob role start`'s path opens one whose start brief lists every unread message. A run open
-// on another machine's T3 is left alone: the messages stay unread for that run, or the next one, to read.
+// first). With no open run and a live seat thread (OS-82, until OS-58), they are queued into the seat as it is and no
+// run is opened. Else `ob role start`'s path opens a run whose start brief lists every unread message. A run open on
+// another machine's T3 is left alone: the messages stay unread for that run, or the next one, to read.
 //
 // The store half (rows, runs) goes through the backends, so the same procedure serves the store and the API client;
 // T3 is always the caller's own.
@@ -15,14 +16,21 @@ import type { RoleMessage } from "./inbox.ts";
 import { roleRunHolder, type RoleRun } from "./role-run.ts";
 import { t3BaseUrl } from "./t3/client.ts";
 import type { T3Seam } from "./t3/dispatch.ts";
-import type { TeamRole } from "./team.ts";
+import { teamRoleAgentId, type TeamRole } from "./team.ts";
 
 /** What a delivery did. `ids` are the messages marked read by the run. */
 export type DeliverOutcome =
   | { kind: "idle" }
   | { kind: "other-host"; run: RoleRun; host: string }
   | { kind: "started"; run: RoleRun; thread_id: string; ids: number[]; auto_settle_warning: string | null }
-  | { kind: "queued"; run: RoleRun; thread_id: string; ids: number[] };
+  | { kind: "queued"; run: RoleRun; thread_id: string; ids: number[] }
+  /** OS-82: the role's seat is a live thread and no run is open: the messages were queued into the seat as it is. */
+  | { kind: "seat"; thread_id: string; ids: number[] };
+
+/** Who marks a message read when it was queued into a live seat with no run (OS-82): `seat:architect-omnibus`. Pure. */
+export function seatReader(agentId: string): string {
+  return `seat:${agentId}`;
+}
 
 /** The T3 request id a queued message carries, so a retry of one message is one delivery. Pure. */
 export function roleMessageRequestId(id: number): string {
@@ -33,9 +41,9 @@ export function roleMessageRequestId(id: number): string {
  * The text a queued message arrives as: its body, then one line naming it. The body comes first because `ob close`
  * finds a held readying note by its first line (`isReadyingNoteFor`) and withdraws it once the ticket has landed. Pure.
  */
-export function queuedText(m: RoleMessage): string {
+export function queuedText(m: RoleMessage, by: "run" | "seat" = "run"): string {
   const ref = m.ref ? ` ${m.ref}` : "";
-  return [m.body, "", `(inbox #${m.id} from ${m.from_actor}, ${m.kind}${ref}; marked read by this run)`].join("\n");
+  return [m.body, "", `(inbox #${m.id} from ${m.from_actor}, ${m.kind}${ref}; marked read by this ${by})`].join("\n");
 }
 
 /**
@@ -59,7 +67,7 @@ export async function deliverToRole(
   const { startRoleRun } = await import("./commands/role.ts");
   const s = await seam();
   const started = await startRoleRun(backend, team, role, s);
-  const reader = roleRunHolder(started.run.id);
+  const reader = started.run ? roleRunHolder(started.run.id) : seatReader(teamRoleAgentId(team, role));
   const briefIds = started.inbox_ids;
   // Anything still unread and not in the brief: every message for a reused run, and only a late arrival for a new one.
   const pending = (await inbox.list(team, role, false)).filter((m) => !briefIds.includes(m.id));
@@ -67,7 +75,7 @@ export async function deliverToRole(
   let sendError: unknown = null;
   for (const m of pending) {
     try {
-      await s.send({ threadId: started.thread_id, message: queuedText(m), mode: "queue", clientRequestId: roleMessageRequestId(m.id) });
+      await s.send({ threadId: started.thread_id, message: queuedText(m, started.run ? "run" : "seat"), mode: "queue", clientRequestId: roleMessageRequestId(m.id) });
     } catch (err) {
       sendError = err;
       break;
@@ -78,6 +86,7 @@ export async function deliverToRole(
   if (queued.length > 0) await inbox.read(team, role, queued, reader);
   if (sendError !== null) throw sendError;
   const ids = [...briefIds, ...queued];
+  if (!started.run) return { kind: "seat", thread_id: started.thread_id, ids };
   return started.created
     ? { kind: "started", run: started.run, thread_id: started.thread_id, ids, auto_settle_warning: started.auto_settle_warning }
     : { kind: "queued", run: started.run, thread_id: started.thread_id, ids };
@@ -88,6 +97,7 @@ export function renderDelivery(d: DeliverOutcome): string {
   if (d.kind === "idle") return "nothing unread to deliver";
   if (d.kind === "other-host") return `run ${d.run.id} is open on ${d.host}; message stored`;
   const n = `${d.ids.length} message${d.ids.length === 1 ? "" : "s"}`;
+  if (d.kind === "seat") return `${n} queued into seat thread ${d.thread_id}`;
   if (d.kind === "started") return `run ${d.run.id} opened, thread ${d.thread_id}, with ${n} in its start brief, marked read by ${roleRunHolder(d.run.id)}`;
   return `${n} queued into run ${d.run.id}, thread ${d.thread_id}, marked read by ${roleRunHolder(d.run.id)}`;
 }

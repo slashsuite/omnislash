@@ -147,13 +147,46 @@ async function pointSeat(registry: AgentRegistry, team: string, role: TeamRole, 
   await registry.register({ id, worktree: await repoPath(), status: "planning", launcher: T3_LAUNCHER, sessionId: threadId, ttlS: T3_AGENT_TTL_S });
 }
 
-/** What `start` did: reused the open run, or opened a new one (`ended` is the run it replaced). */
+/**
+ * The role's seat thread when it is a live T3 thread, else null (no seat, another launcher, settled, archived or gone).
+ * A T3 that cannot be reached throws, as a reuse does, so an outage never reads as "no seat" and launches over one.
+ */
+export async function liveSeatThread(backend: RoleBackend, team: string, role: TeamRole, seam: T3Seam): Promise<string | null> {
+  const row = await backend.team.registry.read(teamRoleAgentId(team, role));
+  if (row?.launcher !== T3_LAUNCHER || !row.session_id) return null;
+  try {
+    const thread = await readThreadHeader(seam, row.session_id);
+    return thread.settled || thread.archived ? null : row.session_id;
+  } catch (err) {
+    // A thread T3 no longer knows is a dead seat, read quietly: the launch that follows moves the seat off it.
+    if (err instanceof T3Error && err.kind === "refused") return null;
+    throw err;
+  }
+}
+
+/**
+ * The T3 request id a run's launch carries. Unique across stores and launches: role_run ids start at 1 in every store,
+ * and T3 dedups a launch on its request id (OB-2128), so `ob-role-run-<id>` alone handed a new run an old proof's
+ * thread (OS-82). A retry never relaunches the same run (an open run with no thread refuses), so the time part loses
+ * nothing. Pure.
+ */
+export function roleRunRequestId(team: string, role: TeamRole, runId: number, nowMs: number): string {
+  return `ob-role-run-${team}-${role}-${runId}-${nowMs.toString(36)}`;
+}
+
+/**
+ * What `start` did: reused the open run, opened a new one (`ended` is the run it replaced), or (`seat`, OS-82) found
+ * the role's seat a live thread and opened nothing: until the OS-58 cut-over a live seat is used as it is.
+ */
 interface RoleStartOutcome {
   team: string;
   role: TeamRole;
-  run: RoleRun;
+  /** Null exactly when `seat` is true. */
+  run: RoleRun | null;
   thread_id: string;
   created: boolean;
+  /** OS-82: the thread is the role's live seat, used as it is; no run was opened, launched, pinned or moved. */
+  seat: boolean;
   /** The run ended as gone on the way, when its thread was no longer live. */
   ended: RoleRun | null;
   auto_settle_warning: string | null;
@@ -166,11 +199,13 @@ function renderStart(o: RoleStartOutcome, mode: Mode): string {
   if (mode === "quiet") return o.thread_id;
   const lines: string[] = [];
   if (o.ended) lines.push(`${o.team} ${o.role}: run ${o.ended.id} ended (gone): its thread ${o.ended.thread_id ?? "(none)"} is no longer live`);
-  lines.push(
-    o.created
-      ? `${o.team} ${o.role}: run ${o.run.id} opened, thread ${o.thread_id} (pinned)`
-      : `${o.team} ${o.role}: run ${o.run.id} is open, thread ${o.thread_id}; nothing launched`,
-  );
+  if (!o.run) lines.push(`${o.team} ${o.role}: seat thread ${o.thread_id} is live; no run opened (the seat is used as it is until OS-58)`);
+  else
+    lines.push(
+      o.created
+        ? `${o.team} ${o.role}: run ${o.run.id} opened, thread ${o.thread_id} (pinned)`
+        : `${o.team} ${o.role}: run ${o.run.id} is open, thread ${o.thread_id}; nothing launched`,
+    );
   return lines.join("\n");
 }
 
@@ -182,7 +217,10 @@ function noThreadRefusal(run: RoleRun, title: string): string {
   );
 }
 
-/** `ob role start`: reuse the role's open run while its thread is live, else open one. Also the delivery path (OS-56). */
+/**
+ * `ob role start`: reuse the role's open run while its thread is live; else use the role's live seat thread as it is
+ * (OS-82, until OS-58); else open a run. Also the delivery path (OS-56).
+ */
 export async function startRoleRun(backend: RoleBackend, teamName: string, role: TeamRole, seam: T3Seam): Promise<RoleStartOutcome> {
   const team = await requireTeam(backend, teamName);
   const local = t3BaseUrl();
@@ -204,13 +242,20 @@ export async function startRoleRun(backend: RoleBackend, teamName: string, role:
     await pointSeat(backend.team.registry, team.name, role, run.thread_id, repoPath).catch((err: unknown) =>
       warn(`role: ${teamRoleAgentId(team.name, role)} still points elsewhere: ${(err as Error).message}`),
     );
-    return { team: team.name, role, run: touched, thread_id: run.thread_id, created: false, ended, auto_settle_warning: null, inbox_ids: [] };
+    return { team: team.name, role, run: touched, thread_id: run.thread_id, created: false, seat: false, ended, auto_settle_warning: null, inbox_ids: [] };
   };
 
   const [open] = await backend.open(team.name, role);
   if (open) {
     const reused = await reuse(open);
     if (reused) return reused;
+  }
+
+  // OS-82: a live seat (`ob t3 architect`, `ob t3 team restart`) is not launched over, moved or settled: no run is
+  // opened for it, so the OS-57 end pass never settles it either. A run starts only for a role with no live seat.
+  const seatThread = await liveSeatThread(backend, team.name, role, seam);
+  if (seatThread) {
+    return { team: team.name, role, run: null, thread_id: seatThread, created: false, seat: true, ended, auto_settle_warning: null, inbox_ids: [] };
   }
 
   // Everything that can refuse is resolved before the marker is written, so a refusal leaves nothing behind.
@@ -240,7 +285,7 @@ export async function startRoleRun(backend: RoleBackend, teamName: string, role:
       modelSelection: { instanceId: resolved.model.selection.instanceId, model: resolved.model.selection.model },
       runtimeMode: T3_DEFAULT_RUNTIME_MODE,
       workspaceStrategy: { type: "root" },
-      clientRequestId: `ob-role-run-${run.id}`,
+      clientRequestId: roleRunRequestId(team.name, role, run.id, Date.now()),
     });
     threadId = launched.threadId;
   } catch (err) {
@@ -281,6 +326,7 @@ export async function startRoleRun(backend: RoleBackend, teamName: string, role:
     run: recorded,
     thread_id: threadId,
     created: true,
+    seat: false,
     ended,
     auto_settle_warning: settle.autoSettleWarning,
     inbox_ids: brief.inboxIds,

@@ -1151,6 +1151,10 @@ T3 Code (1102), the execution-plane seam:
                             Every 'ob t3' subcommand refuses a flag it does not read with exit 2, before any T3 call.
   role start <team> <role>   ONE RUN PER TEAM ROLE (architect, sentinel, muse), recorded in role_run. Reuses the open run
                             while its thread is live and prints it ('run <id> is open, thread <id>; nothing launched').
+                            With no open run and a live seat thread (the 'agent <role>-<team>' row, bound by 'ob t3
+                            architect' or 'team restart'), the seat is used as it is until OS-58: no run, no launch,
+                            no pin, no seat move ('seat thread <id> is live; no run opened'). The launch request id
+                            is 'ob-role-run-<team>-<role>-<id>-<time>', unique across stores (OS-82).
                             Otherwise opens a new T3 thread in the cwd's checkout on claude-opus-5-5 at the model's
                             default effort (no options sent), seeded with '/ob-<role>' and the start brief (role brief),
                             pinned, auto-settle off. A thread that is settled, archived or gone ends its run with reason
@@ -1198,8 +1202,8 @@ T3 Code (1102), the execution-plane seam:
                             none prints 'skip <team>: no checkout here' and the pass goes on. It writes each finding
                             from the store into the architect's inbox, from 'tick', keyed
                             'tick:<team>:<kind>:<ref>:<stamp>' so an unchanged finding writes nothing:
-                            stale-builder (a building row whose agent heartbeat, or with no agent row its launch, is
-                            over 60 minutes old), flake (an open flake item with no live spinoff row) and idle-repo
+                            stale-builder (a building row launched by t3 whose agent heartbeat, or with no agent row
+                            its launch, is over 60 minutes old; rows of retired launchers are skipped), flake (an open flake item with no live spinoff row) and idle-repo
                             (a member project with no live spinoff row whose first non-blocked item would dispatch
                             today). Then it delivers the unread messages as 'send' does, into a run opened in that
                             checkout. No unread messages prints 'role tick <team>: nothing new', delivers nothing
@@ -1224,10 +1228,13 @@ T3 Code (1102), the execution-plane seam:
                             unread messages into its run. The role must be the architect or one bound on the team
                             ('ob t3 team show <team>'), else it is refused by name and nothing is stored. Delivery: an
                             open run on this machine's T3 gets each unread message queued into its thread (mode queue,
-                            request id 'ob-role-msg-<id>'); no open run starts one ('role start') whose brief lists
+                            request id 'ob-role-msg-<id>'); with no open run and a live seat thread each is queued
+                            into the seat as it is, marked read by 'seat:<role>-<team>' ('<n> messages queued into
+                            seat thread <id>'; OS-82, until OS-58); else no open run starts one ('role start') whose brief lists
                             them; a run open on another machine's T3 gets nothing and the message stays unread
                             ('run <id> is open on <host>; message stored'). Delivered messages are marked read by
-                            'role-run-<id>'. A delivery that fails leaves the message stored and unread, and exits 1.
+                            'role-run-<id>' (or 'seat:<role>-<team>' on the seat path). A delivery that fails leaves
+                            the message stored and unread, and exits 1.
                             --no-deliver only stores. --from names the sender (default 'owner'). -q prints the message
                             id; --json adds 'delivery'. 'ob spinoff handoff' also stores its readying note here (kind
                             'handoff', one row per commit) and delivers it the same way to the sentinel, else the
