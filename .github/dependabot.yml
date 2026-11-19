@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Our own packages move by an architect's bump ticket on a new 0.x minor, not by Dependabot.
+      - dependency-name: "@hackcove/*"
+      - dependency-name: "@slashsuite/*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  # Eval fixtures: fake projects an eval prompt reads, never installed. No PRs, security ones included.
+  - package-ecosystem: npm
+    directories: ["/skills/*/evals/*/files"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
