@@ -1114,12 +1114,9 @@ T3 Code (1102), the execution-plane seam:
                             skipped, the old thread stays bound), waits for the thread to go idle, settles and unpins
                             it, opens the new thread in the same T3 project (bound to <role>-<team>, titled, pinned,
                             auto-settle off) and seeds it with '/ob-<role>' plus the handoff to carry on from, then
-                            marks the handoff consumed, and queues one line with the new id ('<team> <role> moved to
-                            thread <new> (was <old>)') to each other live role thread of the team and each building
-                            spinoff thread of its projects, not the caller (OB-2275). A restart seeds only from a
-                            handoff the replaced thread wrote. Scheduled tasks cannot move: the new thread re-creates them
-                            from the handoff. A re-run resumes: a thread settled after its handoff is replaced from
-                            the held handoff without asking again. Exit 1 when any role failed or was skipped for a
+                            marks the handoff consumed. A restart seeds only from a handoff the replaced thread wrote.
+                            Scheduled tasks cannot move: the new thread re-creates them from the handoff. A re-run resumes:
+                            a thread settled after its handoff is replaced from the held handoff without asking again. Exit 1 when any role failed or was skipped for a
                             reason other than having no thread. -q prints the new thread ids.
   t3 architect [<team>] [--thread <id>]
                             ensure the team's ONE architect thread. Idempotent by THREAD ID, never by title: agent row

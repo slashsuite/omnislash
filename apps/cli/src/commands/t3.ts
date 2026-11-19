@@ -5,8 +5,7 @@ import { AppError, UsageError } from "../errors.ts";
 import { print, warn, type Mode } from "../output.ts";
 import { listProjects } from "../project.ts";
 import { storeAgentRegistry, worktreeRepoOf } from "../t3/dispatch.ts";
-import { listSpinoffs, parseJsonMap, resolveRepoFor, rowsInTeam } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
-import { settingFor } from "../settings.ts";
+import { resolveRepoFor } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { doneAgent } from "../../../../platform/cli-coord/src/agent.ts";
 import { addTeam, editTeam, getTeam, joinTeam, leaveTeam, listTeamViews, removeTeam, teamInUseRefusal, teamView } from "../team.ts";
 import { refuseUnreadFlags } from "./capture.ts";
@@ -517,11 +516,6 @@ export function storeTeamBackend(store: Ctx["db"] | NonNullable<Ctx["store"]>): 
     handoffLatest: (team, role, filter) => latestTeamHandoff(store, team, role, filter),
     handoffConsume: async (team, id, newThreadId) => {
       await consumeTeamHandoff(store, team, id, newThreadId);
-    },
-    buildingThreads: async (team) => {
-      const members = (await listProjects(store)).filter((p) => p.team_name === team.name);
-      const rows = rowsInTeam(await listSpinoffs(store, "launched"), members, parseJsonMap(await settingFor(store, "repo_checkouts")));
-      return rows.map((r) => r.t3_thread_id).filter((id): id is string => !!id);
     },
   };
 }

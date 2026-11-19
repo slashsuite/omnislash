@@ -28,11 +28,6 @@ export interface RestartBackend {
    */
   handoffLatest(team: string, role: TeamRole, filter?: HandoffFilter): Promise<TeamHandoff | null>;
   handoffConsume(team: string, id: number, newThreadId: string): Promise<void>;
-  /**
-   * OB-2275: the T3 thread ids of the spinoff rows at `building` that a member project of the team built (the rows
-   * `ob spinoff list --team` keeps), so a restart can tell them a role's new thread.
-   */
-  buildingThreads(team: TeamView): Promise<string[]>;
   /** Where a new thread opens when the old thread's T3 project cannot be read: the cwd's checkout. */
   cwdRepo(): Promise<string>;
 }
@@ -109,53 +104,6 @@ async function liveHeader(seam: T3Seam, threadId: string): Promise<{ thread: T3T
   } catch {
     return { thread: null, live: false };
   }
-}
-
-/** The one queued line a restart sends the rest of the team (OB-2275). Pure. */
-export function teamMovedMessage(team: string, role: TeamRole, oldThreadId: string, newThreadId: string): string {
-  return `${team} ${role} moved to thread ${newThreadId} (was ${oldThreadId}). Send to ${newThreadId} from now on.`;
-}
-
-/**
- * OB-2275: after a role is replaced, queue the moved line to each other role thread of the team and each building
- * spinoff thread of its projects that T3 has live, never to the caller, the replaced thread or the new one. A
- * failed read or send is one log line and a name in the returned list; it never fails the restart.
- */
-export async function tellTeamMoved(
-  backend: RestartBackend,
-  team: TeamView,
-  role: TeamRole,
-  ids: { oldThreadId: string; newThreadId: string; self: string | null },
-  seam: T3Seam,
-  log: (line: string) => void,
-): Promise<{ told: string[]; failed: string[] }> {
-  const label = `${team.name} ${role}`;
-  const skip = new Set([ids.oldThreadId, ids.newThreadId, ...(ids.self ? [ids.self] : [])]);
-  const targets: string[] = [];
-  const add = (id: string | null | undefined) => {
-    if (id && !skip.has(id) && !targets.includes(id)) targets.push(id);
-  };
-  for (const t of team.threads) if (t.role !== role) add(t.thread_id);
-  try {
-    for (const id of await backend.buildingThreads(team)) add(id);
-  } catch (err) {
-    log(`${label}: could not read the team's building spinoffs (${(err as Error).message}); they were not told the new thread`);
-  }
-  const message = teamMovedMessage(team.name, role, ids.oldThreadId, ids.newThreadId);
-  const told: string[] = [];
-  const failed: string[] = [];
-  for (const id of targets) {
-    if (!(await liveHeader(seam, id)).live) continue;
-    try {
-      await seam.send({ threadId: id, message, mode: "queue", clientRequestId: `ob-team-moved-${team.name}-${role}-${ids.newThreadId}-${id}` });
-      told.push(id);
-    } catch (err) {
-      failed.push(id);
-      log(`${label}: could not tell ${id} the new thread (${(err as Error).message})`);
-    }
-  }
-  if (told.length > 0) log(`${label}: told ${told.join(", ")} the new thread`);
-  return { told, failed };
 }
 
 /** The message a late handoff is forwarded with (OB-2275). Pure. */
@@ -239,7 +187,6 @@ export async function restartTeamRole(backend: RestartBackend, team: TeamView, r
       // A re-run after the seed went out but the consume did not: the bound thread, opened after the handoff, is
       // already the replacement. (A thread bound by hand before it is not, and is restarted as usual.)
       await backend.handoffConsume(team.name, seedFor.id, oldThreadId);
-      await tellTeamMoved(backend, team, role, { oldThreadId: replaced, newThreadId: oldThreadId, self }, seam, log);
       return out({ oldThreadId: replaced, result: "restarted", reason: `already replaced by ${oldThreadId}; handoff ${seedFor.id} marked consumed`, newThreadId: oldThreadId, handoffId: seedFor.id });
     }
 
@@ -365,13 +312,10 @@ export async function restartTeamRole(backend: RestartBackend, team: TeamView, r
     } catch (err) {
       log(`${label}: the seed went out, but handoff ${handoff.id} was not marked consumed (${(err as Error).message}); a re-run marks it`);
     }
-    // (g) tell the rest of the team the new id, so nobody keeps sending to the settled one (OB-2275).
-    const moved = await tellTeamMoved(backend, team, role, { oldThreadId, newThreadId: outcome.threadId, self }, seam, log);
-    const notTold = moved.failed.length > 0 ? `; not told: ${moved.failed.join(", ")}` : "";
     return out({
       oldThreadId,
       result: "restarted",
-      reason: `${oldThreadId} → ${outcome.threadId} ('${outcome.title}', pinned, seeded with handoff ${handoff.id})${notTold}`,
+      reason: `${oldThreadId} → ${outcome.threadId} ('${outcome.title}', pinned, seeded with handoff ${handoff.id})`,
       newThreadId: outcome.threadId,
       handoffId: handoff.id,
     });

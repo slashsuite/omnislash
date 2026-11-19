@@ -135,7 +135,7 @@ import { WHATSAPP_PREF_ACTIONS, type AgentRequest, type CreateItemRequest, type 
 // 1120: `ob t3` is SPLIT. A team's thread is opened HERE (this machine runs T3) and its registry row (the
 // thread id that makes the command idempotent) goes over the API (OB-2255).
 import { checkoutRootOf, dropQueuedReadyNotes, ownCloseLine, retiredCloseLine, splitOwnRows, renderLandReplyOutcome, renderSettleOutcome, renderStaleNoteOutcome, replyLandedToBuilders, settleThreadWithRetry, t3Seam, unjoinedSettleLine, worktreeRepoOf, type T3Seam } from "../t3/dispatch.ts";
-import { isReadyableStatus, landCommitFor, parseJsonMap, resolveRepoIn, rowsInTeam, type SpinoffRow } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { isReadyableStatus, landCommitFor, parseJsonMap, resolveRepoIn, type SpinoffRow } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { readRowTokens, type TokenUsage } from "../../../../platform/cli-coord/src/spinoff-tokens.ts";
 import { itemDispatchRefs, unresolvedRefWarning } from "../../../../platform/cli-coord/src/spinoff-item.ts";
 import { homedir } from "node:os";
@@ -681,11 +681,6 @@ function apiTeamBackend(ctx: ApiCtx): TeamBackend {
 		handoffLatest: async (team, role, filter) => (await client.teamHandoffLatest(team, role, filter)).handoff,
 		handoffConsume: async (team, id, newThreadId) => {
 			await client.teamHandoffConsume(team, id, newThreadId);
-		},
-		buildingThreads: async (team) => {
-			const members = (await client.projects()).projects.filter((p) => p.team_name === team.name);
-			const rows = rowsInTeam((await client.spinoffs({ status: "launched" })).spinoffs, members, launchConfig((await client.spinoffConfig()).config).repoCheckouts);
-			return rows.map((r) => r.t3_thread_id).filter((id): id is string => !!id);
 		},
 	};
 }

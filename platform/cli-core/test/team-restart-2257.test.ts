@@ -142,7 +142,6 @@ function backendOf(store: Store | ReturnType<typeof openDb>): RestartBackend {
     registry: storeAgentRegistry(store),
     handoffLatest: (t, r, filter) => latestTeamHandoff(store, t, r, filter),
     handoffConsume: async (t, id, thr) => void (await consumeTeamHandoff(store, t, id, thr)),
-    buildingThreads: async () => [],
     cwdRepo: async () => REPO,
   };
 }
@@ -222,13 +221,11 @@ describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
       "unpin:thr-a",
       "launch",
       "pin:new-1",
-      "send:thr-s", // OB-2275: the sentinel is told the architect's new thread
       "send:thr-s",
       "settle:thr-s",
       "unpin:thr-s",
       "launch",
       "pin:new-2",
-      "send:new-1", // and the new architect the sentinel's
     ]);
     expect(f.sends[0]!.mode).toBe("queue");
     expect(f.sends[0]!.message).toContain("ob t3 team handoff omni --role architect --body-file <file>");
@@ -261,8 +258,7 @@ describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
     fake(f);
     const res = await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "sentinel"]);
     expect(res.code).toBe(0);
-    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-s", "send:thr-a"]);
-    expect(f.sends[1]!.message).toBe("omni sentinel moved to thread new-1 (was thr-s). Send to new-1 from now on.");
+    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-s"]);
     expect(res.out).not.toContain("omni architect");
     expect((await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "boss"])).code).toBe(2);
     db.close();
@@ -470,55 +466,28 @@ describe("ob t3 team handoff and restart over the API (OB-2257 Done when 1, 4)",
   });
 });
 
-// --- OB-2275: the team is told the new thread, and a replaced thread's late report is forwarded ----------------
+// --- a restart tells nobody the new thread (OS-88); a replaced thread's late report is forwarded (OB-2275) ------
 
 /** A building spinoff row for `repo` whose builder thread is `threadId`. Fixture state, so plain SQL. */
-function buildingRow(db: ReturnType<typeof openDb>, repo: string, threadId: string, status = "launched"): void {
+function buildingRow(db: ReturnType<typeof openDb>, repo: string, threadId: string): void {
   db.query(
     "INSERT INTO spinoff (ticket_ref, repo, branch, worktree, mode, brief, status, request_at, t3_thread_id) VALUES (?, ?, ?, ?, 'interactive', 'b', ?, '2026-11-17T00:00:00Z', ?)",
-  ).run(`OB-${threadId}`, repo, `b-${threadId}`, `/wt/${threadId}`, status, threadId);
+  ).run(`OB-${threadId}`, repo, `b-${threadId}`, `/wt/${threadId}`, "launched", threadId);
 }
 
-describe("after a restart the team is told the new thread (OB-2275 Done when 1)", () => {
-  test("one queued moved line to each other live role thread and each building team spinoff, none to the caller, the replaced or a settled thread", async () => {
-    const { dbPath, fake } = await seededTeam({ architect: "thr-a", sentinel: "thr-s", muse: "thr-m" });
+describe("a restart does not broadcast the new thread (OS-88)", () => {
+  test("restarting the architect with a live sentinel and a building spinoff sends neither a moved line; only the handoff request goes out", async () => {
+    const { dbPath, fake } = await seededTeam({ architect: "thr-a", sentinel: "thr-s" });
     const db = openDb(dbPath);
     buildingRow(db, "acme", "thr-b1");
-    buildingRow(db, "acme", "thr-b2");
-    buildingRow(db, "acme", "thr-h", "ready-for-gate"); // handed off: not building
-    buildingRow(db, "pixelslash", "thr-x"); // another team's project
     const f = fakeT3(
-      [thread("thr-a"), thread("thr-s"), thread("thr-m", { settled: true }), thread("thr-b1"), thread("thr-b2"), thread("thr-h"), thread("thr-x"), thread("thr-me")],
+      [thread("thr-a"), thread("thr-s"), thread("thr-b1")],
       async () => void (await recordTeamHandoff(db, { team: "omni", role: "architect", body: "a" })),
     );
     fake(f);
-    // The caller is the builder thr-b2: it is never told what it just did.
-    process.env[T3_ENV] = "thr-b2";
     const res = await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "architect"]);
     expect(res.code).toBe(0);
-    const moved = f.sends.filter((s) => s.message.includes("moved to thread"));
-    expect(moved.map((s) => s.threadId)).toEqual(["thr-s", "thr-b1"]);
-    for (const s of moved) {
-      expect(s.mode).toBe("queue");
-      expect(s.message).toBe("omni architect moved to thread new-1 (was thr-a). Send to new-1 from now on.");
-      expect(s.clientRequestId).toBe(`ob-team-moved-omni-architect-new-1-${s.threadId}`);
-    }
-    expect(res.out).toContain("omni architect: told thr-s, thr-b1 the new thread");
-    db.close();
-  });
-
-  test("a failed moved line is named in the outcome and never fails the restart", async () => {
-    const { dbPath } = await seededTeam({ architect: "thr-a", sentinel: "thr-s" });
-    const db = openDb(dbPath);
-    const f = fakeT3([thread("thr-a"), thread("thr-s")], async () => void (await recordTeamHandoff(db, { team: "omni", role: "architect", body: "a" })));
-    const send = f.seam.send;
-    f.seam.send = async (input) => {
-      if (input.message.includes("moved to thread")) throw new Error("t3 down");
-      return send(input);
-    };
-    const out = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", { seam: f.seam, self: null, log: () => {} });
-    expect(out.result).toBe("restarted");
-    expect(out.reason).toContain("not told: thr-s");
+    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-a"]);
     db.close();
   });
 });
