@@ -4055,6 +4055,15 @@ async function announceReadyForRow(
     spikeCommitted: spikeDoc?.committed ?? false,
     prUrl: spikeDoc?.prUrl ?? null,
     inbox: (msg) => sendRoleMessage(store, { ...msg, from: builderIdOf(row), kind: "handoff" }),
+    // OS-56: the stored handoff goes into the role's run, started if none is open. Imported here: role.ts imports this module.
+    deliver: async (team, role, seam) => {
+      const [{ deliverToRole }, { storeRoleBackend }, { storeInboxBackend }] = await Promise.all([
+        import("../../../../apps/cli/src/role-deliver.ts"),
+        import("../../../../apps/cli/src/commands/role.ts"),
+        import("../../../../apps/cli/src/commands/inbox.ts"),
+      ]);
+      return deliverToRole(storeRoleBackend(store), storeInboxBackend(store), seam, team, role);
+    },
   });
   return recordReadyNoteOutcome(store, row.id, outcome);
 }

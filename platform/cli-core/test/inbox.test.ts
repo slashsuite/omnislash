@@ -93,7 +93,7 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
   [
     "send then inbox lists one unread message",
     async (h) => {
-      const sent = await h.run(["send", "t", "sentinel", "x", "-q"]);
+      const sent = await h.run(["send", "--no-deliver", "t", "sentinel", "x", "-q"]);
       expect(sent.code).toBe(0);
       const listed = await inbox(h);
       expect(listed).toHaveLength(1);
@@ -103,20 +103,20 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
   [
     "send to a role that is not bound (and is not the architect) is refused by name and stores nothing",
     async (h) => {
-      const res = await h.run(["send", "t", "muse", "x"]);
+      const res = await h.run(["send", "--no-deliver", "t", "muse", "x"]);
       expect(res.code).not.toBe(0);
       expect(res.err).toContain("team 't' has no muse bound");
       expect(await rows(h.store)).toHaveLength(0);
       // The architect always receives, bound or not.
-      expect((await h.run(["send", "t", "architect", "hello", "--from", "sentinel-t"])).code).toBe(0);
+      expect((await h.run(["send", "--no-deliver", "t", "architect", "hello", "--from", "sentinel-t"])).code).toBe(0);
       expect((await rows(h.store)).map((m) => [m.role, m.from_actor])).toEqual([["architect", "sentinel-t"]]);
     },
   ],
   [
     "--read hides a message from the unread list, --all still shows it, and read_by is the reader",
     async (h) => {
-      const id = (await h.run(["send", "t", "sentinel", "x", "-q"])).out.trim();
-      const other = (await h.run(["send", "t", "sentinel", "y", "-q"])).out.trim();
+      const id = (await h.run(["send", "--no-deliver", "t", "sentinel", "x", "-q"])).out.trim();
+      const other = (await h.run(["send", "--no-deliver", "t", "sentinel", "y", "-q"])).out.trim();
       const read = await h.run(["inbox", "t", "sentinel", "--read", id, "--by", "r1"]);
       expect(read.code).toBe(0);
       expect((await inbox(h)).map((m) => String(m.id))).toEqual([other]);

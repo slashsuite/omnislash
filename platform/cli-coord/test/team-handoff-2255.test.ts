@@ -4,6 +4,10 @@
 //
 // The same fakes the readying-note tests use (1133, 1205): a fake T3 seam that records every send and holds a
 // queue, a git stub, and a throwaway SQLite store. Nothing reaches a live T3 or a live database.
+import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
+import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
+import { worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -44,7 +48,7 @@ function fakeSeam(held: Record<string, T3QueuedMessage[]> = {}): Fake {
     projects: unused("projects") as T3Seam["projects"],
     capabilities: unused("capabilities") as T3Seam["capabilities"],
     list: unused("list") as T3Seam["list"],
-    read: unused("read") as T3Seam["read"],
+    read: liveRead,
     launch: unused("launch") as T3Seam["launch"],
     rename: unused("rename") as T3Seam["rename"],
     settle: async () => {},
@@ -116,8 +120,12 @@ async function seed(project: string | null, opts: { sentinel?: boolean; architec
     await registerAgent(db, { id: "architect-slash", worktree: REPO, status: "planning", launcher: "t3", sessionId: "slash-architect-thread", ttlS: 900 });
   }
   if (opts.sentinel) await registerAgent(db, { id: "sentinel-slash", worktree: REPO, status: "planning", launcher: "t3", sessionId: "sentinel-thread", ttlS: 900 });
+  await openRunsOnSeats(db);
   return { dbPath, ref, db };
 }
+
+/** OS-56: the checkout a started role run opens in, as `ob role start` resolves it. */
+const CWD_REPO = worktreeRepoOf(checkoutOf(process.cwd())) ?? checkoutOf(process.cwd());
 
 describe("a handoff goes to the team's sentinel, else its architect (OB-2255 Done when 5)", () => {
   test("a pixelslash row with the slash sentinel bound sends to the sentinel thread", async () => {
@@ -157,15 +165,16 @@ describe("a handoff goes to the team's sentinel, else its architect (OB-2255 Don
     expect(all.split("loose is in no team: ob t3 team join <team> loose, or ob t3 architect in its checkout").length - 1).toBe(1);
   });
 
-  test("a team with no architect thread sends nothing and names the command that opens one", async () => {
+  test("a team with no architect thread starts the architect's run with the handoff in its brief (OS-56)", async () => {
     fakeGit();
     const { dbPath, ref } = await seed("pixelslash", { architect: false });
-    const fake = fakeSeam();
-    restores.push(__setT3Seam(fake.seam));
+    const t3 = installFakeT3([CWD_REPO]);
+    restores.push(t3.restore);
     const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
     expect(res.code).toBe(0);
-    expect(fake.sends).toEqual([]);
-    expect(res.out + res.err).toContain("no slash architect thread: run `ob t3 architect slash`");
+    expect(t3.launches.map((l) => l.message!.split("\n")[0])).toEqual(["/ob-architect"]);
+    expect(t3.sends).toEqual([]);
+    expect(res.out).toContain("slash architect: run 1 opened, thread t3-1, with 1 message in its start brief");
   });
 });
 

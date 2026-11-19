@@ -10,6 +10,7 @@
 // These two guards stop the harm independently of the wake, and they are pinned here because they are the
 // difference between a runaway being a no-op and being a hazard. Both are reached from the local command
 // and the API client, which share `pickSpinoffForReady` / `assertWorktreeGateable`.
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -60,7 +61,7 @@ function fakeT3(): { seam: T3Seam; sends: T3SendInput[] } {
     interrupt: async () => {},
     capabilities: unimplemented("capabilities") as T3Seam["capabilities"],
     list: unimplemented("list") as T3Seam["list"],
-    read: unimplemented("read") as T3Seam["read"],
+    read: liveRead,
     launch: unimplemented("launch") as T3Seam["launch"],
     pin: unimplemented("pin") as T3Seam["pin"],
     unpin: unimplemented("unpin") as T3Seam["unpin"],
@@ -119,6 +120,7 @@ async function seed(dbPath: string, worktree: string, status: "merged" | "launch
     sessionId: "architect-thread-1",
     ttlS: 900,
   });
+  await openRunsOnSeats(db);
   db.close();
 }
 

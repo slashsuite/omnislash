@@ -1,3 +1,4 @@
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +40,7 @@ function fakeSeam(): Fake {
     projects: no("projects") as T3Seam["projects"],
     capabilities: no("capabilities") as T3Seam["capabilities"],
     list: no("list") as T3Seam["list"],
-    read: no("read") as T3Seam["read"],
+    read: liveRead,
     launch: no("launch") as T3Seam["launch"],
     rename: no("rename") as T3Seam["rename"],
     settle: async () => {},
@@ -95,13 +96,14 @@ async function seed(db: ReturnType<typeof openDb>, status = "launched"): Promise
   omnislashTeamFor(db, "1805");
   db.query("UPDATE spinoff SET item_id = '1805' WHERE id = ?").run(row.id);
   await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+  await openRunsOnSeats(db);
   return row.id;
 }
 
 const statusOf = (db: ReturnType<typeof openDb>): string => (db.query("SELECT status FROM spinoff WHERE ticket_ref = '1805'").get() as { status: string }).status;
 
 describe("the readying note's key is the head SHA (OB-1805)", () => {
-  test("two handoffs on different SHAs with the same State send two distinct ids; two on one SHA send one id", async () => {
+  test("two handoffs on different SHAs with the same State store and deliver two notes; two on one SHA deliver one", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     const head = { sha: SHA_A };
@@ -115,12 +117,12 @@ describe("the readying note's key is the head SHA (OB-1805)", () => {
     head.sha = SHA_B; // the fix: a new commit, State: landable unchanged
     expect((await runCli(dbPath, ["spinoff", "handoff", "1805"])).code).toBe(0);
 
-    expect(fake.sends).toHaveLength(3);
-    const [first, repeat, fixed] = fake.sends.map((s) => s.clientRequestId);
-    expect(first).toBe(repeat);
-    expect(fixed).not.toBe(first);
-    expect(first).toContain(SHA_A);
-    expect(fixed).toContain(SHA_B);
+    // OS-56: the key is the stored handoff's: a repeat on one commit stores nothing new, so nothing is delivered.
+    const stored = db.query("SELECT id, client_key FROM role_message ORDER BY id").all() as Array<{ id: number; client_key: string }>;
+    expect(stored).toHaveLength(2);
+    expect(stored[0]!.client_key).toContain(SHA_A);
+    expect(stored[1]!.client_key).toContain(SHA_B);
+    expect(fake.sends.map((s) => s.clientRequestId)).toEqual(stored.map((m) => `ob-role-msg-${m.id}`));
   });
 
 });
@@ -133,11 +135,11 @@ describe("handoff output does not claim 'told' (OB-1805)", () => {
     await seed(db);
     restores.push(__setT3Seam(fakeSeam().seam));
     const res = await runCli(dbPath, ["spinoff", "handoff", "1805"]);
-    expect(res.out).toContain(`note:      queued for ${SHA_A.slice(0, 7)} on ${ARCHITECT_THREAD}`);
+    expect(res.out).toContain(`note:      omnislash architect: 1 message queued into run 1, thread ${ARCHITECT_THREAD}`);
     expect(res.out).not.toContain("told");
   });
 
-  test("a repeat on an already handed-off row says T3 may have dropped it as a duplicate", async () => {
+  test("a repeat on an already handed-off row says the handoff was already given to its run", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     fakeGit({ sha: SHA_A });
@@ -146,8 +148,7 @@ describe("handoff output does not claim 'told' (OB-1805)", () => {
     await runCli(dbPath, ["spinoff", "handoff", "1805"]);
     const again = await runCli(dbPath, ["spinoff", "handoff", "1805"]);
     expect(again.out).toContain("already handed off");
-    expect(again.out).toContain("dropped this note as a duplicate without saying");
-    expect(again.out).toContain("push a new commit and hand off again");
+    expect(again.out).toContain("nothing unread to deliver; this handoff was already given to its run");
     expect(again.out).not.toContain("told");
   });
 });
@@ -194,7 +195,8 @@ describe("ob spinoff sendback (OB-1805)", () => {
     // the re-handoff note went out under the NEW commit's id (architect thread), the send-back under the builder's
     const toArchitect = fake.sends.filter((s) => s.threadId === ARCHITECT_THREAD);
     expect(toArchitect).toHaveLength(1);
-    expect(toArchitect[0]!.clientRequestId).toContain(SHA_B);
+    expect(toArchitect[0]!.clientRequestId).toBe("ob-role-msg-1");
+    expect((db.query("SELECT client_key FROM role_message").get() as { client_key: string }).client_key).toContain(SHA_B);
   });
 
   test("refuses by name a row that is not handed-off, and changes nothing", async () => {

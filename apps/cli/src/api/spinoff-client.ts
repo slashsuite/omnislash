@@ -649,6 +649,11 @@ async function composeReadyOverApi(
     prUrl: spikeDoc?.prUrl ?? null,
     inbox: (msg) =>
       ctx.client.roleMessageSend(msg.team, { role: msg.role, from: builderIdOf(row), kind: "handoff", ref: msg.ref, body: msg.body, client_key: msg.clientKey }),
+    // OS-56: the runs and the inbox cross the wire; the delivery into T3 runs here, where T3 is.
+    deliver: async (team, role, seam) => {
+      const [{ deliverToRole }, { apiRoleBackend, apiInboxBackend }] = await Promise.all([import("../role-deliver.ts"), import("./client-handlers.ts")]);
+      return deliverToRole(apiRoleBackend(ctx), apiInboxBackend(ctx), seam, team, role);
+    },
   });
 }
 

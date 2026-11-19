@@ -1,6 +1,7 @@
 // OB-2172: a readying note that T3 refuses is retried once with the same request id, and a note that still
 // fails is kept on the row (`spinoff.note_error`) where `ob spinoff gateable` and `ob spinoff show` print it.
 // A later note that is sent clears it. A fake seam stands in for T3, which cannot be made slow here.
+import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,7 +49,7 @@ function flakySeam(failures: number, error: Error = new T3Error("unreachable", R
     projects: unused("projects"),
     capabilities: unused("capabilities"),
     list: unused("list"),
-    read: unused("read"),
+    read: liveRead,
     launch: unused("launch"),
     rename: unused("rename"),
     settle: async () => {},
@@ -176,6 +177,7 @@ async function seed(dbPath: string): Promise<ReturnType<typeof openDb>> {
   const itemId = await createItem(db, { type: "task", title: "retry the note", projectId: "omnislash" });
   db.query("UPDATE spinoff SET item_id = ? WHERE id = ?").run(itemId, row.id);
   await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+  await openRunsOnSeats(db);
   return db;
 }
 
@@ -191,7 +193,7 @@ describe("ob spinoff handoff keeps a failed note on the row (OB-2172)", () => {
     restores.push(__setT3Seam(fake.seam));
     const res = await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain("note:      queued on");
+    expect(res.out).toContain("note:      omnislash architect: 1 message queued into run 1, thread architect-thread-1");
     expect(fake.attempts).toHaveLength(2);
     expect(noteErrorOf(db)).toBeNull();
   });
@@ -223,5 +225,22 @@ describe("ob spinoff handoff keeps a failed note on the row (OB-2172)", () => {
     expect(noteErrorOf(db)).toBeNull();
     expect((await runCli(dbPath, ["spinoff", "gateable"])).out).not.toContain("readying note: NOT delivered");
     expect((await runCli(dbPath, ["spinoff", "show", "2172"])).out).not.toContain("readying note: NOT delivered");
+  });
+  test("a failed note delivered later by an ob send is cleared by the next handoff of the same commit (OS-56)", async () => {
+    const dbPath = freshDbPath();
+    const db = await seed(dbPath);
+    fakeGit();
+    const fake = flakySeam(2);
+    restores.push(__setT3Seam(fake.seam));
+    expect((await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"])).code).toBe(1);
+    expect(noteErrorOf(db)).not.toBeNull();
+    // The send delivers the stored handoff too, so the repeat handoff finds nothing unread: that is a delivered note.
+    const sent = await runCli(dbPath, ["send", "omnislash", "architect", "x"]);
+    expect(sent.code).toBe(0);
+    expect(sent.out).toContain("2 messages queued into run 1");
+    const again = await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"]);
+    expect(again.code).toBe(0);
+    expect(again.out).toContain("nothing unread to deliver; this handoff was already given to its run");
+    expect(noteErrorOf(db)).toBeNull();
   });
 });

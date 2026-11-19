@@ -733,11 +733,10 @@ async function apiT3(ctx: ApiCtx): Promise<void> {
 	ctx.exit = local.exit;
 }
 
-/** `ob role` over the API: the runs and the team cross the wire, the thread is read, launched and settled here. */
-async function apiRole(ctx: ApiCtx): Promise<void> {
-	const { runRoleCommand } = await import("../commands/role.ts");
+/** The role backend over the API: the runs, the team and the inbox cross the wire; T3 stays the caller's. */
+export function apiRoleBackend(ctx: ApiCtx): import("../commands/role.ts").RoleBackend {
 	const { client } = ctx;
-	await runRoleCommand(ctx, {
+	return {
 		team: apiTeamBackend(ctx),
 		open: async (team, role) => (await client.roleRuns(team, role)).runs,
 		mark: async (team, role, t3Host) => {
@@ -751,11 +750,18 @@ async function apiRole(ctx: ApiCtx): Promise<void> {
 			await client.roleNoteShown(team, runId);
 		},
 		note: async (team, role, body) => (await client.roleNote(team, { role, body })).run,
-	});
+		readMessages: async (team, role, ids, by) => (await client.roleMessagesRead(team, role, ids, by)).messages,
+	};
+}
+
+/** `ob role` over the API: the runs and the team cross the wire, the thread is read, launched and settled here. */
+async function apiRole(ctx: ApiCtx): Promise<void> {
+	const { runRoleCommand } = await import("../commands/role.ts");
+	await runRoleCommand(ctx, apiRoleBackend(ctx));
 }
 
 /** `ob send` / `ob inbox` over the API: the messages live on the server, so any machine reaches them. */
-function apiInboxBackend(ctx: ApiCtx): import("../commands/inbox.ts").InboxBackend {
+export function apiInboxBackend(ctx: ApiCtx): import("../commands/inbox.ts").InboxBackend {
 	const { client } = ctx;
 	return {
 		send: async (input) => {
@@ -776,7 +782,11 @@ function apiInboxBackend(ctx: ApiCtx): import("../commands/inbox.ts").InboxBacke
 
 async function apiSend(ctx: ApiCtx): Promise<void> {
 	const { runSend } = await import("../commands/inbox.ts");
-	await runSend(ctx, apiInboxBackend(ctx));
+	const { deliverToRole } = await import("../role-deliver.ts");
+	const { t3Seam } = await import("../t3/dispatch.ts");
+	const inbox = apiInboxBackend(ctx);
+	// OS-56: the messages and the runs live on the server; the delivery into T3 runs here, where T3 is.
+	await runSend(ctx, inbox, (team, role) => deliverToRole(apiRoleBackend(ctx), inbox, () => t3Seam(), team, role));
 }
 
 async function apiInbox(ctx: ApiCtx): Promise<void> {

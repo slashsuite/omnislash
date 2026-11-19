@@ -50,8 +50,8 @@ export function roleRunLeaseKey(team: string, role: TeamRole): string {
   return `role:${team}:${role}`;
 }
 
-/** `role-run-<id>`. Pure. */
-function roleRunHolder(id: number): string {
+/** `role-run-<id>`: the run's lease holder, and the reader of the messages it was given (OS-56). Pure. */
+export function roleRunHolder(id: number): string {
   return `role-run-${id}`;
 }
 
