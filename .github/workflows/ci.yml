@@ -15,7 +15,7 @@ jobs:
     steps:
       # Full history: in a pull request moon diffs the head against the base branch before any task
       # runs, and a shallow checkout has no `main`, so the gate died with "ambiguous argument 'main'".
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
