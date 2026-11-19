@@ -6,7 +6,23 @@
 import type { Ctx, Flags } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, warn, type Mode } from "../output.ts";
-import { markRoleRun, openRoleRuns, parseEndReason, roleRunLeaseKey, updateRoleRun, type RoleRun, type RoleRunPatch } from "../role-run.ts";
+import {
+  checkRoleNote,
+  markRoleNoteShown,
+  markRoleRun,
+  openRoleRuns,
+  parseEndReason,
+  roleNoteLines,
+  roleRunLeaseKey,
+  updateRoleRun,
+  writeRoleNote,
+  type RoleRun,
+  type RoleRunPatch,
+} from "../role-run.ts";
+import { gatherRoleBrief, readPacing, renderRoleBrief, roleBriefStoreFacts, type RoleBriefFacts, type RoleBriefStoreFacts } from "../role-brief.ts";
+import { bodyFromFlags } from "./doc.ts";
+import { t3Cache } from "./usage.ts";
+import { gateableFactsFor } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { parseTeamRole } from "../team-handoff.ts";
 import { teamRoleAgentId, teamThreadTitle, type TeamRole, type TeamView } from "../team.ts";
 import { t3BaseUrl, T3Error } from "../t3/client.ts";
@@ -36,6 +52,12 @@ export interface RoleBackend {
   /** Insert the role's marker and take its lease, or answer the open run (`created` false). */
   mark(team: string, role: TeamRole, t3Host: string): Promise<{ run: RoleRun; created: boolean }>;
   update(team: string, id: number, patch: RoleRunPatch): Promise<RoleRun>;
+  /** OS-55: the store half of a brief; consumes the waiting note unless `peek`. */
+  briefFacts(team: string, role: TeamRole, peek: boolean): Promise<RoleBriefStoreFacts>;
+  /** OS-55: mark a run's note shown (after `role start` delivered it). */
+  noteShown(team: string, runId: number): Promise<void>;
+  /** OS-55: store the successor note on the role's open run, else its last ended one. */
+  note(team: string, role: TeamRole, body: string): Promise<RoleRun>;
 }
 
 export interface RoleRunCtx {
@@ -46,7 +68,7 @@ export interface RoleRunCtx {
   exit?: number;
 }
 
-const ROLE_SUBCOMMANDS = "start|status|end";
+const ROLE_SUBCOMMANDS = "start|status|end|brief|note";
 
 /**
  * The model a role run opens on: the complex tier at the model's default effort (no options sent). The provider is
@@ -55,9 +77,33 @@ const ROLE_SUBCOMMANDS = "start|status|end";
 const ROLE_RUN_TIER = "complex";
 const ROLE_RUN_MODELS = { ...DEFAULT_TIER_MODELS, [ROLE_RUN_TIER]: `claudeAgent:${DEFAULT_TIER_MODELS[ROLE_RUN_TIER]}` };
 
-/** The first message a new run's thread gets: the role's skill, then one line naming the run. Pure. */
-function roleRunSeedMessage(team: string, role: TeamRole, runId: number): string {
-  return [`/ob-${role}`, "", `Role run ${runId} for team ${team}. The start brief arrives with OS-55.`].join("\n");
+/** The first message a new run's thread gets: the role's skill, a blank line, then the brief. Pure. */
+export function roleRunSeedMessage(role: TeamRole, brief: string): string {
+  return [`/ob-${role}`, "", brief].join("\n");
+}
+
+/** The brief's seams on this machine: pacing from the local T3 cache, gate facts from the local worktrees. */
+function briefSeams(backend: RoleBackend) {
+  return {
+    storeFacts: (team: string, role: TeamRole, opts: { peek: boolean }) => backend.briefFacts(team, role, opts.peek),
+    pacing: (now: Date) => readPacing(t3Cache(), now),
+    gateFacts: (row: Parameters<typeof gateableFactsFor>[0]) => gateableFactsFor(row),
+  };
+}
+
+/**
+ * The brief a new run is seeded with, read without consuming the note (it is marked shown once the launch went
+ * through). A brief that cannot be built never blocks the start: the seed says so and names the command.
+ */
+async function seedBrief(backend: RoleBackend, team: string, role: TeamRole): Promise<{ text: string; noteRun: number | null }> {
+  try {
+    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date(), { peek: true });
+    return { text: renderRoleBrief(facts), noteRun: facts.note?.run_id ?? null };
+  } catch (err) {
+    const reason = (err as Error).message;
+    warn(`role: the start brief could not be built (${reason})`);
+    return { text: `The start brief could not be built (${reason}); run \`ob role brief ${team} ${role}\`.`, noteRun: null };
+  }
 }
 
 /** The refusal for a run another machine's T3 holds. Pure. */
@@ -66,7 +112,10 @@ function otherHostRefusal(run: Pick<RoleRun, "id" | "t3_host">, local: string): 
 }
 
 function flagsFor(sub: string): string[] {
-  return sub === "end" ? ["reason"] : [];
+  if (sub === "end") return ["reason"];
+  if (sub === "brief") return ["peek"];
+  if (sub === "note") return ["body", "body-file"];
+  return [];
 }
 
 async function requireTeam(backend: RoleBackend, name: string): Promise<TeamView> {
@@ -163,12 +212,13 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
     throw new AppError(`run ${marked.run.id} for ${team.name} ${role} ended while this start read it; re-run`);
   }
   const run = marked.run;
+  const brief = await seedBrief(backend, team.name, role);
   let threadId: string;
   try {
     const launched = await seam.launch({
       projectId: project.id,
       title,
-      message: roleRunSeedMessage(team.name, role, run.id),
+      message: roleRunSeedMessage(role, brief.text),
       modelSelection: { instanceId: resolved.model.selection.instanceId, model: resolved.model.selection.model },
       runtimeMode: T3_DEFAULT_RUNTIME_MODE,
       workspaceStrategy: { type: "root" },
@@ -190,6 +240,9 @@ async function start(backend: RoleBackend, teamName: string, role: TeamRole, sea
     // The run was ended (`ob role end`) while this launch was in flight: the new thread belongs to nothing, so it goes.
     await seam.settle(threadId);
     throw new AppError(`run ${run.id} was ended while its thread was launching; thread ${threadId} was settled. Re-run \`ob role start ${team.name} ${role}\``);
+  }
+  if (brief.noteRun !== null) {
+    await backend.noteShown(team.name, brief.noteRun).catch((err: unknown) => warn(`role: the note was delivered but not marked shown: ${(err as Error).message}`));
   }
   await seam.pin(threadId);
   const settle = await teamAutoSettleOff(seam, threadId);
@@ -272,7 +325,7 @@ async function end(backend: RoleBackend, teamName: string, role: TeamRole, reaso
 export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam?: T3Seam): Promise<void> {
   const sub = ctx.args[0];
   if (!sub) throw new UsageError(`role needs a subcommand: ${ROLE_SUBCOMMANDS}`);
-  if (!["start", "status", "end"].includes(sub)) throw new UsageError(`unknown role subcommand '${sub}' (${ROLE_SUBCOMMANDS})`);
+  if (!["start", "status", "end", "brief", "note"].includes(sub)) throw new UsageError(`unknown role subcommand '${sub}' (${ROLE_SUBCOMMANDS})`);
   refuseUnreadFlags(`ob role ${sub}`, ctx.flags, flagsFor(sub));
   const team = ctx.args[1];
   if (!team) throw new UsageError(`role ${sub} requires a <team>`);
@@ -296,6 +349,21 @@ export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam
   }
 
   const role = parseTeamRole(roleArg, "<role>");
+  if (sub === "brief") {
+    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date(), { peek: ctx.flags.peek === true });
+    print(renderBriefOutput(facts, ctx.mode));
+    return;
+  }
+  if (sub === "note") {
+    const body = bodyFromFlags({ body: ctx.flags.body, "body-file": ctx.flags["body-file"] });
+    if (body === undefined) throw new UsageError(`role note needs --body-file <path> or --body "<text>"`);
+    // Refused here too, so a client never sends a note the server would refuse.
+    checkRoleNote(body);
+    const run = await backend.note(team, role, body);
+    if (ctx.mode === "json") print(JSON.stringify({ team, role, run_id: run.id, note_at: run.note_at, lines: roleNoteLines(body) }, null, 2));
+    else if (ctx.mode !== "quiet") print(`${team} ${role}: note stored on run ${run.id} (${roleNoteLines(body)} lines); the next \`ob role brief\` shows it once`);
+    return;
+  }
   if (sub === "start") {
     const outcome = await start(backend, team, role, await lazySeam());
     print(renderStart(outcome, ctx.mode));
@@ -314,6 +382,11 @@ export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam
   }
 }
 
+function renderBriefOutput(facts: RoleBriefFacts, mode: Mode): string {
+  if (mode === "json") return JSON.stringify(facts, null, 2);
+  return renderRoleBrief(facts);
+}
+
 /** `ob role` on this machine: the runs and the team from the store. */
 export async function cmdRole(ctx: Ctx): Promise<void> {
   const store = ctx.store ?? ctx.db;
@@ -322,5 +395,8 @@ export async function cmdRole(ctx: Ctx): Promise<void> {
     open: (team, role) => openRoleRuns(store, team, role),
     mark: (team, role, t3Host) => markRoleRun(store, { team, role, t3Host }),
     update: (team, id, patch) => updateRoleRun(store, team, id, patch),
+    briefFacts: (team, role, peek) => roleBriefStoreFacts(store, team, role, { peek }),
+    noteShown: (team, runId) => markRoleNoteShown(store, team, runId),
+    note: (team, role, body) => writeRoleNote(store, team, role, body),
   });
 }

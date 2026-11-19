@@ -1834,6 +1834,27 @@ exports[`DB migration safety-net (097) schema fingerprint is stable (golden the 
       "pk": 0,
       "type": "TEXT",
     },
+    {
+      "dflt": null,
+      "name": "successor_note",
+      "notnull": 0,
+      "pk": 0,
+      "type": "TEXT",
+    },
+    {
+      "dflt": null,
+      "name": "note_at",
+      "notnull": 0,
+      "pk": 0,
+      "type": "TEXT",
+    },
+    {
+      "dflt": null,
+      "name": "note_shown_at",
+      "notnull": 0,
+      "pk": 0,
+      "type": "TEXT",
+    },
   ],
   "secret": [
     {

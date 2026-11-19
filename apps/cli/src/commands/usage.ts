@@ -404,7 +404,7 @@ function transcriptRoot(): string {
   return join(cfg, "projects");
 }
 
-function t3Cache(): string {
+export function t3Cache(): string {
   return process.env.OB_USAGE_T3_CACHE?.trim() || join(process.env.HOME?.trim() || homedir(), ".t3", "caches", "claudeAgent.json");
 }
 

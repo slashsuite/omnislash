@@ -152,6 +152,8 @@ type SpinoffsQuery,
   type RoleRunResponse,
   type RoleRunsResponse,
   type RoleRunUpdateRequest,
+  type RoleBriefResponse,
+  type RoleNoteRequest,
   type RoleMessageRequest,
   type RoleMessageResponse,
   type RoleMessagesResponse,
@@ -1203,6 +1205,20 @@ export class ApiClient {
 
 	roleRunUpdate(name: string, id: number, body: RoleRunUpdateRequest): Promise<RoleRunResponse> {
 		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/runs/${id}`, body);
+	}
+
+	// --- a role's start brief and successor note (`ob role brief`, `ob role note`) ---
+
+	roleBrief(name: string, role: string, peek: boolean): Promise<RoleBriefResponse> {
+		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/brief${queryString({ role, peek: peek ? "true" : undefined })}`);
+	}
+
+	roleNote(name: string, body: RoleNoteRequest): Promise<RoleRunResponse> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/notes`, body);
+	}
+
+	roleNoteShown(name: string, runId: number): Promise<{ ok: true }> {
+		return this.call("POST", `${path.teams}/${encodeURIComponent(name)}/runs/${runId}/note-shown`, {});
 	}
 
 	// --- a team role's inbox (`ob send`, `ob inbox`) ---

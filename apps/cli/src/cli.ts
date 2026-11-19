@@ -413,6 +413,8 @@ export const FLAGS = {
   access: { type: "string" },
   // 1124: `ob t3 tree --subagents` includes T3's delegated child threads (excluded by default).
   subagents: { type: "boolean" },
+  // OS-55: `ob role brief --peek` prints the waiting note without marking it shown.
+  peek: { type: "boolean" },
   // `ob inbox <team> <role> --read <id>... --by <run|agent id>`: the first id; more follow as positionals.
   read: { type: "string" },
 } as const;
@@ -1149,7 +1151,7 @@ T3 Code (1102), the execution-plane seam:
   role start <team> <role>   ONE RUN PER TEAM ROLE (architect, sentinel, muse), recorded in role_run. Reuses the open run
                             while its thread is live and prints it ('run <id> is open, thread <id>; nothing launched').
                             Otherwise opens a new T3 thread in the cwd's checkout on claude-opus-5-5 at the model's
-                            default effort (no options sent), seeded with '/ob-<role>' and one line naming the run,
+                            default effort (no options sent), seeded with '/ob-<role>' and the start brief (role brief),
                             pinned, auto-settle off. A thread that is settled, archived or gone ends its run with reason
                             'gone' first. Two starts at once launch once: the partial unique index on (team, role)
                             keeps one open run, and lease 'role:<team>:<role>' (holder 'role-run-<id>', TTL a day) is
@@ -1168,6 +1170,23 @@ T3 Code (1102), the execution-plane seam:
                             was opened on <host>; this machine's T3 is <local>') and is never ended as gone.
                             SPLIT: the T3 calls run here; the runs go over the API on a client
                             (GET|POST /teams/:name/runs, POST /teams/:name/runs/:id).
+  role brief <team> <role> [--peek] [--json]
+                            what a fresh run needs, in nine sections: team (projects and their stage, bound threads),
+                            pacing (the seven-day window from the local T3 cache; 'ahead' when used is over 10 points
+                            past the share of the week gone; 'unknown' when the cache is missing or checked over an
+                            hour ago), rows in flight, PRs to gate (handed-off rows with their State line), unread
+                            inbox, open asks for the owner (role rows and builders at needs-human), the next three
+                            buildable items in 'ob next' order, the skill to load, and the note from the last run.
+                            Each list is capped at 10 with a '+N more' line. Printing the note marks it shown, so the
+                            next brief says 'none'; --peek prints it without marking it. 'role start' seeds a new
+                            run with '/ob-<role>', a blank line, then this brief (the note is marked shown once the
+                            launch went through).
+  role note <team> <role> --body-file <path> | --body "<text>"
+                            store the note this run leaves its successor, on the role's open run, else its most
+                            recently ended one. At most 40 lines and 4000 characters: over either it is refused with
+                            exit 2 naming both counts and nothing is stored (never cut). A second note on the same
+                            run replaces the first. Over the API: GET /teams/:name/brief?role=&peek=,
+                            POST /teams/:name/notes, POST /teams/:name/runs/:id/note-shown.
   send <team> <role> "<text>" [--body-file <path>] [--from <id>] [--json|-q]
                             store a message in a team role's inbox (architect, sentinel or muse) on the server, so any
                             machine reaches it and a message to a replaced thread is kept. The role must be the

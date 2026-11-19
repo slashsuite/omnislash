@@ -49,6 +49,8 @@ export interface Flags {
   by?: string;
   /** `ob inbox --read <id>`: the first message id to mark read. */
   read?: string;
+  /** OS-55: `ob role brief --peek`: show the note without consuming it. */
+  peek?: boolean;
   limit?: string;
   remote?: string;
   /** OB-2116: `project add|edit --icon <emoji>`; '' clears on edit. */

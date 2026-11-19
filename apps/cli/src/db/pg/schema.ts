@@ -198,6 +198,10 @@ export const roleRun = pgTable("role_run", {
 	context_tokens: integer("context_tokens"),
 	ended_at: text("ended_at"),
 	end_reason: text("end_reason"),
+	// OS-55: the note this run leaves its successor (`ob role note`), shown once by the next `ob role brief`.
+	successor_note: text("successor_note"),
+	note_at: text("note_at"),
+	note_shown_at: text("note_shown_at"),
 },
 (table) => [
 	uniqueIndex("idx_role_run_open")
