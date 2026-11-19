@@ -50,15 +50,21 @@ function tempDir(prefix: string): string {
 
 // --- 1: which repo is ob's own ------------------------------------------------------------------------------
 
-describe("isObRepo: only omnislash is ob's own (OB-1992, design 1)", () => {
+describe("isObRepo: omnislash and omnibus are ob's own (OB-1992, design 1; OS-65)", () => {
   test("omnislash in every spelling a caller holds", () => {
     for (const r of ["omnislash", "owner/omnislash", "/home/x/dev/omnislash", "/home/x/dev/omnislash/", "/home/x/dev/omnislash.ob-12", "git@github.com:x/omnislash.git", "https://github.com/x/omnislash.git", "OMNISLASH"]) {
       expect(isObRepo(r)).toBe(true);
     }
   });
 
+  test("omnibus in every spelling a caller holds, while it keeps ob's way of working (OS-65)", () => {
+    for (const r of ["omnibus", "owner/omnibus", "/home/x/dev/omnibus", "/home/x/dev/omnibus.ob-2338", "git@github.com:x/omnibus.git", "OMNIBUS"]) {
+      expect(isObRepo(r)).toBe(true);
+    }
+  });
+
   test("every other repo is clean, a look-alike name included", () => {
-    for (const r of ["hackcove", "x/pixelslash", "/home/x/dev/hackcove.ps-12", "git@github.com:x/omnislash-site.git", "/tmp/omnislash-fake-repo", "", null, undefined]) {
+    for (const r of ["hackcove", "x/pixelslash", "/home/x/dev/hackcove.ps-12", "git@github.com:x/omnislash-site.git", "x/omnibus-site", "/tmp/omnislash-fake-repo", "", null, undefined]) {
       expect(isObRepo(r)).toBe(false);
     }
   });
@@ -74,6 +80,10 @@ describe("a clean repo's branch is a slug of the ticket title (design 2)", () =>
     expect(long.length).toBeLessThanOrEqual(BRANCH_SLUG_MAX);
     expect(long).toBe("make-the-timeline-editor-keep-its-zoom");
     expect(branchSlug("")).toBe("change");
+  });
+
+  test("branchSlug drops omnibus (OS-65)", () => {
+    expect(branchSlug("PS-12: wire omnibus sync")).toBe("wire-sync");
   });
 
   test("a taken name gets -2, -3, still within 40 characters", () => {
@@ -298,6 +308,10 @@ describe("ob spinoff handoff in a clean repo (designs 4 and 6)", () => {
 // --- 6: the leak check itself and the land guard ------------------------------------------------------------
 
 describe("obLeaks (design 6)", () => {
+  test("omnibus in a PR body is a word leak (OS-65)", () => {
+    expect(obLeaks("Fixes the sync for omnibus.").map((l) => `${l.kind}:${l.match}`)).toEqual(["word:omnibus"]);
+  });
+
   test("flags a ref, a State/Gate/Visual line, ob and its commands, architect, spinoff, omnislash, AGENTS.md", () => {
     const text = "fix(PS-12): x\n\nState: landable\nGate: green\n> Visual: ok\nRun ob spinoff show, ask the architect, see AGENTS.md in omnislash. ob";
     const kinds = obLeaks(text).map((l) => `${l.kind}:${l.match}`);
