@@ -73,6 +73,32 @@ export function resolveApiBase(raw?: string): string | null {
 	return null;
 }
 
+/** OS-76: the env var naming the team role API base (tests use it; the file is the live switch). */
+export const ROLE_API_ENV = "OMNISLASH_ROLE_API";
+/** OS-76: where the role base file lives, overriding the default home-folder path. */
+export const ROLE_API_FILE_ENV = "OMNISLASH_ROLE_API_URL_FILE";
+
+/** Default location of the role base file: a machine switches the team role routes by writing this file. */
+export function defaultRoleApiPath(): string {
+	return join(homedir(), ".omnislash_role_api_url");
+}
+
+/**
+ * OS-76: the server the team ROLE routes go to, or null when none is set. Read from the env first, then the
+ * first line of the role file. Null means every route goes to the main API base, exactly as before this
+ * setting existed. Only the role routes (`/teams/:name/runs|brief|notes|tick|inbox`) use it; see client.ts.
+ */
+export function resolveRoleApiBase(): string | null {
+	const env = (process.env[ROLE_API_ENV] ?? "").trim();
+	if (env) return normalizeBase(env, ROLE_API_ENV);
+	const path = process.env[ROLE_API_FILE_ENV]?.trim() || defaultRoleApiPath();
+	if (existsSync(path)) {
+		const firstLine = readFileSync(path, "utf8").split("\n")[0]?.trim() ?? "";
+		if (firstLine.length > 0) return normalizeBase(firstLine, path);
+	}
+	return null;
+}
+
 /** Is this process an API client (D2: all of the data, or none of it)? */
 export function isApiClient(raw?: string): boolean {
 	return resolveApiBase(raw) !== null;

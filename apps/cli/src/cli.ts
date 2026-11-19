@@ -1833,6 +1833,14 @@ Env: OMNISLASH_API            the ob API's base url, e.g. https://ob.example.org
                               Unset (the default today) = the direct Postgres path below, unchanged.
      OMNISLASH_API_URL_FILE   file holding that url instead, default ~/.omnislash_api_url.
      OMNISLASH_API_TOKEN      the bearer token, for a one-off without touching a file.
+     OMNISLASH_ROLE_API       (OS-76) a SECOND base url for the team ROLE routes only: /teams/:name/runs,
+                              /brief, /notes, /tick and /inbox (and their sub-paths). Every other route,
+                              /teams, /teams/:name and /teams/:name/handoffs included, stays on
+                              OMNISLASH_API. Same bearer token and Access headers to both. Unset or empty
+                              (the default) = every route goes to OMNISLASH_API, as before.
+     OMNISLASH_ROLE_API_URL_FILE  file holding that role url (first line) instead, default
+                              ~/.omnislash_role_api_url. Writing that file is the live switch; the env
+                              var is for tests. An error from the role server names the role url.
      OB_API_TOKEN_FILE        the token file BOTH ENDS use, default ~/.ob_api_token, mode 0600 (352). A
                               FILE and not an 'ob secret' on purpose: the secret store is a table inside
                               the database the API fronts. The token is sent in the Authorization header

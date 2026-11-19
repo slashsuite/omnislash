@@ -338,6 +338,16 @@ inside the database the API fronts, which is the same circular bootstrap ob 320 
 the `Authorization` header and nowhere else — never in argv, never in a url, and never in an error message
 (a transport error that echoes the request back is redacted before it reaches stderr).
 
+**The team role routes can go to a second server (OS-76).** `OMNISLASH_ROLE_API` (or the first line of
+`~/.omnislash_role_api_url`; `OMNISLASH_ROLE_API_URL_FILE` moves that file) names a base url for the role
+routes only: `GET` and `POST` `/teams/:name/runs`, `POST /teams/:name/runs/:id`, `POST
+/teams/:name/runs/:id/note-shown`, `GET /teams/:name/tick`, `GET /teams/:name/brief`, `POST
+/teams/:name/notes`, and `GET` and `POST /teams/:name/inbox` with `POST /teams/:name/inbox/read`. Every other
+route stays on `OMNISLASH_API`, including `/teams`, `/teams/:name`, `/teams/:name/edit`, `/teams/:name/join`,
+`/teams/leave` and `/teams/:name/handoffs`. Both servers get the same bearer token and the same Access
+headers, and an error from the role server names the role url it called. Unset or empty, every route goes to
+`OMNISLASH_API` exactly as before, so nothing changes until the file is written.
+
 **Nothing waits forever (1616).** On 2026-10-20 a leaked Postgres pool slot left every `omnislash-web` write
 hanging for 43 minutes with no error. Now each side has a bound that names the call: the client gives up
 after `OB_API_TIMEOUT_MS` (default 150000) with `did not answer POST /items within 150000ms (timed out, not

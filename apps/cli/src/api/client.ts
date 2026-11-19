@@ -8,7 +8,7 @@
 import { closeSync, openSync, renameSync, rmSync } from "node:fs";
 import { AppError, UsageError } from "../errors.ts";
 import { CallTimeoutError, timeoutFromEnv, withDeadline } from "../deadline.ts";
-import { resolveAccessCredentials } from "./config.ts";
+import { resolveAccessCredentials, resolveRoleApiBase } from "./config.ts";
 import {
 	OB_API_AUTH_HEADER,
 	OB_API_PREFIX,
@@ -335,6 +335,11 @@ const API_CLIENT_TIMEOUT_MS = 150_000;
 
 export interface ApiClientOptions {
 	base: string;
+	/**
+	 * OS-76: the server the team role routes go to. Undefined reads it from `OMNISLASH_ROLE_API` or the role file
+	 * (config.ts); null sends every route to `base`, which is what a test uses to prove nothing moved.
+	 */
+	roleBase?: string | null;
 	token: string;
 	transport?: ApiTransport;
 	/** Per-call deadline in ms (1616). Default `OB_API_TIMEOUT_MS`, else API_CLIENT_TIMEOUT_MS. */
@@ -549,8 +554,16 @@ const path = {
 	hostJobs: "/host-jobs",
 };
 
+/**
+ * OS-76: the team role routes, the only ones a role base takes. Matched on the route path (the part after
+ * `/api/ob`). `/teams/:name` and `/teams/:name/handoffs` do not match, so they stay on the main base.
+ */
+export const ROLE_ROUTE = /^\/teams\/[^/]+\/(runs|brief|notes|tick|inbox)(\/|\?|$)/;
+
 export class ApiClient {
 	private readonly base: string;
+	private readonly roleOption: string | null | undefined;
+	private roleBaseCache: string | null | undefined;
 	private readonly token: string;
 	private readonly transport: ApiTransport;
 	private readonly timeoutMs: number;
@@ -560,6 +573,7 @@ export class ApiClient {
 
 	constructor(options: ApiClientOptions) {
 		this.base = options.base;
+		this.roleOption = options.roleBase;
 		this.token = options.token;
 		this.transport = options.transport ?? fetchTransport();
 		this.downloader = options.download ?? ((req) => fetch(req.url, { method: req.method, headers: req.headers, signal: req.signal }));
@@ -573,11 +587,26 @@ export class ApiClient {
 	}
 
 	/**
+	 * OS-76: the server a route is sent to. Only a team role route can go to the role base, and the role base is read
+	 * on the first such call (not at construction), so a bad role setting fails the role routes and nothing else.
+	 */
+	private baseFor(route: string): string {
+		if (!ROLE_ROUTE.test(route)) return this.base;
+		return this.roleBaseUrl() ?? this.base;
+	}
+
+	private roleBaseUrl(): string | null {
+		if (this.roleOption !== undefined) return this.roleOption;
+		if (this.roleBaseCache === undefined) this.roleBaseCache = resolveRoleApiBase();
+		return this.roleBaseCache;
+	}
+
+	/**
 	 * Run one attempt, and again while it fails with a connection the server never took (OB-2160). `resets` says
 	 * whether a reset is safe to retry too (a GET). Anything else, a timeout included, is thrown at once, and the
 	 * last error is thrown as it was when the budget runs out.
 	 */
-	private async retrying<T>(attempt: () => Promise<T>, resets: boolean): Promise<T> {
+	private async retrying<T>(attempt: () => Promise<T>, resets: boolean, base: string): Promise<T> {
 		const { totalMs, sleep, now, warn } = this.retry;
 		const start = now();
 		let delay = RETRY_FIRST_DELAY_MS;
@@ -592,7 +621,7 @@ export class ApiClient {
 				if (!this.warnedRetry) {
 					this.warnedRetry = true;
 					const what = isConnectionRefused(err) ? "refused the connection" : "dropped the connection";
-					warn(`ob API at ${this.base} ${what}, retrying for up to ${Math.round(totalMs / 1000)}s (a deploy restarts it)`);
+					warn(`ob API at ${base} ${what}, retrying for up to ${Math.round(totalMs / 1000)}s (a deploy restarts it)`);
 				}
 				await sleep(Math.min(delay, left));
 				delay = Math.min(delay * 2, RETRY_MAX_DELAY_MS);
@@ -607,7 +636,8 @@ export class ApiClient {
 	private async call<T>(method: string, route: string, body?: unknown, redact: readonly string[] = []): Promise<T> {
 		const secrets = [this.token, ...redact];
 		const scrub = (text: string): string => redactSecrets(text, secrets);
-		const url = `${this.base}${OB_API_PREFIX}${route}`;
+		const base = this.baseFor(route);
+		const url = `${base}${OB_API_PREFIX}${route}`;
 		const headers: Record<string, string> = { ...this.authHeaders(), Accept: "application/json" };
 		if (body !== undefined) headers["Content-Type"] = "application/json";
 		let res: ApiRawResponse;
@@ -628,13 +658,13 @@ export class ApiClient {
 						}),
 					() => abort.abort(),
 				);
-			}, method === "GET");
+			}, method === "GET", base);
 		} catch (err) {
 			// A hang is not "could not reach": the host took the request and never answered (1616). Say which
 			// call and for how long, so the journal line is the diagnosis.
 			if (err instanceof CallTimeoutError) {
 				throw new ApiError(
-					scrub(`the ob API at ${this.base} did not answer ${err.call} within ${err.ms}ms (timed out, not unreachable)`),
+					scrub(`the ob API at ${base} did not answer ${err.call} within ${err.ms}ms (timed out, not unreachable)`),
 					0,
 				);
 			}
@@ -642,7 +672,7 @@ export class ApiClient {
 			// reported as the same thing -- the same rule the deleted ssh split had for a failed connection.
 			throw new ApiError(
 				[
-					`could not reach the ob API at ${this.base}: ${scrub((err as Error).message)}`,
+					`could not reach the ob API at ${base}: ${scrub((err as Error).message)}`,
 					`  ob has no local database path to fall back to (map decision D2), so this is the whole answer, not a degraded one.`,
 				].join("\n"),
 				0,
@@ -652,21 +682,21 @@ export class ApiClient {
 		if (res.status === 401 || res.status === 403) {
 			throw new ApiError(
 				[
-					`the ob API at ${this.base} rejected this token (HTTP ${res.status}).`,
+					`the ob API at ${base} rejected this token (HTTP ${res.status}).`,
 					`  the server compares it against ITS OWN token file; re-copy or rotate it from the API host.`,
 				].join("\n"),
 				res.status,
 			);
 		}
 		if (res.status < 200 || res.status >= 300) {
-			throw new ApiError(scrub(this.explain(res)), res.status);
+			throw new ApiError(scrub(this.explain(res, base)), res.status);
 		}
 		if (!res.body.trim()) return undefined as T;
 		try {
 			return JSON.parse(res.body) as T;
 		} catch {
 			throw new ApiError(
-				`the ob API at ${this.base} answered ${res.status} with a body that is not JSON (${res.body.length} bytes)`,
+				`the ob API at ${base} answered ${res.status} with a body that is not JSON (${res.body.length} bytes)`,
 				res.status,
 			);
 		}
@@ -690,7 +720,8 @@ export class ApiClient {
 	 */
 	private async download(route: string, dest: string): Promise<number> {
 		const scrub = (text: string): string => redactSecrets(text, [this.token]);
-		const url = `${this.base}${OB_API_PREFIX}${route}`;
+		const base = this.baseFor(route);
+		const url = `${base}${OB_API_PREFIX}${route}`;
 		let abort = new AbortController();
 		let res: Response;
 		try {
@@ -706,19 +737,19 @@ export class ApiClient {
 						signal,
 					}),
 				);
-			}, false);
+			}, false, base);
 		} catch (err) {
 			abort.abort();
-			throw new ApiError(`could not fetch from the ob API at ${this.base}: ${scrub((err as Error).message)}`, 0);
+			throw new ApiError(`could not fetch from the ob API at ${base}: ${scrub((err as Error).message)}`, 0);
 		}
 		if (res.status < 200 || res.status >= 300) {
-			throw new ApiError(scrub(this.explain({ status: res.status, body: await res.text() })), res.status);
+			throw new ApiError(scrub(this.explain({ status: res.status, body: await res.text() }, base)), res.status);
 		}
 		// Every file this returns is binary. A web page with a 200 is a sign-in page from something in front of the
 		// API, and saving it as a dump would report success for a file that is not one.
 		if ((res.headers.get("content-type") ?? "").includes("text/html")) {
 			await res.body?.cancel();
-			throw new ApiError(`the ob API at ${this.base} answered ${route} with a web page, not a file: is Cloudflare Access asking to sign in?`, res.status);
+			throw new ApiError(`the ob API at ${base} answered ${route} with a web page, not a file: is Cloudflare Access asking to sign in?`, res.status);
 		}
 		const part = `${dest}.part`;
 		try {
@@ -730,11 +761,11 @@ export class ApiClient {
 			return bytes;
 		} catch (err) {
 			rmSync(part, { force: true });
-			throw new ApiError(`the download from the ob API at ${this.base} did not finish: ${scrub((err as Error).message)}`, 0);
+			throw new ApiError(`the download from the ob API at ${base} did not finish: ${scrub((err as Error).message)}`, 0);
 		}
 	}
 
-	private explain(res: ApiRawResponse): string {
+	private explain(res: ApiRawResponse, base: string): string {
 		try {
 			const parsed = JSON.parse(res.body) as ObApiErrorBody;
 			if (parsed?.error?.message) {
@@ -754,7 +785,7 @@ export class ApiClient {
 			// not the envelope; fall through to the raw shape below
 		}
 		const snippet = res.body.trim().slice(0, 300);
-		return `the ob API at ${this.base} answered HTTP ${res.status}${snippet ? `: ${snippet}` : ""}`;
+		return `the ob API at ${base} answered HTTP ${res.status}${snippet ? `: ${snippet}` : ""}`;
 	}
 
 	next(project?: string): Promise<NextResponse> {
