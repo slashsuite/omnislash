@@ -1,6 +1,6 @@
 // OB-1992: a CLEAN repo is every repo that is not ob's own. ob is private, so a clean repo's PR title, body,
 // branch name, commits and squash commit carry nothing of ob: no ticket ref, no `State:`/`Gate:`/`Visual:`
-// line, no planner, architect, sentinel, muse, spinoff or omnislash, no `ob` command, no pointer to the private AGENTS.md. OmniSlash keeps
+// line, no planner, architect, sentinel, muse, spinoff or omnibus, no `ob` command, no pointer to the private AGENTS.md. OmniSlash keeps
 // its own flow (refs, `State:` in git, the commit hook).
 //
 // Everything here is pure: no git, no store, no network. The callers bring the facts.
@@ -27,7 +27,7 @@ export const BRANCH_SLUG_MAX = 40;
 
 /** Words a branch slug drops, so the name cannot itself carry ob. */
 /** `planner` stays beside the team roles (OB-2256): it is ob's old name for the architect, still ob's word. */
-const SLUG_DROP = new Set(["ob", "planner", "architect", "sentinel", "muse", "spinoff", "spinoffs", "omnislash", "omnibus", "agents"]);
+const SLUG_DROP = new Set(["ob", "planner", "architect", "sentinel", "muse", "spinoff", "spinoffs", "omnibus", "agents"]);
 
 /**
  * A clean repo's branch name from the ticket TITLE (OB-1992): lowercase words joined by hyphens, at most `max`
@@ -79,7 +79,7 @@ const NOT_A_REF = new Set(["UTF", "SHA", "ISO", "RFC", "CVE", "PEP", "TLS", "ES"
  * What of ob a clean repo's text carries (OB-1992). `keys` are the `ob project` keys (`OB`, `PS`, …); with
  * them a ref is `<KEY>-<n>` for one of those keys, without them any `[A-Z]{2,4}-<n>` that is not a known
  * standard (`UTF-8`, `SHA-256`). Flags a ref, a `State:`/`Gate:`/`Visual:` line, the word `ob` (alone or as
- * `ob <subcommand>`), the team roles (architect, sentinel, muse) and the old planner, spinoff, omnislash, omnibus, AGENTS.md. Empty for a plain open-source PR body. Pure.
+ * `ob <subcommand>`), the team roles (architect, sentinel, muse) and the old planner, spinoff, omnibus, AGENTS.md. Empty for a plain open-source PR body. Pure.
  */
 export function obLeaks(text: string, keys: readonly string[] = []): Leak[] {
   const leaks: Leak[] = [];
@@ -99,7 +99,7 @@ export function obLeaks(text: string, keys: readonly string[] = []): Leak[] {
   for (const m of text.matchAll(/(?<![\w./-])ob(?:\s+[a-z][\w-]*)?(?![\w./-])/g)) {
     add(/\s/.test(m[0]) ? "ob-command" : "word", m[0].replace(/\s+/g, " "));
   }
-  for (const m of text.matchAll(/\b(planners?|architects?|sentinels?|muses?|spinoffs?|omnislash|omnibus)\b|AGENTS\.md/gi)) add("word", m[0]);
+  for (const m of text.matchAll(/\b(planners?|architects?|sentinels?|muses?|spinoffs?|omnibus)\b|AGENTS\.md/gi)) add("word", m[0]);
   return leaks;
 }
 
@@ -183,7 +183,7 @@ export function legRef(ref: string, leg: string | null | undefined): string {
 /** The one line a clean repo's launch prompt carries, so a builder that skips the skill still sees the rule. */
 export function cleanRepoLaunchLine(ticketRef: string): string {
   return (
-    `Clean repo (not OmniSlash): nothing of ob goes in this repo's PR title, body, branch or commits. No ticket ref, no State:/Gate:/Visual: line, no architect, sentinel, muse, spinoff, omnislash, omnibus, ob command or AGENTS.md. ` +
+    `Clean repo (not OmniSlash): nothing of ob goes in this repo's PR title, body, branch or commits. No ticket ref, no State:/Gate:/Visual: line, no architect, sentinel, muse, spinoff, omnibus, ob command or AGENTS.md. ` +
     `Subjects are \`<type>(<area>): <subject>\`. Record the verdict with \`ob spinoff state ${ticketRef} <landable|needs-human|blocked|partial> --reason '<one line>' --gate '<gate line>'\`, ` +
     `and put the Done check and skeptical review on the ticket with \`ob spinoff handoff ${ticketRef} --report <file>\`. Your builder id is \`${refKey(ticketRef)}\`.`
   );

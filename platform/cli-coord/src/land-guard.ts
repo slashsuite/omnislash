@@ -34,7 +34,7 @@ import { checkSubject, type SubjectCheck } from "./conventional-commit.ts";
 //     commit-msg hook uses (conventional-commit.ts). The hook is bypassable with --no-verify and absent in a
 //     checkout that never ran `bun install`; this is the check that cannot be skipped by accident.
 //  4. CLEAN REPO (OB-1992): in every repo but OmniSlash, the squash subject and body carry nothing of ob (no
-//     ticket ref, no State:/Gate:/Visual: line, no architect, spinoff, omnislash, ob command or AGENTS.md). The
+//     ticket ref, no State:/Gate:/Visual: line, no architect, spinoff, omnibus, ob command or AGENTS.md). The
 //     repo is told by its origin url; one with no origin cannot be told apart and is not checked unless
 //     `--clean` says so. The diff itself is never read.
 

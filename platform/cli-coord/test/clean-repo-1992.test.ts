@@ -75,7 +75,8 @@ describe("isObRepo: omnislash and omnibus are ob's own (OB-1992, design 1; OS-65
 describe("a clean repo's branch is a slug of the ticket title (design 2)", () => {
   test("lowercase words, at most 40 characters, cut at a word boundary; refs and ob's own words dropped", () => {
     expect(branchSlug("Add a dark theme to the Storybook")).toBe("add-a-dark-theme-to-the-storybook");
-    expect(branchSlug("PS-12: spinoff the ob architect sync for omnislash")).toBe("the-sync-for");
+    expect(branchSlug("PS-12: spinoff the ob architect sync for omnislash")).toBe("the-sync-for-omnislash");
+    expect(branchSlug("PS-12: wire omnibus sync")).toBe("wire-sync");
     const long = branchSlug("Make the timeline editor keep its zoom level across reloads and tabs");
     expect(long.length).toBeLessThanOrEqual(BRANCH_SLUG_MAX);
     expect(long).toBe("make-the-timeline-editor-keep-its-zoom");
@@ -312,12 +313,29 @@ describe("obLeaks (design 6)", () => {
     expect(obLeaks("Fixes the sync for omnibus.").map((l) => `${l.kind}:${l.match}`)).toEqual(["word:omnibus"]);
   });
 
-  test("flags a ref, a State/Gate/Visual line, ob and its commands, architect, spinoff, omnislash, AGENTS.md", () => {
+  test("flags a ref, a State/Gate/Visual line, ob and its commands, architect, spinoff, AGENTS.md", () => {
     const text = "fix(PS-12): x\n\nState: landable\nGate: green\n> Visual: ok\nRun ob spinoff show, ask the architect, see AGENTS.md in omnislash. ob";
     const kinds = obLeaks(text).map((l) => `${l.kind}:${l.match}`);
     expect(kinds).toEqual(
-      expect.arrayContaining(["ref:PS-12", "state-line:State:", "state-line:Gate:", "state-line:Visual:", "ob-command:ob spinoff", "word:architect", "word:AGENTS.md", "word:omnislash", "word:ob"]),
+      expect.arrayContaining(["ref:PS-12", "state-line:State:", "state-line:Gate:", "state-line:Visual:", "ob-command:ob spinoff", "word:architect", "word:AGENTS.md", "word:ob"]),
     );
+    expect(kinds).not.toContain("word:omnislash");
+  });
+
+  test("the Slash product names are not leaks, in capitals or lowercase (OS-63)", () => {
+    const names = ["OmniSlash", "PixelSlash", "ToggleSlash", "FlakeSlash", "TaskSlash", "UISlash", "SlashSlash"];
+    for (const name of names) {
+      expect(obLeaks(`Adds the ${name} page.`)).toEqual([]);
+      expect(obLeaks(`Adds the ${name.toLowerCase()} page.`)).toEqual([]);
+    }
+    expect(obLeaks(names.join(" "))).toEqual([]);
+    expect(obLeaks(names.join(" ").toLowerCase())).toEqual([]);
+  });
+
+  test("the product names do not unlock the private words beside them (OS-63)", () => {
+    const kinds = obLeaks("OmniSlash: the omnibus sync, ob spinoff show, PS-12\nState: landable\nthe architect").map((l) => `${l.kind}:${l.match}`);
+    expect(kinds).toEqual(expect.arrayContaining(["word:omnibus", "ob-command:ob spinoff", "ref:PS-12", "state-line:State:", "word:architect"]));
+    expect(kinds).not.toContain("word:OmniSlash");
   });
 
   test("a plain open-source PR body has none, standards and paths included", () => {
