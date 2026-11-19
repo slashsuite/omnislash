@@ -1185,7 +1185,7 @@ T3 Code (1102), the execution-plane seam:
                             store the note this run leaves its successor, on the role's open run, else its most
                             recently ended one. At most 40 lines and 4000 characters: over either it is refused with
                             exit 2 naming both counts and nothing is stored (never cut). A second note on the same
-                            run replaces the first. Over the API: GET /teams/:name/brief?role=&peek=,
+                            run replaces the first. Over the API: GET /teams/:name/brief?role=,
                             POST /teams/:name/notes, POST /teams/:name/runs/:id/note-shown.
   send <team> <role> "<text>" [--body-file <path>] [--from <id>] [--json|-q]
                             store a message in a team role's inbox (architect, sentinel or muse) on the server, so any

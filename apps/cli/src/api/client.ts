@@ -1209,8 +1209,8 @@ export class ApiClient {
 
 	// --- a role's start brief and successor note (`ob role brief`, `ob role note`) ---
 
-	roleBrief(name: string, role: string, peek: boolean): Promise<RoleBriefResponse> {
-		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/brief${queryString({ role, peek: peek ? "true" : undefined })}`);
+	roleBrief(name: string, role: string): Promise<RoleBriefResponse> {
+		return this.call("GET", `${path.teams}/${encodeURIComponent(name)}/brief${queryString({ role })}`);
 	}
 
 	roleNote(name: string, body: RoleNoteRequest): Promise<RoleRunResponse> {

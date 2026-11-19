@@ -9,12 +9,11 @@ import type { Database } from "bun:sqlite";
 import type { Store } from "./db/store.ts";
 import { asStore } from "./db/store.ts";
 import { getFocusProject } from "./config.ts";
-import { AppError } from "./errors.ts";
 import { queryItems, type ItemRow } from "./items.ts";
 import { listRoleMessages, type RoleMessage } from "./inbox.ts";
 import { effectivePriority, priorityName } from "./priority.ts";
 import { listProjects, UnknownTeamError } from "./project.ts";
-import { markRoleNoteShown, pendingRoleNote, type RoleNote } from "./role-run.ts";
+import { pendingRoleNote, type RoleNote } from "./role-run.ts";
 import { settingFor } from "./settings.ts";
 import { DEFAULT_STAGE } from "./stage.ts";
 import { getTeam, listTeams, teamMembersIn, teamRoleAgentId, teamView, TEAM_ROLES, type TeamRole, type TeamThread } from "./team.ts";
@@ -26,16 +25,16 @@ import { listSpinoffs, parseJsonMap, rowsInTeam } from "../../../platform/cli-co
 import { spinoffStatusWord } from "../../../platform/cli-coord/src/spinoff-vocab.ts";
 
 /** An inbox line's text: the body's first non-empty line, cut to 160 characters. Pure. */
-export function inboxFirstLine(body: string): string {
+function inboxFirstLine(body: string): string {
   const first = body.split("\n").find((l) => l.trim()) ?? "";
   const t = first.trim();
   return t.length <= 160 ? t : `${t.slice(0, 159)}…`;
 }
 
 /** Each list's cap; the rest is one `+N more` line. */
-export const BRIEF_LIST_CAP = 10;
+const BRIEF_LIST_CAP = 10;
 /** The queue the brief shows. */
-export const BRIEF_NEXT_COUNT = 3;
+const BRIEF_NEXT_COUNT = 3;
 /** Used this many points over the share of the week gone reads as `ahead`. */
 const PACING_AHEAD_POINTS = 10;
 /** A cache read longer ago than this is too old to pace by. */
@@ -103,10 +102,10 @@ function isBuildable(item: ItemRow, inFlight: ReadonlySet<string>): boolean {
 }
 
 /**
- * The store half of a brief. Prints nothing; consumes the note (sets `note_shown_at`) unless `peek`, so the brief that
- * shows a note is the only one that does.
+ * The store half of a brief. A read only: the note stays waiting until the caller has printed it and calls
+ * `markRoleNoteShown`, so a lost reply or a failed print never loses a note.
  */
-export async function roleBriefStoreFacts(db: Database | Store, teamName: string, role: TeamRole, opts: { peek?: boolean } = {}): Promise<RoleBriefStoreFacts> {
+export async function roleBriefStoreFacts(db: Database | Store, teamName: string, role: TeamRole): Promise<RoleBriefStoreFacts> {
   const s = asStore(db);
   const team = await getTeam(s, teamName);
   if (!team) throw new UnknownTeamError(teamName);
@@ -120,9 +119,8 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
     .map((p) => ({ id: p.id, name: p.name, stage: p.stage ?? `${DEFAULT_STAGE} (not set)` }));
 
   const teamRows = rowsInTeam(await listSpinoffs(s), members, parseJsonMap(await settingFor(s, "repo_checkouts")));
-  const rows: BriefRow[] = teamRows
-    .filter((r) => !DONE_STATUSES.has(r.status))
-    .map((r) => ({
+  const active = teamRows.filter((r) => !DONE_STATUSES.has(r.status));
+  const rows: BriefRow[] = active.map((r) => ({
       id: r.id,
       ticket_ref: r.ticket_ref,
       status: r.status,
@@ -142,7 +140,7 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
     .map((a) => ({ id: a.id, note: a.note }));
 
   const inFlight = new Set<string>();
-  for (const r of teamRows.filter((x) => !DONE_STATUSES.has(x.status))) {
+  for (const r of active) {
     inFlight.add(r.ticket_ref);
     if (r.item_id) inFlight.add(r.item_id);
   }
@@ -157,7 +155,6 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
   }));
 
   const note = await pendingRoleNote(s, team.name, role);
-  if (note && !opts.peek) await markRoleNoteShown(s, team.name, note.run_id);
 
   return {
     team: { name: team.name, display_name: team.display_name, icon: team.icon },
@@ -197,23 +194,17 @@ export function readPacing(file: string, now: Date): Pacing {
 
 /** What a brief reads through: the store (or the API), the pacing, and a handed-off row's worktree. */
 export interface RoleBriefSeams {
-  storeFacts(team: string, role: TeamRole, opts: { peek: boolean }): Promise<RoleBriefStoreFacts>;
+  storeFacts(team: string, role: TeamRole): Promise<RoleBriefStoreFacts>;
   pacing(now: Date): Pacing;
   gateFacts(row: BriefRow): { missing: boolean; state: string | null };
 }
 
-export async function gatherRoleBrief(seams: RoleBriefSeams, team: string, role: TeamRole, now: Date, opts: { peek?: boolean } = {}): Promise<RoleBriefFacts> {
-  const store = await seams.storeFacts(team, role, { peek: opts.peek === true });
-  const gate: GateEntry[] = [];
-  for (const r of store.rows.filter((x) => x.status === HANDED_OFF)) {
-    let facts: { missing: boolean; state: string | null };
-    try {
-      facts = seams.gateFacts(r);
-    } catch (err) {
-      throw new AppError(`could not read ${r.ticket_ref}'s worktree ${r.worktree}: ${(err as Error).message}`);
-    }
-    gate.push({ ref: r.ticket_ref, branch: r.branch, state: facts.state, missing: facts.missing });
-  }
+/** The facts of a brief. Reads only: marking the note shown is the caller's, once it has delivered the brief. */
+export async function gatherRoleBrief(seams: RoleBriefSeams, team: string, role: TeamRole, now: Date): Promise<RoleBriefFacts> {
+  const store = await seams.storeFacts(team, role);
+  const gate: GateEntry[] = store.rows
+    .filter((r) => r.status === HANDED_OFF)
+    .map((r) => ({ ref: r.ticket_ref, branch: r.branch, ...seams.gateFacts(r) }));
   return { ...store, pacing: seams.pacing(now), gate };
 }
 

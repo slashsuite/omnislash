@@ -19,10 +19,11 @@ import {
   type RoleRun,
   type RoleRunPatch,
 } from "../role-run.ts";
-import { gatherRoleBrief, readPacing, renderRoleBrief, roleBriefStoreFacts, type RoleBriefFacts, type RoleBriefStoreFacts } from "../role-brief.ts";
+import { gatherRoleBrief, readPacing, renderRoleBrief, roleBriefStoreFacts, type BriefRow, type RoleBriefFacts, type RoleBriefStoreFacts } from "../role-brief.ts";
 import { bodyFromFlags } from "./doc.ts";
 import { t3Cache } from "./usage.ts";
-import { gateableFactsFor } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { existsSync } from "node:fs";
+import { rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { parseTeamRole } from "../team-handoff.ts";
 import { teamRoleAgentId, teamThreadTitle, type TeamRole, type TeamView } from "../team.ts";
 import { t3BaseUrl, T3Error } from "../t3/client.ts";
@@ -52,9 +53,9 @@ export interface RoleBackend {
   /** Insert the role's marker and take its lease, or answer the open run (`created` false). */
   mark(team: string, role: TeamRole, t3Host: string): Promise<{ run: RoleRun; created: boolean }>;
   update(team: string, id: number, patch: RoleRunPatch): Promise<RoleRun>;
-  /** OS-55: the store half of a brief; consumes the waiting note unless `peek`. */
-  briefFacts(team: string, role: TeamRole, peek: boolean): Promise<RoleBriefStoreFacts>;
-  /** OS-55: mark a run's note shown (after `role start` delivered it). */
+  /** OS-55: the store half of a brief (a read: the note stays waiting). */
+  briefFacts(team: string, role: TeamRole): Promise<RoleBriefStoreFacts>;
+  /** OS-55: mark a run's note shown, once a brief or a start delivered it. */
   noteShown(team: string, runId: number): Promise<void>;
   /** OS-55: store the successor note on the role's open run, else its last ended one. */
   note(team: string, role: TeamRole, body: string): Promise<RoleRun>;
@@ -78,26 +79,25 @@ const ROLE_RUN_TIER = "complex";
 const ROLE_RUN_MODELS = { ...DEFAULT_TIER_MODELS, [ROLE_RUN_TIER]: `claudeAgent:${DEFAULT_TIER_MODELS[ROLE_RUN_TIER]}` };
 
 /** The first message a new run's thread gets: the role's skill, a blank line, then the brief. Pure. */
-export function roleRunSeedMessage(role: TeamRole, brief: string): string {
+function roleRunSeedMessage(role: TeamRole, brief: string): string {
   return [`/ob-${role}`, "", brief].join("\n");
 }
 
 /** The brief's seams on this machine: pacing from the local T3 cache, gate facts from the local worktrees. */
 function briefSeams(backend: RoleBackend) {
   return {
-    storeFacts: (team: string, role: TeamRole, opts: { peek: boolean }) => backend.briefFacts(team, role, opts.peek),
+    storeFacts: (team: string, role: TeamRole) => backend.briefFacts(team, role),
     pacing: (now: Date) => readPacing(t3Cache(), now),
-    gateFacts: (row: Parameters<typeof gateableFactsFor>[0]) => gateableFactsFor(row),
+    gateFacts: (row: BriefRow) => (existsSync(row.worktree) ? { missing: false, state: rowVerdictState(row) } : { missing: true, state: null }),
   };
 }
 
 /**
- * The brief a new run is seeded with, read without consuming the note (it is marked shown once the launch went
- * through). A brief that cannot be built never blocks the start: the seed says so and names the command.
+ * The brief a new run is seeded with (its note is marked shown once the launch went through). A brief that cannot be built never blocks the start: the seed says so and names the command.
  */
 async function seedBrief(backend: RoleBackend, team: string, role: TeamRole): Promise<{ text: string; noteRun: number | null }> {
   try {
-    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date(), { peek: true });
+    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date());
     return { text: renderRoleBrief(facts), noteRun: facts.note?.run_id ?? null };
   } catch (err) {
     const reason = (err as Error).message;
@@ -350,8 +350,10 @@ export async function runRoleCommand(ctx: RoleRunCtx, backend: RoleBackend, seam
 
   const role = parseTeamRole(roleArg, "<role>");
   if (sub === "brief") {
-    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date(), { peek: ctx.flags.peek === true });
+    const facts = await gatherRoleBrief(briefSeams(backend), team, role, new Date());
     print(renderBriefOutput(facts, ctx.mode));
+    // Marked only after the print, so a brief that never reached the reader leaves the note waiting.
+    if (facts.note && ctx.flags.peek !== true) await backend.noteShown(team, facts.note.run_id);
     return;
   }
   if (sub === "note") {
@@ -395,7 +397,7 @@ export async function cmdRole(ctx: Ctx): Promise<void> {
     open: (team, role) => openRoleRuns(store, team, role),
     mark: (team, role, t3Host) => markRoleRun(store, { team, role, t3Host }),
     update: (team, id, patch) => updateRoleRun(store, team, id, patch),
-    briefFacts: (team, role, peek) => roleBriefStoreFacts(store, team, role, { peek }),
+    briefFacts: (team, role) => roleBriefStoreFacts(store, team, role),
     noteShown: (team, runId) => markRoleNoteShown(store, team, runId),
     note: (team, role, body) => writeRoleNote(store, team, role, body),
   });

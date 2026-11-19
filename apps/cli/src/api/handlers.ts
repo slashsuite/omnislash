@@ -1964,8 +1964,8 @@ export async function roleRunUpdate(store: Store, name: string, id: number, req:
 
 // --- a role's start brief and successor note (`ob role brief`, `ob role note`, OS-55) ----------------------
 
-export async function roleBriefFacts(store: Store, name: string, role: string | null, peek: boolean): Promise<RoleBriefResponse> {
-  return { facts: await teamFault(() => roleBriefStoreFacts(store, name, parseTeamRole(role, "'role'"), { peek })) };
+export async function roleBriefFacts(store: Store, name: string, role: string | null): Promise<RoleBriefResponse> {
+  return { facts: await teamFault(() => roleBriefStoreFacts(store, name, parseTeamRole(role, "'role'"))) };
 }
 
 export async function roleNoteWrite(store: Store, name: string, req: RoleNoteRequest): Promise<RoleRunResponse> {

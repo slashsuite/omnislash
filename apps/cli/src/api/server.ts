@@ -1472,7 +1472,7 @@ async function route(
     }
     // A role's start brief and successor note (`ob role brief`, `ob role note`, OS-55).
     if (third === "brief" && segments.length === 3 && method === "GET") {
-      return json(await h.roleBriefFacts(store, second, url.searchParams.get("role"), queryBool(url.searchParams, "peek") === true));
+      return json(await h.roleBriefFacts(store, second, url.searchParams.get("role")));
     }
     if (third === "notes" && segments.length === 3 && method === "POST") {
       const body = await readJson(req);

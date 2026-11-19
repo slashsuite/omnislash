@@ -17,7 +17,7 @@ import { sendRoleMessage, type RoleMessage } from "../../../apps/cli/src/inbox.t
 import { registerAgent } from "../../cli-coord/src/agent.ts";
 import { registerProject } from "../../../apps/cli/src/project.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
-import { readPacing, renderRoleBrief, type RoleBriefFacts } from "../../../apps/cli/src/role-brief.ts";
+import { readPacing, renderRoleBrief, roleBriefStoreFacts, type RoleBriefFacts } from "../../../apps/cli/src/role-brief.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "ob-role-brief-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -303,6 +303,9 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
 
       const peeked = await brief(h, ["--peek"]);
       expect(sectionOf(peeked, "## Note from the last run")).toEqual(["keep the gate green", "watch PS-9"]);
+      expect((await runs(h.store))[0]!.note_shown_at).toBeNull();
+      // The store read (the API's GET) never consumes the note, so a retried or lost reply cannot lose it.
+      expect((await roleBriefStoreFacts(h.store, "t", "architect")).note?.body).toMatch(/^keep the gate green\nwatch PS-9\n?$/);
       expect((await runs(h.store))[0]!.note_shown_at).toBeNull();
 
       const first = await brief(h);

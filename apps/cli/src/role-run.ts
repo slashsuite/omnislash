@@ -167,8 +167,8 @@ export async function updateRoleRun(db: Database | Store, team: string, id: numb
 // --- the successor note (OS-55) ---------------------------------------------------------------------------
 
 /** A successor note's caps: a note over either is refused whole, never cut, so the writer trims it. */
-export const ROLE_NOTE_MAX_LINES = 40;
-export const ROLE_NOTE_MAX_CHARS = 4000;
+const ROLE_NOTE_MAX_LINES = 40;
+const ROLE_NOTE_MAX_CHARS = 4000;
 
 /** The note's line count: a trailing newline does not start another line. Pure. */
 export function roleNoteLines(body: string): number {
