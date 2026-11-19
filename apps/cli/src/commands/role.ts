@@ -154,7 +154,14 @@ async function pointSeat(registry: AgentRegistry, team: string, role: TeamRole, 
 export async function liveSeatThread(backend: RoleBackend, team: string, role: TeamRole, seam: T3Seam): Promise<string | null> {
   const row = await backend.team.registry.read(teamRoleAgentId(team, role));
   if (row?.launcher !== T3_LAUNCHER || !row.session_id) return null;
-  return (await readTeamThread(seam, row.session_id)) ? row.session_id : null;
+  try {
+    const thread = await readThreadHeader(seam, row.session_id);
+    return thread.settled || thread.archived ? null : row.session_id;
+  } catch (err) {
+    // A thread T3 no longer knows is a dead seat, read quietly: the launch that follows moves the seat off it.
+    if (err instanceof T3Error && err.kind === "refused") return null;
+    throw err;
+  }
 }
 
 /**
