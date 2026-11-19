@@ -1233,7 +1233,8 @@ T3 Code (1102), the execution-plane seam:
                             seat thread <id>'; OS-82, until OS-58); else no open run starts one ('role start') whose brief lists
                             them; a run open on another machine's T3 gets nothing and the message stays unread
                             ('run <id> is open on <host>; message stored'). Delivered messages are marked read by
-                            'role-run-<id>'. A delivery that fails leaves the message stored and unread, and exits 1.
+                            'role-run-<id>' (or 'seat:<role>-<team>' on the seat path). A delivery that fails leaves
+                            the message stored and unread, and exits 1.
                             --no-deliver only stores. --from names the sender (default 'owner'). -q prints the message
                             id; --json adds 'delivery'. 'ob spinoff handoff' also stores its readying note here (kind
                             'handoff', one row per commit) and delivers it the same way to the sentinel, else the
