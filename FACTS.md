@@ -1,6 +1,6 @@
 # OmniSlash facts
 
-Checked against main at da6128b on 2026-11-19.
+Checked against main at 10ac094 on 2026-11-19.
 
 ## What it is
 OmniSlash is a command-line tool for keeping track of tasks, projects and the agents that work on them.
@@ -33,3 +33,4 @@ It is in alpha, so anything may change or break.
 
 ## Where it runs
 - `checkout-linux`: a fresh clone with Bun 1.4.2 runs `bun install`, then `bun apps/cli/src/index.ts --help` (checked on Linux).
+- `role-api-base`: when `OMNISLASH_ROLE_API` or the first line of `~/.omnislash_role_api_url` names a base url (`OMNISLASH_ROLE_API_URL_FILE` moves the file), the team role routes (`/teams/:name/runs`, `brief`, `notes`, `tick`, `inbox` and their sub-paths) go to that server and every other route stays on `OMNISLASH_API`; unset, every route goes to `OMNISLASH_API` as before (apps/cli/src/api/client.ts `ROLE_ROUTE`, apps/cli/src/api/config.ts; `bun test test/api-role-base.test.ts` in apps/cli passes).
