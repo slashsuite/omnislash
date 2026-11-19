@@ -51,7 +51,7 @@ function captureJson(fn: () => void): { action: string; jobs: Array<Record<strin
   return JSON.parse(chunks.join("\n")) as { action: string; jobs: Array<Record<string, unknown>> };
 }
 
-/** A synthetic client job: no real one remains since ob 1589, but the renderers stay generic. */
+/** A synthetic client job: the renderers stay generic, whatever the real client jobs are. */
 function probeJob(home: string): DaemonJob {
   return {
     job: "probe",
@@ -114,31 +114,50 @@ function captureText(fn: () => void): string {
   return chunks.join("\n");
 }
 
-describe("ob daemon on Linux (664, 1589: no client jobs)", () => {
-  test("no client job remains: the Mac/laptop install list is empty", () => {
-    expect(macDaemonJobs("/home/u")).toEqual([]);
+const TICK_TIMER = "omnislash-role-tick.timer";
+
+describe("ob daemon on Linux (664, 1589; OS-67: role-tick is the client job)", () => {
+  test("the only client job is role-tick: every 900 s, its rendered timer and service run `ob role tick`", () => {
+    const jobs = macDaemonJobs("/home/u");
+    expect(jobs.map((j) => j.job)).toEqual(["role-tick"]);
+    const [tick] = jobs;
+    expect(tick!.opts.interval).toBe(900);
+    expect(tick!.args).toEqual(["/home/u/.local/bin/ob", "role", "tick"]);
+    const service = renderSystemdUserService(tick!);
+    expect(service).toContain("Type=oneshot");
+    expect(service).toContain("ExecStart=/home/u/.local/bin/ob role tick");
+    expect(service).toContain('Environment="HOME=/home/u"');
+    const timer = renderSystemdUserTimer(tick!);
+    expect(timer).toContain("Unit=omnislash-role-tick.service");
+    expect(timer).toContain("OnUnitActiveSec=900s");
     expect(RETIRED_CLIENT_JOBS).toContain("spinoff-drain");
   });
 
-  test("install on a clean HOME writes no unit, no dir, and calls nothing", () => {
+  test("install on a clean HOME writes the role-tick units and enables its timer", () => {
     const home = fakeHome();
     const { calls, spawn } = recordingSpawn();
     const out = captureJson(() =>
       cmdDaemon({ args: ["install"], mode: "json" }, { home, platform: "linux", spawn }),
     );
-    expect(existsSync(systemdUserDir(home))).toBe(false);
+    const dir = systemdUserDir(home);
+    expect(existsSync(join(dir, "omnislash-role-tick.service"))).toBe(true);
+    expect(existsSync(join(dir, TICK_TIMER))).toBe(true);
     expect(existsSync(join(home, "Library"))).toBe(false);
-    expect(calls).toEqual([]);
-    expect(out.jobs).toEqual([]);
+    expect(calls).toEqual([
+      ["systemctl", "--user", "daemon-reload"],
+      ["systemctl", "--user", "enable", "--now", TICK_TIMER],
+    ]);
+    expect(out.jobs.map((j) => j.unit)).toEqual([TICK_TIMER]);
     expect((out as unknown as { retired_removed: string[] }).retired_removed).toEqual([]);
   });
 
-  test("install says no client jobs remain", () => {
+  test("install names the role-tick timer and its command", () => {
     const home = fakeHome();
     const text = captureText(() =>
       cmdDaemon({ args: ["install"], mode: "human" }, { home, platform: "linux", spawn: recordingSpawn().spawn }),
     );
-    expect(text).toContain("no client jobs remain");
+    expect(text).toContain("installed 1 systemd --user units:");
+    expect(text).toContain(`${TICK_TIMER} → role tick`);
   });
 
   test("install removes a leftover spinoff-drain unit", () => {
@@ -150,7 +169,7 @@ describe("ob daemon on Linux (664, 1589: no client jobs)", () => {
     );
     expect(existsSync(service)).toBe(false);
     expect(existsSync(timer)).toBe(false);
-    expect(calls).toEqual([
+    expect(calls.slice(0, 2)).toEqual([
       ["systemctl", "--user", "disable", "--now", "omnislash-spinoff-drain.timer"],
       ["systemctl", "--user", "daemon-reload"],
     ]);
@@ -169,33 +188,38 @@ describe("ob daemon on Linux (664, 1589: no client jobs)", () => {
     expect(existsSync(service)).toBe(false);
     expect(existsSync(timer)).toBe(false);
     expect(text).toContain("removed retired unit omnislash-spinoff-drain.timer");
+    expect(calls).toContainEqual(["systemctl", "--user", "disable", "--now", TICK_TIMER]);
     expect(calls.flat().join(" ")).not.toContain("launchctl");
   });
 
-  test("status reports no client jobs and names a leftover", () => {
+  test("status reports the role-tick timer and names a leftover", () => {
     const home = fakeHome();
     seedRetiredLinux(home);
     const { calls, spawn } = recordingSpawn();
     const text = captureText(() =>
       cmdDaemon({ args: ["status"], mode: "human" }, { home, platform: "linux", spawn }),
     );
-    expect(text).toContain("no client jobs remain");
+    expect(text).toContain(`${TICK_TIMER}\tabsent\tloaded\tevery 900s\trole tick`);
     expect(text).toContain("retired unit still installed: omnislash-spinoff-drain.timer");
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([["systemctl", "--user", "is-enabled", TICK_TIMER]]);
   });
 });
 
-describe("ob daemon on Mac stays launchd (664, 1589: no client jobs)", () => {
-  test("install on a clean HOME writes no LaunchAgent and calls nothing", () => {
+describe("ob daemon on Mac stays launchd (664, 1589; OS-67: role-tick)", () => {
+  test("install on a clean HOME writes the role-tick LaunchAgent and loads it", () => {
     const home = fakeHome();
     const { calls, spawn } = recordingSpawn();
     const out = captureJson(() =>
       cmdDaemon({ args: ["install"], mode: "json" }, { home, platform: "darwin", spawn }),
     );
-    expect(existsSync(join(home, "Library", "LaunchAgents"))).toBe(false);
+    const plist = join(home, "Library", "LaunchAgents", "com.omnislash.role-tick.plist");
+    expect(existsSync(plist)).toBe(true);
     expect(existsSync(systemdUserDir(home))).toBe(false);
-    expect(calls).toEqual([]);
-    expect(out.jobs).toEqual([]);
+    expect(calls).toEqual([
+      ["launchctl", "unload", plist],
+      ["launchctl", "load", "-w", plist],
+    ]);
+    expect(out.jobs.map((j) => j.job)).toEqual(["role-tick"]);
   });
 
   test("install and uninstall remove a leftover com.omnislash.spinoff-drain", () => {
@@ -207,19 +231,19 @@ describe("ob daemon on Mac stays launchd (664, 1589: no client jobs)", () => {
         cmdDaemon({ args: [sub], mode: "json" }, { home, platform: "darwin", spawn }),
       );
       expect(existsSync(plist), sub).toBe(false);
-      expect(calls, sub).toEqual([["launchctl", "unload", "-w", plist]]);
+      expect(calls[0], sub).toEqual(["launchctl", "unload", "-w", plist]);
       expect(calls.flat().join(" "), sub).not.toContain("systemctl");
       expect((out as unknown as { retired_removed: string[] }).retired_removed, sub).toEqual([plist]);
     }
   });
 
-  test("status names a leftover plist", () => {
+  test("status lists role-tick and names a leftover plist", () => {
     const home = fakeHome();
     const plist = seedRetiredMac(home);
     const out = captureJson(() =>
       cmdDaemon({ args: ["status"], mode: "json" }, { home, platform: "darwin", spawn: recordingSpawn().spawn }),
     );
-    expect(out.jobs).toEqual([]);
+    expect(out.jobs.map((j) => j.job)).toEqual(["role-tick"]);
     expect((out as unknown as { retired_leftover: string[] }).retired_leftover).toEqual([plist]);
   });
 });

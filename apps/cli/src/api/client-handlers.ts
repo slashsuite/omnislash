@@ -754,10 +754,22 @@ export function apiRoleBackend(ctx: ApiCtx): import("../commands/role.ts").RoleB
 	};
 }
 
+/** `ob role tick` over the API (OS-67): the findings are read on the server, the inbox and runs cross the wire, T3 is here. */
+function apiTickBackend(ctx: ApiCtx): import("../commands/role-tick.ts").TickBackend {
+	const { client } = ctx;
+	return {
+		role: apiRoleBackend(ctx),
+		inbox: apiInboxBackend(ctx),
+		teams: () => apiTeamBackend(ctx).list(),
+		checkouts: async () => launchConfig((await client.spinoffConfig()).config).repoCheckouts,
+		findings: async (team) => (await client.roleTick(team)).findings,
+	};
+}
+
 /** `ob role` over the API: the runs and the team cross the wire, the thread is read, launched and settled here. */
 async function apiRole(ctx: ApiCtx): Promise<void> {
 	const { runRoleCommand } = await import("../commands/role.ts");
-	await runRoleCommand(ctx, apiRoleBackend(ctx));
+	await runRoleCommand(ctx, apiRoleBackend(ctx), undefined, apiTickBackend(ctx));
 }
 
 /** `ob send` / `ob inbox` over the API: the messages live on the server, so any machine reaches them. */

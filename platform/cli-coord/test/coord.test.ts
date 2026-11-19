@@ -77,8 +77,8 @@ describe("daemonJobs registry (via `ob daemon status`)", () => {
     expect(daemonJobs("/Users/nobody").find((j) => j.job === "backup")!.args.slice(1)).toEqual(["backup"]);
   });
 
-  test("Mac install list is empty since the drain retired (457, 1589)", () => {
-    expect(macDaemonJobs("/Users/nobody")).toEqual([]);
+  test("the only Mac client job is role-tick since the drain retired (457, 1589, OS-67)", () => {
+    expect(macDaemonJobs("/Users/nobody").map((j) => [j.job, j.opts.interval, j.args.slice(1)])).toEqual([["role-tick", 900, ["role", "tick"]]]);
     const chunks: string[] = [];
     const orig = console.log;
     console.log = (m?: unknown) => {
@@ -98,6 +98,6 @@ describe("daemonJobs registry (via `ob daemon status`)", () => {
       console.log = orig;
     }
     const jobs = JSON.parse(chunks.join("\n")).jobs as Array<{ job: string }>;
-    expect(jobs).toEqual([]);
+    expect(jobs.map((j) => j.job)).toEqual(["role-tick"]);
   });
 });

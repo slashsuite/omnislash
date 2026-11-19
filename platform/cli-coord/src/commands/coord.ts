@@ -597,16 +597,22 @@ export function daemonJobs(home: string): DaemonJob[] {
     mk("cert-renew", ["cert", "renew"], { calendar: { hour: 3, minute: 40 } }), // daily 03:40, renews inside the last 30 days of a 90-day certificate, so a broken renewal is a JOB FAILING alert (218) a month before it is an outage (220)
     mk("tunnel-check", ["cloudflare", "tunnels"], { calendar: { hour: 7, minute: 30 } }), // daily 07:30 — flag a stale cloudflared connector before Cloudflare emails the advisory (1643). Exit 1 on drift is the signal: a JOB FAILING alert (218) plus the unit's OnFailure ticket, both carrying the per-host fix the command prints. 07:30 so the 08:00 alerts digest has today's verdict.
     mk("creds-check", ["creds", "check", "--all"], { calendar: { hour: 7, minute: 45 } }), // daily 07:45 — asks every credential's provider whether it still works and records each verdict in credential_check (1655). `--all` is every spec in the inventory, so opencode-go/opencode-zen (1656) join with no change here. A failed verdict exits 1 and names which, so a revoked or expired token is a JOB FAILING alert (218) like gmail-sync, not a surprise when the monthly ob backup needs it (1575). 07:45 so the 08:00 alerts digest (rule 11) has today's verdicts; the job itself does not notify.
+    mk("role-tick", ["role", "tick"], { interval: 900 }), // every 15 min (OS-67), a CLIENT job: writes what needs each team's architect into its inbox and delivers it into the architect's run on this machine's T3. Nothing new is one line and no T3 call.
     mk("ci-main", ["ci", "main", "--notify"], { interval: 3600 }), // hourly (OB-2276): the catch-up behind the GitHub webhook receiver. Tells a red run on main the receiver missed, once, and its recovery. Exit 1 when a repo could not be read or a note not sent, so a broken catch-up is a JOB FAILING alert. Server only, enabled by hand after one manual run.
   ];
 }
 
 /**
- * The jobs a GUI client runs. Empty since ob 1589: `ob spinoff <ref>` opens its T3 thread in the same
- * invocation, so the 45s `spinoff-drain` poll that used to launch queued rows has nothing left to do. The
- * install/uninstall machinery stays for the next client job.
+ * The jobs a GUI client runs. Since ob 1589 `ob spinoff <ref>` opens its T3 thread in the same invocation, so the 45s
+ * `spinoff-drain` poll retired. `role-tick` (OS-67) runs here because a pass may open a role run, and runs open on the
+ * caller's own T3, which the server does not have.
  */
-const MAC_DAEMON_JOBS = new Set<string>();
+const MAC_DAEMON_JOBS = new Set<string>(["role-tick"]);
+
+/** Whether a declared job runs on a client, not the server, so the server's job_run table never sees its runs. */
+export function isClientJob(job: string): boolean {
+  return MAC_DAEMON_JOBS.has(job);
+}
 
 /**
  * Client jobs an older `ob daemon install` wrote and this one no longer does (ob 1589). Install and

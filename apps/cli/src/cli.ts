@@ -1010,7 +1010,7 @@ Coordination (v2):
                             cert or key is missing, the cert is expired, the key has group/other bits, the key does not
                             match the cert, or the served and installed paths differ. Not configured exits 0. renew
                             installs the key first and the cert last (the cert rename restarts the dashboard).
-  daemon install | uninstall | status       Mac launchd or Linux systemd --user. 1589 retired the spinoff-drain job, the only client job, so install writes NO drain unit; install and uninstall both REMOVE an existing omnislash-spinoff-drain unit / com.omnislash.spinoff-drain plist and say so, and say when no client job remains (server jobs live on the API host)
+  daemon install | uninstall | status       Mac launchd or Linux systemd --user. Installs the one client job, role-tick ('ob role tick' every 900s, OS-67); install and uninstall both REMOVE a leftover omnislash-spinoff-drain unit / com.omnislash.spinoff-drain plist (the job 1589 retired) and say so (server jobs live on the API host)
   deploy status | deploy record --target <t> --host <h> --unit <u> --sha <s> --result <ok|rolled-back|refused>
                              [--at <iso>] | deploy run [--sha <sha>] [--ssh]
                              the ob record of what is deployed, per target (582): ONE row per
@@ -1190,6 +1190,21 @@ T3 Code (1102), the execution-plane seam:
                             exit 2 naming both counts and nothing is stored (never cut). A second note on the same
                             run replaces the first. Over the API: GET /teams/:name/brief?role=,
                             POST /teams/:name/notes, POST /teams/:name/runs/:id/note-shown.
+  role tick [--team <t>[,<t>...]] [--json]
+                            one pass of the 15 minute role-tick client job (OS-67), for the ARCHITECT role. With no
+                            --team it takes every team whose checkout is on this machine (the first member project
+                            that resolves: an existing path, its repo_checkouts entry, else ~/dev/<id>); a team with
+                            none prints 'skip <team>: no checkout here' and the pass goes on. It writes each finding
+                            from the store into the architect's inbox, from 'tick', keyed
+                            'tick:<team>:<kind>:<ref>:<stamp>' so an unchanged finding writes nothing:
+                            stale-builder (a building row whose agent heartbeat, or with no agent row its launch, is
+                            over 60 minutes old), flake (an open flake item with no live spinoff row) and idle-repo
+                            (a member project with no live spinoff row whose first non-blocked item would dispatch
+                            today). Then it delivers the unread messages as 'send' does, into a run opened in that
+                            checkout. No unread messages prints 'role tick <team>: nothing new', makes no T3 call
+                            and starts no run. While ~/.cache/ob-good-night holds a future time it writes the
+                            findings but starts and sends nothing. A failed team exits 1 and the next still runs.
+                            Over the API the findings come from GET /teams/:name/tick.
   send <team> <role> "<text>" [--body-file <path>] [--from <id>] [--no-deliver] [--json|-q]
                             store a message in a team role's inbox (architect, sentinel or muse) on the server, so any
                             machine reaches it and a message to a replaced thread is kept, then DELIVER the role's

@@ -131,6 +131,7 @@ import {
 import { consumeTeamHandoff, latestTeamHandoff, parseTeamRole, recordTeamHandoff, type HandoffFilter } from "../team-handoff.ts";
 import { markRoleNoteShown, markRoleRun, openRoleRuns, parseEndReason, updateRoleRun, writeRoleNote } from "../role-run.ts";
 import { roleBriefStoreFacts } from "../role-brief.ts";
+import { tickFindings } from "../role-tick.ts";
 import { listRoleMessages, markRoleMessagesRead, sendRoleMessage, ROLE_MESSAGE_KINDS, type RoleMessageKind } from "../inbox.ts";
 import { clearCredentialCheck, defaultMasterKey, getSecret, listSecrets, masterKeyForWrite, removeSecret, setSecret, type MasterKey } from "../secrets.ts";
 import {
@@ -294,6 +295,7 @@ import type {
   RoleRunsResponse,
   RoleRunUpdateRequest,
   RoleBriefResponse,
+  RoleTickResponse,
   RoleNoteRequest,
   RoleMessageRequest,
   RoleMessageResponse,
@@ -1963,6 +1965,10 @@ export async function roleRunUpdate(store: Store, name: string, id: number, req:
 }
 
 // --- a role's start brief and successor note (`ob role brief`, `ob role note`, OS-55) ----------------------
+
+export async function roleTickFindings(store: Store, name: string): Promise<RoleTickResponse> {
+  return { findings: await teamFault(() => tickFindings(store, name)) };
+}
 
 export async function roleBriefFacts(store: Store, name: string, role: string | null): Promise<RoleBriefResponse> {
   return { facts: await teamFault(() => roleBriefStoreFacts(store, name, parseTeamRole(role, "'role'"))) };
