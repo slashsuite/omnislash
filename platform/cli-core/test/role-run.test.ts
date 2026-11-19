@@ -10,6 +10,7 @@ import { __setT3Seam, storeAgentRegistry, t3Seam, worktreeRepoOf } from "../../.
 import { t3BaseUrl, T3Error, T3_BASE_URL_ENV } from "../../../apps/cli/src/t3/client.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { teamHandoffTarget } from "../../../apps/cli/src/team.ts";
+import { roleRunRequestId } from "../../../apps/cli/src/commands/role.ts";
 import { openRoleRuns, updateRoleRun, type RoleRun } from "../../../apps/cli/src/role-run.ts";
 import { openStore, sqliteStoreFor, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseStatus } from "../../cli-coord/src/lease.ts";
@@ -133,7 +134,56 @@ async function leaseHolder(store: Store, resource: string): Promise<string | nul
   return (await leaseStatus(store)).find((l) => l.resource === resource)?.holder ?? null;
 }
 
+
+/** OS-82: a live thread `seat-1` in the fake T3, bound as the role's seat the way `ob t3 architect --thread` binds it. */
+async function bindSeat(store: Store, f: FakeT3Install, role = "architect", threadId = "seat-1"): Promise<void> {
+  f.threads.push({
+    threadId,
+    projectId: "proj-0",
+    title: `t · ${role}`,
+    status: "idle",
+    worktreePath: null,
+    branch: null,
+    settled: false,
+    archived: false,
+    model: "claude-opus-5-5",
+    providerInstanceId: "claudeAgent",
+    activeRunId: null,
+    latestRunId: null,
+  });
+  await storeAgentRegistry(store).register({ id: `${role}-t`, worktree: REPO, status: "planning", launcher: "t3", sessionId: threadId, ttlS: 3600 });
+}
+
 const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
+  [
+    "OS-82: with no open run and a live seat thread, start launches nothing, writes no run and leaves the seat",
+    async (h) => {
+      const f = t3();
+      await bindSeat(h.store, f);
+      const res = await h.run(["role", "start", "t", "architect"]);
+      expect(res.err).toBe("");
+      expect(res.code).toBe(0);
+      expect(res.out.trim()).toBe("t architect: seat thread seat-1 is live; no run opened (the seat is used as it is until OS-58)");
+      expect(f.launches).toHaveLength(0);
+      expect(f.pinned).toEqual([]);
+      expect(await runs(h.store)).toEqual([]);
+      expect((await storeAgentRegistry(h.store).read("architect-t"))?.session_id).toBe("seat-1");
+      expect(JSON.parse((await h.run(["role", "start", "t", "architect", "--json"])).out)).toMatchObject({ seat: true, run: null, thread_id: "seat-1", created: false });
+    },
+  ],
+  [
+    "OS-82: a settled seat thread launches once and moves the seat to the new thread, as before",
+    async (h) => {
+      const f = t3();
+      await bindSeat(h.store, f);
+      f.threads.find((t) => t.threadId === "seat-1")!.settled = true;
+      const res = await h.run(["role", "start", "t", "architect"]);
+      expect(res.code).toBe(0);
+      expect(res.out).toContain("run 1 opened, thread t3-2");
+      expect(f.launches).toHaveLength(1);
+      expect((await storeAgentRegistry(h.store).read("architect-t"))?.session_id).toBe("t3-2");
+    },
+  ],
   [
     "start twice launches once and prints the same thread id both times",
     async (h) => {
@@ -380,4 +430,24 @@ describe("ob role, local", () => {
 
 describe("ob role, over the API", () => {
   for (const [name, body] of CASES) test(name, () => withApi(body));
+});
+
+describe("OS-82: a launch's request id is unique across stores and launches", () => {
+  test("roleRunRequestId differs by team and by time", () => {
+    const n1 = Date.parse("2026-11-19T11:26:00.000Z");
+    expect(roleRunRequestId("a", "architect", 1, n1)).not.toBe(roleRunRequestId("b", "architect", 1, n1));
+    expect(roleRunRequestId("a", "architect", 1, n1)).not.toBe(roleRunRequestId("a", "architect", 1, n1 + 1));
+  });
+
+  test("run 1 of team t in two stores sends two different clientRequestIds", async () => {
+    const f = t3();
+    expect((await (await local()).run(["role", "start", "t", "architect"])).code).toBe(0);
+    await Bun.sleep(2);
+    expect((await (await local()).run(["role", "start", "t", "architect"])).code).toBe(0);
+    expect(f.launches).toHaveLength(2);
+    const [a, b] = f.launches.map((l) => l.clientRequestId);
+    expect(a).toStartWith("ob-role-run-t-architect-1-");
+    expect(b).toStartWith("ob-role-run-t-architect-1-");
+    expect(a).not.toBe(b);
+  });
 });

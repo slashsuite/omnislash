@@ -19,6 +19,7 @@ import { spinoffRowsServingItem } from "../../../platform/cli-coord/src/spinoff-
 import { refuseUncheckedDispatch } from "../../../platform/cli-coord/src/spinoff-check.ts";
 import { settingFor } from "./settings.ts";
 import { AppError } from "./errors.ts";
+import { T3_LAUNCHER } from "./t3/dispatch.ts";
 
 /** A builder whose heartbeat (or, with no agent row, whose launch) is older than this is stale. */
 const TICK_STALE_MS = 60 * 60 * 1000;
@@ -64,6 +65,9 @@ export async function tickFindings(db: Database | Store, team: string, now: Date
   // A `building` row (stored `launched`) whose builder has not beaten for an hour.
   for (const row of teamLive) {
     if (row.status !== "launched") continue;
+    // Only T3 builders beat or launch today: the store still holds `building` rows from the launchers retired in October
+    // (omnishell, none), whose stored ticket refs are free text, and they would be reported stale forever (OS-82).
+    if (row.launcher !== T3_LAUNCHER) continue;
     const agent = row.agent_id ? await getAgent(s, row.agent_id) : null;
     const at = agent ? agent.heartbeat_at : row.launched_at;
     if (!olderThan(at, now, TICK_STALE_MS)) continue;

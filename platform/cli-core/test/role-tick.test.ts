@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { freshDbPath, runCli, type CliResult } from "../../../apps/cli/test/helpers.ts";
 import { installFakeT3, type FakeT3Install } from "../../../apps/cli/test/fake-t3.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { __setT3Seam, worktreeRepoOf, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
+import { __setT3Seam, storeAgentRegistry, worktreeRepoOf, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import type { RoleMessage } from "../../../apps/cli/src/inbox.ts";
 import type { RoleRun } from "../../../apps/cli/src/role-run.ts";
@@ -133,7 +133,7 @@ async function runs(store: Store): Promise<RoleRun[]> {
 }
 
 /** A `building` spinoff row in `repo` whose builder last beat `heartbeatAt`. */
-async function building(store: Store, ref: string, heartbeatAt: string, repo = "tickp"): Promise<void> {
+async function building(store: Store, ref: string, heartbeatAt: string, repo = "tickp", launcher: string | null = "t3"): Promise<void> {
   const id = ref.toLowerCase();
   await store.q.insert(store.t.agent).values({ id, ticket: ref, worktree: `/wt/${id}`, branch: id, status: "working", started_at: heartbeatAt, heartbeat_at: heartbeatAt, ttl_s: 3600 });
   await store.q.insert(store.t.spinoff).values({
@@ -144,6 +144,7 @@ async function building(store: Store, ref: string, heartbeatAt: string, repo = "
     mode: "interactive",
     brief: "b",
     status: "launched",
+    launcher,
     agent_id: id,
     request_at: heartbeatAt,
     launched_at: heartbeatAt,
@@ -161,6 +162,26 @@ async function dispatchReady(store: Store, projectId: string, title: string): Pr
   const id = await createItem(store, { type: "task", title, body: READY_BODY, projectId });
   await recordSpinoffCheck(store, id, { architect: SIDE, checker: SIDE });
   return id;
+}
+
+
+/** OS-82: a live thread `seat-1` in the fake T3, bound as the role's seat the way `ob t3 architect --thread` binds it. */
+async function bindSeat(store: Store, f: FakeT3Install, role = "architect", threadId = "seat-1"): Promise<void> {
+  f.threads.push({
+    threadId,
+    projectId: "proj-0",
+    title: `t · ${role}`,
+    status: "idle",
+    worktreePath: null,
+    branch: null,
+    settled: false,
+    archived: false,
+    model: "claude-opus-5-5",
+    providerInstanceId: "claudeAgent",
+    activeRunId: null,
+    latestRunId: null,
+  });
+  await storeAgentRegistry(store).register({ id: `${role}-t`, worktree: REPO, status: "planning", launcher: "t3", sessionId: threadId, ttlS: 3600 });
 }
 
 const staleBuilder = async (h: Harness) => {
@@ -326,6 +347,25 @@ describe("ob role tick, locally", () => {
   });
 });
 
+describe("ob role tick, OS-82", () => {
+  test("a team with a live seat and one unread message: no launch, the message is queued into the seat, the seat stays, no run ends", async () => {
+    const h = await local();
+    const f = t3();
+    await bindSeat(h.store, f);
+    await building(h.store, "TP-1", ago(61));
+    const res = await h.run(["role", "tick"]);
+    expect(res.err).toBe("");
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("role tick t architect: 1 message queued into seat thread seat-1");
+    expect(f.launches).toHaveLength(0);
+    expect(f.sends.map((s) => s.threadId)).toEqual(["seat-1"]);
+    expect(f.threads.find((t) => t.threadId === "seat-1")!.settled).toBe(false);
+    expect((await storeAgentRegistry(h.store).read("architect-t"))?.session_id).toBe("seat-1");
+    expect(await runs(h.store)).toEqual([]);
+    expect((await messages(h.store))[0]).toMatchObject({ read_by: "seat:architect-t" });
+  });
+});
+
 describe("ob role tick, over the API", () => {
   test("a builder with a 61 minute old heartbeat: one tick row and one run; a second tick writes and starts nothing", () => withApi(staleBuilder), 60_000);
 });
@@ -345,6 +385,7 @@ describe("tickFindings on a fixed clock", () => {
       mode: "interactive",
       brief: "b",
       status: "launched",
+      launcher: "t3",
       request_at: ago(90, NOW),
       launched_at: ago(90, NOW),
     });
@@ -356,6 +397,14 @@ describe("tickFindings on a fixed clock", () => {
     expect(found[1]!.body).toContain("it launched 90 minutes ago");
     expect(found[1]!.body).toContain("no builder has checked in");
     expect(tickClientKey("t", found[0]!)).toBe(`tick:t:stale-builder:TP-1:building@${ago(61, NOW)}`);
+  });
+
+  test("OS-82: only t3 rows are stale builders; omnishell rows and rows with no launcher are retired and give nothing", async () => {
+    const h = await local();
+    await building(h.store, "OLD-1", ago(120, NOW), "tickp", "omnishell");
+    await building(h.store, "OLD-2", ago(120, NOW), "tickp", null);
+    await building(h.store, "TP-9", ago(120, NOW));
+    expect((await tickFindings(h.store, "t", NOW)).map((f) => [f.kind, f.ref])).toEqual([["stale-builder", "TP-9"]]);
   });
 
   test("a stale row in another team's repo is not this team's", async () => {
