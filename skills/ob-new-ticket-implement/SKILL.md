@@ -1,6 +1,6 @@
 ---
 name: ob-new-ticket-implement
-description: "Create a new `ob` ticket, spin up a dedicated git worktree for it with `wt`, and hand it to `ob spinoff` (an interactive T3 thread on the bare ask). Use when the user wants to \"make a ticket and implement it\", \"spin up a ticket for X and build it\", \"create a ticket and have an agent implement it\", or otherwise turn an idea into a ticket plus an in-flight implementation in one step. Also supports a mid-flow SPIN-OFF mode (`--spinoff --parent ID`): carve a discovered task off the current ticket into its own `ob add` ticket and `wt` worktree, record the parent→child link, and hand it to `ob spinoff`. Use when the user wants to \"spin this off into its own ticket\", \"carve this out into a new thread\", \"open this in a new tab/thread\", or split follow-up work off an in-progress change to keep it small."
+description: "Create a new `ob` ticket, spin up a dedicated git worktree for it with `wt`, and hand it to `ob spinoff` (an interactive T3 thread on the bare ask). Use when the user wants to \"make a ticket and implement it\", \"spin up a ticket for X and build it\", \"create a ticket and have an agent implement it\", or otherwise turn an idea into a ticket plus an in-flight implementation in one step. Also supports a mid-flow SPINOFF mode (`--spinoff --parent ID`): carve discovered work off the current ticket into its own `ob add` ticket and `wt` worktree, record the parent→child link, and hand it to `ob spinoff`. Use when the user wants to \"spin this off into its own ticket\", \"carve this out into a new thread\", \"open this in a new tab/thread\", or split follow-up work off an in-progress change to keep it small."
 ---
 
 # New ticket → worktree → spinoff
@@ -24,7 +24,7 @@ Turn a request into three things, in order:
 From the user's request, draft:
 
 - **title**: imperative and concise.
-- **description**: markdown with context and acceptance criteria / scope, detailed enough that an agent can implement it without further questions. If the request is thin, flesh out sensible ACs and explicitly note any assumptions.
+- **description**: markdown with context, a Done when list and scope, detailed enough that an agent can implement it without further questions. If the request is thin, flesh out sensible Done when items and explicitly note any assumptions.
 - **priority**: if the user named one; otherwise omit and let `ob add` default.
 
 Show the drafted title, description, and priority to the user and get a quick 👍 **before creating**. Skip the confirm only if the user said to just go.
@@ -76,7 +76,7 @@ cat > /tmp/spinoff-brief.md <<'MD'
 
 Branch: <BRANCH>   Worktree: <WORKTREE>
 
-## Acceptance criteria
+## Done when
 - ...
 
 ## Testing steps
@@ -96,7 +96,7 @@ ob spinoff "<id>" \
 - **`--worktree "$WORKTREE"`** points `ob` at the checkout step 3 created.
 - **`--brief -`** reads the brief from stdin.
 - **`--repo`** takes a path or a slug. Pass it when cwd is not the target repo.
-- **`--branch "$BRANCH"`** keeps the child on the branch step 3 created.
+- **`--branch "$BRANCH"`** keeps the builder on the branch step 3 created.
 - **`--tier`** picks the builder's model: `simple` → Haiku, `medium` → Sonnet, `complex` → Opus. Rate it yourself with the rubric in the `ob-architect` skill ("Rate every dispatch"). Omitted = `medium`, and the queue line says `tier: medium (default)`.
 
 The session opens on the **ticket's own brief** (its title, what to build, acceptance and do not, then the directive to run `ob-spinoff`): the ask, never a self-gating procedure. You steer; you declare it done. `--agent` is a usage error.
@@ -108,9 +108,9 @@ The session opens on the **ticket's own brief** (its title, what to build, accep
 - **Tier:** `<tier>` (`<model>`). Say it, so the cost of the dispatch is visible.
 - **Launch:** `ob spinoff` opens a T3 thread bound to its worktree in the same invocation (the `t3` launcher) and prints the thread id. When another live session holds its `ticket:`/`worktree:` lease it refuses, names the holder and leaves no pending row; `--holder <id>` dispatches under your own hold.
 
-## Spin-off mode (`--spinoff --parent <id>`)
+## Spinoff mode (`--spinoff --parent <id>`)
 
-A **mid-flow** variant: you're already deep in one ticket's worktree and a task surfaces that deserves its **own** ticket (keeps the current change small). Carve it off and hand it to **`ob spinoff`**.
+A **mid-flow** variant: you're already deep in one ticket's worktree and work surfaces that deserves its **own** ticket (keeps the current change small). Carve it off and hand it to **`ob spinoff`**.
 
 Trigger: the user says "spin this off", "carve this out into its own ticket", "open this in a new tab/thread", etc., **from within the current ticket's session**.
 

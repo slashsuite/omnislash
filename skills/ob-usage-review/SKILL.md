@@ -16,7 +16,7 @@ The review itself must be cheap. Run it in a fresh thread, start no subagents, a
 1. **Read the numbers.** `ob usage day --compare` (last 24 hours against the 24 before). Note the total, the weekly window line (points ahead or behind pace), and the biggest rows in each section.
 2. **Read the last levers.** The levers log in your main repo (for example `docs/usage-levers.md`): what was adopted on which day, and the numbers it was meant to move. If a lever's figure did not move in the `--compare` deltas, say so; it is a candidate to drop or redo.
 3. **Name at most three levers**, largest dollar size first. Each one is:
-   - the figure it moves, with its dollars and its share of the day from today's report (`cache read $516, 65%`); state the saving as a share of the day's usage too, not only dollars, and say it is the total across threads, not per task,
+   - the figure it moves, with its dollars and its share of the day from today's report (`cache read $516, 65%`); state the saving as a share of the day's usage too, not only dollars, and say it is the total across threads, not per ticket,
    - the cause read off the report (a session whose peak context sits at 360k, one thread doing most of the cost, subagents above 15%, Opus on work a cheaper tier could do),
    - one concrete change: a rule (compact or start fresh past a context size, a tier for a kind of ticket), a polling or watchdog loop to cut or slow, a role thread to retire, a skill to make shorter.
    A lever with no dollar figure behind it is not a lever. Skip anything under 5% of the day.

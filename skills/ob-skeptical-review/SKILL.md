@@ -51,10 +51,10 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 
 ## Which models
 
-**The owner picks the readers, their models and how many run per task tier.** The owner sets them on the dashboard's **Reviewers** page (`/reviewers`) or with
+**The owner picks the readers, their models and how many run per ticket tier.** The owner sets them on the dashboard's **Reviewers** page (`/reviewers`) or with
 `ob review readers set|rm|tier`; both write the server's `review_readers` setting, so every machine reads the same
 set. `ob review readers --tier <tier> -q` prints the legs a tier runs, one per line, and How to run runs exactly
-those. A simple task may get one reader and a complex one three. Unset, every tier runs the three below. The free
+those. A simple ticket may get one reader and a complex one three. Unset, every tier runs the three below. The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
@@ -91,19 +91,19 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   steps below apply only if a paid reader is made required again. When a required `opencode-go/...` reader
   exits non-zero, run `ob creds check opencode-go`. Only if it reports `FAILED` is the reader `skipped (no credits)`
   and not `failed`. The review carries on with the readers that ran, and the land is not blocked. If the check
-  passes, the leg is an ordinary `failed` as above and no task is filed. The check decides, not the leg's error text,
+  passes, the leg is an ordinary `failed` as above and no ticket is filed. The check decides, not the leg's error text,
   so do not match on `Insufficient account funds` or rate-limit output. A paid optional leg skipped this way reports
   `skipped (no credits)` and files nothing.
-  - **Log the owed review.** Each skipped review files one task, on the reviewed repo's project, in the same step that
-    records the result. One task per ticket, covering every reader it is owed:
+  - **Log the owed review.** Each skipped review files one ticket, on the reviewed repo's project, in the same step that
+    records the result. One owed ticket per reviewed ticket, covering every reader it is owed:
     `ob add "Owed review: <ticket>, <readers>" --project <project> --priority medium --tag review-owed --body "<body>"`
     The body names the ticket, the branch (the PR may not exist yet: round 1 usually runs before `gh pr create`, so
     the architect finds the PR by `gh pr list --state all --search <ticket>`), the readers owed (`deepseek`, `luna`), the
     round they missed, and the review kind: skeptical review, or hill climb with its kit path. The body also says
-    "the architect pays this back under Owed reviews, not through `ob spinoff`". Note the task's ref.
+    "the architect pays this back under Owed reviews, not through `ob spinoff`". Note the ticket's ref.
   - A reader skipped for independence (`skipped (builder)`) is not owed and files nothing.
   - **Paying it back** is the architect's: `skills/ob-architect` (Step 0 and the queue pass) runs the owed readers once the
-    creds check passes and closes the task.
+    creds check passes and closes the ticket.
 - **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
@@ -348,4 +348,4 @@ finished builds of the same ticket.
 - **stupid** / **overboard**: cut it or justify in one line (ticket required it / existing pattern). Start a new round (see Scores and rounds) only when a fix or cut changed the diff.
 - **unproven**: check it yourself; fix it if it holds, otherwise drop it with one line on why.
 - An unfixed `wrong`, a `rejected` answer, or an unjustified leftover blocks the PR and `State: landable`.
-- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (opus: a + deepseek: b + luna: c)"`, each leg separately, because a model that keeps returning `ok` is information the lander wants.
+- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (opus: a + deepseek: b + luna: c)"`, each leg separately, because a model that keeps returning `ok` is information the sentinel wants.

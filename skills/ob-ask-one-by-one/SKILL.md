@@ -1,6 +1,6 @@
 ---
 name: ob-ask-one-by-one
-description: "How to put ANY question, decision, approval or review item to the owner: always through the harness's question tool (AskUserQuestion), never as plain text, and one question at a time when there are several. Use every time you are about to ask the owner anything, one question or twenty: a yes/no, a pick between options, a \"needs you\" from a builder, a morning review, a batch of PRs or tickets to approve, a grilling round. Triggers: ask the owner, question for the owner, decision for you, needs you, approve, one by one, review these, morning review, going to bed review, a pile of decisions."
+description: "How to put ANY question, decision, approval or review item to the owner: always through the harness's question tool (AskUserQuestion), never as plain text, and one question at a time when there are several. Use every time you are about to ask the owner anything, one question or twenty: a yes/no, a pick between options, a \"needs you\" from a builder, a good morning, a batch of PRs or tickets to approve, a grilling round. Triggers: ask the owner, question for the owner, decision for you, needs you, approve, one by one, review these, morning review, going to bed review, a pile of decisions."
 ---
 
 # Ask with the question tool, one by one

@@ -93,7 +93,7 @@ belongs on main. Before you rebase:
 your last push). Push with `git push --force-with-lease=<branch>:<that SHA>`, never a bare `--force`. If the lease fails,
 someone pushed to your branch: fetch, look at what they pushed, and reassess before you overwrite it.
 
-**Visual repos.** A repo with a visual check (the Hack Cove UI repo, for example) documents it in its `AGENTS.md` "Visual check" section. Read that section and follow
+**Visual repos.** A repo with a visual check (the UISlash repo, for example) documents it in its `AGENTS.md` "Visual check" section. Read that section and follow
 it, including the upload when the commit carries a `Visual:` line. The visual-review host and its token come from your own config or `ob secret get <name>`.
 
 **A ticket tagged `spike` answers instead of committing.** It may edit, test and run commands in its worktree. It may commit documentation but never code: when its ticket asks for a report under `docs/`, it commits that file alone as `docs(<ref>): ...`, rebases, pushes and opens a PR, and otherwise it never commits, pushes or opens a PR. It answers the ticket's `## Questions` with `ob note` on the parent ticket: each answer with evidence, what is still unknown, the size it now expects, whether to split. It stops at its `## Box`. When it has answered, it runs `ob spinoff handoff <ticket> --note '<one line>'`: that skips the dirty-worktree check (a spike tries things), refuses naming each path if the branch changes anything but documentation past `base_sha` (a `.md` file outside `apps/`, `platform/`, `domains/`, `skills/` and `ops/`; drop those changes and hand off again), names the open doc PR in the architect's note, and stamps nothing, so there is no `State:` line and no gate. It then stops. The architect reads the notes on the parent, closes the spike and removes its worktree. The rest of this section is for builds.
@@ -108,7 +108,7 @@ and `Look at:` / `Run:` lines give the files and the command. `ob spinoff gateab
 readying note and `ob agents` print the reason on its own marked line and never the paragraph, so a reason buried
 behind the gate result is a reason nobody sees (a longer one is cut at a word boundary).
 
-- `State: landable`: acceptance criteria met, gate green, mergeable as-is. Put the gate result on the `Gate:` line.
+- `State: landable`: Done when items met, gate green, mergeable as-is. Put the gate result on the `Gate:` line.
   (`State: ready` is the older spelling; old commits that carry it stay landable, but write `landable`.)
 - `State: needs-human: <what to decide or look at>`: built and gated, but the human must judge it (feel, wording,
   anything visual). Write the reason as the question the owner answers, not as a status report: `is the empty-state wording
@@ -143,7 +143,7 @@ SHA is the gate for those two. Run them locally while you build as your own feed
 pass before the handoff, and you do not re-run them after the rebase. **You do wait for CI, though:** open the PR, then
 `gh pr checks <N> --watch` until every check on the PR head is green. A failing check is fixed on the branch (push, watch again),
 or reported as a flake (below), never handed off. `ob spinoff handoff` enforces this: with an open PR it refuses a pending or failing
-check, a PR head that is not your HEAD, and a `gh` it cannot read (`COULD NOT READ CI`, never treated as green). "I believe the task
+check, a PR head that is not your HEAD, and a `gh` it cannot read (`COULD NOT READ CI`, never treated as green). "I believe the ticket
 is done" is not the trigger; a green PR is. The rest stays yours to run and report:
 - `ob` still loads (the on-PATH `ob` runs this source; try `ob next`).
 - `bunx moon run <project>:typecheck` and `bunx moon run <project>:test` while you build (feedback; CI gates the PR head).

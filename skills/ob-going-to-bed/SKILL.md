@@ -1,12 +1,12 @@
 ---
 name: ob-going-to-bed
-description: Overnight autonomous mode. Invoke when the user is going to sleep and wants the agent to work the ENTIRE buildable task queue to completion unattended, deciding and logging every key call for morning review. Progress over perfection; anything wrong gets fixed in the morning. Triggers on "going to bed", "overnight", "work through the night / the queue while I sleep", "run till it's done".
+description: Overnight autonomous mode. Invoke when the user is going to sleep and wants the agent to work the ENTIRE buildable ticket queue to completion unattended, deciding and logging every key call for good morning. Progress over perfection; anything wrong gets fixed in the morning. Triggers on "going to bed", "overnight", "work through the night / the queue while I sleep", "run till it's done".
 ---
 
-The user is going to sleep. **Work the entire buildable task queue to completion, unattended:** make reasonable calls on anything that would normally need them, **log every key decision** for morning review, and **keep going until the frontier is empty**. **Progress over perfection: anything wrong gets fixed in the morning.** You build on top of the `/ob-architect` role (charts, delegates, gates, lands); this skill sets the OVERNIGHT operating posture.
+The user is going to sleep. **Work the entire buildable ticket queue to completion, unattended:** make reasonable calls on anything that would normally need them, **log every key decision** for good morning, and **keep going until the frontier is empty**. **Progress over perfection: anything wrong gets fixed in the morning.** You build on top of the `/ob-architect` role (charts, delegates, gates, lands); this skill sets the OVERNIGHT operating posture.
 
 ## The mandate
-- **Keep going until the frontier is EMPTY.** Dispatch → gate → land → pick the next → repeat. Never stop after one task. Never ask "what next?": **there is no one to answer.**
+- **Keep going until the frontier is EMPTY.** Dispatch → gate → land → pick the next → repeat. Never stop after one ticket. Never ask "what next?": **there is no one to answer.**
 - **Never block on the user.** Do NOT use AskUserQuestion / EnterPlanMode / any "confirm?": the user is asleep. For every decision, pick the most reasonable option, **LOG it** with `ob overnight decide` (what, why, doubt, undo), and continue.
 - **Keep the pipeline MOVING, one builder per repo.** Dispatch one buildable ticket per repo; gate and land it when its completion re-invokes you (the notification chain IS the overnight engine); then dispatch the next. A second builder in the same repo only when the architect clears `ob-architect`'s 98% no-conflict bar.
 - **Retry transient failures once**, then move on and log it (a stalled or API-errored subagent is not a reason to stop the night).
@@ -19,7 +19,7 @@ The user is going to sleep. **Work the entire buildable task queue to completion
   - **Migrations additive and non-destructive only**; back up first; never a destructive migration on the live DB.
   - **Secrets** stay in their token files (never committed); **DBs never in git**.
   - **Device or physical work** you can't do (no phone in hand) → LOG as needs-you.
-- **Interactive / "feel" tasks** (prompt wording, UX, voice, visual polish): build the **functional/mechanical** version, gate it, land it if green, and **LOG "needs your feel-review in the morning."** NEVER self-declare the FEEL done: you cannot judge taste while the user sleeps; that stays the user's call.
+- **Interactive / "feel" tickets** (prompt wording, UX, voice, visual polish): build the **functional/mechanical** version, gate it, land it if green, and **LOG "needs your feel-review in the morning."** NEVER self-declare the FEEL done: you cannot judge taste while the user sleeps; that stays the user's call.
 
 ## What to work, in priority order
 1. **Buildable-now, fully-specifiable** (one at a time, unless the user asked for parallel): the bulk of the night.
@@ -32,7 +32,7 @@ The user is going to sleep. **Work the entire buildable task queue to completion
   1. **Start the night:** `ob overnight start --project <your project>` before the first dispatch. It creates the night's run doc (or prints the existing one) and prints the date to pass as `--night`; the night is the date the run started, local time. Architects in other repos log on their own project the same way.
   2. **Log every key call as you make it** (don't batch at the end: if the session dies, the log survives): `ob overnight decide "<the decision, one line>" --what '<what you did>' --why '<why>' --doubt '<how sure, what could be wrong>' --undo '<how to change it in the morning>' --project <p> --night <date>`. Pass `--doubt` and `--undo` every time; leave one out only when there is truly nothing to say, and it shows as `not recorded`. Add `--context '<the user's words>'` when a call answers something the user said. A later change to a call is an `ob note <ref> '...'` on that decision, never a new edit of what you logged.
   3. **Write the morning summary** as the run ends, one bullet per call: `ob overnight summary shipped|review|skipped|next --add '<line>' --project <p> --date <date>`.
-     - **shipped**: each task and its gate result (test counts).
+     - **shipped**: each ticket and its gate result (test counts).
      - **review**: every autonomous decision you're not fully sure about, most consequential first, each with how to reverse it (name the decision's ref).
      - **skipped**: device, data migration, feel review, external send, genuine forks, with exactly what you need from the user to proceed.
      - **next**: the ordered list for when the user wakes up.

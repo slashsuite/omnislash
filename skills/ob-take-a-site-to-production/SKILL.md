@@ -41,7 +41,7 @@ record that they did.
   - **Price and payment:** a deposit before work starts, and the balance due before the cut-over
     (step 10).
   - **Ownership:** the code, design and content made for the client pass to them on full payment,
-    and not before. The contractor keeps what they brought (a UI kit such as Hack Cove UI, their scripts and skills), and the
+    and not before. The contractor keeps what they brought (a UI kit such as UISlash, their scripts and skills), and the
     client gets a perpetual, non-exclusive licence to use those parts for this site. The contractor may show
     the site in their portfolio.
   - **Liability:** capped at the fees paid, except for intent or gross negligence, and nothing for
