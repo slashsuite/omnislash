@@ -36,7 +36,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { asStore, type Store } from "../db/store.ts";
 import { warn } from "../output.ts";
 import { UsageError } from "../errors.ts";
-import { SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
+import { activeComplexModel, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
 import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
 import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
@@ -1236,7 +1236,9 @@ export function storeAgentRegistry(db: Database | Store): AgentRegistry {
  * never opened twice; a settled, archived or deleted one is replaced. `adoptThreadId` (`--thread`) adopts that
  * live thread instead, refused when it is not live or when a different live thread is already recorded. Every
  * call pins the thread (every team thread is pinned). A NEW thread opens in `repoPath`'s
- * T3 project on its default model, seeded once with the role's skill; an adopted one is never seeded.
+ * T3 project on the active models profile's `builder.complex` model (falling back to the project's
+ * default model when no usable profile is configured), seeded once with the role's skill; an adopted
+ * one is never seeded.
  */
 export async function ensureTeamThread(
   registry: AgentRegistry,
@@ -1329,13 +1331,15 @@ export async function ensureTeamThread(
       `register the checkout as a T3 project`,
     );
   }
-  const model = modelSelectionFor(project, await seam.capabilities());
+  const profile = activeComplexModel();
+  const tierModel = profile ? `${profile.providerInstanceId}:${profile.model}` : undefined;
+  const caps = tierModel ? await capabilitiesWithModel(seam, project, tierModel) : await seam.capabilities();
+  const model = modelSelectionFor(project, caps, tierModel);
   if (!model.selection) {
-    throw new T3Error(
-      "refused",
-      `${model.error ?? "no model resolved"}; set ${project.title}'s default model in T3 Code (Project settings, model)`,
-      `set ${project.title}'s default model in T3 Code`,
-    );
+    const remedy = model.tierConfig
+      ? `set builder.complex (${tierModel}) in the active models profile (\`ob models show\`) to one T3 lists`
+      : `set ${project.title}'s default model in T3 Code (Project settings, model)`;
+    throw new T3Error("refused", `${model.error ?? "no model resolved"}; ${remedy}`, remedy);
   }
 
   // THE MARKER, before anything is created: the row records that a launch was asked for (launcher `t3`, no

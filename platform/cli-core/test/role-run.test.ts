@@ -451,3 +451,42 @@ describe("OS-82: a launch's request id is unique across stores and launches", ()
     expect(a).not.toBe(b);
   });
 });
+
+describe("OS-129: role start follows the active models profile", () => {
+  test("opens on the active profile's builder.complex model and falls back to Claude Opus when unusable", async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const saved = process.env.OB_MODELS_FILE;
+    const dir = mkdtempSync(join(tmpdir(), "ob-role-models-"));
+    try {
+      const f = installFakeT3([REPO], undefined, {}, [
+        { providerInstanceId: "antigravity", displayName: "Antigravity", models: [{ id: "gemini-4-neon" }] },
+      ]);
+      fake = f;
+
+      const modelsPath = join(dir, "models.jsonc");
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({
+          active: "antigravity",
+          profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } },
+        }),
+      );
+      process.env.OB_MODELS_FILE = modelsPath;
+      const onProfile = await (await local()).run(["role", "start", "t", "architect"]);
+      expect(onProfile.code).toBe(0);
+      expect(f.launches[0]!.modelSelection).toEqual({ instanceId: "antigravity", model: "gemini-4-neon" });
+      expect(f.launches[0]!.modelSelection.options).toBeUndefined();
+
+      process.env.OB_MODELS_FILE = join(dir, "missing.jsonc");
+      const fallback = await (await local()).run(["role", "start", "t", "architect"]);
+      expect(fallback.code).toBe(0);
+      expect(f.launches[1]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-opus-5-5" });
+    } finally {
+      if (saved === undefined) delete process.env.OB_MODELS_FILE;
+      else process.env.OB_MODELS_FILE = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

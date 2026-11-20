@@ -213,4 +213,51 @@ describe("ob usage day (1, 3, 5)", () => {
     expect(res.code).toBe(2);
     expect(res.err).toContain(join(FIX, "nope"));
   });
+
+  test("OS-129: weekly window follows active Antigravity profile and missing window reads null", async () => {
+    const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const savedModels = process.env.OB_MODELS_FILE;
+    const savedHome = process.env.HOME;
+    const dir = mkdtempSync(join(tmpdir(), "ob-usage-os129-"));
+    try {
+      __setUsageNameSources(SOURCES);
+      const modelsPath = join(dir, "models.jsonc");
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } }),
+      );
+      process.env.OB_MODELS_FILE = modelsPath;
+      delete process.env.OB_USAGE_T3_CACHE;
+      process.env.HOME = dir;
+
+      const caches = join(dir, ".t3", "caches");
+      mkdirSync(caches, { recursive: true });
+      writeFileSync(
+        join(caches, "antigravity.json"),
+        JSON.stringify({
+          usageLimits: {
+            checkedAt: "2026-11-17T12:00:00Z",
+            windows: [{ id: "gemini-weekly", usedPercent: 14, resetsAt: "2026-11-24T00:00:00Z", windowDurationMins: 10080 }],
+          },
+        }),
+      );
+
+      const agRes = await runCli(migratedDbPath(), [...ARGS, "--json"]);
+      expect(agRes.code).toBe(0);
+      expect(JSON.parse(agRes.out).weekly.usedPercent).toBe(14);
+
+      // Missing gemini-weekly window -> weekly is null
+      writeFileSync(join(caches, "antigravity.json"), JSON.stringify({ usageLimits: { windows: [] } }));
+      const missingRes = await runCli(migratedDbPath(), [...ARGS, "--json"]);
+      expect(missingRes.code).toBe(0);
+      expect(JSON.parse(missingRes.out).weekly).toBeNull();
+    } finally {
+      if (savedModels === undefined) delete process.env.OB_MODELS_FILE;
+      else process.env.OB_MODELS_FILE = savedModels;
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

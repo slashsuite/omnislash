@@ -686,11 +686,13 @@ Query:
                             priorities, best first: critical, urgent, flake, high, medium, low, none (or 0-6);
                             critical is an active production bug affecting users now; flake is a flaky test,
                             so it sits above high (OB-2060)
-                            THE CRITICAL-ONLY LINE (OS-108): at 95% or more of the weekly Claude usage (T3's cache,
-                            ~/.t3/caches/claudeAgent.json, read on the machine ob runs on), until the window resets,
-                            next lists only critical items after one line: 'Weekly Claude usage is 96% (resets Tue
-                            03:00): critical only.' A missing cache, no seven_day window or a check over an hour old
-                            prints 'usage unknown' once on stderr and never blocks
+                            THE CRITICAL-ONLY LINE (OS-108, OS-129): at 95% or more of the active models profile's
+                            weekly usage (T3's cache on the machine ob runs on: ~/.t3/caches/antigravity.json
+                            gemini-weekly for Antigravity, ~/.t3/caches/claudeAgent.json seven_day otherwise;
+                            OB_USAGE_T3_CACHE overrides the file), until the window resets, next lists only critical
+                            items after one line: 'Weekly Claude usage is 96% (resets Tue 03:00): critical only.'
+                            (or 'Weekly Gemini usage' for Antigravity). A missing cache, no weekly window or a check
+                            over an hour old prints 'usage unknown' once on stderr and never blocks
   status                    NOW snapshot: agents · T3 threads (1124, with a 'needs you' line; ONE line saying
                             it could not be read when T3 is down) · in-flight PRs by state · blocked · live
                             deploy (when not ok) · focus · journal
@@ -1135,8 +1137,9 @@ T3 Code (1102), the execution-plane seam:
                             reads the thread back and says 'already live ... nothing created'. A thread that is
                             settled, archived or gone is replaced. With no <team> it takes the team of the project
                             whose checkout holds the cwd; a project in no team becomes a team of one under its own
-                            name, and stdout says so. A new thread opens in the cwd's checkout on its T3 project's
-                            default model, seeded once with '/ob-architect' plus one orientation line; --thread <id>
+                            name, and stdout says so. A new thread opens in the cwd's checkout on the active models
+                            profile's builder.complex model (falling back to the T3 project's default model when there
+                            is no usable profile), seeded once with '/ob-architect' plus one orientation line; --thread <id>
                             ADOPTS that live thread instead (the one the architect skill runs in, from T3's
                             t3_thread_configuration) and is never seeded; refused when the thread is not live or a
                             different live thread is already recorded. Every call titles the thread
@@ -1144,7 +1147,7 @@ T3 Code (1102), the execution-plane seam:
                             its AUTO-SETTLE OFF (T3's global setting is untouched, so builders keep the sweep); if T3
                             refuses auto-settle the title stands, a warning names the thread and the sidebar fix
                             (Auto-settle behavior, Disabled), and it exits 1. Refuses by name when the checkout is not
-                            a T3 project or the project has no default model. --json is the outcome; -q the thread id.
+                            a T3 project or no model resolves. --json is the outcome; -q the thread id.
                             SPLIT: the T3 calls run here; the team and the agent row go over the API on a client.
   t3 sentinel <team> [--thread <id>] | t3 sentinel <team> --remove
   t3 muse <team> [--thread <id>] | t3 muse <team> --remove
@@ -1163,8 +1166,9 @@ T3 Code (1102), the execution-plane seam:
                             architect' or 'team restart'), the seat is used as it is until OS-58: no run, no launch,
                             no pin, no seat move ('seat thread <id> is live; no run opened'). The launch request id
                             is 'ob-role-run-<team>-<role>-<id>-<time>', unique across stores (OS-82).
-                            Otherwise opens a new T3 thread in the cwd's checkout on claude-opus-5-5 at the model's
-                            default effort (no options sent), seeded with '/ob-<role>' and the start brief (role brief),
+                            Otherwise opens a new T3 thread in the cwd's checkout on the active models profile's
+                            builder.complex model (default claudeAgent:claude-opus-5-5 with no usable profile) at the
+                            model's default effort (no options sent), seeded with '/ob-<role>' and the start brief (role brief),
                             pinned, auto-settle off. A thread that is settled, archived or gone ends its run with reason
                             'gone' first. Two starts at once launch once: the partial unique index on (team, role)
                             keeps one open run, and lease 'role:<team>:<role>' (holder 'role-run-<id>', TTL a day) is
@@ -1188,9 +1192,10 @@ T3 Code (1102), the execution-plane seam:
                             (GET|POST /teams/:name/runs, POST /teams/:name/runs/:id).
   role brief <team> <role> [--peek] [--json]
                             what a fresh run needs, in nine sections: team (projects and their stage, bound threads),
-                            pacing (the seven-day window from the local T3 cache; 'ahead' when used is over 10 points
-                            past the share of the week gone; 'unknown' when the cache is missing or checked over an
-                            hour ago), rows in flight, PRs to gate (handed-off rows with their State line), unread
+                            pacing (the active models profile's weekly window from the local T3 cache: gemini-weekly in
+                            antigravity.json for Antigravity, seven_day in claudeAgent.json otherwise; 'ahead' when used
+                            is over 10 points past the share of the week gone; 'unknown' when the cache is missing or
+                            checked over an hour ago), rows in flight, PRs to gate (handed-off rows with their State line), unread
                             inbox, open asks for the owner (role rows and builders at needs-human), the next three
                             buildable items in 'ob next' order, the skill to load, and the note from the last run.
                             Each list is capped at 10 with a '+N more' line. Printing the note marks it shown, so the
@@ -1669,8 +1674,10 @@ Admin:
                             line, printed last) and the top sessions (peak context), each named by its thread where the
                             spinoff rows and the agent registry map the checkout (a builder worktree -> its ticket, a team
                             role's checkout -> its role); if that read fails the slugs are printed, every session goes on
-                            the 'not an ob project' line, and the totals are the same. Adds the weekly window from
-                            ~/.t3/caches/claudeAgent.json (OB_USAGE_T3_CACHE overrides). --compare puts the window of the same
+                            the 'not an ob project' line, and the totals are the same. Adds the weekly window from the
+                            active models profile's T3 cache (~/.t3/caches/antigravity.json window gemini-weekly when
+                            builder.complex is on antigravity, else ~/.t3/caches/claudeAgent.json window seven_day;
+                            OB_USAGE_T3_CACHE overrides the file). --compare puts the window of the same
                             length just before beside every figure, with the change. --limit sets the top lists (default 10).
                             A message split over several records counts once; a '<synthetic>' record counts zero. No
                             database; runs locally even on an API client. No transcript directory: names the path, exits 2.
@@ -1686,7 +1693,9 @@ Admin:
                             sets "active" by editing that one value (comments survive); an unknown profile exits 1 naming the
                             profiles. init copies apps/cli/models.example.jsonc to the path and refuses if a file is there. A file
                             that does not parse, an unknown profile or a builder key that is not a tier refuses by name, exit 1:
-                            never a silent fallback. 'ob spinoff --tier' and the review legs (skills/ob-skeptical-review/review-leg.ts)
+                            never a silent fallback. 'ob spinoff --tier', role threads ('role start', 't3 architect|sentinel|muse',
+                            't3 team restart' via builder.complex), usage pacing ('ob next', 'usage day', 'role brief') and the
+                            review legs (skills/ob-skeptical-review/review-leg.ts)
                             read the file on the machine that launches. No secret in it. Runs locally even on an API client.
                             FALLBACK (OB-1970): on a credit or quota error (a provider code such as insufficient_quota or
                             credit_balance_too_low, else the message text as a named last resort; a rate limit or any other
