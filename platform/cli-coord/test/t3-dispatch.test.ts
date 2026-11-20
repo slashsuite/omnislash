@@ -865,8 +865,8 @@ describe("t3 dispatch — settle on close, and the cleanup guard (1120)", () => 
     setT3Seam(fake.seam);
     await enqueueSpinoff(db, { ticketRef: "1120", repo: "/r/repo", branch: "1120", mode: "interactive", brief: "x", launcher: "t3" });
     db.query("UPDATE spinoff SET status = 'launched', launcher = 't3', t3_thread_id = 't3-1' WHERE id = 1").run();
-    await enqueueSpinoff(db, { ticketRef: "1120", repo: "/r/repo", branch: "1120", mode: "interactive", brief: "x", launcher: "t3" });
-    db.query("UPDATE spinoff SET status = 'launched', launcher = 't3', t3_thread_id = 't3-2' WHERE id = 2").run();
+    // A second live row is written directly: the enqueue would reuse the first one.
+    db.query("INSERT INTO spinoff (ticket_ref, repo, branch, worktree, mode, brief, status, request_at, launcher, t3_thread_id) SELECT ticket_ref, repo, branch, worktree, mode, brief, 'launched', request_at, 't3', 't3-2' FROM spinoff WHERE id = 1").run();
 
     const outcomes = await settleT3ThreadsForTicket(db, "1120");
     expect(outcomes.map((o) => [o.threadId, o.settled])).toEqual([["t3-1", true], ["t3-2", true]]);

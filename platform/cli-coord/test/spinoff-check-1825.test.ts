@@ -299,6 +299,25 @@ describe("the dispatch gate (OB-1825)", () => {
     expect((await trail(dbPath, id)).filter((d) => d.to === "no-check")).toHaveLength(0);
   });
 
+  test("`ob spinoff <ref>` on a building or handed-off row reuses it: exit 0, `already <status>` with its id and thread, one row", async () => {
+    for (const [stored, word] of [["launched", "building"], ["ready-for-gate", "handed-off"]] as const) {
+      const { dbPath, id, repo } = await ticket();
+      await runCli(dbPath, ["spinoff", "check", id, ...sheets()]);
+      expect((await dispatch(dbPath, id, repo)).launches).toBe(1);
+      const db = openDb(dbPath);
+      db.query("UPDATE spinoff SET status = ?").run(stored);
+      const live = db.query("SELECT id, t3_thread_id FROM spinoff").get() as { id: number; t3_thread_id: string | null };
+      db.close();
+      expect(live.t3_thread_id).not.toBeNull();
+      // Under the builder's own hold, the path the TLA+ trace took to a second live row.
+      const again = await dispatch(dbPath, id, repo, "--holder", `build-${id}`);
+      expect(again.code).toBe(0);
+      expect(again.launches).toBe(0);
+      expect(again.out).toContain(`already ${word}: ${await refOf(dbPath, id)} (#${live.id}) in T3 thread ${live.t3_thread_id}; nothing new was launched`);
+      expect(await rowCount(dbPath)).toBe(1);
+    }
+  });
+
   test("a re-dispatch of a launched row with an old body is not refused, a failed or merged one needs a fresh check (OB-1924)", async () => {
     const { dbPath, id, repo } = await ticket();
     await runCli(dbPath, ["spinoff", "check", id, ...sheets()]);
@@ -312,6 +331,9 @@ describe("the dispatch gate (OB-1825)", () => {
     const queued = await runCli(dbPath, ["spinoff", "queue", id, "--repo", repo, "--brief", "b", "--holder", `build-${id}`]);
     expect(queued.err).not.toContain("not dispatched");
     expect(queued.code).toBe(0);
+    // The re-dispatch reuses the building row: no second live row on the same worktree.
+    expect(queued.out).toContain("already building:");
+    expect(await rowCount(dbPath)).toBe(1);
     // OB-1924: only a LIVE row exempts. A failed-only or merged-only ticket is refused without a fresh check.
     for (const status of ["failed", "merged"]) {
       const dead = openDb(dbPath);
@@ -325,7 +347,12 @@ describe("the dispatch gate (OB-1825)", () => {
     const live = openDb(dbPath);
     live.query("UPDATE spinoff SET status = 'ready-for-gate'").run();
     live.close();
-    expect((await dispatch(dbPath, id, repo, "--holder", `build-${id}`)).err).not.toContain("not dispatched");
+    const again = await dispatch(dbPath, id, repo, "--holder", `build-${id}`);
+    expect(again.err).not.toContain("not dispatched");
+    expect(again.code).toBe(0);
+    expect(again.out).toContain("already handed-off:");
+    expect(again.launches).toBe(0);
+    expect(await rowCount(dbPath)).toBe(1);
   });
 
   test("a sendback of a handed-off row with an old body goes through", async () => {

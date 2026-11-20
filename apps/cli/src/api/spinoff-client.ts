@@ -56,6 +56,7 @@ import {
   launchRowIn,
   launcherRejection,
   launchedUrgentNote,
+  renderAlreadyLine,
   renderLaunchedLine,
   renderQueuedLine,
   type UrgentTierNote,
@@ -1020,9 +1021,12 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
         );
         if (queued.warning && leg === "a") warn(`  ⚠ ${queued.warning}`); // OB-1825, said once
         if (queued.deduped) {
-          // The ticket already had a queued row: that row is launched as the single build it was queued as.
+          // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
+          // launching, building or handed-off one is left as it is (nothing new is launched).
+          const was = queued.row.status;
           await launchOverApi(ctx, cfg, queued.row, true, tier !== undefined, under);
-          return { row: null, launched: false, error: `${ticketRef} already had queued row #${queued.row.id}, launched as a single build`, settled: true };
+          const outcome = was === "pending" ? "launched as a single build" : "nothing new was launched";
+          return { row: null, launched: false, error: `${ticketRef} already had ${spinoffStatusWord(was)} row #${queued.row.id}, ${outcome}`, settled: true };
         }
         return { row: queued.row, launched: await launchOverApi(ctx, cfg, queued.row, false, tier !== undefined, under) };
       },
@@ -1111,7 +1115,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   let outcome: { status: string; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean; error: string | null };
   const dbFailures: DbHalfFailure[] = [];
   if (queued.status !== "pending") {
-    outcome = { status: spinoffStatusWord(queued.status), row: queued, threadId: null, model: null, error: null };
+    outcome = { status: spinoffStatusWord(queued.status), row: queued, threadId: queued.t3_thread_id ?? null, model: null, error: null };
   } else {
     outcome = await (async () => {
       const notLaunched = (error: string) => ({ status: "pending", row: queued, threadId: null, model: null, error });
@@ -1140,7 +1144,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   } else if (outcome.status === "launched") {
     print(renderLaunchedLine(row, threadId, model, deduped, tierNamed, effort, launchedUrgentNote(urgent, outcome.adopted)));
   } else if (error === null) {
-    print(`already ${outcome.status}: ${row.ticket_ref} (#${row.id}); nothing new was launched`);
+    print(renderAlreadyLine(row, outcome.status));
   } else {
     warn(`${row.ticket_ref} (#${row.id}) was not launched: ${error}`);
   }

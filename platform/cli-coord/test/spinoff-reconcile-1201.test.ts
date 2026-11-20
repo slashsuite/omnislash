@@ -47,14 +47,21 @@ async function seedLaunched(
 ): Promise<number> {
   const ticket = opts.ticket ?? "738";
   const branch = opts.branch ?? ticket;
-  const { row } = await enqueueSpinoff(db, input({ ticketRef: ticket, branch }));
+  const queued = await enqueueSpinoff(db, input({ ticketRef: ticket, branch }));
+  // The enqueue reuses a live row of the same ticket, so a second live row (a test of reconcile, not of the
+  // dispatch) is written directly, as one left from before that dedupe would be.
+  const id = queued.deduped
+    ? (db
+        .query("INSERT INTO spinoff (ticket_ref, repo, branch, worktree, mode, brief, status, request_at, item_id) SELECT ticket_ref, repo, ?, worktree, mode, brief, 'pending', request_at, item_id FROM spinoff WHERE id = ? RETURNING id")
+        .get(branch, queued.row.id) as { id: number }).id
+    : queued.row.id;
   db.query("UPDATE spinoff SET status = 'launched', agent_id = ?, base_sha = ? WHERE id = ?").run(
     branch,
     opts.baseSha ?? null,
-    row.id,
+    id,
   );
   await registerAgent(db, { id: branch, ticket, branch, status: "working", ttlS: 900 });
-  return row.id;
+  return id;
 }
 
 // 738's row, verbatim: the chart commit landed, main moved, and the dispatch captured that tip as its base.
@@ -109,7 +116,8 @@ describe("reconcile does not retire a row on a chart/docs commit naming the tick
 
   test("two rows for ONE ticket: each row is judged by its OWN base, so a newer dispatch is not retired", async () => {
     const db = freshDb();
-    // Two live rows for 738 — a re-dispatch (the enqueue dedupe only covers pending/launching rows).
+    // Two live rows for 738, seeded directly: the enqueue dedupe now reuses any live row, so only a row left from
+    // before that (or a direct write) gives two, and reconcile must still judge each by its own base.
     const older = await seedLaunched(db, { branch: "738", baseSha: BASE_738.sha });
     const newer = await seedLaunched(db, { branch: "738-again", baseSha: "base-again" });
     const commits: Commit[] = [
