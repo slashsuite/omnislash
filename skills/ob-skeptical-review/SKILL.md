@@ -348,4 +348,4 @@ finished builds of the same ticket.
 - **stupid** / **overboard**: cut it or justify in one line (ticket required it / existing pattern). Start a new round (see Scores and rounds) only when a fix or cut changed the diff.
 - **unproven**: check it yourself; fix it if it holds, otherwise drop it with one line on why.
 - An unfixed `wrong`, a `rejected` answer, or an unjustified leftover blocks the PR and `State: landable`.
-- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (opus: a + deepseek: b + luna: c)"`, each leg separately, because a model that keeps returning `ok` is information the sentinel wants.
+- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (opus: a + deepseek: b + luna: c)"`, each leg separately, because a model that keeps returning `ok` is information the thread that gates it wants.
