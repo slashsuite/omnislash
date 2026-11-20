@@ -1,6 +1,6 @@
 # ob-dashboard
 
-The OB dashboard (OB-2199): the tracker's own app, apart from the personal dashboard in `apps/dashboard`.
+The OB dashboard (OB-2199): the tracker's own app, apart from the personal dashboard, which is not part of this repo.
 It is served on `:5070`; it has its own Home Screen app
 (manifest `id` `/ob`).
 
