@@ -146,14 +146,13 @@ export function parseRecordableVerdict(word: string): string {
 
 /**
  * THE verdict of a row (OB-1992), for every reader: the gateable list, the handoff, the readying note, the
- * API client. A clean repo's recorded verdict wins; omnislash, and a clean-repo row that recorded none (a build
- * dispatched before 0040), read the `State:` line in git through `readGit`.
+ * API client. A recorded verdict wins for EVERY repo, omnislash included (OS-78: a row whose verdict was written
+ * while omnibus core handled the command must read the same under OmniSlash). A row that recorded none (a build
+ * dispatched before 0040, or an omnislash row never recorded) reads the `State:` line in git through `readGit`.
  */
 export function verdictStateFor(row: RowVerdict, readGit: () => string | null): string | null {
-  if (!isObRepo(row.repo)) {
-    const recorded = rowStateText(row);
-    if (recorded) return recorded;
-  }
+  const recorded = rowStateText(row);
+  if (recorded) return recorded;
   return readGit();
 }
 

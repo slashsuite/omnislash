@@ -154,11 +154,25 @@ describe("the verdict lives on a clean repo's row (design 3)", () => {
     expect(() => parseRecordableVerdict("done")).toThrow("'done' is not a verdict");
   });
 
-  test("verdictStateFor: a clean repo's recorded verdict wins; none recorded falls back to git; omnislash always reads git", () => {
+  test("verdictStateFor: a recorded verdict wins for every repo, omnislash included; none recorded falls back to git", () => {
     const git = () => "State: partial - from git";
     expect(verdictStateFor({ repo: "/r/hackcove", verdict: "landable" }, git)).toBe("State: landable");
+    expect(verdictStateFor({ repo: "/r/omnislash", verdict: "landable" }, git)).toBe("State: landable");
     expect(verdictStateFor({ repo: "/r/hackcove" }, git)).toBe("State: partial - from git");
-    expect(verdictStateFor({ repo: "/r/omnislash", verdict: "landable" }, git)).toBe("State: partial - from git");
+    expect(verdictStateFor({ repo: "/r/omnislash" }, git)).toBe("State: partial - from git");
+  });
+
+  test("rowVerdictState on an omnislash row with a recorded verdict does not read git", () => {
+    let reads = 0;
+    restores.push(
+      __setSh(() => {
+        reads++;
+        return { ok: true, err: "", out: "fix(OS-1): y\n\nState: blocked - from git\n" };
+      }),
+    );
+    const base = { repo: "/r/omnislash", worktree: "/wt/os-1", branch: "os-1" };
+    expect(rowVerdictState({ ...base, verdict: "landable", gate_line: "green" })).toBe("State: landable\nGate: green");
+    expect(reads).toBe(0);
   });
 
   test("rowVerdictState reads git only when the row recorded nothing", () => {
