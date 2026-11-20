@@ -28,7 +28,7 @@ import { settingFor } from "../settings.ts";
 export const FACTS_START = "<!-- ob:facts:start -->";
 export const FACTS_END = "<!-- ob:facts:end -->";
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const PRIORITY_ORDER = ["urgent", "flake", "high", "medium", "low", "none"];
+const PRIORITY_ORDER = ["critical", "urgent", "flake", "high", "medium", "low", "none"];
 
 /** Whether `dir` is an OmniSlash checkout: it carries the wiki's README and this command's source. */
 function isOmnislashCheckout(dir: string): boolean {

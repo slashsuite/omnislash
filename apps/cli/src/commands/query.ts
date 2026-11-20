@@ -14,6 +14,7 @@ import {
 import { triageBanner } from "./triage.ts";
 import { parseGithubIssueUrl } from "../tracker-link.ts";
 import { parsePriority, PRIORITY_OPTIONS } from "../priority.ts";
+import { criticalOnlyNext } from "../usage-gate.ts";
 import { itemView, print, renderItems } from "../output.ts";
 import { searchItemIds } from "../search.ts";
 import { aliasesOf } from "../refs.ts";
@@ -62,12 +63,14 @@ export async function cmdNext(ctx: Ctx): Promise<void> {
   const { items, focusProject, triageCount: triage } = await nextWorklist(ctx.store ?? ctx.db, {
     project: ctx.flags.repo ?? ctx.flags.project,
   });
+  // OS-108: at the critical-only line, only critical items, after the one line that says why.
+  const views = criticalOnlyNext(items.map((i) => itemView(i, focusProject)), ctx.mode);
   // Triage-inbox banner near the top (human/table only; json/quiet stay machine-clean).
   if (ctx.mode === "human" || ctx.mode === "table") {
     const banner = triageBanner(triage);
     if (banner) print(banner);
   }
-  print(renderItems(items.map((i) => itemView(i, focusProject)), ctx.mode));
+  print(renderItems(views, ctx.mode));
 }
 
 export async function cmdShow(ctx: Ctx): Promise<void> {

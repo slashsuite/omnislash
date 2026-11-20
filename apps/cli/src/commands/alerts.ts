@@ -8,7 +8,7 @@ import { queryItems, type ItemRow } from "../items.ts";
 import { jobHealth } from "../jobs.ts";
 import { sendHaNotify } from "../notify.ts";
 import { CREDENTIALS, lastCredentialChecks } from "../credentials.ts";
-import { effectivePriority, PRIORITY_FLAKE, PRIORITY_HIGH, PRIORITY_URGENT } from "../priority.ts";
+import { effectivePriority, PRIORITY_CRITICAL, PRIORITY_FLAKE, PRIORITY_HIGH, PRIORITY_URGENT } from "../priority.ts";
 import { print } from "../output.ts";
 import type { Store } from "../db/store.ts";
 import { openCiNotices } from "../ci-main.ts";
@@ -37,9 +37,9 @@ const LABELS: Record<number, string> = {
   12: "main red",
 };
 
-/** Urgent, flake (OB-2060, above high) or high: the levels worth surfacing. */
+/** Critical (OS-108), urgent, flake (OB-2060, above high) or high: the levels worth surfacing. */
 function isHighPri(eff: number): boolean {
-  return eff === PRIORITY_URGENT || eff === PRIORITY_FLAKE || eff === PRIORITY_HIGH;
+  return eff === PRIORITY_CRITICAL || eff === PRIORITY_URGENT || eff === PRIORITY_FLAKE || eff === PRIORITY_HIGH;
 }
 
 function ageHours(from: string, to: string): number {

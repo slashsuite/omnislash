@@ -107,6 +107,7 @@ import {
   trialStoreDeps,
   ticketTitleFor,
   urgentLaunchRow,
+  recordOverUsage, recordOverUsageUndone,
   type LauncherName,
 } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
@@ -1486,6 +1487,8 @@ export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise
     trialModel: req.trial_model ?? null,
   });
   if (flake && req.no_flake_slot) await recordNoFlakeSlot(store, row, req.no_flake_slot, req.actor);
+  // OS-108: the client checked the critical-only line (the usage cache is on its machine); the override goes on the trail here.
+  if (req.over_usage?.trim()) await recordOverUsage(store, row.ticket_ref, req.over_usage, { actor: req.actor, spinoffRow: row.id, itemId: row.item_id });
   return { row, deduped, collision, warning, urgent, raised_from: raisedFrom, flake };
 }
 
@@ -1656,9 +1659,12 @@ export async function spinoffSendBack(store: Store, req: SendBackSpinoffRequest)
     if (!row) throw new ApiFault("not_found", 404, `no spinoff #${req.id}`);
     if (req.restore) {
       const restored = await restoreSentBackRow(store, row.id, { note: "send-back undone: the builder thread could not be told" });
+      if (req.over_usage?.trim()) await recordOverUsageUndone(store, row.ticket_ref, { spinoffRow: row.id, itemId: row.item_id }); // OS-108
       return { row: restored.row };
     }
-    return { row: await markSpinoffSentBack(store, row, { note: req.note }) };
+    const sent = await markSpinoffSentBack(store, row, { note: req.note });
+    if (req.over_usage?.trim()) await recordOverUsage(store, row.ticket_ref, req.over_usage, { spinoffRow: row.id, itemId: row.item_id }); // OS-108
+    return { row: sent };
   } catch (e) {
     if (e instanceof ApiFault) throw e;
     throw new ApiFault("refused", 409, e instanceof AppError ? e.message : String(e));

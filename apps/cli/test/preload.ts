@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterAll, afterEach } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sweepNxTmp } from "./nx-tmp-sweep.ts";
@@ -145,6 +145,25 @@ process.env.OB_REVIEW_READERS_SKIP = "1";
  * submit a job to this desktop's real daemon, so the path is off; a test of it points this at a fake client.
  */
 process.env.OB_LEASE_RUN_TASKSLASH = "0";
+
+/**
+ * OS-108: `ob next` and every spinoff dispatch read the weekly Claude usage from T3's cache. A test must not
+ * read this desktop's real one (at 95% it would refuse every dispatch in the suite, and a CI runner without
+ * one would print "usage unknown" into every command's stderr), so the suite gets a fresh, low-usage cache.
+ * A test of the line points `OB_USAGE_T3_CACHE` at its own fixture.
+ */
+const usageCache = join(scratch, "claudeAgent.json");
+writeFileSync(
+  usageCache,
+  JSON.stringify({
+    usageLimits: {
+      // A day ahead, so the cache never reads as an hour stale during a long run.
+      checkedAt: new Date(Date.now() + 86_400_000).toISOString(),
+      windows: [{ id: "seven_day", usedPercent: 10, resetsAt: new Date(Date.now() + 3 * 86_400_000).toISOString(), windowDurationMins: 10080 }],
+    },
+  }),
+);
+process.env.OB_USAGE_T3_CACHE = usageCache;
 
 /** The central DB, in case something resolves it before `XDG_DATA_HOME` is consulted. */
 process.env.OMNISLASH_DB ??= join(scratch, `acme-${randomUUID()}.db`);

@@ -10,9 +10,17 @@ export const PRIORITY_LOW = 4;
  * changes and there is no migration. The ordering that puts it second is `prioritySortRank`, not the int.
  */
 export const PRIORITY_FLAKE = 5;
+/**
+ * OS-108: critical sits above urgent. It means an active bug in production that is affecting users now, and
+ * it is the only level worked once the weekly Claude usage crosses the critical-only line (usage-gate.ts).
+ *
+ * STORED as 6, a NEW value like flake: no live row changes and no migration. `prioritySortRank` puts it first.
+ */
+export const PRIORITY_CRITICAL = 6;
 
 const NAME_TO_INT: Record<string, number> = {
   none: PRIORITY_NONE,
+  critical: PRIORITY_CRITICAL,
   urgent: PRIORITY_URGENT,
   flake: PRIORITY_FLAKE,
   high: PRIORITY_HIGH,
@@ -27,16 +35,17 @@ const INT_TO_NAME: Record<number, string> = {
   3: "medium",
   4: "low",
   5: "flake",
+  6: "critical",
 };
 
 /** The accepted priorities, best first, as one phrase for every "must be one of" / "expected:" message. */
-export const PRIORITY_OPTIONS = "urgent|flake|high|medium|low|none (or 0-5)";
+export const PRIORITY_OPTIONS = "critical|urgent|flake|high|medium|low|none (or 0-6)";
 
 export function parsePriority(input: string): number | null {
   const lower = input.trim().toLowerCase();
   if (lower in NAME_TO_INT) return NAME_TO_INT[lower]!;
   const n = Number(lower);
-  if (Number.isInteger(n) && n >= 0 && n <= 5) return n;
+  if (Number.isInteger(n) && n >= 0 && n <= 6) return n;
   return null;
 }
 
@@ -45,8 +54,9 @@ export function priorityName(value: number | null): string {
   return INT_TO_NAME[value] ?? "none";
 }
 
-/** Best first. The store's integers put flake last; the work order puts it second (OB-2060). */
+/** Best first. The store's integers put flake and critical last; the work order puts critical first (OS-108), flake third (OB-2060). */
 const RANK_ORDER = [
+  PRIORITY_CRITICAL,
   PRIORITY_URGENT,
   PRIORITY_FLAKE,
   PRIORITY_HIGH,

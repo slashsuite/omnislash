@@ -7,7 +7,7 @@ import { installFakeT3, type FakeT3Install } from "../../../apps/cli/test/fake-t
 import { createItem, editItem } from "../../../apps/cli/src/items.ts";
 import { asStore } from "../../../apps/cli/src/db/store.ts";
 import { spinoffLaunchable, spinoffStamp } from "../../../apps/cli/src/api/handlers.ts";
-import { PRIORITY_FLAKE, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, PRIORITY_URGENT } from "../../../apps/cli/src/priority.ts";
+import { PRIORITY_CRITICAL, PRIORITY_FLAKE, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM, PRIORITY_URGENT } from "../../../apps/cli/src/priority.ts";
 import { __setSh, claimSpinoffRow, drainSpinoffs, enqueueSpinoff, launchedUrgentNote, listSpinoffs, renderLaunchedLine, renderQueuedLine, stampArgv, urgentLaunchRow, type SpinoffRow } from "../src/commands/spinoff.ts";
 
 // OB-2075: a ticket at priority `urgent` always builds on the complex tier (Opus), whatever `--tier` named.
@@ -63,6 +63,16 @@ describe("an urgent ticket builds on complex (OB-2075)", () => {
     const after = (await listSpinoffs(db))[0] as SpinoffRow;
     expect(after.tier).toBe("complex");
     expect(after.model).toBe(OPUS);
+  });
+
+  test("OS-108: a critical ticket, which ranks above urgent, records complex too", async () => {
+    const db = freshDb();
+    const { repo } = fixture();
+    const ref = await ticket(db, PRIORITY_CRITICAL);
+    const { row, urgent, raisedFrom } = await queue(db, repo, ref, "simple");
+    expect(row.tier).toBe("complex");
+    expect(urgent).toBe(true);
+    expect(raisedFrom).toBe("simple");
   });
 
   test("the queue line says the tier was raised, and from what", async () => {

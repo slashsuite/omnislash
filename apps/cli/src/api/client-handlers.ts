@@ -19,6 +19,7 @@ import { emitId, print, printRaw, renderItems, warn, type Mode } from "../output
 import { handleMemory } from "../memory.ts";
 import type { Flags } from "../ctx.ts";
 import { parsePriority, priorityName, PRIORITY_OPTIONS } from "../priority.ts";
+import { criticalOnlyNext } from "../usage-gate.ts";
 import { orderMoveFromFlags } from "../commands/focus.ts";
 import { VALID_TYPES } from "../status.ts";
 import { triageBanner } from "../commands/triage.ts";
@@ -199,11 +200,13 @@ async function apiNext(ctx: ApiCtx): Promise<void> {
 	// The query string drops an empty value, which would print every project's queue; the local command errors.
 	if (project === "") throw new AppError("no project '' (see: ob project list)");
 	const res = await ctx.client.next(project);
+	// OS-108: the usage cache is on THIS machine (the T3 desktop), not the API host, so the line is applied here.
+	const items = criticalOnlyNext(res.items, ctx.mode);
 	if (ctx.mode === "human" || ctx.mode === "table") {
 		const banner = triageBanner(res.triage_count);
 		if (banner) print(banner);
 	}
-	print(renderItems(res.items, ctx.mode));
+	print(renderItems(items, ctx.mode));
 }
 
 async function apiList(ctx: ApiCtx): Promise<void> {

@@ -134,6 +134,7 @@ import {
   type StampInput,
 } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { spinoffStatusWord } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
+import { refuseOverUsage } from "../usage-gate.ts";
 import { readRowTokens, type TokenUsage } from "../../../../platform/cli-coord/src/spinoff-tokens.ts";
 import { parseIssueRef } from "../github-issues.ts";
 import { renderSendBack, sendBackSpinoff, type SendBackDeps } from "../../../../platform/cli-coord/src/spinoff-sendback.ts";
@@ -284,10 +285,11 @@ async function apiItemPriority(client: ApiClient, idOrRef: string): Promise<stri
   }
 }
 
-/** OB-2075: is the ticket an urgent item? The item lives on the host, so ask it; a miss or a failed read is "not urgent" (the launch validates the real tier model either way). */
+/** OB-2075: is the ticket an urgent item (or a critical one, OS-108, which ranks above it)? The item lives on the host, so ask it; a miss or a failed read is "not urgent" (the launch validates the real tier model either way). */
 async function apiItemUrgent(client: ApiClient, idOrRef: string): Promise<boolean> {
   try {
-    return (await client.item(idOrRef)).item.priority === "urgent";
+    const p = (await client.item(idOrRef)).item.priority;
+    return p === "urgent" || p === "critical";
   } catch {
     return false;
   }
@@ -943,6 +945,9 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     const worktree = flag(ctx, "worktree") ?? `${rowRepoPathIn(cfg, repo)}.${worktreeKeyOf({ repo, branch, ticket_ref: ticketRef })}`;
     await refuseForeignHoldOverApi(ctx.client, ticketRef, branch, worktree, under);
   }
+  // OS-108: the usage cache is on THIS machine, so the critical-only line is checked here, before the request;
+  // the server records --over-usage on the trail and does not check (it has no cache).
+  await refuseOverUsage({ ref: ticketRef, critical: async () => (await apiItemPriority(ctx.client, ticketRef)) === "critical", overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   // OB-1815: and an effort the tier's model cannot take, for the same reason. T3 is on this machine.
   if (effort !== undefined) {
     // OB-2075: an urgent ticket runs on complex, so the level is checked against that tier's model.
@@ -977,6 +982,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     note: withOpusHighNote(flag(ctx, "note"), flag(ctx, "opus-high")) ?? null, // OB-2107
     no_check: flag(ctx, "no-check") ?? null,
     no_flake_slot: flag(ctx, "no-flake-slot") ?? null,
+    over_usage: flag(ctx, "over-usage") ?? null,
     // OB-2230: the box is on the machine that launches the builder, which is this one. The server reads the
     // priority, refuses a held flake:slot and adds the flake-box paragraph, saying so with `flake: true`.
     flake_box: flakeBoxPresent(),
@@ -1308,12 +1314,14 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     const ref = ctx.args[1];
     if (!ref) throw new UsageError("spinoff sendback requires a <ticket|id>");
     const row = pickSpinoffForShow((await ctx.client.spinoffs({})).spinoffs, ref);
+    // OS-108: past the critical-only usage line only a critical ticket goes back; checked here, where the cache is.
+    const overUsage = await refuseOverUsage({ ref: row.ticket_ref, critical: async () => (await apiItemPriority(ctx.client, row.item_id ?? row.ticket_ref)) === "critical", overUsage: flag(ctx, "over-usage"), verb: "sent back" });
     const deps: SendBackDeps = {
       flip: async () => {
-        await ctx.client.sendBackSpinoff({ id: row.id, note: flag(ctx, "note") ?? "" });
+        await ctx.client.sendBackSpinoff({ id: row.id, note: flag(ctx, "note") ?? "", over_usage: overUsage });
       },
       restore: async () => {
-        await ctx.client.sendBackSpinoff({ id: row.id, note: "", restore: true });
+        await ctx.client.sendBackSpinoff({ id: row.id, note: "", restore: true, over_usage: overUsage });
       },
       send: async (threadId, message, clientRequestId) => {
         await (await t3Seam()).send({ threadId, message, mode: "queue", clientRequestId });

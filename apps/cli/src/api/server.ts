@@ -1231,6 +1231,7 @@ async function route(
           note: optString(body, "note") ?? null,
           no_check: optString(body, "no_check") ?? null,
           no_flake_slot: optString(body, "no_flake_slot") ?? null,
+          over_usage: optString(body, "over_usage") ?? null,
           flake_box: typeof body.flake_box === "boolean" ? body.flake_box : null,
           actor: optString(body, "actor") ?? null,
           trial_leg: trialLegOf(optString(body, "trial_leg")),
@@ -1321,6 +1322,7 @@ async function route(
           id: reqPositiveInt(body, "id"),
           note: optString(body, "note") ?? "",
           restore: body.restore === true,
+          over_usage: optString(body, "over_usage") ?? null,
         }),
       );
     }
