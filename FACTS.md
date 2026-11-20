@@ -1,6 +1,6 @@
 # OmniSlash facts
 
-Checked against main at d043759 on 2026-11-20.
+Checked against main at ce1b6bc on 2026-11-20.
 
 ## What it is
 OmniSlash is a command-line tool for keeping track of tickets, projects and the agents that work on them.
@@ -23,6 +23,7 @@ It is in alpha, so anything may change or break.
 - `role-end`: `role tick` also ends a team's open role runs on this machine's T3 when they are done: a run with nothing for 15 minutes after its last turn, or whose context (read from T3 Code's own state database) has reached 200,000 tokens, is asked to write its successor note with `role note`, then its thread is settled and the run ended, freeing its lease. A turn in flight, a question waiting on the owner or a message queued in the thread keeps it open, and a run that writes no note within 10 minutes is kept (apps/cli/src/role-end.ts, apps/cli/src/commands/role-tick.ts; `bun test test/role-end.test.ts` in platform/cli-core passes).
 - `compared-linear`: Linear ships agents on issues: an issue is delegated by assigning it to Linear's own agent or an installed third-party agent, and Linear's agent writes code in a sandbox and creates branches (https://linear.app/docs/agents-in-linear, https://linear.app/docs/assigning-issues and https://linear.app/changelog, read 2026-11-18). Those pages name no check on what an issue says before it is delegated; OmniSlash refuses the first dispatch of a ticket that has no drilled section, no done-when item or no recorded check, unless overridden, as `drilled-ticket-gate` says (platform/cli-coord/src/spinoff-check.ts:352-399). OmniSlash makes no other claim beyond what Linear ships.
 - `compared-jira`: Jira ships Rovo agents on work items, in beta: an agent is added to the assignee field, mentioned in a comment, or set on a workflow transition or board column, and the Rovo Dev coding agent has a CLI worktree mode that creates a branch (https://support.atlassian.com/rovo/docs/collaborate-with-your-rovo-agent-on-work-items/ and https://support.atlassian.com/rovo/docs/use-worktree-mode-in-rovo-dev-cli/, read 2026-11-18). Those pages name no check on what a work item says before an agent takes it; OmniSlash refuses the first dispatch of a ticket that has no drilled section, no done-when item or no recorded check, unless overridden, as `drilled-ticket-gate` says (platform/cli-coord/src/spinoff-check.ts:352-399). OmniSlash makes no other claim beyond what Jira ships.
+- `public-repo`: the source is public at https://github.com/slashsuite/omnislash (`gh repo view slashsuite/omnislash --json visibility` reads `PUBLIC`).
 
 ## Planned
 - `role-runs-on-demand`: role runs started on demand, and an inbox for each role.
