@@ -18,7 +18,7 @@ import { settingFor } from "./settings.ts";
 import { DEFAULT_STAGE } from "./stage.ts";
 import { getTeam, listTeams, teamMembersIn, teamRoleAgentId, teamView, TEAM_ROLES, type TeamRole, type TeamThread } from "./team.ts";
 import { sortWorklist } from "./worklist.ts";
-import { readWeekly } from "./commands/usage.ts";
+import { cacheCheckedAt, pacingSource, readWeeklyFromDoc, type PacingSource } from "./commands/usage.ts";
 import { listAgents } from "../../../platform/cli-coord/src/agent.ts";
 import { builderIdOf } from "../../../platform/cli-coord/src/clean-repo.ts";
 import { listSpinoffs, parseJsonMap, rowsInTeam } from "../../../platform/cli-coord/src/commands/spinoff.ts";
@@ -171,18 +171,20 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
 }
 
 /** Pacing from the T3 cache: unknown when the file is missing or unreadable, or its `checkedAt` is over an hour old. */
-export function readPacing(file: string, now: Date): Pacing {
-  let checkedAt: unknown;
+export function readPacing(file: string, now: Date, source: PacingSource = pacingSource()): Pacing {
+  let doc: unknown;
   try {
-    checkedAt = (JSON.parse(readFileSync(file, "utf8")) as { checkedAt?: unknown })?.checkedAt;
+    doc = JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return { known: false, reason: `no readable usage cache at ${file}` };
   }
-  const at = typeof checkedAt === "string" ? Date.parse(checkedAt) : Number.NaN;
+  const checkedAt = cacheCheckedAt(doc);
+  const at = checkedAt ? Date.parse(checkedAt) : Number.NaN;
   if (Number.isNaN(at)) return { known: false, reason: "the usage cache has no checkedAt" };
-  if (now.getTime() - at > PACING_MAX_AGE_MS) return { known: false, reason: `the usage cache was last checked ${checkedAt as string}, over an hour ago` };
-  const w = readWeekly(file, now);
-  if (!w) return { known: false, reason: "the usage cache has no seven-day window" };
+  if (now.getTime() - at > PACING_MAX_AGE_MS) return { known: false, reason: `the usage cache was last checked ${checkedAt!}, over an hour ago` };
+  const w = readWeeklyFromDoc(doc, now, source.windowId);
+  if (!w) return { known: false, reason: `the usage cache has no ${source.windowId} window` };
+  if (Number.isNaN(w.elapsedPercent)) return { known: false, reason: "the usage cache has no readable resetsAt" };
   return {
     known: true,
     used_percent: w.usedPercent,

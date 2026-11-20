@@ -7,6 +7,7 @@ import { print } from "../output.ts";
 import { defineSeam } from "../test-seams.ts";
 import { resolveApiBase, resolveApiToken } from "../api/config.ts";
 import { ApiClient } from "../api/client.ts";
+import { activeComplexModel } from "../models-file.ts";
 
 // -----------------------------------------------------------------------------
 // `ob usage day` (OB-2278): where the Claude tokens went over a window, read from the transcripts Claude
@@ -375,6 +376,45 @@ async function lookups(ctx: Ctx): Promise<ScanOptions & { note: string | null }>
 
 // --- the weekly window ---------------------------------------------------------
 
+export type PacingProvider = "antigravity" | "claude";
+
+export interface PacingSource {
+  provider: PacingProvider;
+  cacheFile: "antigravity.json" | "claudeAgent.json";
+  windowId: "gemini-weekly" | "seven_day";
+}
+
+const ANTIGRAVITY_PACING: PacingSource = {
+  provider: "antigravity",
+  cacheFile: "antigravity.json",
+  windowId: "gemini-weekly",
+};
+
+const CLAUDE_PACING: PacingSource = {
+  provider: "claude",
+  cacheFile: "claudeAgent.json",
+  windowId: "seven_day",
+};
+
+/**
+ * Which T3 cache and weekly window pacing reads (OS-129): Antigravity (`antigravity.json`, `gemini-weekly`)
+ * when the active models profile's `builder.complex` names provider `antigravity`; Claude (`claudeAgent.json`,
+ * `seven_day`) for anything else (including `claudeAgent`, `claudeAgent2`, `opencode`, a missing or malformed
+ * models file, no `builder.complex`, or a bare id). Never throws.
+ */
+export function pacingSource(env: Record<string, string | undefined> = process.env): PacingSource {
+  return activeComplexModel(env)?.providerInstanceId === "antigravity" ? ANTIGRAVITY_PACING : CLAUDE_PACING;
+}
+
+/** `usageLimits.checkedAt`, falling back to the top-level `checkedAt`, or null. Pure. */
+export function cacheCheckedAt(doc: unknown): string | null {
+  if (!doc || typeof doc !== "object") return null;
+  const d = doc as { checkedAt?: unknown; usageLimits?: { checkedAt?: unknown } };
+  if (typeof d.usageLimits?.checkedAt === "string" && d.usageLimits.checkedAt.trim()) return d.usageLimits.checkedAt;
+  if (typeof d.checkedAt === "string" && d.checkedAt.trim()) return d.checkedAt;
+  return null;
+}
+
 export interface WeeklyWindow {
   usedPercent: number;
   resetsAt: string;
@@ -382,15 +422,23 @@ export interface WeeklyWindow {
   elapsedPercent: number;
 }
 
-export function readWeekly(file: string, now: Date): WeeklyWindow | null {
+export function readWeeklyFromDoc(doc: unknown, now: Date, windowId: string): WeeklyWindow | null {
+  if (!doc || typeof doc !== "object") return null;
+  const d = doc as { usageLimits?: { windows?: unknown } };
+  const windows = d.usageLimits?.windows;
+  if (!Array.isArray(windows)) return null;
+  const w = windows.find((x): x is { id?: unknown; usedPercent?: unknown; resetsAt?: unknown; windowDurationMins?: unknown } =>
+    Boolean(x && typeof x === "object" && (x as { id?: unknown }).id === windowId));
+  if (!w || typeof w.usedPercent !== "number" || !Number.isFinite(w.usedPercent) || typeof w.resetsAt !== "string") return null;
+  const mins = typeof w.windowDurationMins === "number" && Number.isFinite(w.windowDurationMins) && w.windowDurationMins > 0 ? w.windowDurationMins : 10080;
+  const left = (Date.parse(w.resetsAt) - now.getTime()) / 60000;
+  const elapsedPercent = Math.max(0, Math.min(100, (100 * (mins - left)) / mins));
+  return { usedPercent: w.usedPercent, resetsAt: w.resetsAt, elapsedPercent };
+}
+
+function readWeekly(file: string, now: Date, windowId: string): WeeklyWindow | null {
   try {
-    const d = JSON.parse(readFileSync(file, "utf8"));
-    const w = (d?.usageLimits?.windows ?? []).find((x: { id?: string }) => x.id === "seven_day");
-    if (!w || typeof w.usedPercent !== "number" || typeof w.resetsAt !== "string") return null;
-    const mins = typeof w.windowDurationMins === "number" ? w.windowDurationMins : 10080;
-    const left = (Date.parse(w.resetsAt) - now.getTime()) / 60000;
-    const elapsedPercent = Math.max(0, Math.min(100, (100 * (mins - left)) / mins));
-    return { usedPercent: w.usedPercent, resetsAt: w.resetsAt, elapsedPercent };
+    return readWeeklyFromDoc(JSON.parse(readFileSync(file, "utf8")), now, windowId);
   } catch {
     return null;
   }
@@ -404,8 +452,8 @@ function transcriptRoot(): string {
   return join(cfg, "projects");
 }
 
-export function t3Cache(): string {
-  return process.env.OB_USAGE_T3_CACHE?.trim() || join(process.env.HOME?.trim() || homedir(), ".t3", "caches", "claudeAgent.json");
+export function t3Cache(env: Record<string, string | undefined> = process.env, source: PacingSource = pacingSource(env)): string {
+  return env.OB_USAGE_T3_CACHE?.trim() || join(env.HOME?.trim() || homedir(), ".t3", "caches", source.cacheFile);
 }
 
 function parseWhen(raw: string | undefined, flag: string): Date | null {
@@ -472,7 +520,8 @@ export async function cmdUsage(ctx: Ctx): Promise<void> {
   if (flags.compare) windows.push({ since: new Date(since.getTime() - span), until: since });
   const { note, ...opts } = await lookups(ctx);
   const [cur, prev] = scanUsage(transcriptRoot(), windows, opts);
-  const weekly = readWeekly(t3Cache(), new Date());
+  const source = pacingSource();
+  const weekly = readWeekly(t3Cache(process.env, source), new Date(), source.windowId);
   if (ctx.flags.json) {
     if (note) process.stderr.write(`note: ${note}\n`);
     print(JSON.stringify({ ...cur, previous: prev ?? null, weekly, estimated: true }, null, 2));

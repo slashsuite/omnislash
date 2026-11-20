@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { AppError, UsageError } from "./errors.ts";
-import { readWeekly, t3Cache } from "./commands/usage.ts";
+import { cacheCheckedAt, pacingSource, readWeeklyFromDoc, t3Cache, type PacingProvider, type PacingSource } from "./commands/usage.ts";
 import { print, type Mode } from "./output.ts";
 
 /**
- * The critical-only line (OS-108). At this share of the weekly Claude usage or above, until the window resets,
- * only critical tickets are worked: `ob next` lists only them and a dispatch or send-back of anything else is
- * refused. Jacobus, 2026-11-20: "when we reach 95% of the weekly usage, we will only do critical tickets."
+ * The critical-only line (OS-108, OS-129). At this share of the active models profile's weekly usage or above,
+ * until the window resets, only critical tickets are worked: `ob next` lists only them and a dispatch or
+ * send-back of anything else is refused. Jacobus, 2026-11-20: "when we reach 95% of the weekly usage, we will
+ * only do critical tickets."
  */
 const CRITICAL_ONLY_PERCENT = 95;
 
@@ -14,31 +15,33 @@ const CRITICAL_ONLY_PERCENT = 95;
 const USAGE_CACHE_MAX_AGE_MIN = 60;
 
 type UsageGate =
-  | { unknown: false; active: boolean; usedPercent: number; resetsAt: string }
+  | { unknown: false; active: boolean; usedPercent: number; resetsAt: string; provider: PacingProvider }
   | { unknown: true; why: string };
 
 /**
- * Read the weekly window from T3's cache (`OB_USAGE_T3_CACHE` overrides the path) and say whether the
- * critical-only line holds now. A missing or unreadable file, no `seven_day` window, or a `checkedAt` older
- * than an hour is `unknown`: it never blocks, and the caller says so.
+ * Read the active profile's weekly window from T3's cache (`OB_USAGE_T3_CACHE` overrides the path) and say
+ * whether the critical-only line holds now. A missing or unreadable file, no weekly window, or a `checkedAt`
+ * older than an hour is `unknown`: it never blocks, and the caller says so.
  */
-export function criticalOnlyGate(now: Date = new Date(), file: string = t3Cache()): UsageGate {
-  let checkedAt: unknown;
+export function criticalOnlyGate(now: Date = new Date(), file?: string, source: PacingSource = pacingSource()): UsageGate {
+  const path = file ?? t3Cache(process.env, source);
+  let doc: unknown;
   try {
-    checkedAt = JSON.parse(readFileSync(file, "utf8"))?.usageLimits?.checkedAt;
+    doc = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return { unknown: true, why: `no readable usage cache at ${file}` };
+    return { unknown: true, why: `no readable usage cache at ${path}` };
   }
-  const weekly = readWeekly(file, now);
-  if (!weekly) return { unknown: true, why: `no seven_day window in ${file}` };
-  const checked = typeof checkedAt === "string" ? Date.parse(checkedAt) : Number.NaN;
-  if (Number.isNaN(checked)) return { unknown: true, why: `no checkedAt in ${file}` };
+  const weekly = readWeeklyFromDoc(doc, now, source.windowId);
+  if (!weekly) return { unknown: true, why: `no ${source.windowId} window in ${path}` };
+  const checkedAt = cacheCheckedAt(doc);
+  const checked = checkedAt ? Date.parse(checkedAt) : Number.NaN;
+  if (Number.isNaN(checked)) return { unknown: true, why: `no checkedAt in ${path}` };
   const ageMin = (now.getTime() - checked) / 60000;
   if (ageMin > USAGE_CACHE_MAX_AGE_MIN) return { unknown: true, why: `the usage cache was last checked ${Math.round(ageMin)} minutes ago` };
   const resets = Date.parse(weekly.resetsAt);
-  if (Number.isNaN(resets)) return { unknown: true, why: `no readable resetsAt in ${file}` };
+  if (Number.isNaN(resets)) return { unknown: true, why: `no readable resetsAt in ${path}` };
   const active = weekly.usedPercent >= CRITICAL_ONLY_PERCENT && now.getTime() < resets;
-  return { unknown: false, active, usedPercent: weekly.usedPercent, resetsAt: weekly.resetsAt };
+  return { unknown: false, active, usedPercent: weekly.usedPercent, resetsAt: weekly.resetsAt, provider: source.provider };
 }
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -49,9 +52,10 @@ export function resetWhen(resetsAt: string): string {
   return `${DAYS[d.getDay()]} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** The one line: `Weekly Claude usage is 96% (resets Tue 03:00): critical only.` Pure. */
-export function criticalOnlyLine(g: { usedPercent: number; resetsAt: string }): string {
-  return `Weekly Claude usage is ${g.usedPercent}% (resets ${resetWhen(g.resetsAt)}): critical only.`;
+/** The one line: `Weekly Claude usage is 96% (resets Tue 03:00): critical only.` (or Gemini for Antigravity). Pure. */
+export function criticalOnlyLine(g: { usedPercent: number; resetsAt: string; provider?: PacingProvider }): string {
+  const who = g.provider === "antigravity" ? "Gemini" : "Claude";
+  return `Weekly ${who} usage is ${g.usedPercent}% (resets ${resetWhen(g.resetsAt)}): critical only.`;
 }
 
 /** What an unknown usage reads as. Never silent, never a block. Pure. */

@@ -201,6 +201,28 @@ export function activeProfile(file: ModelsFile | null): ModelsProfile | null {
 }
 
 /**
+ * The active profile's complex-tier model, split into its provider instance and model id (OS-129).
+ * Returns `null` when there is no models file, it is malformed/unreadable, the active profile names
+ * no `builder.complex`, or that value is a bare model id with no provider. Never throws, so pacing
+ * (`ob next`, `ob usage`, `ob role brief`) and role-thread launches can fall back cleanly.
+ */
+export function activeComplexModel(
+  env: Record<string, string | undefined> = process.env,
+): { providerInstanceId: string; model: string } | null {
+  let file: ModelsFile | null;
+  try {
+    file = loadModelsFile(env);
+  } catch {
+    return null;
+  }
+  const raw = activeProfile(file)?.builder.complex;
+  if (!raw) return null;
+  const split = splitTierModel(raw);
+  if (!split || !split.providerInstanceId) return null;
+  return { providerInstanceId: split.providerInstanceId, model: split.model };
+}
+
+/**
  * Set `"active"` by editing that one value in the raw text, so comments and layout survive. The key is
  * found in the comment-blanked copy (same offsets), so a commented-out `"active": "x"` is never the one
  * edited. Throws when the file has no `"active"` string. Pure.

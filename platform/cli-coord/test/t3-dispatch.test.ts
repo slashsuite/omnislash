@@ -106,6 +106,8 @@ function fakeT3(
     options?: Record<string, Array<{ id: string; values: string[]; default?: string }>>;
     /** Model ids T3's short list leaves out and only a `search` for the id finds (OB-1815). */
     omitted?: Record<string, { providerInstanceId: string; options?: Array<{ id: string; values: string[]; default?: string }> }>;
+    /** Extra providers appended to the default fakeT3 capabilities for a specific test. */
+    extraProviders?: T3Capabilities["providers"];
   } = { repoPath: "/r/repo" },
 ): FakeT3 {
   const searches: string[] = [];
@@ -125,6 +127,7 @@ function fakeT3(
     runtimeMode: "full-access",
     providers: [
       { providerInstanceId: "opencode", displayName: "OpenCode", models: [{ id: "opencode-go/deepseek-v4.1-flash", ...(opts.options?.["opencode-go/deepseek-v4.1-flash"] ? { options: opts.options["opencode-go/deepseek-v4.1-flash"] } : {}) }], constraints: [] },
+      ...(opts.extraProviders ?? []),
       {
         providerInstanceId: "claudeAgent",
         displayName: "Claude",
@@ -1285,6 +1288,46 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
     setT3Seam(fake2.seam);
     await expect(ensureTeamThread(storeAgentRegistry(db2), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo })).rejects.toThrow(/no default model/);
     expect(fake2.calls.launch).toBe(0);
+  });
+
+  test("OS-129: opens on the active profile's builder.complex model and falls back to the project default when unusable", async () => {
+    const saved = process.env.OB_MODELS_FILE;
+    const dir = trackedDir(mkdtempSync(join(tmpdir(), "ob-team-models-")));
+    try {
+      const repo = trackedRepo();
+      const modelsPath = join(dir, "models.jsonc");
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({
+          active: "antigravity",
+          profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } },
+        }),
+      );
+      process.env.OB_MODELS_FILE = modelsPath;
+
+      // Opens on antigravity:gemini-4-neon even when the project default is Claude or absent
+      const antigravityProvider = [{ providerInstanceId: "antigravity", displayName: "Antigravity", models: [{ id: "gemini-4-neon" }], constraints: [] }];
+      for (const defaultModel of [true, false]) {
+        const db = freshDb();
+        const fake = fakeT3({ repoPath: repo, defaultModel, extraProviders: antigravityProvider });
+        setT3Seam(fake.seam);
+        const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "muse", members: ["omnislash"], repoPath: repo });
+        expect(out.created).toBe(true);
+        expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "antigravity", model: "gemini-4-neon" });
+      }
+
+      // With no usable models file, keeps the project default
+      process.env.OB_MODELS_FILE = join(dir, "missing.jsonc");
+      const db = freshDb();
+      const fake = fakeT3({ repoPath: repo, extraProviders: antigravityProvider });
+      setT3Seam(fake.seam);
+      const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo });
+      expect(out.created).toBe(true);
+      expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-opus-5-5" });
+    } finally {
+      if (saved === undefined) delete process.env.OB_MODELS_FILE;
+      else process.env.OB_MODELS_FILE = saved;
+    }
   });
 });
 

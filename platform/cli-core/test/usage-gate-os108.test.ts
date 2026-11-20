@@ -111,5 +111,151 @@ describe("the gate's reading (OS-108)", () => {
     const at = new Date(2026, 10, 24, 3, 0); // a Tuesday, 03:00 local
     expect(resetWhen(at.toISOString())).toBe("Tue 03:00");
     expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString() })).toBe("Weekly Claude usage is 96% (resets Tue 03:00): critical only.");
+    expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString(), provider: "claude" })).toBe("Weekly Claude usage is 96% (resets Tue 03:00): critical only.");
+    expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString(), provider: "antigravity" })).toBe("Weekly Gemini usage is 96% (resets Tue 03:00): critical only.");
+  });
+});
+
+describe("OS-129: active models profile pacing (Antigravity vs Claude)", () => {
+  test("activeComplexModel splits qualified builder.complex and returns null on absent/malformed/bare profiles", async () => {
+    const { activeComplexModel } = await import("../../../apps/cli/src/models-file.ts");
+    const dir = mkdtempSync(join(tmpdir(), "ob-os129-models-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+
+    const write = (name: string, body: string) => {
+      const p = join(dir, name);
+      writeFileSync(p, body);
+      return p;
+    };
+
+    expect(activeComplexModel({ OB_MODELS_FILE: join(dir, "missing.jsonc") })).toBeNull();
+    expect(activeComplexModel({ OB_MODELS_FILE: write("bad.jsonc", "{ not json") })).toBeNull();
+    expect(activeComplexModel({ OB_MODELS_FILE: write("no-complex.jsonc", JSON.stringify({ active: "a", profiles: { a: { builder: { simple: "antigravity:gemini-4-neon" } } } })) })).toBeNull();
+    expect(activeComplexModel({ OB_MODELS_FILE: write("bare.jsonc", JSON.stringify({ active: "a", profiles: { a: { builder: { complex: "gemini-4-neon" } } } })) })).toBeNull();
+    expect(activeComplexModel({ OB_MODELS_FILE: write("ag.jsonc", JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } })) })).toEqual({
+      providerInstanceId: "antigravity",
+      model: "gemini-4-neon",
+    });
+  });
+
+  test("pacingSource and t3Cache pick antigravity.json/gemini-weekly for Antigravity and claudeAgent.json/seven_day otherwise; OB_USAGE_T3_CACHE wins", async () => {
+    const { pacingSource, t3Cache } = await import("../../../apps/cli/src/commands/usage.ts");
+    const dir = mkdtempSync(join(tmpdir(), "ob-os129-src-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const write = (name: string, body: string) => {
+      const p = join(dir, name);
+      writeFileSync(p, body);
+      return p;
+    };
+
+    const ag = write("ag.jsonc", JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } }));
+    expect(pacingSource({ OB_MODELS_FILE: ag })).toEqual({ provider: "antigravity", cacheFile: "antigravity.json", windowId: "gemini-weekly" });
+    expect(t3Cache({ OB_MODELS_FILE: ag, HOME: "/tmp/h" })).toBe("/tmp/h/.t3/caches/antigravity.json");
+    expect(t3Cache({ OB_MODELS_FILE: ag, HOME: "/tmp/h", OB_USAGE_T3_CACHE: "/tmp/override.json" })).toBe("/tmp/override.json");
+
+    for (const [name, body] of [
+      ["claude.jsonc", JSON.stringify({ active: "c", profiles: { c: { builder: { complex: "claudeAgent:claude-opus-5-5" } } } })],
+      ["claude2.jsonc", JSON.stringify({ active: "c2", profiles: { c2: { builder: { complex: "claudeAgent2:claude-opus-5-5" } } } })],
+      ["opencode.jsonc", JSON.stringify({ active: "oc", profiles: { oc: { builder: { complex: "opencode:opencode-go/deepseek-v4.1-flash" } } } })],
+      ["bad.jsonc", "{ not valid"],
+    ] as const) {
+      const f = write(name, body);
+      expect(pacingSource({ OB_MODELS_FILE: f })).toEqual({ provider: "claude", cacheFile: "claudeAgent.json", windowId: "seven_day" });
+      expect(t3Cache({ OB_MODELS_FILE: f, HOME: "/tmp/h" })).toBe("/tmp/h/.t3/caches/claudeAgent.json");
+    }
+  });
+
+  test("with Antigravity active, ob next reads gemini-weekly from antigravity.json, says 'Weekly Gemini usage', and missing window reads unknown", async () => {
+    const { mkdirSync } = await import("node:fs");
+    const savedModels = process.env.OB_MODELS_FILE;
+    const savedHome = process.env.HOME;
+    const dir = mkdtempSync(join(tmpdir(), "ob-os129-ag-"));
+    cleanup.push(() => {
+      if (savedModels === undefined) delete process.env.OB_MODELS_FILE;
+      else process.env.OB_MODELS_FILE = savedModels;
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    const modelsPath = join(dir, "models.jsonc");
+    writeFileSync(
+      modelsPath,
+      JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } }),
+    );
+    process.env.OB_MODELS_FILE = modelsPath;
+    delete process.env.OB_USAGE_T3_CACHE;
+    process.env.HOME = dir;
+
+    const caches = join(dir, ".t3", "caches");
+    mkdirSync(caches, { recursive: true });
+    const now = Date.now();
+    // Put low usage in claudeAgent.json and high usage in antigravity.json to prove antigravity.json is read
+    writeFileSync(
+      join(caches, "claudeAgent.json"),
+      JSON.stringify({
+        usageLimits: {
+          checkedAt: new Date(now - 60_000).toISOString(),
+          windows: [{ id: "seven_day", usedPercent: 10, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 }],
+        },
+      }),
+    );
+    writeFileSync(
+      join(caches, "antigravity.json"),
+      JSON.stringify({
+        checkedAt: new Date(now - 30_000).toISOString(),
+        usageLimits: {
+          checkedAt: new Date(now - 60_000).toISOString(),
+          windows: [
+            { id: "gemini-5h", usedPercent: 12, resetsAt: new Date(now + HOUR).toISOString(), windowDurationMins: 300 },
+            { id: "gemini-weekly", usedPercent: 96, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 },
+          ],
+        },
+      }),
+    );
+
+    const dbPath = await seeded();
+    const human = await runCli(dbPath, ["next"]);
+    expect(human.code).toBe(0);
+    expect(human.out.split("\n")[0]).toMatch(/^Weekly Gemini usage is 96% \(resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d\): critical only\.$/);
+    expect(human.out).toContain("item critical");
+    expect(human.out).not.toContain("item urgent");
+
+    // Top-level checkedAt fallback when usageLimits.checkedAt is absent
+    writeFileSync(
+      join(caches, "antigravity.json"),
+      JSON.stringify({
+        checkedAt: new Date(now - 60_000).toISOString(),
+        usageLimits: {
+          windows: [{ id: "gemini-weekly", usedPercent: 97, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 }],
+        },
+      }),
+    );
+    expect(criticalOnlyGate(new Date(now))).toMatchObject({ unknown: false, active: true, usedPercent: 97, provider: "antigravity" });
+
+    // Missing gemini-weekly window reads as unknown (never blocks)
+    resetUsageUnknownWarning();
+    writeFileSync(
+      join(caches, "antigravity.json"),
+      JSON.stringify({
+        usageLimits: {
+          checkedAt: new Date(now - 60_000).toISOString(),
+          windows: [{ id: "gemini-5h", usedPercent: 99, resetsAt: new Date(now + HOUR).toISOString(), windowDurationMins: 300 }],
+        },
+      }),
+    );
+    const missingWin = await runCli(dbPath, ["next", "--json"]);
+    expect(missingWin.code).toBe(0);
+    expect((JSON.parse(missingWin.out) as Row[]).map((r) => r.effective_priority)).toEqual(["critical", "urgent", "medium"]);
+    expect(missingWin.err).toContain("usage unknown");
+    expect(missingWin.err).toContain("gemini-weekly");
+
+    // Malformed models file never throws from `ob next` and falls back to Claude
+    writeFileSync(modelsPath, "{ not json");
+    resetUsageUnknownWarning();
+    const malformed = await runCli(dbPath, ["next", "--json"]);
+    expect(malformed.code).toBe(0);
+    expect((JSON.parse(malformed.out) as Row[]).map((r) => r.effective_priority)).toEqual(["critical", "urgent", "medium"]);
+    expect(malformed.err).not.toContain("usage unknown");
   });
 });

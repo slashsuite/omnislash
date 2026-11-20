@@ -201,6 +201,91 @@ describe("readPacing (fixed now)", () => {
   test("a missing cache reads unknown", () => {
     expect(readPacing(join(scratch, "absent.json"), now)).toMatchObject({ known: false });
   });
+
+  test("OS-129: reads gemini-weekly for Antigravity, prefers usageLimits.checkedAt with top-level fallback, and treats missing window as unknown", async () => {
+    const { mkdirSync } = await import("node:fs");
+    const savedModels = process.env.OB_MODELS_FILE;
+    const savedCache = process.env.OB_USAGE_T3_CACHE;
+    const savedHome = process.env.HOME;
+    const dir = mkdtempSync(join(tmpdir(), "ob-role-brief-os129-"));
+    try {
+      const modelsPath = join(dir, "models.jsonc");
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } }),
+      );
+      process.env.OB_MODELS_FILE = modelsPath;
+
+      const mins = 10080;
+      const resetsAt = new Date(now.getTime() + ((100 - 20) / 100) * mins * 60_000).toISOString();
+      const agFile = join(dir, "antigravity.json");
+      // usageLimits.checkedAt is fresh; top-level checkedAt is stale -> usageLimits.checkedAt wins
+      writeFileSync(
+        agFile,
+        JSON.stringify({
+          checkedAt: "2026-11-19T09:00:00.000Z",
+          usageLimits: {
+            checkedAt: "2026-11-19T11:50:00.000Z",
+            windows: [
+              { id: "gemini-5h", usedPercent: 90, resetsAt, windowDurationMins: 300 },
+              { id: "gemini-weekly", usedPercent: 45, resetsAt, windowDurationMins: mins },
+            ],
+          },
+        }),
+      );
+      expect(readPacing(agFile, now)).toMatchObject({ known: true, used_percent: 45, ahead: true });
+
+      // Missing gemini-weekly window (only seven_day present) reads as unknown
+      const onlyClaude = join(dir, "only-claude.json");
+      writeFileSync(
+        onlyClaude,
+        JSON.stringify({
+          usageLimits: {
+            checkedAt: "2026-11-19T11:50:00.000Z",
+            windows: [{ id: "seven_day", usedPercent: 45, resetsAt, windowDurationMins: mins }],
+          },
+        }),
+      );
+      expect(readPacing(onlyClaude, now)).toMatchObject({ known: false, reason: "the usage cache has no gemini-weekly window" });
+
+      // Through `ob role brief`: reads antigravity.json from HOME when OB_USAGE_T3_CACHE is unset
+      delete process.env.OB_USAGE_T3_CACHE;
+      process.env.HOME = dir;
+      const caches = join(dir, ".t3", "caches");
+      mkdirSync(caches, { recursive: true });
+      const liveNow = Date.now();
+      const liveResets = new Date(liveNow + 5 * 86_400_000).toISOString();
+      writeFileSync(
+        join(caches, "antigravity.json"),
+        JSON.stringify({
+          usageLimits: {
+            checkedAt: new Date(liveNow - 60_000).toISOString(),
+            windows: [{ id: "gemini-weekly", usedPercent: 37, resetsAt: liveResets, windowDurationMins: 10080 }],
+          },
+        }),
+      );
+      writeFileSync(
+        join(caches, "claudeAgent.json"),
+        JSON.stringify({
+          usageLimits: {
+            checkedAt: new Date(liveNow - 60_000).toISOString(),
+            windows: [{ id: "seven_day", usedPercent: 88, resetsAt: liveResets, windowDurationMins: 10080 }],
+          },
+        }),
+      );
+      const h = await local();
+      const out = await brief(h, ["--peek"]);
+      expect(sectionOf(out, "## Pacing")[0]).toContain("37% used");
+    } finally {
+      if (savedModels === undefined) delete process.env.OB_MODELS_FILE;
+      else process.env.OB_MODELS_FILE = savedModels;
+      if (savedCache === undefined) delete process.env.OB_USAGE_T3_CACHE;
+      else process.env.OB_USAGE_T3_CACHE = savedCache;
+      if (savedHome === undefined) delete process.env.HOME;
+      else process.env.HOME = savedHome;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // --- through the CLI, on both stores -----------------------------------------------------------------------
