@@ -27,10 +27,12 @@ export interface LegTokens {
   reasoning: number;
 }
 
+export type LegKind = "claude" | "opencode" | "antigravity";
+
 export interface LegRecord {
   v: 1;
   leg: string;
-  kind: "claude" | "opencode" | null;
+  kind: LegKind | null;
   model: string | null;
   variant: string | null;
   profile: string | null;
@@ -163,6 +165,24 @@ export function claudeSessionTokens(sessionId: string, env: Env = process.env): 
     // no projects dir
   }
   return null;
+}
+
+/**
+ * Token totals from `agy --output-format json`'s `usage` object
+ * (`{ input_tokens, output_tokens, thinking_tokens, cache_read_tokens, total_tokens }`).
+ * Null when `usage` is absent or carries no finite numeric counts.
+ */
+export function antigravityUsageTokens(usage: unknown): LegTokens | null {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  const u = usage as Record<string, unknown>;
+  const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  if (!isNum(u.input_tokens) && !isNum(u.output_tokens) && !isNum(u.thinking_tokens) && !isNum(u.cache_read_tokens)) return null;
+  const n = (v: unknown) => (isNum(v) ? v : 0);
+  return {
+    input: n(u.input_tokens) + n(u.cache_read_tokens),
+    output: n(u.output_tokens),
+    reasoning: n(u.thinking_tokens),
+  };
 }
 
 // --- the trend ----------------------------------------------------------------

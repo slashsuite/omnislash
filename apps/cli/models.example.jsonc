@@ -20,13 +20,14 @@
       },
       // The blind scorer in the planner's measure-twice step.
       "checker": "claude-haiku-5-5",
-      // The skeptical-review legs. An opencode/ or opencode-go/ id runs through opencode, anything else
-      // through claude, so a profile may move a leg between providers. `opus` runs at its default effort;
-      // an older file's `sonnet` key is read as `opus` (OB-2107).
+      // The skeptical-review legs. An antigravity: id runs through agy, an opencode/ or opencode-go/ id
+      // runs through opencode, anything else through claude, so a profile may move a leg between
+      // providers. Default legs when review_readers is unset are `neon` and `opus` (`deepseek` and
+      // `luna` stay runnable when named). `opus` runs at its default effort; an older file's `sonnet`
+      // key is read as `opus` (OB-2107).
       "review": {
-        "opus": "claude-opus-5-5",
-        "deepseek": "opencode-go/deepseek-v4.1-flash#high",
-        "luna": "opencode-go/gpt-6-luna#high"
+        "neon": "antigravity:gemini-4-neon",
+        "opus": "claude-opus-5-5"
       }
     }
     // A second account: add a profile, then `ob models use claude2`. The provider before the colon is the

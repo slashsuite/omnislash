@@ -31,10 +31,14 @@ export function splitTierModel(value: string): { providerInstanceId: string | nu
 
 /** The skeptical-review legs' built-in models. `review-leg.ts` and `ob models show` both read this one table. */
 export const DEFAULT_REVIEW_MODELS = {
+  neon: "antigravity:gemini-4-neon",
   opus: "claude-opus-5-5",
   deepseek: "opencode-go/deepseek-v4.1-flash#high",
   luna: "opencode-go/gpt-6-luna#high",
 } as const;
+
+/** The default skeptical-review leg set when `review_readers` is unset: Neon and Opus. */
+export const DEFAULT_REVIEW_LEGS = ["neon", "opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
 
 /**
  * Old review-leg names still accepted (OB-2107): `sonnet` is the Claude leg, renamed `opus` when it moved to
@@ -68,7 +72,7 @@ export class ModelsFileError extends Error {}
 export interface ModelsProfile {
   builder: Partial<Record<SpinoffTier, string>>;
   checker?: string;
-  /** Review leg name (`opus`, `deepseek`, `luna`, ...; `sonnet` is read as `opus`) to model id. */
+  /** Review leg name (`neon`, `opus`, `deepseek`, `luna`, ...; `sonnet` is read as `opus`) to model id. */
   review: Record<string, string>;
 }
 

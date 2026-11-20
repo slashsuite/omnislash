@@ -179,11 +179,10 @@ is done" is not the trigger; a green PR is. The rest stays yours to run and repo
 - **ob-skeptical-review** before `State: landable`: one read-only leg **per model** on `git diff main...HEAD`,
   each launched with the skill's `review-leg.ts` under the `ob-reviewer` profile (no edits, no writes, a read-only
   shell; not `delegate_task`, which cannot choose a tool profile). The legs are the ones the owner picked for your row's tier: `ob review readers --tier <tier> -q`, set on the dashboard's Reviewers page; no tier on the row means medium, and unset it is
-  `opus` (`claude-opus-5-5` at default effort), `deepseek` and `luna`. None is told what the others found. Readers presume every changed line is wrong and report
+  `neon` (`antigravity:gemini-4-neon` through `agy`) and `opus` (`claude-opus-5-5` at default effort); `deepseek` and `luna` stay runnable when named. None is told what the others found. Readers presume every changed line is wrong and report
   `wrong` (a bug, with the failure), `stupid` or `overboard`: fix wrong, cut or justify the rest. Not nits. A leg the builder itself ran is skipped (`+ <leg>: skipped (builder)`); a failed
   leg is reported, never blocking. A paid leg that fails because the account is out of credits (the creds check reports FAILED) is
-  `skipped (no credits)` and owes nothing (ob-skeptical-review's Out of credits rule). Opus unavailable → `deepseek` (then `luna`) stands in and the report says so. Report
-  Opus first: `skeptical-review: N cut, 0 open (opus: a + deepseek: b + luna: c)`. From round 2, hand each leg its
+  `skipped (no credits)` and owes nothing (ob-skeptical-review's Out of credits rule). Opus unavailable → `neon` stands in (or `deepseek` or `luna` when `neon` is skipped or out of credits), and the report says so. Report each leg separately: `skeptical-review: N cut, 0 open (neon: a + opus: b)`. From round 2, hand each leg its
   own previous findings and your `fixed` / `rebutted` answer to each, and a `rejected` answer keeps the finding open
   (ob-skeptical-review, the rebuttal pass).
 Report each gate result: `ob agent register --id <branch> --status readying --note "moon typecheck clean; cli:test 1040 pass x2; migration fingerprint additive"`.

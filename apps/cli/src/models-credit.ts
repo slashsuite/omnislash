@@ -47,6 +47,55 @@ const CREDIT_ERROR_TEXT: readonly RegExp[] = [
   /you'?ve hit your (usage )?limit/i,
 ];
 
+/** Extra provider codes and text phrasings that signal an `agy` (Antigravity) quota or rate-limit failure. */
+// RESOURCE_EXHAUSTED also covers Gemini 429 rate limits, so it counts only for an agy attempt, never globally.
+const AGY_ERROR_CODES = ["rate_limit_exceeded", "resource_exhausted"] as const;
+const AGY_ERROR_TEXT: readonly RegExp[] = [
+  /\bquota\b/i,
+  /\brate[- ]?limit(?:ed|s)?\b/i,
+  /\b429\b/,
+];
+
+/** How much of the end of an `agy` stdout/response string `creditErrorOf` inspects for failure text. */
+const AGY_STDOUT_TAIL = 600;
+
+export interface AntigravityJson {
+  conversation_id?: string;
+  status?: string;
+  response?: string;
+  error?: string;
+  message?: string;
+  num_turns?: number;
+  usage?: Record<string, unknown>;
+  denied_actions?: unknown[];
+}
+
+/**
+ * Parse `agy --output-format json` stdout. Tries the trimmed output first, then falls back to the last
+ * JSON-object line in case `agy` printed a status line ahead of the payload. Returns `null` when none parses.
+ */
+export function parseAntigravityJson(stdout: string): AntigravityJson | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as AntigravityJson;
+  } catch {
+    const lines = trimmed.split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!.trim();
+      if (!line.startsWith("{")) continue;
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as AntigravityJson;
+      } catch {
+        // keep scanning upwards
+      }
+    }
+  }
+  return null;
+}
+
 export interface CreditMatch {
   /** `code` when a provider code matched, `text` when only the message phrasing did (the last resort). */
   by: "code" | "text";
@@ -54,18 +103,65 @@ export interface CreditMatch {
   match: string;
 }
 
-/** Whether `err` is a credit or quota exhaustion, and how that was decided. `null` for anything else. Pure. */
-export function creditErrorOf(err: { code?: string | null; message?: string | null } | null | undefined): CreditMatch | null {
-  if (!err) return null;
-  const code = err.code?.trim().toLowerCase();
-  if (code && (CREDIT_ERROR_CODES as readonly string[]).includes(code)) return { by: "code", match: code };
-  const message = err.message ?? "";
+export interface CreditErrorInput {
+  code?: string | null;
+  message?: string | null;
+  /**
+   * An `agy` (`antigravity` leg) attempt result: matches quota, rate limit, `RESOURCE_EXHAUSTED` or `429`
+   * on a non-zero exit (stderr or last 600 bytes of stdout) or on a JSON `status` other than `SUCCESS`.
+   */
+  agy?: {
+    exitCode: number | null;
+    stderr?: string | null;
+    stdout?: string | null;
+  } | null;
+}
+
+function matchCreditMessage(message: string, includeAgy: boolean): CreditMatch | null {
   for (const c of CREDIT_ERROR_CODES) if (new RegExp(`\\b${c}\\b`, "i").test(message)) return { by: "code", match: c };
+  if (includeAgy) {
+    for (const c of AGY_ERROR_CODES) if (new RegExp(`\\b${c}\\b`, "i").test(message)) return { by: "code", match: c };
+  }
   for (const re of CREDIT_ERROR_TEXT) {
     const m = re.exec(message);
     if (m) return { by: "text", match: m[0] };
   }
+  if (includeAgy) {
+    for (const re of AGY_ERROR_TEXT) {
+      const m = re.exec(message);
+      if (m) return { by: "text", match: m[0] };
+    }
+  }
   return null;
+}
+
+/** Whether `err` is a credit or quota exhaustion, and how that was decided. `null` for anything else. Pure. */
+export function creditErrorOf(err: CreditErrorInput | null | undefined): CreditMatch | null {
+  if (!err) return null;
+  if (err.agy) {
+    const { exitCode, stderr, stdout } = err.agy;
+    const rawOut = stdout ?? "";
+    const parsed = parseAntigravityJson(rawOut);
+    // A payload with no status is a failure too (finishAntigravityRun fails it), so its error text still counts.
+    if (parsed && parsed.status !== "SUCCESS") {
+      const parts = [
+        stderr ?? "",
+        parsed.status ?? "missing status",
+        typeof parsed.error === "string" ? parsed.error : "",
+        typeof parsed.message === "string" ? parsed.message : "",
+      ];
+      return matchCreditMessage(parts.join("\n"), true);
+    }
+    if (exitCode !== null && exitCode !== 0) {
+      // A parsed JSON payload is the review's own text (it may quote "quota" or "429"), so only stderr counts.
+      const text = parsed ? (stderr ?? "") : `${stderr ?? ""}\n${rawOut.slice(-AGY_STDOUT_TAIL)}`;
+      return matchCreditMessage(text, true);
+    }
+    return null;
+  }
+  const code = err.code?.trim().toLowerCase();
+  if (code && (CREDIT_ERROR_CODES as readonly string[]).includes(code)) return { by: "code", match: code };
+  return matchCreditMessage(err.message ?? "", false);
 }
 
 /** The profiles a launch tries, in order: the active one, then `fallback` (duplicates dropped). Pure. */

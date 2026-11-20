@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 // Run ONE skeptical-review leg under a read-only tool profile.
 //
-//   bun review-leg.ts <opus|deepseek|luna|<a reader from `ob review readers`>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
+//   bun review-leg.ts <neon|opus|deepseek|luna|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
 //
 // The brief arrives on stdin; the reader's findings go to stdout. Readers used to be read-only by
 // instruction only: in one review a reader leg shell-executed `ob spinoff cleanup` through an
 // unescaped backtick, and in another a reader left edits in six files. `delegate_task` cannot pick a
 // tool profile (T3 runs every OpenCode child on the `build` agent with a session-wide allow in
 // full-access, and gives a Claude child no tool list), so the legs launch here instead:
+//   - Antigravity legs (`antigravity:<model>`, default `neon`) run `agy --sandbox --output-format json`
+//     with `--settings` allowing only read-only tools/commands and denying writes, reading the brief
+//     from a temp file under `$TMPDIR` via `--add-dir` + a short `-p` prompt, printing `response` as
+//     plain text and recording `usage` tokens.
 //   - OpenCode legs run the `ob-reviewer` agent (ob-reviewer.md beside this file): every tool denied
 //     but read/grep/glob and a read-only shell allowlist, with shell metacharacters denied.
 //   - The Opus leg (once `sonnet`) runs `claude -p --restricted` (no user/project settings, no MCP) in `dontAsk`
@@ -17,9 +21,19 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_REVIEW_MODELS, activeProfile, canonicalLeg, reviewModelFor, loadModelsFile, splitTierModel, type ModelsFile } from "../../apps/cli/src/models-file.ts";
-import { creditErrorOf, profileOrder, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
+import { creditErrorOf, parseAntigravityJson, profileOrder, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
 import { parseReviewReaders, type ReviewReaders } from "../../apps/cli/src/review-readers.ts";
-import { appendLegRecord, claudeSessionTokens, diffSize, variantOf, type DiffSize, type LegRecord, type LegTokens } from "../../apps/cli/src/review-legs.ts";
+import {
+  antigravityUsageTokens,
+  appendLegRecord,
+  claudeSessionTokens,
+  diffSize,
+  variantOf,
+  type DiffSize,
+  type LegKind,
+  type LegRecord,
+  type LegTokens,
+} from "../../apps/cli/src/review-legs.ts";
 
 /** The read-only shell commands a reader may run (prefixes; arguments allowed). */
 export const READ_COMMANDS = [
@@ -92,9 +106,10 @@ export const AGENT = "ob-reviewer";
  * The named legs. A Claude leg runs at the model's default effort: no `--effort` flag at all
  * (Opus at its default, higher only on the owner's explicit ask).
  */
-type LegSpec = { kind: "claude" | "opencode"; model: string };
+type LegSpec = { kind: LegKind; model: string };
 
 export const LEGS = {
+  neon: { kind: "antigravity", model: DEFAULT_REVIEW_MODELS.neon },
   opus: { kind: "claude", model: DEFAULT_REVIEW_MODELS.opus },
   deepseek: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.deepseek },
   luna: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.luna },
@@ -104,16 +119,31 @@ export type LegCommand = { argv: string[]; env: Record<string, string> };
 
 type ResolvedLeg = LegSpec;
 
+/** An `antigravity:<model>` id runs through `agy` with the prefix stripped before `--model`. */
+function isAntigravityModel(model: string): boolean {
+  return model.startsWith("antigravity:") && model.slice("antigravity:".length).trim().length > 0;
+}
+
 /** An `opencode/` or `opencode-go/` id runs through opencode, anything else through claude. */
 function isOpencodeModel(model: string): boolean {
   return model.startsWith("opencode/") || model.startsWith("opencode-go/");
 }
 
-/** The model review_readers gives `leg` (or its old name), when the setting is stored and names it. */
+function classifyModel(value: string): ResolvedLeg | undefined {
+  if (value.startsWith("antigravity:")) {
+    const model = value.slice("antigravity:".length).trim();
+    return model ? { kind: "antigravity", model } : undefined;
+  }
+  // A `<provider>:<model>` value (the form builder tiers use) names the model after the colon here.
+  const model = splitTierModel(value)?.model ?? value;
+  if (!model.trim()) return undefined;
+  return { kind: isOpencodeModel(model) ? "opencode" : "claude", model };
+}
+
+/** The raw model review_readers gives `leg` (or its old name), when the setting is stored and names it. */
 function readerModel(readers: ReviewReaders | null, leg: string): string | undefined {
   if (!readers) return undefined;
-  const model = readers.readers[leg]?.model ?? readers.readers[canonicalLeg(leg)]?.model;
-  return model === undefined ? undefined : (splitTierModel(model)?.model ?? model);
+  return readers.readers[leg]?.model ?? readers.readers[canonicalLeg(leg)]?.model;
 }
 
 /** What runs `ob review readers --json`: exit code and stdout. A seam so tests need no ob. */
@@ -152,11 +182,11 @@ export function loadReaderSetting(
 }
 
 /**
- * The model and runner for `leg`. A named leg (`opus`, `deepseek`, `luna`; `sonnet` is read as `opus`) takes its model from
+ * The model and runner for `leg`. A named leg (`neon`, `opus`, `deepseek`, `luna`; `sonnet` is read as `opus`) takes its model from
  * the active profile's `review` map in the machine's models file (`ob models show`), else from LEGS; the kind
- * follows the value, so a profile may move a leg between providers. A raw `opencode/<model>` id is its own
- * model. A models file that does not parse throws: no silent fallback to the table. Undefined when `leg` is
- * neither a known leg nor an opencode id.
+ * follows the value, so a profile may move a leg between providers. A raw `antigravity:<model>` or
+ * `opencode/<model>` id is its own model. A models file that does not parse throws: no silent fallback to the table.
+ * Undefined when `leg` is neither a known leg nor a raw provider id.
  */
 export function resolveLeg(
   leg: string,
@@ -166,15 +196,42 @@ export function resolveLeg(
 ): ResolvedLeg | undefined {
   // A reader the owner set in review_readers (the Reviewers page) wins over the machine's file.
   const fromSetting = readerModel(readers, leg);
-  if (fromSetting !== undefined) return { kind: isOpencodeModel(fromSetting) ? "opencode" : "claude", model: fromSetting };
+  if (fromSetting !== undefined) return classifyModel(fromSetting);
   const known = (LEGS as Record<string, LegSpec>)[canonicalLeg(leg)];
   const file = loadModelsFile(env);
   const fromFile = reviewModelFor((profile !== undefined ? file?.profiles[profile] : activeProfile(file))?.review, leg);
-  const value = fromFile ?? known?.model ?? (isOpencodeModel(leg) ? leg : undefined);
+  const value = fromFile ?? known?.model ?? (isOpencodeModel(leg) || isAntigravityModel(leg) ? leg : undefined);
   if (value === undefined) return undefined;
-  // A `<provider>:<model>` value (the form builder tiers use) names the model after the colon here.
-  const model = splitTierModel(value)?.model ?? value;
-  return { kind: isOpencodeModel(model) ? "opencode" : "claude", model };
+  return classifyModel(value);
+}
+
+/**
+ * Read-only permissions passed to `agy --settings`: read files and READ_COMMANDS allowed, file writes and
+ * DENIED_COMMANDS denied (no `--dangerously-skip-permissions`).
+ */
+export function antigravitySettings(): { permissions: { allow: string[]; deny: string[] } } {
+  return {
+    permissions: {
+      allow: [
+        "read_file(*)",
+        ...READ_COMMANDS.flatMap((c) => [`command(${c})`, `command(${c} *)`]),
+      ],
+      deny: [
+        "write_file(*)",
+        ...DENIED_COMMANDS.flatMap((c) => [`command(${c})`, `command(${c} *)`]),
+        "command(git * --output*)",
+        // Shell metacharacters, as ob-reviewer.md denies them. Whether agy's matcher splits compound commands is
+        // unverified; these entries cost nothing if it does not.
+        "command(*`*)",
+        "command(*$(*)",
+        "command(*;*)",
+        "command(*|*)",
+        "command(*&*)",
+        "command(*>*)",
+        "command(*<*)",
+      ],
+    },
+  };
 }
 
 /**
@@ -190,7 +247,26 @@ export function legCommand(
   readers: ReviewReaders | null = null,
 ): LegCommand {
   const resolved = resolveLeg(leg, env, profile, readers);
-  if (resolved === undefined) throw new Error(`unknown leg '${leg}': use a reader from \`ob review readers\`, opus (or its old name sonnet), deepseek, luna or an opencode/<model>[#variant] id`);
+  if (resolved === undefined) {
+    throw new Error(
+      `unknown leg '${leg}': use a reader from \`ob review readers\`, neon, opus (or its old name sonnet), deepseek, luna, antigravity:<model> or an opencode/<model>[#variant] id`,
+    );
+  }
+  if (resolved.kind === "antigravity") {
+    return {
+      argv: [
+        "agy",
+        "--model",
+        resolved.model,
+        "--sandbox",
+        "--output-format",
+        "json",
+        "--settings",
+        JSON.stringify(antigravitySettings()),
+      ],
+      env: {},
+    };
+  }
   if (resolved.kind === "claude") {
     return {
       argv: [
@@ -229,18 +305,43 @@ export function legCommand(
   };
 }
 
+export interface LegSpawn {
+  cmd: string[];
+  stdin: string;
+  /** Temp dir holding `brief.md` for an antigravity leg; caller removes it after the run. */
+  briefDir?: string;
+}
+
 /**
- * What to spawn for `brief`: the leg's argv as it is and the brief as stdin, for every leg. The
- * brief never goes in argv, where Linux caps one string at 128 KiB and a larger brief fails with E2BIG.
+ * What to spawn for `brief`:
+ * - Claude and OpenCode take the brief on stdin, leaving argv untouched.
+ * - Antigravity (`agy`) does not read a prompt from stdin in print mode, so the brief is written to a temp
+ *   file under `$TMPDIR` and `agy` gets `--add-dir <dir>` and a short `-p` prompt pointing at that file.
+ * In every case the brief never goes in argv, where Linux caps one string at 128 KiB (E2BIG).
  */
-export function legSpawn(argv: string[], brief: string): { cmd: string[]; stdin: string } {
-  return { cmd: argv, stdin: brief };
+export function legSpawn(
+  argv: string[],
+  brief: string,
+  env: Record<string, string | undefined> = process.env,
+): LegSpawn {
+  if (argv[0] !== "agy") return { cmd: argv, stdin: brief };
+  const baseTmp = env.TMPDIR?.trim() || tmpdir();
+  mkdirSync(baseTmp, { recursive: true });
+  const briefDir = mkdtempSync(join(baseTmp, "ob-review-brief-"));
+  const briefPath = join(briefDir, "brief.md");
+  writeFileSync(briefPath, brief, "utf8");
+  const prompt = `Read ${briefPath} in full and follow every instruction in it. Return only the findings and score requested by the brief.`;
+  return {
+    cmd: [...argv, "--add-dir", briefDir, "-p", prompt],
+    stdin: "",
+    briefDir,
+  };
 }
 
 /**
  * The profiles a leg tries, in order: the active one, then `fallback`, each kept only when it
- * gives the leg a model not already in the list (the same model on the same account would hit the same
- * empty balance). `[undefined]` with no models file: the one built-in model.
+ * gives the leg a (kind, model) pair not already in the list (the same model on the same provider would hit
+ * the same empty balance). `[undefined]` with no models file: the one built-in model.
  */
 export function legProfiles(leg: string, env: Record<string, string | undefined> = process.env, readers: ReviewReaders | null = null): Array<string | undefined> {
   // A leg whose model comes from review_readers gets one attempt; there is no other profile to try.
@@ -250,9 +351,11 @@ export function legProfiles(leg: string, env: Record<string, string | undefined>
   const seen = new Set<string>();
   const out: Array<string | undefined> = [];
   for (const profile of profileOrder(file)) {
-    const model = resolveLeg(leg, env, profile)?.model;
-    if (model === undefined || seen.has(model)) continue;
-    seen.add(model);
+    const resolved = resolveLeg(leg, env, profile);
+    if (resolved === undefined) continue;
+    const key = `${resolved.kind}\u0000${resolved.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push(profile);
   }
   return out.length > 0 ? out : [undefined];
@@ -262,6 +365,8 @@ export interface LegRun {
   code: number;
   /** What the run printed. It has already been passed through; these copies are only read for the error. */
   out: string;
+  /** Raw stdout before JSON extraction (antigravity legs), kept so credit checks can read JSON status/errors. */
+  rawOut?: string;
   err: string;
   /** The signal that ended the child, when one did. */
   signal?: string | null;
@@ -280,7 +385,7 @@ const CAP_TAIL = 4000;
  * "maximum steps for this agent have been reached" in its final answer, then exits 0, so that sentence near the
  * end of stdout is the only mark. Best effort: a model that does not say it reads as a normal finish.
  */
-export function capStopOf(kind: "claude" | "opencode" | null, out: string): "steps" | "max-turns" | null {
+export function capStopOf(kind: LegKind | null, out: string): "steps" | "max-turns" | null {
   const tail = out.slice(-CAP_TAIL);
   if (kind === "claude") return /Error: Reached max turns \(\d+\)/.test(tail) ? "max-turns" : null;
   if (kind === "opencode") return /maximum steps[^\n]{0,40}(?:been )?reached/i.test(tail) ? "steps" : null;
@@ -406,12 +511,19 @@ export async function runAcrossProfiles(
         log,
       );
       inFlight = null;
-      log(`review-leg: ${leg} timed out after ${legTimeoutS(env)}s; partial output above`);
+      // agy prints its JSON only when it finishes, so a killed agy attempt has no partial text to point at.
+      const partial = base.kind === "antigravity" ? "no partial output (agy prints only when it finishes)" : "partial output above";
+      log(`review-leg: ${leg} timed out after ${legTimeoutS(env)}s; ${partial}`);
       return { code: TIMEOUT_EXIT, profile };
     }
     const stop = capStopOf(base.kind, `${result.err}\n${result.out}`);
     if (stop) log(`review-leg: ${leg} stopped at its turn cap (${stop === "steps" ? "steps" : "--max-turns"} ${MAX_TURNS}); its findings may be incomplete`);
-    const credit = result.code !== 0 ? creditErrorOf({ message: `${result.err}\n${result.out.slice(-STDOUT_TAIL)}` }) : null;
+    const credit =
+      base.kind === "antigravity"
+        ? creditErrorOf({ agy: { exitCode: result.code, stderr: result.err, stdout: result.rawOut ?? result.out } })
+        : result.code !== 0
+          ? creditErrorOf({ message: `${result.err}\n${result.out.slice(-STDOUT_TAIL)}` })
+          : null;
     safeRecord(
       record,
       finish(base, now(), {
@@ -434,7 +546,7 @@ export async function runAcrossProfiles(
       continue;
     }
     log(`review-leg: ${leg}: out of credits on every profile tried (${profiles.filter((p) => p !== undefined).join(", ") || "built-in model"})`);
-    return { code: result.code, profile };
+    return { code: result.code || 1, profile };
   }
   throw new Error(`review-leg: ${leg}: no profile to run on`);
 }
@@ -460,15 +572,22 @@ export function onLegSignal(
 }
 
 /**
- * Pass a stream through to `to` as it arrives, and return all of it. A killed leg keeps its partial output.
- * `sink.text` holds what has passed so far, so a caller that stops waiting (a timed-out leg whose grandchild
- * still holds the pipe) can still read it.
+ * Pass a stream through to `to` as it arrives (when `to` is non-null), and return all of it. A killed leg
+ * keeps its partial output. `sink.text` holds what has passed so far, so a caller that stops waiting (a
+ * timed-out leg whose grandchild still holds the pipe) can still read it.
  */
-async function tee(stream: ReadableStream<Uint8Array>, to: NodeJS.WriteStream, which: "out" | "err", sink: { text: string } = { text: "" }): Promise<string> {
+async function tee(
+  stream: ReadableStream<Uint8Array>,
+  to: NodeJS.WriteStream | null,
+  which: "out" | "err",
+  sink: { text: string } = { text: "" },
+): Promise<string> {
   const decoder = new TextDecoder();
   for await (const chunk of stream) {
-    to.write(chunk);
-    countOutput(which, chunk.byteLength);
+    if (to) {
+      to.write(chunk);
+      countOutput(which, chunk.byteLength);
+    }
     sink.text += decoder.decode(chunk, { stream: true });
   }
   sink.text += decoder.decode();
@@ -479,13 +598,20 @@ async function tee(stream: ReadableStream<Uint8Array>, to: NodeJS.WriteStream, w
 const DRAIN_MS = 2_000;
 
 /**
- * Spawn one attempt, stream its output through, and kill it once `timeoutS` has passed: SIGTERM, then
- * SIGKILL after `graceMs` if it is still alive. The output printed before the kill stays printed and is returned.
+ * Spawn one attempt, stream its output through (unless `passThroughStdout` is false, as for `agy` JSON
+ * output), and kill it once `timeoutS` has passed: SIGTERM, then SIGKILL after `graceMs` if it is still
+ * alive. The output printed before the kill stays printed and is returned.
  */
 export async function spawnLeg(
   cmd: string[],
   stdin: string,
-  opts: { env?: Record<string, string | undefined>; timeoutS: number; graceMs?: number; onChild?: (child: { kill: (signal?: number | NodeJS.Signals) => void } | null) => void },
+  opts: {
+    env?: Record<string, string | undefined>;
+    timeoutS: number;
+    graceMs?: number;
+    onChild?: (child: { kill: (signal?: number | NodeJS.Signals) => void } | null) => void;
+    passThroughStdout?: boolean;
+  },
 ): Promise<LegRun> {
   const proc = Bun.spawn(cmd, { env: opts.env, stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" });
   opts.onChild?.(proc);
@@ -500,18 +626,59 @@ export async function spawnLeg(
   }, opts.timeoutS * 1000);
   const out = { text: "" };
   const err = { text: "" };
-  const streams = Promise.all([tee(proc.stdout, process.stdout, "out", out), tee(proc.stderr, process.stderr, "err", err)]);
+  const streams = Promise.all([
+    tee(proc.stdout, opts.passThroughStdout === false ? null : process.stdout, "out", out),
+    tee(proc.stderr, process.stderr, "err", err),
+  ]);
   try {
     const code = await proc.exited;
     // A killed child's grandchild can keep the pipe open; a timed-out leg does not wait on it past DRAIN_MS.
     if (timedOut) await Promise.race([streams, new Promise((r) => setTimeout(r, DRAIN_MS))]);
     else await streams;
-    return { code, out: out.text, err: err.text, signal: proc.signalCode ?? null, timedOut };
+    return { code, out: out.text, err: err.text, signal: proc.signalCode == null ? null : String(proc.signalCode), timedOut };
   } finally {
     clearTimeout(timer);
     clearTimeout(killer);
     opts.onChild?.(null);
   }
+}
+
+/**
+ * Post-process an `agy --output-format json` attempt: parse the JSON payload, extract `usage` tokens,
+ * promote a non-`SUCCESS` status to a non-zero exit so credit checks and callers see the failure, and write
+ * `response` as plain text to `stdout` on success.
+ */
+export function finishAntigravityRun(
+  run: LegRun,
+  stdout: { write: (s: string) => unknown } = process.stdout,
+  log: (line: string) => void = (l) => console.error(l),
+): LegRun {
+  if (run.timedOut) return { ...run, rawOut: run.out, tokens: null };
+  const parsed = parseAntigravityJson(run.out);
+  const tokens = parsed ? antigravityUsageTokens(parsed.usage) : null;
+  if (!parsed) {
+    if (run.code === 0) {
+      log("review-leg: agy exited 0 without JSON output");
+      return { ...run, code: 1, rawOut: run.out, tokens: null };
+    }
+    return { ...run, rawOut: run.out, tokens: null };
+  }
+  const status = typeof parsed.status === "string" ? parsed.status : null;
+  if (status !== "SUCCESS") {
+    const code = run.code === 0 ? 1 : run.code;
+    const detail = [parsed.error, parsed.message, parsed.response].find((v): v is string => typeof v === "string" && v.trim().length > 0);
+    if (detail) log(`review-leg: agy status ${status ?? "missing"}: ${detail.trim()}`);
+    else if (run.code === 0) log(`review-leg: agy exited 0 with status ${status ?? "missing"}`);
+    return { ...run, code, out: "", rawOut: run.out, tokens };
+  }
+  const response = typeof parsed.response === "string" ? parsed.response : "";
+  const text = response.length > 0 && !response.endsWith("\n") ? `${response}\n` : response;
+  if (run.code === 0 && text.length > 0) {
+    stdout.write(text);
+    countOutput("out", Buffer.byteLength(text));
+  }
+  // Only a leg that exited 0 prints its text, so only then does `out` carry it (out_bytes matches what was printed).
+  return { ...run, out: run.code === 0 ? text : "", rawOut: run.out, tokens };
 }
 
 /** A throwaway OpenCode config dir holding only the reviewer agent. */
@@ -525,7 +692,7 @@ export function reviewerConfigDir(): string {
 if (import.meta.main) {
   const leg = process.argv[2];
   if (!leg) {
-    console.error("usage: bun review-leg.ts <opus|deepseek|luna|<a reader from `ob review readers`>|opencode/<model>[#variant]> < brief.md");
+    console.error("usage: bun review-leg.ts <neon|opus|deepseek|luna|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md");
     process.exit(2);
   }
   // The readers the owner chose (review_readers), read once for this leg.
@@ -540,34 +707,58 @@ if (import.meta.main) {
   const configDir = reviewerConfigDir();
   // A caller's timeout still leaves a record of the attempt it cut short, and the child goes with it.
   let child: { kill: (signal?: number | NodeJS.Signals) => void } | null = null;
+  let briefDir: string | null = null;
+  const cleanup = () => {
+    rmSync(configDir, { recursive: true, force: true });
+    if (briefDir) {
+      rmSync(briefDir, { recursive: true, force: true });
+      briefDir = null;
+    }
+  };
   for (const sig of ["SIGTERM", "SIGINT"] as const) {
     process.on(sig, () => {
       const code = onLegSignal(sig);
       child?.kill(sig);
-      rmSync(configDir, { recursive: true, force: true });
+      cleanup();
       process.exit(code);
     });
   }
   // A leg that fails on a credit or quota error retries on the next profile's model for that leg.
-  // Output streams through as it comes and a copy is kept so the error can be read.
+  // Output streams through as it comes (or `response` is printed from `agy` JSON) and a copy is kept so the error can be read.
   const result = await runAcrossProfiles(
     leg,
     legProfiles(leg, process.env, readers),
     async (profile) => {
       const { argv, env } = legCommand(leg, configDir, process.env, profile, readers);
+      const isAgy = argv[0] === "agy";
       // A fixed session id lets the Claude leg's token use be read from its transcript afterwards,
-      // without changing what it prints. Standalone OpenCode leaves no usage on disk, so its tokens stay null.
+      // without changing what it prints. Antigravity returns usage in its JSON payload; standalone
+      // OpenCode leaves no usage on disk, so its tokens stay null.
       const sessionId = argv[0] === "claude" ? crypto.randomUUID() : null;
-      const spawn = legSpawn(sessionId ? [...argv, "--session-id", sessionId] : argv, brief);
-      // Each attempt has a wall-clock limit, so a wandering leg ends instead of running until killed.
-      const run = await spawnLeg(spawn.cmd, spawn.stdin, { env: { ...process.env, ...env }, timeoutS: legTimeoutS(), onChild: (c) => (child = c) });
-      return { ...run, tokens: sessionId ? claudeSessionTokens(sessionId) : null };
+      const spawn = legSpawn(sessionId ? [...argv, "--session-id", sessionId] : argv, brief, process.env);
+      briefDir = spawn.briefDir ?? null;
+      try {
+        // Each attempt has a wall-clock limit, so a wandering leg ends instead of running until killed.
+        const run = await spawnLeg(spawn.cmd, spawn.stdin, {
+          env: { ...process.env, ...env },
+          timeoutS: legTimeoutS(),
+          onChild: (c) => (child = c),
+          passThroughStdout: !isAgy,
+        });
+        if (isAgy) return finishAntigravityRun(run);
+        return { ...run, tokens: sessionId ? claudeSessionTokens(sessionId) : null };
+      } finally {
+        if (spawn.briefDir) {
+          rmSync(spawn.briefDir, { recursive: true, force: true });
+          if (briefDir === spawn.briefDir) briefDir = null;
+        }
+      }
     },
     undefined,
     process.env,
     { briefBytes: Buffer.byteLength(brief), readers },
   );
   const code = result.code;
-  rmSync(configDir, { recursive: true, force: true });
+  cleanup();
   process.exit(code);
 }

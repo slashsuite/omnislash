@@ -1506,7 +1506,7 @@ Entities (v3):
                             the skeptical-review readers and their models per task tier (OB-2173): the server's review_readers
                             setting, the one the dashboard's Reviewers page edits. No --tier prints every reader, its model and
                             the tiers it is on; --tier prints that tier's readers as '<leg> <model>' (-q: leg names only, one per
-                            line, what a builder's review runs). Unset = opus, deepseek and luna on every tier.
+                            line, what a builder's review runs). Unset = neon and opus on every tier (deepseek and luna stay runnable when named).
   review readers set <leg> --model <id> | review readers rm <leg> | review readers tier <tier> <leg>...
                             set adds a reader or changes its model (a new reader joins no tier); rm removes one from every tier,
                             refused while it is a tier's only reader; tier replaces that tier's list. Every tier keeps at least
@@ -1685,7 +1685,7 @@ Admin:
                             which model runs what, from ONE machine file, ~/.config/ob/models.jsonc (OB_MODELS_FILE overrides
                             the path) (OB-1969). The file holds profiles, one per account: each names the builder model per tier
                             (builder.complex|medium|simple, '<provider>:<model>' as spinoff_tier_models does), the architect's
-                            checker model and the skeptical-review legs (review.opus|deepseek|luna; OB-2107: an older file's review.sonnet is read as review.opus, and the opus leg runs at the model's default effort). 'active' names the profile
+                            checker model and the skeptical-review legs (default: review.neon|opus, with deepseek and luna still runnable when named; OB-2107: an older file's review.sonnet is read as review.opus, and the opus leg runs at the model's default effort). 'active' names the profile
                             in force. PRECEDENCE per role: the active profile, then the spinoff_tier_models setting (builder tiers
                             only), then the built-in default; a role a profile leaves out falls through, so a machine with no file
                             behaves as before. show (the default) prints the active profile and, per role, the model and its source
@@ -1699,7 +1699,7 @@ Admin:
                             read the file on the machine that launches. No secret in it. Runs locally even on an API client.
                             FALLBACK (OB-1970): on a credit or quota error (a provider code such as insufficient_quota or
                             credit_balance_too_low, else the message text as a named last resort; a rate limit or any other
-                            error never moves it) a spinoff launch, or a first turn the run mirror sees end on one, is relaunched
+                            error never moves it, except an agy leg which also moves on quota, rate limit, RESOURCE_EXHAUSTED or 429) a spinoff launch, or a first turn the run mirror sees end on one, is relaunched
                             ONCE per remaining profile in "fallback" order, printing '<ticket>: <A> out of credits, relaunched on
                             <B>' and stamping the model with '(profile B)'. Every profile spent fails the row with a named
                             'blocked: every models profile is out of credits' refusal listing each one tried. A review leg retries
@@ -1709,7 +1709,7 @@ Admin:
                             the skeptical-review legs' run trend (OB-2133). review-leg.ts writes one record per leg attempt (a credit
                             retry is two) to review-legs.jsonl beside the models file: start, end, wall seconds, leg, model, variant,
                             profile, the diff size (git diff --shortstat origin/main...HEAD, or OB_REVIEW_DIFF_BASE), brief and output
-                            bytes, tokens (claude legs, from the session transcript; null for opencode legs, whose standalone run leaves
+                            bytes, tokens (claude legs from the session transcript, antigravity legs from agy's JSON usage; null for opencode legs, whose standalone run leaves
                             no usage on disk), the exit code or signal, whether it ended on a credit error, and stop (steps or
                             max-turns when it hit its 40-turn cap, OB-2140). A caller's SIGTERM or SIGINT still records the attempt it
                             cut short; one the leg's own wall-clock limit ended (15 min, OB_REVIEW_LEG_TIMEOUT_S) has signal 'timeout'
