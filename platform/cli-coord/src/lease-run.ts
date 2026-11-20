@@ -81,8 +81,8 @@ export interface LeaseRunOptions {
   capS?: number | null;
 }
 
-const signalNumber = (sig: string | null | undefined): number | undefined =>
-  sig ? (constants.signals as Record<string, number>)[sig] : undefined;
+const signalNumber = (sig: string | number | null | undefined): number | undefined =>
+  typeof sig === "number" ? sig : sig ? (constants.signals as Record<string, number>)[sig] : undefined;
 
 /**
  * Whether the terminal itself already delivers a Ctrl-C or hangup to the child: `ob` is in the terminal's
