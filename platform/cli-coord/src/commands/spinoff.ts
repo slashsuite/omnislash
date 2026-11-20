@@ -811,7 +811,9 @@ export async function urgentLaunchRow(
 }
 
 /**
- * Enqueue a launch. Dedups on an active (pending|launching) row for the same ticket.
+ * Enqueue a launch. Dedups on a live row for the same ticket: queued, launching, building or handed-off
+ * (`IN_FLIGHT`). A re-dispatch of a ticket whose builder is still live reuses that row and inserts none, so one
+ * ticket never has two builders on one worktree; relaunching a live build is `ob spinoff abandon` first.
  *
  * `collision` is the ob item id the ref is ALSO the id of, when the ref's ticket path bound the row to a
  * different item (1226): ref "1133" is both the strip mirror's id and the wayfinder number of the
@@ -854,7 +856,7 @@ export async function enqueueSpinoff(
   const actives = (await s.q
     .select()
     .from(s.t.spinoff)
-    .where(and(sameTicket, inArray(s.t.spinoff.status, ["pending", "launching"])))
+    .where(and(sameTicket, inArray(s.t.spinoff.status, [...IN_FLIGHT])))
     .limit(1)) as SpinoffRow[];
   const active = actives[0];
   if (active) {
@@ -1381,8 +1383,21 @@ function tierNote(tier: string | null, defaulted: boolean, urgent?: UrgentTierNo
  */
 export function renderQueuedLine(row: SpinoffRow, deduped: boolean, tierNamed: boolean, urgent?: UrgentTierNote | null): string {
   const tier = tierNote(row.tier, !tierNamed && !deduped, urgent);
-  if (deduped) return `already queued: ${row.ticket_ref} (#${row.id}); ${tier}${effortNote(row.effort)}`;
+  if (deduped) return `already ${spinoffStatusWord(row.status)}: ${row.ticket_ref} (#${row.id})${threadNote(row.t3_thread_id)}; ${tier}${effortNote(row.effort)}`;
   return `queued ${row.ticket_ref} → ${row.branch} (#${row.id})${row.launcher ? ` via ${row.launcher}` : ""}; ${tier}${effortNote(row.effort)}; 'ob spinoff drain' launches it`;
+}
+
+/** ` in T3 thread <id>` when the row has opened one, so a re-dispatch is pointed at the live builder; else empty. */
+function threadNote(threadId: string | null | undefined): string {
+  return threadId ? ` in T3 thread ${threadId}` : "";
+}
+
+/**
+ * The line a dispatch prints when it deduped onto a row it did not launch (already launching, building or
+ * handed-off), local and over the API alike: the row, its live thread when it has one, and that nothing new ran.
+ */
+export function renderAlreadyLine(row: SpinoffRow, statusWord: string): string {
+  return `already ${statusWord}: ${row.ticket_ref} (#${row.id})${threadNote(row.t3_thread_id)}; nothing new was launched`;
 }
 
 /** The line a bare `ob spinoff <ref>` prints once its thread is open (1589), local, split and API alike. */
@@ -6338,9 +6353,12 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
           decision: dispatchDecisionOf(ctx), // OB-2107: carries the --opus-high quote
         });
         if (queued.deduped) {
-          // The ticket already had a queued row: that row is launched as the single build it was queued as.
+          // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
+          // launching, building or handed-off one is left as it is (nothing new is launched).
+          const was = queued.row.status;
           await launchAndReport(ctx, store, queued.row, true, tier !== undefined, under, spinoffSteps(ctx, under));
-          return { row: null, launched: false, error: `${ticketRef} already had queued row #${queued.row.id}, launched as a single build`, settled: true };
+          const outcome = was === "pending" ? "launched as a single build" : "nothing new was launched";
+          return { row: null, launched: false, error: `${ticketRef} already had ${spinoffStatusWord(was)} row #${queued.row.id}, ${outcome}`, settled: true };
         }
         return { row: queued.row, launched: await launchAndReport(ctx, store, queued.row, false, tier !== undefined, under, spinoffSteps(ctx, under)) };
       },
@@ -6492,7 +6510,7 @@ async function launchAndReport(
   const r: RowLaunch = queued.status === "pending" ? await launchQueuedRow(db, queued, under, steps) : { kind: "raced" };
   if (r.dbFailure) reportDbFailures(ctx, [r.dbFailure]);
   const row = r.kind === "launched" || r.kind === "failed" ? r.row : queued;
-  const threadId = r.kind === "launched" ? (r.effect.t3ThreadId ?? null) : null;
+  const threadId = r.kind === "launched" ? (r.effect.t3ThreadId ?? null) : r.kind === "raced" ? (queued.t3_thread_id ?? null) : null;
   const status = r.kind === "launched" ? "launched" : r.kind === "failed" ? "failed" : r.kind === "raced" ? spinoffStatusWord(queued.status) : "pending";
   const reason =
     r.kind === "failed" ? r.error
@@ -6507,7 +6525,7 @@ async function launchAndReport(
   } else if (r.kind === "launched") {
     print(renderLaunchedLine(row, threadId, r.effect.model ?? null, deduped, tierNamed, r.effect.effort ?? row.effort, launchedUrgentNote(urgent, r.effect.adopted)));
   } else if (r.kind === "raced") {
-    print(`already ${spinoffStatusWord(queued.status)}: ${row.ticket_ref} (#${row.id}); nothing new was launched`);
+    print(renderAlreadyLine(row, spinoffStatusWord(queued.status)));
   } else {
     warn(`${row.ticket_ref} (#${row.id}) was not launched: ${reason}`);
   }

@@ -56,6 +56,7 @@ import {
   launchRowIn,
   launcherRejection,
   launchedUrgentNote,
+  renderAlreadyLine,
   renderLaunchedLine,
   renderQueuedLine,
   type UrgentTierNote,
@@ -1111,7 +1112,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   let outcome: { status: string; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean; error: string | null };
   const dbFailures: DbHalfFailure[] = [];
   if (queued.status !== "pending") {
-    outcome = { status: spinoffStatusWord(queued.status), row: queued, threadId: null, model: null, error: null };
+    outcome = { status: spinoffStatusWord(queued.status), row: queued, threadId: queued.t3_thread_id ?? null, model: null, error: null };
   } else {
     outcome = await (async () => {
       const notLaunched = (error: string) => ({ status: "pending", row: queued, threadId: null, model: null, error });
@@ -1140,7 +1141,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   } else if (outcome.status === "launched") {
     print(renderLaunchedLine(row, threadId, model, deduped, tierNamed, effort, launchedUrgentNote(urgent, outcome.adopted)));
   } else if (error === null) {
-    print(`already ${outcome.status}: ${row.ticket_ref} (#${row.id}); nothing new was launched`);
+    print(renderAlreadyLine(row, outcome.status));
   } else {
     warn(`${row.ticket_ref} (#${row.id}) was not launched: ${error}`);
   }

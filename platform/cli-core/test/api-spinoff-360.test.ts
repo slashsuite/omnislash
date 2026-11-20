@@ -1550,6 +1550,17 @@ describe("the served queue, against a real store (360)", () => {
         expect(rows[0]!.worktree).toBe("/tmp/wt");
         expect(rows[0]!.agent_id).toBe("build-360");
 
+        // A re-dispatch of the BUILDING ticket reuses its live row: deduped, the same id, nothing inserted,
+        // so no second builder is put on the same worktree.
+        const again = await call("/spinoffs", {
+          body: { no_check: "a test fixture", ticket_ref: "360", repo: "omnislash", branch: "build-360", mode: "agent", brief: "do it again" },
+        });
+        expect(again.status).toBe(200);
+        expect(again.body.deduped).toBe(true);
+        expect(again.body.row.id).toBe(id);
+        expect(again.body.row.status).toBe("launched");
+        expect(await listSpinoffs(store)).toHaveLength(1);
+
         const landed = await call("/spinoffs/land", {
           body: { id, tokens: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 3 } },
         });

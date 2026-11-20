@@ -109,7 +109,8 @@ describe("reconcile does not retire a row on a chart/docs commit naming the tick
 
   test("two rows for ONE ticket: each row is judged by its OWN base, so a newer dispatch is not retired", async () => {
     const db = freshDb();
-    // Two live rows for 738 — a re-dispatch (the enqueue dedupe only covers pending/launching rows).
+    // Two live rows for 738, seeded directly: the enqueue dedupe now reuses any live row, so only a row left from
+    // before that (or a direct write) gives two, and reconcile must still judge each by its own base.
     const older = await seedLaunched(db, { branch: "738", baseSha: BASE_738.sha });
     const newer = await seedLaunched(db, { branch: "738-again", baseSha: "base-again" });
     const commits: Commit[] = [

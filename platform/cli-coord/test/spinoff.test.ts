@@ -570,6 +570,30 @@ describe("enqueue + dedup", () => {
     expect(b.row.brief).toBe("implement the transcript"); // dedup did not overwrite
   });
 
+  test("a re-dispatch of a launching, building or handed-off ticket reuses its live row; a failed or landed one queues anew", async () => {
+    for (const live of ["launching", "launched", "ready-for-gate"]) {
+      const db = freshDb();
+      const a = await enqueueSpinoff(db, input({ tier: "simple" }));
+      db.query("UPDATE spinoff SET status = ? WHERE id = ?").run(live, a.row.id);
+      // A named tier re-rates only a PENDING row: the live row keeps the rating it was launched at.
+      const b = await enqueueSpinoff(db, input({ brief: "different", tier: "complex" }));
+      expect(b.deduped).toBe(true);
+      expect(b.row.id).toBe(a.row.id);
+      expect(b.row.status).toBe(live);
+      expect(b.row.tier).toBe("simple");
+      expect(await listSpinoffs(db)).toHaveLength(1);
+    }
+    for (const dead of ["failed", "merged"]) {
+      const db = freshDb();
+      const a = await enqueueSpinoff(db, input());
+      db.query("UPDATE spinoff SET status = ? WHERE id = ?").run(dead, a.row.id);
+      const b = await enqueueSpinoff(db, input());
+      expect(b.deduped).toBe(false);
+      expect(b.row.id).not.toBe(a.row.id);
+      expect(await listSpinoffs(db)).toHaveLength(2);
+    }
+  });
+
   test("an explicit --worktree overrides the derived <repo>.<branch> path (#61)", async () => {
     const db = freshDb();
     const { row } = (await enqueueSpinoff(db, input({ worktree: "/custom/existing-checkout" })));
