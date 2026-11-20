@@ -594,6 +594,22 @@ describe("enqueue + dedup", () => {
     }
   });
 
+  test("a trial's leg b gets its own row beside a building leg a, and dedupes only onto another leg b (OB-1991)", async () => {
+    const db = freshDb();
+    const a = await enqueueSpinoff(db, input({ trialLeg: "a", trialModel: "m-a" }));
+    db.query("UPDATE spinoff SET status = 'launched' WHERE id = ?").run(a.row.id);
+    const b = await enqueueSpinoff(db, input({ branch: "cue-9893-x-b", trialLeg: "b", trialModel: "m-b" }));
+    expect(b.deduped).toBe(false);
+    expect(b.row.trial_leg).toBe("b");
+    db.query("UPDATE spinoff SET status = 'launched' WHERE id = ?").run(b.row.id);
+    const again = await enqueueSpinoff(db, input({ branch: "cue-9893-x-b", trialLeg: "b", trialModel: "m-b" }));
+    expect(again.deduped).toBe(true);
+    expect(again.row.id).toBe(b.row.id);
+    // A single dispatch of a ticket whose pair is live reuses a live row too.
+    expect((await enqueueSpinoff(db, input())).deduped).toBe(true);
+    expect(await listSpinoffs(db)).toHaveLength(2);
+  });
+
   test("an explicit --worktree overrides the derived <repo>.<branch> path (#61)", async () => {
     const db = freshDb();
     const { row } = (await enqueueSpinoff(db, input({ worktree: "/custom/existing-checkout" })));

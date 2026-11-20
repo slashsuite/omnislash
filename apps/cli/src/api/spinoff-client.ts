@@ -1021,9 +1021,12 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
         );
         if (queued.warning && leg === "a") warn(`  ⚠ ${queued.warning}`); // OB-1825, said once
         if (queued.deduped) {
-          // The ticket already had a queued row: that row is launched as the single build it was queued as.
+          // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
+          // launching, building or handed-off one is left as it is (nothing new is launched).
+          const was = queued.row.status;
           await launchOverApi(ctx, cfg, queued.row, true, tier !== undefined, under);
-          return { row: null, launched: false, error: `${ticketRef} already had queued row #${queued.row.id}, launched as a single build`, settled: true };
+          const outcome = was === "pending" ? "launched as a single build" : "nothing new was launched";
+          return { row: null, launched: false, error: `${ticketRef} already had ${spinoffStatusWord(was)} row #${queued.row.id}, ${outcome}`, settled: true };
         }
         return { row: queued.row, launched: await launchOverApi(ctx, cfg, queued.row, false, tier !== undefined, under) };
       },

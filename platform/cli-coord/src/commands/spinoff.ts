@@ -853,10 +853,13 @@ export async function enqueueSpinoff(
         ),
       )
     : eq(s.t.spinoff.ticket_ref, input.ticketRef);
+  // OB-1991: leg b of a model trial is the pair's second row by design, on its own branch and worktree, so it
+  // dedupes only onto another leg b row. Every other dispatch (single or leg a) dedupes onto any live row.
+  const legOf = input.trialLeg === "b" ? eq(s.t.spinoff.trial_leg, "b") : undefined;
   const actives = (await s.q
     .select()
     .from(s.t.spinoff)
-    .where(and(sameTicket, inArray(s.t.spinoff.status, [...IN_FLIGHT])))
+    .where(and(sameTicket, inArray(s.t.spinoff.status, [...IN_FLIGHT]), legOf))
     .limit(1)) as SpinoffRow[];
   const active = actives[0];
   if (active) {

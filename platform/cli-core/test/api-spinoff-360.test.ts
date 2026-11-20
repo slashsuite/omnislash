@@ -1555,7 +1555,7 @@ describe("the served queue, against a real store (360)", () => {
         const again = await call("/spinoffs", {
           body: { no_check: "a test fixture", ticket_ref: "360", repo: "omnislash", branch: "build-360", mode: "agent", brief: "do it again" },
         });
-        expect(again.status).toBe(200);
+        expect(again.status).toBe(201); // the route always answers 201; `deduped` says nothing was inserted
         expect(again.body.deduped).toBe(true);
         expect(again.body.row.id).toBe(id);
         expect(again.body.row.status).toBe("launched");
