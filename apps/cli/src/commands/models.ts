@@ -10,6 +10,7 @@ import { ApiClient } from "../api/client.ts";
 import { DEFAULT_TIER_MODELS, parseTierModels } from "../t3/dispatch.ts";
 import {
   DEFAULT_CHECKER,
+  DEFAULT_REVIEW_LEGS,
   DEFAULT_REVIEW_MODELS,
   canonicalLeg,
   reviewModelFor,
@@ -92,7 +93,7 @@ function describeRoles(file: ModelsFile | null, tierSetting: string): ModelRole[
       : { role: "checker", model: DEFAULT_CHECKER, source: "default" },
   );
   // OB-2107: an alias (`review.sonnet`) is shown as the leg it feeds (`review.opus`), not as a leg of its own.
-  const legs = new Set<string>([...Object.keys(DEFAULT_REVIEW_MODELS), ...Object.keys(profile?.review ?? {}).map(canonicalLeg)]);
+  const legs = new Set<string>([...DEFAULT_REVIEW_LEGS, ...Object.keys(profile?.review ?? {}).map(canonicalLeg)]);
   for (const leg of legs) {
     const fromFile = reviewModelFor(profile?.review, leg);
     const builtin = (DEFAULT_REVIEW_MODELS as Record<string, string>)[leg];

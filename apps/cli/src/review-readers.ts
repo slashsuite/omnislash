@@ -5,12 +5,12 @@
 //
 //   {"readers": {"<leg>": {"model": "<id>"}}, "tiers": {"simple": ["<leg>"], "medium": [...], "complex": [...]}}
 //
-// Unset means today's behaviour: opus, deepseek and luna on every tier. A reader may sit in no tier (kept
+// Unset means the default two legs: neon and opus on every tier. A reader may sit in no tier (kept
 // but off). This module is PURE (no store, no ob imports beyond models-file's table) so review-leg.ts, a
 // standalone bun script, and the dashboard can both import it cheaply. Reads and writes go through a
 // `ConfigIO` the caller supplies: the store locally and on the dashboard, the API client in API mode.
 
-import { DEFAULT_REVIEW_MODELS, type SpinoffTier } from "./models-file.ts";
+import { DEFAULT_REVIEW_LEGS, DEFAULT_REVIEW_MODELS, type SpinoffTier } from "./models-file.ts";
 
 export const REVIEW_READERS_KEY = "review_readers";
 
@@ -29,11 +29,11 @@ export interface ReviewReaders {
 /** A leg name: lowercase letters, digits and dashes. */
 export const LEG_NAME = /^[a-z0-9-]+$/;
 
-/** The value an unset setting stands for: the three readers, on every tier. */
+/** The value an unset setting stands for: neon and opus, on every tier. */
 export function defaultReviewReaders(): ReviewReaders {
-  const legs = Object.keys(DEFAULT_REVIEW_MODELS);
+  const legs = [...DEFAULT_REVIEW_LEGS];
   return {
-    readers: Object.fromEntries(Object.entries(DEFAULT_REVIEW_MODELS).map(([leg, model]) => [leg, { model }])),
+    readers: Object.fromEntries(legs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg] }])),
     tiers: { simple: [...legs], medium: [...legs], complex: [...legs] },
   };
 }
