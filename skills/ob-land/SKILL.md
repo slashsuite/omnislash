@@ -29,7 +29,7 @@ push, not the architect before the merge. The local-only checks (listed in step 
 or a `gate` that is missing or on an older SHA keeps the local gate.
 
 There is no branch protection on this repo, so nothing enforces that green: the architect reads it on the PR head before
-it merges (step 4b). In a repo that runs one, the other check GitHub runs on a PR is the Hack Cove UI review, and only on PRs that
+it merges (step 4b). In a repo that runs one, the other check GitHub runs on a PR is the UISlash UI review, and only on PRs that
 touch the dashboard source (`apps/ob-dashboard/src/**` here). Step 4b waits for it before the merge.
 
 Work these steps in order for your role. Each step ends when its criterion is true. Stop on a refuse.
@@ -201,7 +201,7 @@ A repo or PR with no CI keeps the local gate in full.
 
 **UI review wait.** If `git diff --name-only origin/main...<pr head> -- apps/ob-dashboard/src` prints
 any file, the PR touches the dashboard, so run `gh pr checks <pr> --watch` and wait for it to finish before the
-merge. It waits on every check on the PR, the Hack Cove UI review included. Otherwise skip the wait.
+merge. It waits on every check on the PR, the UISlash UI review included. Otherwise skip the wait.
 
 Read the result of `gh pr checks`:
 
@@ -209,7 +209,7 @@ Read the result of `gh pr checks`:
 - **A check failed:** exit 1 with a listed failing check is a failure. **Layer 1 (a raw colour, a local
   stylesheet, a look-alike `@hackcove/ui` component) means send it back to the builder (`ob spinoff sendback <ref> --note '<the failing rule and the lines>'`) to fix on the branch,
   not merge:** the fix is the lines the PR adds; the gate runs again, the builder pushes, and you wait again.
-- **A rule is a false positive:** leave the PR open and unmerged and file the rule to the Hack Cove UI architect.
+- **A rule is a false positive:** leave the PR open and unmerged and file the rule to the UISlash architect.
   The architect decides; a `needs-human` handoff would merge past the failure.
 - **No checks listed yet:** the check can take a few seconds to appear after `gh pr create`. Run it again.
   An empty list is not a pass and not a failure.

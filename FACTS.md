@@ -3,7 +3,7 @@
 Checked against main at adad1dc on 2026-11-19.
 
 ## What it is
-OmniSlash is a command-line tool for keeping track of tasks, projects and the agents that work on them.
+OmniSlash is a command-line tool for keeping track of tickets, projects and the agents that work on them.
 It is in alpha, so anything may change or break.
 
 ## Today

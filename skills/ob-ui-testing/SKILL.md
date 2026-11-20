@@ -258,9 +258,9 @@ PixelSlash, whose shots cover every route or story in each theme:
   test checks the theme control's state (`aria-pressed`, the selected option) and that it survives a
   reload; whether the page looks dark is PixelSlash's, which shoots each theme.
 - **A design-system rule is a lint or a type, not a string search.** "No colour on the link variant",
-  "no raw colours", "positive never borrows another tone" belong in the repo's lint (Hack Cove's
+  "no raw colours", "positive never borrows another tone" belong in the repo's lint (UISlash's
   `slopRules`, the ui-review layer 1, and for apps on `@hackcove/ui-react` the `@hackcove/oxlint-ui`
-  package) or in the component's props (Hack Cove's `noStyling.test.tsx`:
+  package) or in the component's props (UISlash's `noStyling.test.tsx`:
   components refuse `className` and `style`, one structural test instead of hundreds).
 - **No layout geometry:** widths, font sizes, spacing rhythm, column counts, alignment measured in
   pixels. That is look. The one measurement that stays is **no sideways scroll** at the phone width

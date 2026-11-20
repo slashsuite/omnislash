@@ -7,7 +7,7 @@ description: Monitor an OmniSlash pull request after a builder hands it off. The
 
 Adapted from [t3dotgg/tstack](https://github.com/t3dotgg/tstack) `babysit-pr` (see `skills/README.md`).
 OmniSlash runs no review bots. Its PR checks are `gate` (`.github/workflows/ci.yml`) and, in a repo that has one, `ui-review`
-(Hack Cove rules, plus an advisory model review, on PRs that touch the dashboard source). The watch exists to tell the architect when a PR
+(UISlash rules, plus an advisory model review, on PRs that touch the dashboard source). The watch exists to tell the architect when a PR
 head is ready to gate, and when it has come back to its builder.
 
 ## Who watches

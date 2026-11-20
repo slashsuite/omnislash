@@ -5,7 +5,7 @@ description: "Morning catch-up across every architect. Gathers what each archite
 
 # ob-good-morning
 
-After a night away, every report and everything that needs the owner should be answerable in one thread: all the questions from all the planners that left something overnight, resolved one by one, instead of going to each planner to work out what it needs.
+After a night away, every report and everything that needs the owner should be answerable in one thread: all the questions from all the architects that left something overnight, resolved one by one, instead of going to each architect to work out what it needs.
 
 This thread is a switchboard. It reads, asks and routes. It does not land, dispatch, deploy, send anything external or change code: each answer goes back to the architect that owns the item, and that architect acts on it. Run it in a fresh thread (or any architect thread) from anywhere; it needs only `ob` and the T3 tools.
 

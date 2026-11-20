@@ -1,6 +1,6 @@
 # OmniSlash
 
-OmniSlash is a command-line work tracker and agent coordinator. The `ob` command keeps tasks, projects
+OmniSlash is a command-line work tracker and agent coordinator. The `ob` command keeps tickets, projects
 and the agents that work on them in one place, and it ships with an API server and a web dashboard.
 It is built with Bun.
 

@@ -5,7 +5,7 @@ description: End the owner's working day. Stops every builder after a checkpoint
 
 # ob-good-night
 
-Unlike going to bed, good night runs no tasks. It shuts down all the planners and everything else for the day, and it stops the owner from doing more work until the next morning around 07:00, so they get more sleep.
+Unlike going to bed, good night works no tickets. It shuts down all the architects and everything else for the day, and it stops the owner from doing more work until the next morning around 07:00, so they get more sleep.
 
 The owner chose a hard lock, and asked to be called out when a request made during the lock is not urgent.
 
