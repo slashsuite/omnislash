@@ -66,4 +66,8 @@ const watch = setInterval(() => {
 
 const code = await child.exited;
 clearInterval(watch);
-process.exit(code ?? 128 + ((constants.signals as Record<string, number>)[child.signalCode ?? ""] ?? 1));
+const sig = child.signalCode;
+process.exit(
+  code ??
+    128 + (typeof sig === "number" ? sig : ((constants.signals as Record<string, number>)[sig ?? ""] ?? 1)),
+);
