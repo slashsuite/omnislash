@@ -931,6 +931,8 @@ export interface AgentResponse {
   kept?: string[];
   /** OB-1922: on a `heartbeat`, this holder's expired leases it acquired again as fresh leases. Optional. */
   reacquired_leases?: string[];
+  /** OS-110: on a `heartbeat`, the row's ticket:/worktree: keys another session now holds live. Empty when none. */
+  lost_leases?: Array<{ resource: string; holder: string; since: string | null }>;
 }
 
 // --- GET /agents/active -------------------------------------------------------------------------------

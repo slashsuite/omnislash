@@ -62,6 +62,7 @@ import {
   LeaseExpiredError,
   sweepExpiredLeases,
   heartbeatLeasesByHolder,
+  lostLeasesOf,
   leaseStatus,
   recordedHold,
   releaseLease,
@@ -1177,13 +1178,16 @@ export async function agent(store: Store, req: AgentRequest): Promise<AgentRespo
     if (!found) throw new ApiFault("not_found", 404, `no agent '${req.id}'`);
     // an expired lease is never revived: it is acquired afresh, and the caller is told (OB-1922)
     const { reacquired } = await heartbeatLeasesByHolder(store, req.id);
+    const row = await getAgent(store, req.id);
     return {
-      agent: await getAgent(store, req.id),
+      agent: row,
       found: true,
       ticket_lease: null,
       released: [],
       kept: [],
       reacquired_leases: reacquired,
+      // OS-110: the row's ticket:/worktree: keys another session now holds live
+      lost_leases: (await lostLeasesOf(store, row!)).map(({ resource, holder, since }) => ({ resource, holder, since })),
     };
   }
   if (req.action === "set-run") {
