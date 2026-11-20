@@ -419,7 +419,7 @@ export function dumpReplicaBytes(db: Database): Uint8Array {
 
 export async function dumpReplica(
   db: Database,
-  write: (bytes: Uint8Array) => unknown | Promise<unknown>,
+  write: (bytes: Uint8Array) => unknown,
 ): Promise<number> {
   const gz = dumpReplicaBytes(db);
   await write(gz);

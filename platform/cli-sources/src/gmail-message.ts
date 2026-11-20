@@ -199,6 +199,7 @@ export function defaultAttachmentDir(messageId: string): string {
 /** The sender chose this name, so keep only a plain file name: no path, no control characters. */
 export function safeFileName(raw: string, fallback: string): string {
   const name = basename(raw.replace(/\\/g, "/"))
+    // oxlint-disable-next-line no-control-regex -- stripping control characters is the point of this regex
     .replace(/[\x00-\x1f\x7f]/g, "")
     .trim();
   return name === "" || name === "." || name === ".." ? fallback : name;

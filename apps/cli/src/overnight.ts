@@ -111,7 +111,7 @@ export function appendToSection(body: string, section: Section, line: string): s
   const lines = body.split("\n");
   const head = lines.findIndex((l) => l === `## ${SECTIONS[section]}`);
   if (head === -1) throw new AppError(`the run's summary has no '## ${SECTIONS[section]}' (see ob overnight show; fix it with ob doc set)`);
-  let end = lines.findIndex((l, i) => i > head && /^## /.test(l));
+  let end = lines.findIndex((l, i) => i > head && l.startsWith("## "));
   if (end === -1) end = lines.length;
   const part = lines.slice(head + 1, end);
   while (part.length && part[part.length - 1]!.trim() === "") part.pop();

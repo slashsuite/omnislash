@@ -230,7 +230,9 @@ function PairingPanel({ initial, linked }: { initial: WhatsappQrView; linked: bo
   // The PANEL's cadence, not the tab-aware one: on a return to visible the tab-aware value is still the
   // hidden one for this render, but whether there is anything worth reading has not changed.
   const panelPoll = useRef<number | null>(null);
-  panelPoll.current = panel.pollMs;
+  useEffect(() => {
+    panelPoll.current = panel.pollMs;
+  });
   // Guards the two setStates against a response that lands after unmount.
   const alive = useRef(true);
   // OB-1942: every read carries a number and only a newer one is applied, so a slow read cannot land on top
@@ -375,6 +377,7 @@ function Tokens() {
   const [rows, setRows] = useState<CredentialStatus[]>(initial);
   // Fixed at render: a page that re-derives "checked 3m ago" every second is a clock, not a status page,
   // and every action here already returns a fresh payload.
+  // oxlint-disable-next-line react/purity -- the clock is read once per render on purpose, as the comment above says
   const now = Date.now();
   const canPaste =
     typeof window === "undefined" ? false : pasteAllowedHere({ protocol: window.location.protocol, hostname: window.location.hostname });

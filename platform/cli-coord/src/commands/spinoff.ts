@@ -2672,7 +2672,7 @@ export async function launchQueuedRow(
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const stamp: StampInput = { id: row.id, outcome: "failed", error: msg, ...(prep ?? {}) };
+    const stamp: StampInput = { id: row.id, outcome: "failed", error: msg, ...prep };
     const stampError = await steps.stamp(stamp);
     return {
       kind: "failed",
@@ -2975,7 +2975,7 @@ function onlyPickedUpMain(repo: string, base: string, branch: string): boolean {
   const entries = (log.out ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
   if (!log.ok || entries.length === 0) return false;
   // a commit made on the branch: its own, or a merge that was not a fast-forward (a review round on this ticket)
-  return !entries.some((e) => /^(commit|cherry-pick|revert|am)\b/.test(e) || (/^(merge|pull)\b/.test(e) && !/Fast-forward$/.test(e)));
+  return !entries.some((e) => /^(commit|cherry-pick|revert|am)\b/.test(e) || (/^(merge|pull)\b/.test(e) && !e.endsWith("Fast-forward")));
 }
 
 /**

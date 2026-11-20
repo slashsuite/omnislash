@@ -94,6 +94,9 @@ import { setting, DEFAULTS } from "../../../apps/cli/src/settings.ts";
 import { mkdirSync, rmSync, chmodSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
+// Plain code-unit order of the string form, what a bare sort() gives.
+const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
+
 /** The monorepo root, for the cross-language pins that read the Swift side of a shared contract. */
 const REPO_ROOT = join(import.meta.dir, "../../..");
 
@@ -1566,7 +1569,7 @@ describe("launcher seam (154/G5)", () => {
       expect(res.out).toContain("79f-legacy\twarp\t"); // labelled as what it actually was
       expect(res.out).toContain("1589h-legacy\theadless\t");
       const j = JSON.parse((await runCli(dbPath, ["spinoff", "list", "--json"])).out) as SpinoffRow[];
-      expect(j.map((r) => r.launcher).sort()).toEqual(["headless", "warp"]);
+      expect(j.map((r) => r.launcher).sort(byCodeUnit)).toEqual(["headless", "warp"]);
     });
 
     test("spinoff list renders '-' for a row launched before the launcher was recorded", async () => {
@@ -2764,13 +2767,13 @@ describe("cleanupWorktrees (217) — classify + sweep with a mocked git seam", (
     }
 
     // removed: fix-1 worktree + dangling-merged branch
-    const removedBranches = res.removed.map((e) => e.branch).sort();
+    const removedBranches = res.removed.map((e) => e.branch).sort(byCodeUnit);
     expect(removedBranches).toEqual(["dangling-merged", "fix-1"]);
     expect(res.removed.find((e) => e.branch === "fix-1")!.kind).toBe("worktree");
     expect(res.removed.find((e) => e.branch === "dangling-merged")!.kind).toBe("branch");
 
     // skipped: fix-2 (dirty), feat-3 (unmerged), dangling-unmerged (unmerged branch). main NOT listed.
-    const skippedBranches = res.skipped.map((e) => e.branch).sort();
+    const skippedBranches = res.skipped.map((e) => e.branch).sort(byCodeUnit);
     expect(skippedBranches).toEqual(["dangling-unmerged", "feat-3", "fix-2"]);
     expect(res.skipped.find((e) => e.branch === "fix-2")!.reason).toMatch(/uncommitted/);
     expect(res.skipped.find((e) => e.branch === "feat-3")!.reason).toMatch(/not merged/);
@@ -2796,8 +2799,8 @@ describe("cleanupWorktrees (217) — classify + sweep with a mocked git seam", (
     }
     expect(res.dry_run).toBe(true);
     expect(mutations).toHaveLength(0); // NOTHING removed
-    expect(res.removed.map((e) => e.branch).sort()).toEqual(["dangling-merged", "fix-1"]);
-    expect(res.skipped.map((e) => e.branch).sort()).toEqual(["dangling-unmerged", "feat-3", "fix-2"]);
+    expect(res.removed.map((e) => e.branch).sort(byCodeUnit)).toEqual(["dangling-merged", "fix-1"]);
+    expect(res.skipped.map((e) => e.branch).sort(byCodeUnit)).toEqual(["dangling-unmerged", "feat-3", "fix-2"]);
   });
 
   test("--force removes dirty + unmerged too (worktree remove --force + branch -D)", async () => {
@@ -2810,7 +2813,7 @@ describe("cleanupWorktrees (217) — classify + sweep with a mocked git seam", (
       restore();
     }
     // everything except main is now removed
-    expect(res.removed.map((e) => e.branch).sort()).toEqual(["dangling-merged", "dangling-unmerged", "feat-3", "fix-1", "fix-2"]);
+    expect(res.removed.map((e) => e.branch).sort(byCodeUnit)).toEqual(["dangling-merged", "dangling-unmerged", "feat-3", "fix-1", "fix-2"]);
     expect(res.skipped).toHaveLength(0);
     expect(mutations).toContainEqual(["git", "-C", REPO, "worktree", "remove", "--force", `${REPO}.fix-2`]);
     expect(mutations).toContainEqual(["git", "-C", REPO, "branch", "-D", "fix-2"]);
@@ -3144,7 +3147,7 @@ describe("squash-merged PRs count as merged (OB-2141)", () => {
     } finally {
       restore();
     }
-    expect(res.removed.map((e) => e.branch).sort()).toEqual(["sq-1", "sq-dangling"]);
+    expect(res.removed.map((e) => e.branch).sort(byCodeUnit)).toEqual(["sq-1", "sq-dangling"]);
     expect(mutations).toContainEqual(["git", "-C", REPO, "worktree", "remove", `${REPO}.sq-1`]);
     expect(mutations).toContainEqual(["git", "-C", REPO, "branch", "-D", "sq-1"]);
     expect(res.github_error).toBeUndefined();

@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// Plain code-unit order of the string form, what a bare sort() gives.
+const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
+
 // ob 1103 — the T3 V2 surface-contract fixtures.
 //
 // These are captured live from T3 Code 0.1.0 by `apps/cli/src/t3/surface-probe.ts`
@@ -36,7 +39,7 @@ describe("ob 1103 — the T3 surface-contract fixtures", () => {
 
   test("the manifest names exactly the fixtures on disk", () => {
     const manifest = fixture("manifest.json");
-    expect([...manifest.fixtures].sort()).toEqual(fixtureNames());
+    expect([...(manifest.fixtures as string[])].sort(byCodeUnit)).toEqual(fixtureNames());
     expect(manifest.build).toBe("0.1.0");
     expect(manifest.probe).toBe("apps/cli/src/t3/surface-probe.ts");
   });

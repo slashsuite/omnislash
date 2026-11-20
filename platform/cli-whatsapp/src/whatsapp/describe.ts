@@ -113,7 +113,7 @@ export function stripGenerateBanner(raw: string): string {
       const t = l.trim();
       if (!t) return false; // blank lines are separator chrome
       if (/^=+$/.test(t)) return false; // ==== rule banners
-      if (/^\[WARNING\]/.test(t)) return false; // wired-limit warning prints to stdout
+      if (t.startsWith("[WARNING]")) return false; // wired-limit warning prints to stdout
       return !KNOWN_PREFIXES.some((p) => t.startsWith(p));
     })
     .join("\n")

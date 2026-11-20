@@ -616,7 +616,7 @@ export async function ingestJustSentMessage(
          ORDER BY m.timestamp DESC
          LIMIT 3`,
       )
-      .all(...[target, opts.content, ...(opts.mediaType ? [opts.mediaType] : [])]) as BridgeRow[];
+      .all(target, opts.content, ...(opts.mediaType ? [opts.mediaType] : [])) as BridgeRow[];
 
     const inWindow = candidates.filter((r) => {
       const ms = bridgeTsMs(r.timestamp);

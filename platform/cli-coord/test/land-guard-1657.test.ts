@@ -19,7 +19,10 @@ function git(...args: string[]): string {
 
 function put(path: string, body: string | null): void {
   const abs = join(repo, path);
-  if (body === null) return void rmSync(abs);
+  if (body === null) {
+    rmSync(abs);
+    return;
+  }
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, body);
 }

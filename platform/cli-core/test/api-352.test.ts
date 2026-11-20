@@ -22,6 +22,9 @@ import { createObApi, isObApiPath } from "../../../apps/cli/src/api/server.ts";
 import { loadApiToken, tokenMatches } from "../../../apps/cli/src/api/token.ts";
 import { OB_API_LOCAL_ONLY, OB_API_PREFIX, describeRoutes, type ObApiErrorBody } from "../../../apps/cli/src/api/contract.ts";
 
+// Plain code-unit order of the string form, what a bare sort() gives.
+const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
+
 const TOKEN = "a-test-bearer-token-that-is-long-enough";
 const OTHER_TOKEN = "a-different-bearer-token-of-similar-size";
 const BUDGET = spawnBudget(4);
@@ -260,7 +263,7 @@ describe("the working loop over the API (352)", () => {
         expect(shown.status).toBe(200);
         expect(shown.body.item.title).toBe("api build");
         expect(shown.body.item.effective_priority).toBe("high");
-        expect([...shown.body.item.tags].sort()).toEqual(["api", "gate"]);
+        expect([...shown.body.item.tags].sort(byCodeUnit)).toEqual(["api", "gate"]);
 
         // --- POST /items/:id/notes: the appended note is in the BODY afterwards ----------------------
         const noted = await call(`/items/${id}/notes`, { body: { text: "a second thought" } });
@@ -271,8 +274,8 @@ describe("the working loop over the API (352)", () => {
 
         // --- POST /items/:id/tags: add and remove, and the response is the READ-BACK -----------------
         const tagged = await call(`/items/${id}/tags`, { body: { add: ["shipped"], remove: ["gate"] } });
-        expect([...tagged.body.tags].sort()).toEqual(["api", "shipped"]);
-        expect([...(await call(`/items/${id}`)).body.item.tags].sort()).toEqual(["api", "shipped"]);
+        expect([...tagged.body.tags].sort(byCodeUnit)).toEqual(["api", "shipped"]);
+        expect([...(await call(`/items/${id}`)).body.item.tags].sort(byCodeUnit)).toEqual(["api", "shipped"]);
 
         // --- POST /items/:id/state ------------------------------------------------------------------
         const started = await call(`/items/${id}/state`, { body: { action: "start" } });

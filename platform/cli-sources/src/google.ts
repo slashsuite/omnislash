@@ -558,7 +558,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     // Gmail's default is false, and a draft discarded in Gmail is only labelled TRASH: drafts.get still reads it.
     if (opts.includeSpamTrash) p.set("includeSpamTrash", "true");
     p.set("maxResults", String(opts.maxResults ?? 20));
-    return this.get<GmailDraftListResponse>(`${GMAIL_BASE}/drafts?${p}`);
+    return this.get<GmailDraftListResponse>(`${GMAIL_BASE}/drafts?${p.toString()}`);
   }
 
   gmailUpdateDraft(id: string, req: { raw: string; threadId?: string }): Promise<GmailDraft> {
@@ -581,7 +581,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     if (opts.q) p.set("q", opts.q);
     if (opts.pageToken) p.set("pageToken", opts.pageToken);
     p.set("maxResults", String(opts.maxResults ?? 100));
-    return this.get<GmailListResponse>(`${GMAIL_BASE}/messages?${p}`);
+    return this.get<GmailListResponse>(`${GMAIL_BASE}/messages?${p.toString()}`);
   }
 
   gmailGetMessage(id: string): Promise<GmailMessage> {
@@ -597,7 +597,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
   gmailHistoryList(opts: { startHistoryId: string; pageToken?: string }): Promise<GmailHistoryResponse> {
     const p = new URLSearchParams({ startHistoryId: opts.startHistoryId, historyTypes: "messageAdded" });
     if (opts.pageToken) p.set("pageToken", opts.pageToken);
-    return this.get<GmailHistoryResponse>(`${GMAIL_BASE}/history?${p}`);
+    return this.get<GmailHistoryResponse>(`${GMAIL_BASE}/history?${p.toString()}`);
   }
 
   gmailGetProfile(): Promise<{ historyId?: string }> {
@@ -618,7 +618,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     }
     if (opts.pageToken) p.set("pageToken", opts.pageToken);
     return this.get<CalendarListResponse>(
-      `${CALENDAR_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events?${p}`,
+      `${CALENDAR_BASE}/calendars/${encodeURIComponent(opts.calendarId)}/events?${p.toString()}`,
     );
   }
 }

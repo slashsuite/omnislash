@@ -254,7 +254,7 @@ describe("the resolution helpers (OB-2130)", () => {
 
 const BASE = "https://ob.example.test";
 
-function stub(answers: Record<string, unknown | ((body: Record<string, unknown>) => unknown)>) {
+function stub(answers: Record<string, unknown>) {
   const calls: ApiRequest[] = [];
   const bodies: Array<Record<string, unknown>> = [];
   const transport: ApiTransport = async (req) => {

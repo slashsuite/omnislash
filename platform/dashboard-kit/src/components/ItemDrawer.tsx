@@ -68,7 +68,8 @@ export function ItemDrawer(props: ItemDrawerProps) {
 
 function ItemDrawerBody({ itemId, onClose, getItem, transitionItem, setTodayRank }: ItemDrawerProps) {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Keyed per item, so the effect below runs once per instance: an instance with an item starts loading.
+  const [loading, setLoading] = useState(Boolean(itemId));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -78,7 +79,6 @@ function ItemDrawerBody({ itemId, onClose, getItem, transitionItem, setTodayRank
   useEffect(() => {
     if (!itemId) return;
     let live = true;
-    setLoading(true);
     getItem({ data: { id: itemId } })
       .then((d) => {
         if (live) setDetail(d);
@@ -92,7 +92,7 @@ function ItemDrawerBody({ itemId, onClose, getItem, transitionItem, setTodayRank
     return () => {
       live = false;
     };
-  }, [itemId]); // the server fns are module-level in each app, so they never change
+  }, [itemId, getItem]); // the server fns are module-level in each app, so getItem never changes
 
   if (!itemId) return null;
 

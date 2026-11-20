@@ -40,7 +40,7 @@ export interface Listener {
 /** True for an address only this machine can reach. `*`, `0.0.0.0`, `::` and a LAN address are reachable. */
 export function isLoopbackAddress(address: string): boolean {
   const a = address.replace(/%.*$/, "");
-  return a === "::1" || a === "localhost" || /^127\./.test(a);
+  return a === "::1" || a === "localhost" || a.startsWith("127.");
 }
 
 /**

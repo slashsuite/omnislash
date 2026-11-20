@@ -71,7 +71,7 @@ describe("POST /deploys/run (OB-1926)", () => {
 		};
 		const handler = api({} as Store, fake);
 		const [a, b] = await Promise.all([handler(post({ sha: SHA })), handler(post({}))]);
-		expect([a.status, b.status].sort()).toEqual([200, 409]);
+		expect([a.status, b.status].sort((x, y) => x - y)).toEqual([200, 409]);
 		const loser = a.status === 409 ? a : b;
 		expect(((await loser.json()) as { error: { message: string } }).error.message).toContain("already running");
 		expect(ran.filter((r) => r.includes("start"))).toEqual([[...DEPLOY_START_ARGV]]);

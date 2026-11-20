@@ -45,13 +45,13 @@ function summarizeEvent(row: EventRow): string {
     case "ready_for_review":
       return `${s("pr")} ready for review`;
     case "review":
-      return `review ${s("state")} by ${p.author ?? "?"} on ${s("pr")}`.replace(/\s+/g, " ").trim();
+      return `review ${s("state")} by ${p.author == null ? "?" : s("author")} on ${s("pr")}`.replace(/\s+/g, " ").trim();
     case "review_comment":
-      return `review comment by ${p.author ?? "?"} on ${s("pr")}`;
+      return `review comment by ${p.author == null ? "?" : s("author")} on ${s("pr")}`;
     case "state_change":
-      return `${s("entity")}: ${p.from ?? "?"} → ${s("to")}`;
+      return `${s("entity")}: ${p.from == null ? "?" : s("from")} → ${s("to")}`;
     case "reopened":
-      return `${s("entity")} reopened (${p.from ?? "?"} → ${s("to")})`;
+      return `${s("entity")} reopened (${p.from == null ? "?" : s("from")} → ${s("to")})`;
     case "ticket_completed":
       return `${s("entity")} completed`;
     case "ticket_acs":

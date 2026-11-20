@@ -593,7 +593,7 @@ async function runProbes(): Promise<{ client: T3Client; project: T3Project; opts
   record(
     "Q4 grouping",
     grouping.sidebarProjectGroupingMode !== undefined,
-    `grouping=${grouping.sidebarProjectGroupingMode} · list default=${defaultList.threads?.length} includeSubagents:true=${threads.length} false=${withoutChildren.threads?.length} · architects=${architects.length} builders=${builders.length} children=${children.length}`,
+    `grouping=${String(grouping.sidebarProjectGroupingMode)} · list default=${String(defaultList.threads?.length)} includeSubagents:true=${threads.length} false=${String(withoutChildren.threads?.length)} · architects=${architects.length} builders=${builders.length} children=${children.length}`,
     { grouping, counts: { default: defaultList.threads?.length, includeSubagentsTrue: threads.length, includeSubagentsFalse: withoutChildren.threads?.length }, architects: architects.map((t) => t.title), builders: builders.map((t) => t.title), children: children.map((t) => t.title), architectReadThread: architectRead?.thread ?? architectRead },
     true,
   );

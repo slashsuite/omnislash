@@ -82,7 +82,7 @@ export function deepRedactSecretKeys(value: unknown): unknown {
 function needsQuote(s: string): boolean {
   if (s === "") return true;
   if (/^\s|\s$/.test(s)) return true;
-  if (/[:#\[\]{}&*!|>'"%@`,]/.test(s)) return true;
+  if (/[:#[\]{}&*!|>'"%@`,]/.test(s)) return true;
   if (/^[-?]/.test(s)) return true;
   if (/^(true|false|null|yes|no|on|off|~)$/i.test(s)) return true;
   if (s.trim() !== "" && !Number.isNaN(Number(s))) return true;

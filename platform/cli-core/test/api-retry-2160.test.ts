@@ -64,7 +64,7 @@ describe("the refused-connection mapping is pinned on a real fetch (OB-2160)", (
 	test("a fetch to a closed local port throws what isConnectionRefused treats as refused", async () => {
 		const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("x") });
 		const port = server.port;
-		server.stop(true);
+		await server.stop(true);
 		let caught: unknown;
 		try {
 			await fetch(`http://127.0.0.1:${port}/`);
@@ -104,7 +104,7 @@ describe("the refused-connection mapping is pinned on a real fetch (OB-2160)", (
 	test("the real fetch transport keeps that code, so the full client retries a closed port and then fails as unreachable", async () => {
 		const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("x") });
 		const port = server.port;
-		server.stop(true);
+		await server.stop(true);
 		// The real fetchTransport (no transport option) with a fake clock: the port stays closed, so every
 		// attempt is a real refused fetch until the 1s budget is spent.
 		const c = clock(1000);

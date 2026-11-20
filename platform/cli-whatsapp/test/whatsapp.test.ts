@@ -24,6 +24,9 @@ import {
   messagePreview,
 } from "../src/ingest/whatsapp.ts";
 
+// Plain code-unit order of the string form, what a bare sort() gives.
+const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
+
 // Fixture-only: a small in-memory SQLite mimicking the Go bridge's chats + messages schema. Tests NEVER
 // touch a real bridge/DB — the bridge handle is injected. RFC3339 timestamps (the whatsmeow/go-sqlite3
 // default) so the cursor/`--since` string comparison and ORDER BY behave like the real bridge.
@@ -1258,7 +1261,7 @@ describe("whatsapp thread dedup — same msg under phone + @lid (174)", () => {
       { id: "l1", chat_jid: TINO_LID, sender: TINO_LID, content: "second thought", timestamp: "2026-07-10T09:00:00Z" },
     ];
     await syncWhatsapp(db, { bridge: bridgeWith([[TINO_PHONE, null], [TINO_LID, null]], distinctContent), contacts });
-    expect((await threadForChat(db, TINO_PHONE, { contacts })).map((i) => i.content).sort()).toEqual([
+    expect((await threadForChat(db, TINO_PHONE, { contacts })).map((i) => i.content).sort(byCodeUnit)).toEqual([
       "first thought",
       "second thought",
     ]);

@@ -839,7 +839,7 @@ async function launchEntryOverApi(
     return { status: "launched", row: effect.adopted ? row : launchRow, threadId: effect.t3ThreadId ?? null, model: effect.model ?? null, effort: effect.effort ?? null, adopted: effect.adopted, error: null };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const stampError = await stampOverApi(ctx, { id: row.id, outcome: "failed", error: msg, ...(prep ?? {}) });
+    const stampError = await stampOverApi(ctx, { id: row.id, outcome: "failed", error: msg, ...prep });
     if (stampError) dbFailures.push({ ticket: row.ticket_ref, detail: claimNotStamped(row, msg, stampError) });
     return { status: "failed", row, threadId: null, model: null, error: msg };
   }

@@ -32,3 +32,9 @@ implicitInputs:
   # moon's own cache: every run writes its hash manifests there, so hashing it would make every run
   # a miss (and the cache would chase its own tail).
   - '!/.moon/cache/**'
+
+tasks:
+  # Oxlint over the project with the root .oxlintrc.json: the correctness category (typescript,
+  # unicorn, import and react) plus no-floating-promises, type-aware. A warning fails it too.
+  lint:
+    command: 'bunx oxlint --type-aware --deny-warnings -c $workspaceRoot/.oxlintrc.json .'

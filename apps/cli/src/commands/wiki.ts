@@ -292,7 +292,7 @@ async function showPage(ctx: WikiCtx, name: string): Promise<void> {
     else print(page.replace(/\n+$/, ""));
     return;
   }
-  const all = [...pageNames("projects"), ...pageNames("topics"), ...[...projects.keys()]];
+  const all = [...pageNames("projects"), ...pageNames("topics"), ...projects.keys()];
   const unique = [...new Set(all)].sort();
   throw new AppError(`no wiki page '${name}'. Nearest: ${nearestNames(name, unique).join(", ")}`);
 }

@@ -12,9 +12,6 @@ updates:
       # Our own packages move by an architect's bump ticket on a new 0.x minor, not by Dependabot.
       - dependency-name: "@hackcove/*"
       - dependency-name: "@slashsuite/*"
-      # typescript-eslint 8.x refuses TS 7: no TS major until it supports it.
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
       # vitest 5.1.1 fails to start fork workers under bun --bun vitest.
       - dependency-name: "vitest"
         versions: ["5.1.1"]

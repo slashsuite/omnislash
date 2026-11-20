@@ -487,7 +487,7 @@ export function renderT3ThreadsBlock(view: T3ReadView, indent = "  "): string[] 
     out.push(`${indent}(none)`);
     return out;
   }
-  for (const project of [...new Set(view.threads.map((t) => t.project))]) {
+  for (const project of new Set(view.threads.map((t) => t.project))) {
     out.push(`${indent}${project}`);
     for (const t of view.threads.filter((x) => x.project === project)) out.push(renderT3ThreadLine(t, `${indent}  `));
   }
