@@ -28,6 +28,7 @@ bunx moon run --concurrency 3 :typecheck :test
 ```
 
 The command reference is in [`apps/cli/README.md`](apps/cli/README.md).
+The full feature list is in [`FEATURES.md`](FEATURES.md).
 
 ## Licence
 
