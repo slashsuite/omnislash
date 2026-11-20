@@ -7,7 +7,7 @@ This is the full list of what OmniSlash does today, read from the source. The sh
 
 ## Capture and edit
 - `ob-add`: Create a work item with a title, type, kind, project, priority, body, tags and links, or a roadmap, decision or learning entry. How to reach it: `ob add <title>`. Source: `apps/cli/src/commands/capture.ts`.
-- `ob-triage`: List the triage inbox, the items still waiting for a priority, newest first. How to reach it: `ob triage`. Source: `apps/cli/src/commands/triage.ts`.
+- `ob-triage`: List the triage inbox, the items still waiting for a priority, newest first, and clear an item's triage flag or reject (close) it. How to reach it: `ob triage`, `ob triage clear|reject <id>`. Source: `apps/cli/src/commands/triage.ts`.
 - `ob-edit`: Change an item's title, body, priority or project. How to reach it: `ob edit <id>`. Source: `apps/cli/src/commands/capture.ts`.
 - `ob-note`: Append a note to an item. How to reach it: `ob note <id> <text>`. Source: `apps/cli/src/commands/capture.ts`.
 - `ob-log`: Write a standup journal entry (kudos, suggestion or comment) and list past entries. How to reach it: `ob log <kudos|suggestion|comment> "<text>"`, `ob log list`. Source: `apps/cli/src/commands/log.ts`.
@@ -29,7 +29,7 @@ This is the full list of what OmniSlash does today, read from the source. The sh
 - `ob-state`: Move an item to any state its type allows, through the same steps as the named commands. How to reach it: `ob state <id> <state>`. Source: `apps/cli/src/commands/state.ts`.
 
 ## Query
-- `ob-next`: Show today's focus in priority order, or one project's queue, with `critical` work only once weekly Claude usage passes 95%. How to reach it: `ob next [--project <p>]`. Source: `apps/cli/src/commands/query.ts`.
+- `ob-next`: Show today's focus in priority order, or one project's queue, with `critical` work only while weekly Claude usage is at 95% or more. How to reach it: `ob next [--project <p>]`. Source: `apps/cli/src/commands/query.ts`.
 - `ob-status`: Show a snapshot of now: agents, T3 Code threads, pull requests in flight, blocked items, the live deploy, focus and journal. How to reach it: `ob status`. Source: `apps/cli/src/commands/status.ts`.
 - `ob-list`: List items filtered by state, kind, project, team, priority, type and tag. How to reach it: `ob list`. Source: `apps/cli/src/commands/query.ts`.
 - `ob-show`: Show one item in full, with its trail of status changes. How to reach it: `ob show <id>`. Source: `apps/cli/src/commands/query.ts`.
@@ -50,11 +50,11 @@ This is the full list of what OmniSlash does today, read from the source. The sh
 ## Coordination
 - `ob-lease`: Acquire, heartbeat, release and list time-limited resource leases, and run a command while holding one. How to reach it: `ob lease acquire|run|heartbeat|release|status`. Source: `platform/cli-coord/src/commands/coord.ts`.
 - `ob-ports`: Show the LAN dev-port range and each port's state, and claim the lowest free port. How to reach it: `ob ports`, `ob ports next`. Source: `apps/cli/src/ports.ts`.
-- `ob-agent`: Register an agent with its ticket, worktree, branch, status and note, and keep it alive with heartbeats. How to reach it: `ob agent register`, `ob agent heartbeat <id>`. Source: `platform/cli-coord/src/commands/coord.ts`.
+- `ob-agent`: Register an agent with its ticket, worktree, branch, status and note, keep it alive with heartbeats, and mark it done, releasing the leases it took. How to reach it: `ob agent register`, `ob agent heartbeat <id>`, `ob agent done <id>`. Source: `platform/cli-coord/src/commands/coord.ts`.
 - `ob-agents`: Show who is working on what now, or wipe the registry and release every lease. How to reach it: `ob agents`, `ob agents reset`. Source: `platform/cli-coord/src/commands/coord.ts`.
 - `ob-spinoff`: Dispatch a ticket to a builder in its own git worktree as a T3 Code thread, and manage the launch queue: `queue`, `drain`, `reconcile`, `watch`, `abandon`, `show`, `list`, `check`, `brief`, `cleanup`, `claim`, `stamp`, `land`, `tokens backfill`, `reclaim`, `state`, `handoff`, `ready`, `sendback`, `reopen`, `gateable`, `trial` and `mix`. How to reach it: `ob spinoff <ticket>`, `ob spinoff <subcommand>`. Source: `platform/cli-coord/src/commands/spinoff.ts`.
 - `ob-standup`: Save, edit, read and mark posted the daily standup. How to reach it: `ob standup save|set|latest|posted`. Source: `apps/cli/src/commands/standup.ts`.
-- `ob-web`: Build and serve the read-only dashboard, or another app in the repo. How to reach it: `ob web`. Source: `apps/cli/src/commands/web.ts`.
+- `ob-web`: Build and serve the dashboard, or another app in the repo. How to reach it: `ob web`. Source: `apps/cli/src/commands/web.ts`.
 - `ob-cert`: Show and renew the LAN TLS certificate the dashboard serves, issued by Let's Encrypt over a DNS challenge. How to reach it: `ob cert status|renew`. Source: `apps/cli/src/commands/cert.ts`.
 - `ob-daemon`: Install, remove and check the background client job on macOS launchd or Linux systemd. How to reach it: `ob daemon install|uninstall|status`. Source: `platform/cli-coord/src/commands/coord.ts`.
 - `ob-deploy`: Show and record what is deployed per target, and run a deploy. How to reach it: `ob deploy status|record|run`. Source: `apps/cli/src/commands/deploy.ts`.
