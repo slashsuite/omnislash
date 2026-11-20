@@ -3651,8 +3651,8 @@ async function releaseBuilderReadyLeases(db: Database | Store, row: SpinoffRow):
 }
 
 /**
- * THE verdict of a row (OB-1992), for every reader: a clean repo's recorded `ob spinoff state` wins; omnislash,
- * and a clean-repo row that recorded none, read the `State:` line in git.
+ * THE verdict of a row (OB-1992), for every reader: a recorded `ob spinoff state` verdict wins for every repo
+ * (OS-78), and a row that recorded none reads the `State:` line in git.
  */
 export function rowVerdictState(row: { worktree: string; branch: string } & RowVerdict): string | null {
   return verdictStateFor(row, () => readCommitState(row.worktree, row.branch));
@@ -5450,7 +5450,7 @@ export function pickSpinoffForState(all: SpinoffRow[], ref: string, itemId?: str
 
 /** The last `State:` paragraph on a row's branch for `spinoff show`; null when the checkout is gone. */
 export function showStateFor(row: SpinoffRow): string | null {
-  if (!isObRepo(row.repo) && row.verdict) return rowVerdictState(row);
+  if (row.verdict) return rowVerdictState(row);
   return existsSync(row.worktree) ? rowVerdictState(row) : null;
 }
 
