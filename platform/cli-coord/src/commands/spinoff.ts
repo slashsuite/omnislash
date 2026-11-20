@@ -1039,7 +1039,7 @@ const realSh: Sh = (cmd, cwd, timeoutMs) => {
       err: new TextDecoder().decode(p.stderr).trim(),
       out: new TextDecoder().decode(p.stdout),
       code: p.exitCode,
-      signal: p.signalCode ?? null,
+      signal: p.signalCode == null ? null : String(p.signalCode),
     };
   } catch (e) {
     return { ok: false, err: String(e), out: "" };
