@@ -128,9 +128,9 @@ beforeEach(() => {
   role = fakeServer();
 });
 
-afterEach(() => {
-  main.server.stop(true);
-  role.server.stop(true);
+afterEach(async () => {
+  await main.server.stop(true);
+  await role.server.stop(true);
   rmSync(dir, { recursive: true, force: true });
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
