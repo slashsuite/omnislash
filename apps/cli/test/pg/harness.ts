@@ -619,7 +619,7 @@ export function trackPgRelease(release: () => Promise<void>): () => void {
  */
 export async function releasePgLeases(): Promise<void> {
   let changed: unknown;
-  for (const release of [...leased]) {
+  for (const release of Array.from(leased)) {
     await release().catch((err) => {
       if (err instanceof PooledSchemaChanged) changed ??= err;
     });

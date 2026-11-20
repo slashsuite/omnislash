@@ -276,7 +276,7 @@ describe("setQueueOrder (OB-2083)", () => {
     await mk("c", "alpha", MEDIUM);
     await setTodayRank(store, a, 2);
     await setTodayRank(store, b, 1);
-    const todays = async () => (await nextWorklist(store)).items.map((i) => [i.id, i.today_rank]).sort();
+    const todays = async () => (await nextWorklist(store)).items.map((i) => [i.id, i.today_rank] as const).sort((x, y) => String(x[0]).localeCompare(String(y[0])));
     const before = await todays();
     await setQueueOrder(store, b, { top: true });
     await setQueueOrder(store, a, { after: b });

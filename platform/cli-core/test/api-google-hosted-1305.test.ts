@@ -79,7 +79,7 @@ async function withApi(
   });
 
   const call: Ctx["call"] = async (path, o = {}) => {
-    const headers: Record<string, string> = { ...(o.headers ?? {}) };
+    const headers: Record<string, string> = { ...o.headers };
     const token = o.token === undefined ? TOKEN : o.token;
     if (token !== null) headers.authorization = `Bearer ${token}`;
     const res = await api(new Request(`${ORIGIN}${OB_API_PREFIX}${path}`, { method: o.method ?? "GET", headers }));

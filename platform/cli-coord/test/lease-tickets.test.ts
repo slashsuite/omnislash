@@ -39,6 +39,9 @@ import {
 import { registerAgent } from "../src/agent.ts";
 import { claimTicketLease, finishAgent } from "../src/agent-register.ts";
 
+// Plain code-unit order of the string form, what a bare sort() gives.
+const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
+
 // #97: tickets/worktrees/apps lease like ports (decision #37). Two concurrent architect sessions had no
 // mutual exclusion over a ticket or its worktree; one removed a worktree, deleted its branch and landed
 // the ticket while another was mid-review + mid-gate on it. These tests pin the key shapes, the
@@ -297,7 +300,7 @@ describe("cleanup guard (#97): never remove a worktree / delete a branch under a
     const { mutations, restore } = fakeGit(model());
     try {
       const res = (await cleanupWorktrees(db, { repo: REPO }));
-      expect(res.removed.map((e) => e.branch).sort()).toEqual(["build-96", "dangling-96"]);
+      expect(res.removed.map((e) => e.branch).sort(byCodeUnit)).toEqual(["build-96", "dangling-96"]);
     } finally {
       restore();
     }

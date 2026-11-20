@@ -317,7 +317,7 @@ async function certStatus(ctx: Ctx, now: Date = new Date()): Promise<void> {
           keyMode: report.keyMode?.toString(8) ?? null,
           pairMatches: report.pairMatches,
           renewDays,
-          ...(report.summary ?? {}),
+          ...report.summary,
           paths_agree: pathsAgree,
           ok,
           problems,

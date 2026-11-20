@@ -113,8 +113,7 @@ describe("ob 1532: the migration lock cannot leak across a pool", () => {
 				expect(err).toBeInstanceOf(PgMigrationLockError);
 				expect(String((err as Error).message)).toContain("released nothing");
 			} finally {
-				a.release();
-				b.release();
+				await Promise.allSettled([a.release(), b.release()]);
 				await p.end().catch(() => {});
 				await db.drop();
 			}

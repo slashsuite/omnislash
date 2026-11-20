@@ -152,7 +152,9 @@ describe("the Start outcome line (OB-1942)", () => {
     show(view("unset"));
     await settle();
 
-    await act(async () => void screen.getByRole("button", { name: "Start pairing" }).click());
+    await act(async () => {
+      screen.getByRole("button", { name: "Start pairing" }).click();
+    });
     await settle();
     expect(screen.getByText("Started the WhatsApp bridge.")).toBeTruthy();
 
@@ -170,7 +172,9 @@ describe("the Start outcome line (OB-1942)", () => {
     });
     show(view("unset"));
     await settle();
-    await act(async () => void screen.getByRole("button", { name: "Start pairing" }).click());
+    await act(async () => {
+      screen.getByRole("button", { name: "Start pairing" }).click();
+    });
     await settle();
     expect(screen.getByText("The session is already live, so there is nothing to pair.")).toBeTruthy();
     getWhatsappQr.mockResolvedValue(view("live"));

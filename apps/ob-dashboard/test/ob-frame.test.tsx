@@ -2,7 +2,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToString } from "react-dom/server";
 
-mock.module("../../../platform/dashboard-kit/src/lib/useRealtime.ts", () => ({
+void mock.module("../../../platform/dashboard-kit/src/lib/useRealtime.ts", () => ({
   useRealtime: () => ({ snap: null, connected: false }),
 }));
 

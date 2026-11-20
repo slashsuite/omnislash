@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { renderToString } from "react-dom/server";
 
 const rt: { snap: { alertCount: number } | null } = { snap: null };
-mock.module("../../../platform/dashboard-kit/src/lib/useRealtime.ts", () => ({
+void mock.module("../../../platform/dashboard-kit/src/lib/useRealtime.ts", () => ({
   useRealtime: () => ({ snap: rt.snap, connected: rt.snap !== null }),
 }));
 

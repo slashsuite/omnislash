@@ -53,7 +53,7 @@ export const PROJECT_DISPLAY_NAME_MAX = 40;
 export function parseProjectLabel(flag: "icon" | "display-name", value: string): string {
   const v = value.trim();
   const max = flag === "icon" ? PROJECT_ICON_MAX : PROJECT_DISPLAY_NAME_MAX;
-  const len = flag === "icon" ? v.length : [...v].length;
+  const len = flag === "icon" ? v.length : Array.from(v).length;
   if (len > max) throw new UsageError(`--${flag} must be at most ${max} ${flag === "icon" ? "UTF-16 code units" : "characters"} (got ${len})`);
   return v;
 }

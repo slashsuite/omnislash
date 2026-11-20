@@ -235,7 +235,10 @@ export async function waitUntilAcquired<T extends { ok: boolean }>(
     return [sig, h] as const;
   });
   const nap = async (ms: number) => {
-    if (opts.sleep) return void (await opts.sleep(ms));
+    if (opts.sleep) {
+      await opts.sleep(ms);
+      return;
+    }
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, ms);
       wake = () => {

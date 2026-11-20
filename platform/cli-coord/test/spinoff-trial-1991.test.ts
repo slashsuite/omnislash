@@ -609,7 +609,7 @@ describe("gateable and the leg's own row (OB-1991)", () => {
     try {
       const json = JSON.parse((await runCli(dbPath, ["spinoff", "gateable", "--json"])).out) as Array<{ ids?: number[]; pair?: unknown; model: string | null }>;
       expect(json.length).toBe(1);
-      expect(json[0]!.ids!.sort()).toEqual([pair.row_a!, pair.row_b!].sort());
+      expect(json[0]!.ids!.sort((x, y) => x - y)).toEqual([pair.row_a!, pair.row_b!].sort((x, y) => x - y));
       expect(json[0]!.pair).toBeTruthy();
       expect(json[0]!.model).toBeNull();
       const text = (await runCli(dbPath, ["spinoff", "gateable"])).out;

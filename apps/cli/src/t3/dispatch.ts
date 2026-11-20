@@ -359,7 +359,7 @@ function splitLeaseMarkers(title: string): { markers: string[]; rest: string } {
 
 /** The label a marker token carries: everything after its state emoji. Pure. */
 function markerLabel(token: string): string {
-  return [...token].slice(1).join("");
+  return Array.from(token).slice(1).join("");
 }
 
 /** The title with every lease marker taken off (the whole run and its ` · `). Pure. */

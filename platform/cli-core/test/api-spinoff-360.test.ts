@@ -44,7 +44,7 @@ interface Stub {
 }
 
 /** A transport that answers from a canned table, keyed `METHOD /path`, and records every request. */
-function stub(answers: Record<string, unknown | ((body: Record<string, unknown>, req: ApiRequest) => unknown)>): Stub {
+function stub(answers: Record<string, unknown>): Stub {
   const calls: ApiRequest[] = [];
   const bodies: Array<Record<string, unknown>> = [];
   const transport: ApiTransport = async (req) => {

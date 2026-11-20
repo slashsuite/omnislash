@@ -123,7 +123,7 @@ export async function listTeamViews(db: Database | Store): Promise<TeamView[]> {
 export function parseTeamLabel(flag: "icon" | "display-name", value: string): string {
   const v = value.trim();
   const max = flag === "icon" ? 16 : 40;
-  const len = flag === "icon" ? v.length : [...v].length;
+  const len = flag === "icon" ? v.length : Array.from(v).length;
   if (len > max) throw new UsageError(`--${flag} must be at most ${max} ${flag === "icon" ? "UTF-16 code units" : "characters"} (got ${len})`);
   return v;
 }

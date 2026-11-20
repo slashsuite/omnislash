@@ -411,7 +411,7 @@ export function listOpencodeApiSessions(
   }
   try {
     const q = new URLSearchParams({ directory, parentID: "null", limit: "50", order: "desc" });
-    const r = Bun.spawnSync(["opencode", "api", "get", `/api/session?${q}`], {
+    const r = Bun.spawnSync(["opencode", "api", "get", `/api/session?${q.toString()}`], {
       stdout: "pipe",
       stderr: "ignore",
     });

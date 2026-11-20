@@ -113,6 +113,7 @@ export function agentStateLabel(status: string | null, run: string | null): stri
  * decides when to write it (only to a TTY). Returns "" if there's nothing meaningful to show.
  */
 export function tabTitleEscape(status: string | null, ticket: string | null): string {
+  // oxlint-disable-next-line no-control-regex -- stripping control characters is the point of this regex
   const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   const parts = [status, ticket].filter((p): p is string => !!p).map(clean).filter(Boolean);
   if (parts.length === 0) return "";

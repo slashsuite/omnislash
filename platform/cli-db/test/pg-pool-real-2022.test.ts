@@ -82,7 +82,7 @@ describe("the pooled real-schema database (OB-2022)", () => {
       await first.sql.unsafe(`SET search_path TO pg_catalog`);
       // The release ends the store's backends and the open transaction's itself.
       await first.release();
-      held.release();
+      await held.release().catch(() => {});
       await other.end().catch(() => {});
       await store.close().catch(() => {});
 

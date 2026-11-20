@@ -247,7 +247,7 @@ async function exercise(store: Store): Promise<Record<string, unknown>> {
 
   // liveBuildAgentsByRepo counts live BUILD agents through the launched join; `architect-*` never counts.
   const byRepo = await liveBuildAgentsByRepo(store);
-  out.perRepo = [...byRepo.perRepo.entries()].sort();
+  out.perRepo = [...byRepo.perRepo.entries()].sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
   out.perRepoTypes = [...new Set([...byRepo.perRepo.values()].map((n) => typeof n))];
   out.totalBuildAgents = byRepo.total;
 
