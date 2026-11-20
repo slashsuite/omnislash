@@ -7,38 +7,70 @@ import ts from "typescript";
 // Named exceptions: FTS5 `MATCH` and the hand-kept `*_fts` tables stay raw `sql`, and `excluded.*`
 // upsert sets use `sql` fragments.
 //
-// This guard reads every non-test `.ts`/`.tsx` source file under apps/cli/src, apps/ob-dashboard/src and
-// platform/*/src with the TypeScript parser (so comments never count) and reports:
-//   1. a string or template literal, not tagged `sql`, whose text starts with a SQL statement;
-//   2. any `sql.raw(...)` call, and any `.unsafe(...)` call (postgres.js runs its string as raw SQL);
-//   3. a `sql`-tagged template that starts with a statement and names no `*_fts` table.
-// A `sql` fragment that is not a whole statement (an `excluded.*` set, a `COALESCE`) is not reported.
-//
 // Files that legitimately hold raw SQL (opening the database, pragmas, the migration runners, the export
-// tool, schema introspection, reads of databases ob does not own) are listed in EXEMPT with a reason.
-// An exemption whose file is gone, or no longer holds any raw SQL, fails the guard as stale.
+// tool, schema introspection, reads of databases ob does not own) are listed in EXEMPT with a reason and
+// the number of raw SQL sites they hold today. A new site in an exempt file fails the guard, and so does
+// an exemption whose count no longer matches (a site was removed, or the file is gone): update the count.
 //
 // What it cannot catch: SQL held in a variable or built by concatenation and passed to a call (only
-// literals and the call names above are read), and SQL a dependency builds. It is a tripwire for the
+// literals and sql.raw() and .unsafe() calls are read), and SQL a dependency builds. It is a tripwire for the
 // common shape, not a proof.
 
 const REPO = join(import.meta.dir, "../../..");
 
-const EXEMPT: Record<string, string> = {
-  "apps/cli/src/db.ts":
-    "opens the SQLite database: pragmas, the legacy schema chain, the migration runner and its bookkeeping table",
-  "apps/cli/src/db/pg/migrate.ts": "the Postgres migration runner: bookkeeping, advisory lock, lock_timeout, catalog probes",
-  "apps/cli/src/db/pg/schema.ts": "schema definition: sql.raw builds the generated tsvector column and trigram index expressions",
-  "apps/cli/src/db/store.ts": "the Postgres store's notify(): pg_notify on a validated channel name",
-  "apps/cli/src/db/fingerprint.ts": "schema introspection (sqlite_master, PRAGMA table_info) for the schema fingerprint",
-  "apps/cli/src/pgexport.ts": "the SQLite to Postgres export tool: catalog reads, bulk copy, sequence resets",
-  "apps/cli/src/commands/pgexport.ts": "the export command runs the statements the export tool produced",
-  "apps/cli/src/remote.ts": "sets PRAGMA busy_timeout on the connection before an orm() read",
-  "apps/cli/src/role-end.ts": "reads T3's own state database, which ob does not own",
-  "apps/cli/src/t3/surface-probe.ts": "probe script reading OpenCode's own database, which ob does not own",
-  "platform/cli-coord/src/spinoff-tokens.ts": "reads OpenCode's own database (session, message) for token counts",
-  "platform/cli-whatsapp/src/ingest/whatsapp.ts": "reads the WhatsApp bridge's own database (messages, whatsmeow tables)",
-  "platform/cli-whatsapp/src/whatsapp/bridge.ts": "reads the WhatsApp bridge's own database for health checks",
+const EXEMPT: Record<string, { sites: number; reason: string }> = {
+  "apps/cli/src/db.ts": {
+    sites: 32,
+    reason: "opens the SQLite database: pragmas, the legacy schema chain, the migration runner and its bookkeeping table",
+  },
+  "apps/cli/src/db/pg/migrate.ts": {
+    sites: 21,
+    reason: "the Postgres migration runner: bookkeeping, advisory lock, lock_timeout, catalog probes",
+  },
+  "apps/cli/src/db/pg/schema.ts": {
+    sites: 2,
+    reason: "schema definition: sql.raw builds the generated tsvector column and trigram index expressions",
+  },
+  "apps/cli/src/db/store.ts": {
+    sites: 2,
+    reason: "the Postgres store's notify(): pg_notify on a validated channel name",
+  },
+  "apps/cli/src/db/fingerprint.ts": {
+    sites: 2,
+    reason: "schema introspection (sqlite_master, PRAGMA table_info) for the schema fingerprint",
+  },
+  "apps/cli/src/pgexport.ts": {
+    sites: 12,
+    reason: "the SQLite to Postgres export tool: catalog reads, bulk copy, sequence resets",
+  },
+  "apps/cli/src/commands/pgexport.ts": {
+    sites: 1,
+    reason: "the export command runs the statements the export tool produced",
+  },
+  "apps/cli/src/remote.ts": {
+    sites: 1,
+    reason: "sets PRAGMA busy_timeout on the connection before an orm() read",
+  },
+  "apps/cli/src/role-end.ts": {
+    sites: 1,
+    reason: "reads T3's own state database, which ob does not own",
+  },
+  "apps/cli/src/t3/surface-probe.ts": {
+    sites: 2,
+    reason: "probe script reading OpenCode's own database, which ob does not own",
+  },
+  "platform/cli-coord/src/spinoff-tokens.ts": {
+    sites: 6,
+    reason: "reads OpenCode's own database (session, message) for token counts",
+  },
+  "platform/cli-whatsapp/src/ingest/whatsapp.ts": {
+    sites: 8,
+    reason: "reads the WhatsApp bridge's own database (messages, whatsmeow tables)",
+  },
+  "platform/cli-whatsapp/src/whatsapp/bridge.ts": {
+    sites: 2,
+    reason: "reads the WhatsApp bridge's own database for health checks",
+  },
 };
 
 // A literal counts as SQL only when it has the shape of a statement, not merely a leading verb, so UI
@@ -138,9 +170,17 @@ describe("no raw SQL in app queries outside the named exceptions", () => {
     ).toEqual([]);
   });
 
-  test("every exemption still names a file that holds raw SQL", () => {
-    const stale = Object.keys(EXEMPT).filter((f) => !found.has(f));
-    expect(stale, stale.length ? `Stale exemptions, remove them from EXEMPT: ${stale.join(", ")}` : "").toEqual([]);
+  test("every exempt file holds exactly the raw SQL sites it is exempted for", () => {
+    const changed = Object.entries(EXEMPT)
+      .map(([f, { sites }]) => ({ f, sites, now: found.get(f) ?? [] }))
+      .filter(({ sites, now }) => now.length !== sites)
+      .map(({ f, sites, now }) => `${f}: exempt for ${sites}, holds ${now.length} (${now.join("; ") || "file gone or clean"})`);
+    expect(
+      changed,
+      changed.length
+        ? `Exempt files changed. A new site belongs in orm(); a removed one lowers the count (0 removes the entry): ${changed.join(" | ")}`
+        : "",
+    ).toEqual([]);
   });
 
   test("the detector reports raw SQL and spares FTS statements and fragments", () => {
@@ -148,6 +188,7 @@ describe("no raw SQL in app queries outside the named exceptions", () => {
     expect(rawSqlSites("a.ts", "db.run(sql`DELETE FROM item WHERE id = ${1}`)").length).toBeGreaterThan(0);
     expect(rawSqlSites("a.ts", 'sql.raw("SELECT 1")').length).toBeGreaterThan(0);
     expect(rawSqlSites("a.ts", "client.unsafe(text)").length).toBeGreaterThan(0);
+    expect(rawSqlSites("a.ts", "db.exec(`UPDATE ${table} SET done = 1`)").length).toBeGreaterThan(0);
     expect(rawSqlSites("a.ts", "db.run(sql`DELETE FROM item_fts WHERE item_id = ${1}`)")).toEqual([]);
     expect(rawSqlSites("a.ts", "set({ title: sql`excluded.title` })")).toEqual([]);
     expect(rawSqlSites("a.ts", '// db.query("SELECT * FROM item")\nconst m = "DELETE"; const u = "Update available";')).toEqual([]);
