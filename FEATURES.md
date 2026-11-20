@@ -1,6 +1,6 @@
 # OmniSlash features
 
-Checked against main at ce1b6bc on 2026-11-20.
+Checked against main at 2cd30da on 2026-11-20.
 
 This is the full list of what OmniSlash does today, read from the source. The short list of claims is in
 [`FACTS.md`](FACTS.md); the command reference with every flag is in [`apps/cli/README.md`](apps/cli/README.md).
@@ -186,6 +186,5 @@ All routes are served under the prefix `/api/ob`.
 - `skill-ob-wire-ob-architect-into-a-repo`: Sets up another repo so the `ob` planning workflow and its architect work in it. How to reach it: the `ob-wire-ob-architect-into-a-repo` skill. Source: `skills/ob-wire-ob-architect-into-a-repo/SKILL.md`.
 
 ## Planned
-- `role-runs-on-demand`: role runs started on demand, and an inbox for each role.
 - `parallel-conflict-checks`: checks for conflicts between builders working in parallel.
 - `team-server`: a team server with per-user access.

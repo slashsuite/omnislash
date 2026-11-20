@@ -1,6 +1,6 @@
 # OmniSlash facts
 
-Checked against main at ce1b6bc on 2026-11-20.
+Checked against main at 2cd30da on 2026-11-20.
 
 ## What it is
 OmniSlash is a command-line tool for keeping track of tickets, projects and the agents that work on them.
@@ -26,7 +26,6 @@ It is in alpha, so anything may change or break.
 - `public-repo`: the source is public at https://github.com/slashsuite/omnislash (`gh repo view slashsuite/omnislash --json visibility` reads `PUBLIC`).
 
 ## Planned
-- `role-runs-on-demand`: role runs started on demand, and an inbox for each role.
 - `parallel-conflict-checks`: checks for conflicts between builders working in parallel.
 - `team-server`: a team server with per-user access.
 
