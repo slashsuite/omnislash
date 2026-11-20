@@ -651,7 +651,7 @@ export interface ItemsQuery {
   team?: string;
   tag?: string;
   kind?: string;
-  /** A priority NAME (`urgent`|`flake`|`high`|`medium`|`low`|`none`) or its 0-5 integer, as a string. */
+  /** A priority NAME (`critical`|`urgent`|`flake`|`high`|`medium`|`low`|`none`) or its 0-6 integer, as a string. */
   priority?: string;
   since?: string;
   updated_after?: string;
@@ -673,7 +673,7 @@ export interface CreateItemRequest {
   status?: string;
   /** A project id or name; resolved server-side, and stored as given when it names no known project. */
   project?: string | null;
-  /** A priority NAME or its 0-5 integer, as a string. */
+  /** A priority NAME or its 0-6 integer, as a string. */
   priority?: string | null;
   tags?: string[];
   triage?: boolean;
@@ -844,7 +844,7 @@ export interface ItemDetailResponse {
 export interface OrderRequest {
   /** First in its band (the item's own, or `priority`'s). */
   top?: boolean;
-  /** With `top`: put it first in this band, setting the priority. A name or 0-5. */
+  /** With `top`: put it first in this band, setting the priority. A name or 0-6. */
   priority?: string;
   /** Place it right before / after this item (same project, open). A different band's priority is adopted. */
   before?: string;
@@ -1207,6 +1207,8 @@ export interface EnqueueSpinoffRequest {  ticket_ref: string;
   no_check?: string | null;
   /** OB-2230: the `--no-flake-slot` reason: a flake row launches without taking `flake:slot`. Blank is refused. */
   no_flake_slot?: string | null;
+  /** OS-108: the `--over-usage` reason, checked on the client (the usage cache is there) and recorded on the trail here. */
+  over_usage?: string | null;
   /** OB-2230: is `flake-box` on the client that will launch the builder? Absent reads as present. */
   flake_box?: boolean | null;
   /** OB-1825: `--holder`, who the trail names for the note and the override. Absent means the human. */
@@ -1406,6 +1408,8 @@ export interface SendBackSpinoffRequest {
   note: string;
   /** Undo a send-back whose note could not be delivered: put the row back to handed-off. */
   restore?: boolean;
+  /** OS-108: the `--over-usage` reason, checked on the client and recorded on the trail here. */
+  over_usage?: string | null;
 }
 
 export interface SendBackSpinoffResponse {

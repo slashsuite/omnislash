@@ -78,3 +78,42 @@ describe("OB-2060: the flake priority through the command path", () => {
     });
   });
 });
+
+// OS-108: `critical` is a new level above urgent, stored as the NEW integer 6 (no existing row changes).
+describe("OS-108: the critical priority through the command path", () => {
+  test("--priority critical and --priority 6 store 6, and show prints critical", async () => {
+    await withDb(async (dbPath) => {
+      for (const flag of ["critical", "6"]) {
+        const added = await runCli(dbPath, ["add", `critical via ${flag}`, "--project", "acme", "--priority", flag, "--json"]);
+        expect(added.code).toBe(0);
+        const id = (JSON.parse(added.out) as { id: string }).id;
+        expect((await runCli(dbPath, ["show", id])).out).toContain("priority:  critical (explicit)");
+        const db = openDb(dbPath);
+        try {
+          expect((db.query("SELECT priority FROM item WHERE id = ?").get(id) as { priority: number }).priority).toBe(6);
+        } finally {
+          db.close();
+        }
+      }
+    });
+  });
+
+  test("next and list sort critical above urgent, and urgent, flake and high keep their stored ints", async () => {
+    await withDb(async (dbPath) => {
+      for (const priority of ["high", "flake", "urgent", "critical"]) {
+        expect((await runCli(dbPath, ["add", `item ${priority}`, "--project", "acme", "--priority", priority])).code).toBe(0);
+      }
+      for (const args of [["next", "--json"], ["list", "--by", "priority", "--json"]]) {
+        const ran = await runCli(dbPath, args);
+        expect((JSON.parse(ran.out) as Row[]).map((r) => r.effective_priority)).toEqual(["critical", "urgent", "flake", "high"]);
+      }
+      const db = openDb(dbPath);
+      try {
+        const stored = db.query("SELECT title, priority FROM item ORDER BY priority").all() as Array<{ title: string; priority: number }>;
+        expect(stored.map((r) => [r.title, r.priority])).toEqual([["item urgent", 1], ["item high", 2], ["item flake", 5], ["item critical", 6]]);
+      } finally {
+        db.close();
+      }
+    });
+  });
+});

@@ -29,7 +29,7 @@ export interface ItemQuery {
   team?: string;
   tag?: string;
   kind?: string;
-  /** An already-parsed priority integer (0-5, where 5 is `flake`). Parsing the NAME belongs to the caller's validator. */
+  /** An already-parsed priority integer (0-6, where 5 is `flake` and 6 is `critical`). Parsing the NAME belongs to the caller's validator. */
   priority?: number;
   since?: string;
   updatedAfter?: string;

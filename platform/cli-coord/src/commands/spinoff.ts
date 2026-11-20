@@ -49,7 +49,8 @@ import { asStore, SQLITE_ESCAPE_HATCH, STORE_ENV, type Store } from "../../../..
 import { deriveBranch, fetchIssue, parseIssueRef, type FetchedIssue } from "../../../../apps/cli/src/github-issues.ts";
 import { getItem, getTags, getTagsSync } from "../../../../apps/cli/src/items.ts";
 import { isTeamRoleAgent, listTeams, storeTeamOf, teamHandoffTarget, teamMembersIn } from "../../../../apps/cli/src/team.ts";
-import { PRIORITY_URGENT } from "../../../../apps/cli/src/priority.ts";
+import { PRIORITY_CRITICAL, PRIORITY_URGENT } from "../../../../apps/cli/src/priority.ts";
+import { OVER_USAGE_FROM, OVER_USAGE_TO, refuseOverUsage } from "../../../../apps/cli/src/usage-gate.ts";
 import { getProject, listProjects } from "../../../../apps/cli/src/project.ts";
 import { equivalentRefs, normalizeRef } from "../../../../apps/cli/src/refs.ts";
 import { decisionOptsOf, recordDecision, type DecisionOpts } from "../../../../apps/cli/src/decisions.ts";
@@ -742,17 +743,51 @@ export async function architectCmdFor(db: Database | Store, engine: Engine): Pro
 /**
  * OB-2075: an URGENT ticket always builds on the complex tier (Opus), whatever `--tier` named.
  *
- * True when the item at `itemId` is at the stored urgent priority (compared by the named constant, not a
+ * True when the item at `itemId` is at the stored urgent or critical (OS-108) priority (compared by the named constant, not a
  * bare integer; `flake` and `high` are NOT urgent). A null id (a ref with no item) or a failed read is
  * not urgent: the named tier stands, like the thread title, this is best effort.
  */
 export async function itemIsUrgent(db: Database | Store, itemId: string | null | undefined): Promise<boolean> {
-  if (!itemId) return false;
+  const p = await itemPriorityOf(db, itemId);
+  return p === PRIORITY_URGENT || p === PRIORITY_CRITICAL; // OS-108: critical ranks above urgent, so it builds on complex too
+}
+
+/** OS-108: is the ticket critical, the one level worked past the critical-only usage line? A failed read is not. */
+async function itemIsCritical(db: Database | Store, itemId: string | null | undefined): Promise<boolean> {
+  return (await itemPriorityOf(db, itemId)) === PRIORITY_CRITICAL;
+}
+
+/** The item's stored priority, or null for no item or a failed read. */
+async function itemPriorityOf(db: Database | Store, itemId: string | null | undefined): Promise<number | null> {
+  if (!itemId) return null;
   try {
-    return (await getItem(db, itemId))?.priority === PRIORITY_URGENT;
+    return (await getItem(db, itemId))?.priority ?? null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** OS-108: put an `--over-usage` reason on the ticket's Decisions trail (`usage → over-usage`), like `--no-check`. */
+export async function recordOverUsage(
+  db: Database | Store,
+  ticketRef: string,
+  why: string,
+  opts: { actor?: string | null; spinoffRow?: number | null; itemId?: string | null } = {},
+): Promise<void> {
+  const itemId = opts.itemId ?? (await ticketItemIdFor(db, ticketRef));
+  if (!itemId) return;
+  await recordDecision(db, itemId, OVER_USAGE_FROM, OVER_USAGE_TO, { actor: opts.actor, note: why, spinoffRow: opts.spinoffRow });
+}
+
+/** OS-108: an API send-back records its override when the row moves; a failed note undoes the move, so the trail says the override went unused. */
+export async function recordOverUsageUndone(
+  db: Database | Store,
+  ticketRef: string,
+  opts: { spinoffRow?: number | null; itemId?: string | null } = {},
+): Promise<void> {
+  const itemId = opts.itemId ?? (await ticketItemIdFor(db, ticketRef));
+  if (!itemId) return;
+  await recordDecision(db, itemId, OVER_USAGE_TO, OVER_USAGE_FROM, { note: "send-back undone: the builder thread could not be told, so the override was not used", spinoffRow: opts.spinoffRow });
 }
 
 /** A trial leg (OB-1991) keeps its recorded tier and `trial_model`: the urgent rule leaves it alone. */
@@ -5007,6 +5042,32 @@ export function spinoffEnqueueRef(command: string, args: string[]): string | nul
   return (args[0] === "queue" ? args[1] : args[0]) ?? null;
 }
 
+/**
+ * OS-108: the usage gate for an argv dispatched whole over ssh (`remote_host`). `spinoff queue <ref>` and
+ * `spinoff sendback <ref>` run on the server, whose usage cache and `T3CODE_THREAD_ID` are not this
+ * machine's, so the client asks the gate here against its replica before the argv crosses the wire. A
+ * send-back whose row the replica does not hold yet is judged by the item its ref names.
+ */
+export async function refuseOverUsageBeforeDispatch(db: Database | Store, command: string, args: string[], overUsage: string | undefined): Promise<void> {
+  if (command !== "spinoff") return;
+  if (args[0] === "sendback" && args[1]) {
+    const ref = args[1];
+    const itemId = await ticketItemIdFor(db, ref);
+    const critical = async (): Promise<boolean> => {
+      try {
+        return await itemIsCritical(db, await rowItemId(db, pickSpinoffForShow(await listSpinoffs(db), ref, itemId)));
+      } catch {
+        return itemIsCritical(db, itemId);
+      }
+    };
+    await refuseOverUsage({ ref, critical, overUsage, verb: "sent back" });
+    return;
+  }
+  if (args[0] !== "queue") return;
+  const ref = spinoffEnqueueRef(command, args);
+  if (ref) await refuseOverUsage({ ref, critical: async () => itemIsCritical(db, await ticketItemIdFor(db, ref)), overUsage, verb: "dispatched" });
+}
+
 // --- --repo is resolved on the CLIENT, before dispatch (217) -----------------
 //
 // `ob spinoff <ticket>` is a write, so once `remote_host` is set the whole invocation is dispatched to the
@@ -5967,6 +6028,9 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     const ref = ctx.args[1];
     if (!ref) throw new UsageError("spinoff sendback requires a <ticket|id>");
     const row = pickSpinoffForShow(await listSpinoffs(store), ref, await ticketItemIdFor(store, ref));
+    // OS-108: past the critical-only usage line only a critical ticket goes back to its builder.
+    const sendbackItem = await rowItemId(store, row);
+    const overUsage = await refuseOverUsage({ ref: row.ticket_ref, critical: () => itemIsCritical(store, sendbackItem), overUsage: flag(ctx, "over-usage"), verb: "sent back" });
     const note = flag(ctx, "note") ?? "";
     const decision = { ...decisionOptsOf(ctx), note };
     const deps: SendBackDeps = {
@@ -5983,6 +6047,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
       headSha: (r) => headShaFor(r.worktree, r.branch),
     };
     const res = await sendBackSpinoff(row, deps, note);
+    if (overUsage) await recordOverUsage(store, row.ticket_ref, overUsage, { actor: decisionOptsOf(ctx).actor, spinoffRow: row.id, itemId: sendbackItem });
     print(renderSendBack(res, ctx.mode === "json"));
     return;
   }
@@ -6196,6 +6261,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   await refuseForeignHold(store, ticketRef, branch, worktree ?? worktreePath(repo, worktreeKeyOf({ repo, branch, ticket_ref: ticketRef })), under);
   // OB-2230: one flake fix on the whole machine. A held `flake:slot` refuses here, before the row exists.
   const flake = await refuseHeldFlakeSlot(store, ticketRef, [leaseHolderId(), branch, refKey(ticketRef), under], noFlakeSlot);
+  // OS-108: past the critical-only usage line only a critical ticket is dispatched, refused here before the row exists.
+  const overUsage = await refuseOverUsage({ ref: ticketRef, critical: async () => itemIsCritical(store, await ticketItemIdFor(store, ticketRef)), overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   if (flake && !queueOnly && !flakeBoxPresent()) warn(noFlakeBoxWarning(ticketRef));
   // OB-1815: a level the tier's model cannot take is refused here, before the row exists, for the same reason.
   // `queue` skips it: that is the server's DB half and T3 is on the caller's machine, which ran the check.
@@ -6215,6 +6282,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // OB-1825: last, so a dispatch another check refuses leaves no stray `--no-check` on the trail.
   const uncheckedWarning = await refuseUncheckedDispatch(store, ticketRef, { noCheck, actor: flag(ctx, "holder") });
   if (uncheckedWarning) warn(`  ⚠ ${uncheckedWarning}`);
+  if (overUsage) await recordOverUsage(store, ticketRef, overUsage, { actor: flag(ctx, "holder") });
 
   // OB-1991: while a model trial is active, a dispatch at its tier runs twice, same brief, one row per leg.
   // `queue` is the split client's DB half and stays single; so does `--no-trial`.
@@ -6347,6 +6415,9 @@ async function enqueueAndLaunchSplit(
   const repo = repoFlag ? await repoForRow(ctx.db, repoFlag) : (fromProject?.repo ?? process.cwd());
   // A checkout T3 has no project for would fail at launch, after the server made the row: refuse here, where T3 is.
   await refuseUnregisteredT3Project(await t3Seam(), repo);
+  // OS-108: the usage cache is on THIS machine, so the critical-only line is checked here; --over-usage crosses
+  // the wire so the server's `queue` records it on the trail.
+  await refuseOverUsage({ ref: rawRef, critical: async () => itemIsCritical(ctx.db, await ticketItemIdFor(ctx.db, rawRef)), overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   // OB-2230: the builder launches HERE, so the box is checked here; the server's `queue` takes and refuses the slot.
   if (!flakeBoxPresent() && (await ticketIsFlake(ctx.db, rawRef))) warn(noFlakeBoxWarning(rawRef));
   // OB-1815: T3 is on THIS machine, so the check of --effort runs here, before anything crosses the wire.
@@ -6356,7 +6427,7 @@ async function enqueueAndLaunchSplit(
   }
   if (repoFlag !== undefined) argv.push("--repo", repoFlag);
   // OB-2107: --opus-high crosses too: the server's `queue` re-checks it and puts the quote on the trail note.
-  for (const name of ["branch", "worktree", "holder", "note", "no-check", "no-flake-slot", "opus-high"] as const) {
+  for (const name of ["branch", "worktree", "holder", "note", "no-check", "no-flake-slot", "opus-high", "over-usage"] as const) {
     const value = flag(ctx, name);
     if (value !== undefined) argv.push(`--${name}`, value);
   }
