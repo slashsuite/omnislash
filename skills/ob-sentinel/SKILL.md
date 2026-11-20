@@ -21,7 +21,7 @@ off the architect, which is the thread the owner talks to most.
 
 ## A retired role thread forwards, it does not work
 
-A retired thread must not let the owner keep chatting in it. It finds the correct architect and sends the message there.
+A retired thread must not let the owner keep chatting in it. It finds the bound thread for its role and sends the message there.
 
 - **Check the seat first, every turn.** Before any other step, read your own thread id (`t3_thread_configuration`, or `$T3CODE_THREAD_ID`) and the team's bound thread for your role (`ob t3 team show <team>`). If they differ, this thread is retired.
 - **A retired thread does no work.** It forwards the message it was given, word for word, to the bound thread with `t3_thread_send` (mode `queue`), with one line saying it was forwarded from the retired thread. It tells the owner in one line where the message went, giving that thread's `link`. Then it ends the turn. It runs nothing else: no gate, merge, dispatch or ticket.

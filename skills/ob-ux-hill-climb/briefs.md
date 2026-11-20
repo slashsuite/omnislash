@@ -1,6 +1,6 @@
 # Briefs for ob-ux-hill-climb
 
-The two brief templates of an earlier skeptical design review, with the site names, file lists and theme facts as placeholders. Keep the wording as it is, so scores stay comparable across legs. Fill only the `{{…}}` placeholders. Write each filled brief into the kit directory (`brief-round1.md` once per leg, `brief-round2-s<stage>.md` per stage). Round 2 exists only with two or more readers: a stage with one reader runs round 1 alone.
+The two brief templates of an earlier design council, with the site names, file lists and theme facts as placeholders. Keep the wording as it is, so scores stay comparable across legs. Fill only the `{{…}}` placeholders. Write each filled brief into the kit directory (`brief-round1.md` once per leg, `brief-round2-s<stage>.md` per stage). Round 2 exists only with two or more readers: a stage with one reader runs round 1 alone.
 
 Placeholders:
 

@@ -1,6 +1,6 @@
 ---
 name: ob-new-ticket-implement
-description: "Create a new `ob` ticket, spin up a dedicated git worktree for it with `wt`, and hand it to `ob spinoff` (an interactive T3 thread on the bare ask). Use when the user wants to \"make a ticket and implement it\", \"spin up a ticket for X and build it\", \"create a ticket and have an agent implement it\", or otherwise turn an idea into a ticket plus an in-flight implementation in one step. Also supports a mid-flow SPINOFF mode (`--spinoff --parent ID`): carve discovered work off the current ticket into its own `ob add` ticket and `wt` worktree, record the parent→child link, and hand it to `ob spinoff`. Use when the user wants to \"spin this off into its own ticket\", \"carve this out into a new thread\", \"open this in a new tab/thread\", or split follow-up work off an in-progress change to keep it small."
+description: "Create a new `ob` ticket, spin up a dedicated git worktree for it with `wt`, and hand it to `ob spinoff` (an interactive T3 thread on the bare ask). Use when the user wants to \"make a ticket and implement it\", \"spin up a ticket for X and build it\", \"create a ticket and have an agent implement it\", or otherwise turn an idea into a ticket plus an in-flight implementation in one step. Also supports a mid-flow SPINOFF mode (`--spinoff --parent ID`): carve a discovered task off the current ticket into its own `ob add` ticket and `wt` worktree, record the parent→child link, and hand it to `ob spinoff`. Use when the user wants to \"spin this off into its own ticket\", \"carve this out into a new thread\", \"open this in a new tab/thread\", or split follow-up work off an in-progress change to keep it small."
 ---
 
 # New ticket → worktree → spinoff
@@ -110,7 +110,7 @@ The session opens on the **ticket's own brief** (its title, what to build, accep
 
 ## Spinoff mode (`--spinoff --parent <id>`)
 
-A **mid-flow** variant: you're already deep in one ticket's worktree and work surfaces that deserves its **own** ticket (keeps the current change small). Carve it off and hand it to **`ob spinoff`**.
+A **mid-flow** variant: you're already deep in one ticket's worktree and a task surfaces that deserves its **own** ticket (keeps the current change small). Carve it off and hand it to **`ob spinoff`**.
 
 Trigger: the user says "spin this off", "carve this out into its own ticket", "open this in a new tab/thread", etc., **from within the current ticket's session**.
 

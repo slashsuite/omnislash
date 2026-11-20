@@ -161,7 +161,7 @@ The rules below are spread over this skill; this is their order, for every repo'
 
 ## Claude usage pacing: ahead of the week means high and above only
 
-Monitor the Claude subscription's usage: if the week is running ahead, so tokens would burn too quickly, flag it to the owner and stop builders that use a lot of tokens and are not on high or urgent tickets.
+Monitor the Claude subscription's usage: if the week is running ahead, so tokens would burn too quickly, flag it to the owner and stop tickets that use a lot of tokens and are not high or urgent.
 
 - **Where the number is.** T3 Code keeps the Claude subscription's usage in `~/.t3/caches/claudeAgent.json`, refreshed every few minutes: `.usageLimits.windows[]` with `id` `seven_day` (the weekly window), `usedPercent` and `resetsAt`. Read it with `jq '.usageLimits.windows[] | select(.id=="seven_day")' ~/.t3/caches/claudeAgent.json`. The week started at `resetsAt` minus 7 days; the share of the week gone is the time since then over 7 days. A `checkedAt` older than an hour means T3 is not refreshing it: say so, and treat the pace as unknown, not as fine.
 - **Ahead of pace** is `usedPercent` more than 10 points above the share of the week gone (60% used with 40% of the week gone is ahead; 45% is not).

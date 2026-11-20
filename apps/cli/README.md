@@ -1117,7 +1117,7 @@ than failing — they are ordinary optional JSON — and an older host's item de
 ### Work-classification tags
 
 A small, flat vocabulary for classifying the *nature* of a ticket, applied to both
-`linear_ref` items and personal tasks — so work is labelled consistently. These are a
+`linear_ref` items and personal tasks, so work is labelled consistently. These are a
 **documented convention, not an enforced set**: a flat classification tag is
 indistinguishable from any other free-form tag, so `ob tag` never rejects an unknown
 tag. Mix and match (a ticket can be `frontend` + `rework` + `based-off-design`).
