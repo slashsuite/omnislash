@@ -33,6 +33,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nowIso } from "../../../apps/cli/src/db.ts";
 import { asStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { isApiTransient } from "../../../apps/cli/src/api/client.ts";
+import { isTeamRoleAgent } from "../../../apps/cli/src/team.ts";
 import type { LeaseWaitTitle } from "./lease-wait-title.ts";
 
 /** Default TTL for ticket: / worktree: / port: / app:<variant> unless the caller passes --ttl (ob 561). */
@@ -752,6 +753,33 @@ export async function heartbeatLeasesByHolder(
     }
   }
   return { beat, reacquired };
+}
+
+/**
+ * OS-110: the ticket:/worktree: keys an agent's row records that another session now holds LIVE. Its own
+ * heartbeat only beats rows still in its name, so a lease that lapsed and was taken would otherwise vanish
+ * from its list with no warning, and two sessions act on one ticket. A team role hold is never lost: the lease
+ * row cannot tell one taken from a lapsed builder from the normal ones (a builder registered under it, the
+ * architect gating after the handoff, the ticket it keeps through a sendback), and the handoff fence passes
+ * it for the same reason.
+ */
+export async function lostLeasesOf(
+  db: Database | Store,
+  agent: { id: string; ticket: string | null; worktree: string | null },
+  nowMs: number = Date.now(),
+): Promise<LeaseHold[]> {
+  const s = asStore(db);
+  const lost: LeaseHold[] = [];
+  for (const resource of [ticketLeaseKey(agent.ticket), worktreeLeaseKey(agent.worktree)]) {
+    const hold = resource ? await liveHold(s, resource, nowMs) : null;
+    if (hold && hold.holder !== agent.id && !isTeamRoleAgent(hold.holder)) lost.push(hold);
+  }
+  return lost;
+}
+
+/** The line `ob agent heartbeat` prints on stderr for each lost lease (OS-110). Pure. */
+export function formatLostLease(hold: { resource: string; holder: string; since: string | null }): string {
+  return `lost: ${hold.resource} is now held by ${hold.holder} since ${hold.since ?? "unknown"}; stop work on this ticket and ask the architect`;
 }
 
 /** What `ob agent heartbeat` warns when the holder had leases that expired and were not revived. Pure. */

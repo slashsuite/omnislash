@@ -116,6 +116,7 @@ import { AGENT_STATUSES, DEFAULT_AGENT_TTL_S, agentStateLabel, formatAgentsReset
 import {
 	DEFAULT_LEASE_TTL_S,
 	formatReacquiredLeases,
+	formatLostLease,
 	formatNotHeld,
 	LeaseExpiredError,
 	leaseHolderId,
@@ -979,7 +980,11 @@ async function apiAgent(ctx: ApiCtx): Promise<void> {
 		const res = await ctx.client.agent({ action: "heartbeat", id });
 		// OB-1922: an expired lease is acquired afresh, never revived, and the builder is told.
 		if (res.reacquired_leases && res.reacquired_leases.length > 0) warn(`note: ${formatReacquiredLeases(id, res.reacquired_leases)}`);
+		// OS-110: a lease another session took is printed and fails the beat, as cmdAgent does.
+		const lost = res.lost_leases ?? [];
+		for (const hold of lost) warn(formatLostLease(hold));
 		if (ctx.mode !== "quiet") print(`beat ${id}`);
+		if (lost.length > 0) ctx.exit = 1;
 		return;
 	}
 

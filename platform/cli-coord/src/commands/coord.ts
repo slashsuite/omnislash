@@ -18,6 +18,8 @@ import {
   heartbeatLease,
   LeaseExpiredError,
   formatReacquiredLeases,
+  formatLostLease,
+  lostLeasesOf,
   sweepExpiredLeases,
   heartbeatLeasesByHolder,
   holderRemedy,
@@ -247,7 +249,11 @@ export async function cmdAgent(ctx: Ctx): Promise<void> {
     // revived but acquired afresh, and the builder is told (OB-1922)
     const { reacquired } = await heartbeatLeasesByHolder(store, id);
     if (reacquired.length > 0) warn(`note: ${formatReacquiredLeases(id, reacquired)}`);
+    // OS-110: a key the row records that another session took is never in that list, so say so and fail
+    const lost = await lostLeasesOf(store, (await getAgent(store, id))!);
+    for (const hold of lost) warn(formatLostLease(hold));
     if (ctx.mode !== "quiet") print(`beat ${id}`);
+    if (lost.length > 0) ctx.exit = 1;
     return;
   }
 

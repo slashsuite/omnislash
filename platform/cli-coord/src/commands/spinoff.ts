@@ -3668,12 +3668,34 @@ export function gateNoteWithCi(builderNote: string | null, ci: HandoffCiResult):
   return base ? `${base}; ${ci.line}` : ci.line;
 }
 
+/** The ids a row's builder holds its leases as: the same set `releaseBuilderReadyLeases` releases. */
+function builderHoldersOf(row: SpinoffRow): string[] {
+  return [...new Set([row.agent_id, row.branch, builderIdOf(row)].filter((h): h is string => !!h && !isTeamRoleAgent(h)))];
+}
+
+/**
+ * OS-110: refuse a handoff when the row's ticket: or worktree: lease is held live by a session that is neither
+ * this row's builder nor a team role agent. A team role hold passes on purpose: the architect stamps a handoff
+ * on the builder's behalf (1205) and holds the ticket while gating a sendback. A free or expired lease passes.
+ */
+async function assertHandoffLeasesHeld(db: Database | Store, row: SpinoffRow): Promise<void> {
+  const mine = builderHoldersOf(row);
+  for (const resource of spinoffLeaseKeys(row)) {
+    if (!resource) continue;
+    const hold = await liveHold(db, resource);
+    if (!hold || mine.includes(hold.holder) || isTeamRoleAgent(hold.holder)) continue;
+    throw new AppError(
+      `cannot hand off ${row.ticket_ref}: ${resource} is now held by ${hold.holder} since ${hold.since ?? "unknown"}, so another session is on this ticket; nothing was stamped. Stop work on it and ask the architect`,
+    );
+  }
+}
+
 /**
  * Builder ticket:/worktree: holds, and the flake:slot (OB-2230), only (426). `releaseLeasesByHolder` exists but would also drop
  * an `app:` / `port:` the builder happened to hold, and would not distinguish an architect holder.
  */
 async function releaseBuilderReadyLeases(db: Database | Store, row: SpinoffRow): Promise<string[]> {
-  const holders = [...new Set([row.agent_id, row.branch, builderIdOf(row)].filter((h): h is string => !!h && !isTeamRoleAgent(h)))];
+  const holders = builderHoldersOf(row);
   const released: string[] = [];
   for (const holder of holders) {
     for (const resource of await listLeasesByHolder(db, holder)) {
@@ -5954,6 +5976,9 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     // is the exception, because a repeat exists for its 426 cleanup (the stuck-lease class) and only the
     // ANNOUNCE is unsafe with the checkout gone — so the dirty rule still refuses for it, a missing
     // worktree does not, and the note becomes the named skip below.
+    // OS-110: a builder whose ticket:/worktree: lease lapsed and was taken by another session must not hand
+    // off its work; refused before anything is stamped or sent.
+    await assertHandoffLeasesHeld(store, found);
     const repeat = found.status === READY_FOR_GATE;
     const gone = !existsSync(found.worktree);
     if (gone && !repeat) throw new AppError(missingWorktreeRefusal(found.worktree));
