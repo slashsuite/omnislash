@@ -13,7 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OB_API_LOCAL_ONLY } from "../../../apps/cli/src/api/contract.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 
 const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
 
@@ -28,14 +28,14 @@ describe("the split, which was the bug (1319)", () => {
 
 describe("docs name which google subcommand is served (1319)", () => {
 	test("HELP's google section marks auth-url as served", () => {
-		// The entry as `ob --help` prints it: its own line, up to the next entry (the same two-space
-		// indent). Scoping to the entry is the point of the test -- the section must say WHICH subcommand
-		// is served, not merely contain the word.
-		const entry = HELP.match(/\n {2}google auth-url[\s\S]*?(?=\n {2}\S|$)/)?.[0] ?? "";
-		expect(entry.length).toBeGreaterThan(0); // renamed or reordered: fail loudly, never "nothing to check"
+		const googleHelp = renderCommandHelp("google");
+		const entry = googleHelp.match(/\n {2}auth-url[\s\S]*?(?=\n {2}\S|\n\n|$)/)?.[0] ?? "";
+		expect(entry.length).toBeGreaterThan(0);
 		expect(entry).toMatch(/served/i);
-		// Without this line "not served" would satisfy the one above.
 		expect(entry).not.toMatch(/not served/i);
+		const subHelp = renderSubcommandHelp("google", "auth-url");
+		expect(subHelp).toMatch(/served/i);
+		expect(subHelp).not.toMatch(/not served/i);
 	});
 
 	test("the README says which google subcommand is served", () => {

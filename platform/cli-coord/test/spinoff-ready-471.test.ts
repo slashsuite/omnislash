@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import {
   enqueueSpinoff,
   formatReadyReport,
@@ -155,13 +155,13 @@ describe("ob spinoff ready refuses a dirty worktree (471)", () => {
 
 describe("docs (471)", () => {
   test("HELP and README name dirty refuse and needs-human landable", () => {
-    expect(HELP).toContain("spinoff ready");
+    const help = renderSubcommandHelp("spinoff", "handoff");
+    expect(help).toContain("spinoff ready");
     expect(README).toContain("spinoff ready");
-    expect(HELP).toContain("refuses if the worktree is dirty");
+    expect(help).toContain("dirty worktrees");
     expect(README).toContain("Refuses if the worktree is dirty");
-    expect(HELP).toContain("gate and merge the PR (the handoff is the human yes)");
     expect(README).toContain("gate and merge the PR (the handoff is the human yes)");
-    expect(HELP).toContain("needs-human");
+    expect(help).toContain("needs-human");
     expect(README).toContain("needs-human");
     expect(README).toContain("amends 442");
   });

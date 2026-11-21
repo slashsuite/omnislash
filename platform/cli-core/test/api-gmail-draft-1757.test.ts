@@ -9,7 +9,7 @@ import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { FakeDraftClient } from "../../cli-sources/test/fake-draft-client.ts";
@@ -47,7 +47,8 @@ const api = (s: { transport: ApiTransport }) => ({ api: { base: BASE, token: "t"
 
 describe("docs (1757)", () => {
   test("HELP, README and ob-infra name draft and send-draft --confirm --hash", () => {
-    for (const doc of [HELP, README]) {
+    const help = `${renderSubcommandHelp("gmail", "draft")}\n${renderSubcommandHelp("gmail", "send-draft")}`;
+    for (const doc of [help, README]) {
       expect(doc).toContain("gmail draft");
       expect(doc).toContain("send-draft <draft-id> --confirm --hash <hex>");
     }
@@ -277,11 +278,16 @@ const ATTACHMENTS = {
 
 describe("docs (1680)", () => {
   test("HELP, README and ob-infra name read, attachment and --attach", () => {
-    for (const doc of [HELP, README]) {
+    const help = [
+      renderSubcommandHelp("gmail", "read"),
+      renderSubcommandHelp("gmail", "attachment"),
+      renderSubcommandHelp("gmail", "draft"),
+    ].join("\n");
+    for (const doc of [help, README]) {
       expect(doc).toContain("gmail read");
       expect(doc).toContain("gmail attachment");
     }
-    for (const doc of [HELP, README]) expect(doc).toContain("--attach");
+    for (const doc of [help, README]) expect(doc).toContain("--attach");
     expect(README).toContain("/api/ob/gmail/messages/");
   });
 });

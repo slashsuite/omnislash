@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 
@@ -66,7 +66,7 @@ describe("ob agent register ≠ launch (417)", () => {
   });
 
   test("HELP and README say register ≠ launch", () => {
-    expect(HELP).toContain("register ≠ launch");
+    expect(renderSubcommandHelp("agent", "register")).toContain("Register ≠ launch");
     expect(README).toContain("Register ≠ launch");
   });
 });

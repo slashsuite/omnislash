@@ -15,7 +15,7 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import type { EmailHit } from "../../cli-sources/src/ingest/gmail.ts";
@@ -118,11 +118,13 @@ describe("routing (415)", () => {
 
 describe("docs/HELP mention the split (415)", () => {
   test("HELP names the served half and that google auth is THIS machine, not the API host", () => {
-    expect(HELP).toContain("gmail search");
-    expect(HELP).toContain("gmail list");
-    expect(HELP).toContain("GMAIL/CAL ARE SERVED (415)");
-    expect(HELP).toContain("THIS machine");
-    expect(HELP).toContain("SPLIT (420)");
+    const gmailHelp = renderCommandHelp("gmail");
+    const googleAuthHelp = renderSubcommandHelp("google", "auth");
+    expect(gmailHelp).toContain("gmail list");
+    expect(gmailHelp).toContain("gmail search");
+    expect(gmailHelp).toContain("Served over the API");
+    expect(googleAuthHelp).toContain("this machine");
+    expect(googleAuthHelp).toContain("Split over API");
   });
 
   test("README names the endpoints", () => {

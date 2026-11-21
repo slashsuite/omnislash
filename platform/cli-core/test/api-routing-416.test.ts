@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HANDLERS, HELP } from "../../../apps/cli/src/cli.ts";
+import { HANDLERS } from "../../../apps/cli/src/cli.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import {
   API_ROUTED_COMMANDS,
@@ -260,12 +260,6 @@ describe("MUST LOCAL refuse by name (416)", () => {
 });
 
 describe("docs (416)", () => {
-  test("HELP names the 416 served half and that the third class is gone", () => {
-    expect(HELP).toContain("416");
-    expect(HELP).toContain("EVERY command is API-routed or local-only");
-    expect(HELP).not.toContain("'ob brief' and 'ob log' are not in this change");
-  });
-
   test("README names the new endpoints", () => {
     expect(README).toContain("/api/ob/projects");
     expect(README).toContain("/api/ob/brief");

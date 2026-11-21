@@ -4,7 +4,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HELP } from "../../../apps/cli/src/cli.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import { OB_API_LOCAL_ONLY, OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
@@ -189,12 +188,6 @@ describe("MUST SERVE over a stub (456)", () => {
 });
 
 describe("docs (456)", () => {
-  test("HELP names the 456 served half", () => {
-    expect(HELP).toContain("456");
-    expect(HELP).toContain("SERVED (456): person, whois,");
-    expect(HELP).toContain("sync runs ON THE HOST");
-  });
-
   test("README names the new endpoints", () => {
     expect(README).toContain("/api/ob/people");
     expect(README).toContain("/api/ob/sync");

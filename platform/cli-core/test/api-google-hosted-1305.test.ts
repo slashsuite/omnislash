@@ -14,7 +14,7 @@ import { setConfig } from "../../../apps/cli/src/config.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { getSecret, inMemoryMasterKey, setSecret } from "../../../apps/cli/src/secrets.ts";
 import { OB_API_PREFIX, OB_API_ROUTES } from "../../../apps/cli/src/api/contract.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import {
   STATE_TTL_MS,
   createGoogleStateStore,
@@ -464,8 +464,9 @@ describe("hosted Google auth -- CLI + docs (1305)", () => {
   });
 
   test("docs: HELP and the route list carry the hosted half", () => {
-    expect(HELP).toContain("google auth-url");
-    expect(HELP).toContain("HOSTED");
+    const help = renderSubcommandHelp("google", "auth-url");
+    expect(help).toContain("google auth-url");
+    expect(help).toMatch(/hosted/i);
     const routes = OB_API_ROUTES.map((r) => `${r.method} ${r.path}`);
     expect(routes).toContain("GET /google/auth");
     expect(routes).toContain("GET /google/callback");

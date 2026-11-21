@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp } from "../../../apps/cli/src/cli.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
@@ -63,9 +63,10 @@ describe("routing (582)", () => {
   });
 
   test("HELP and README document deploy status|record|run", () => {
-    expect(HELP).toContain("deploy status");
-    expect(HELP).toContain("deploy record");
-    expect(HELP).toContain("deploy run");
+    const help = renderCommandHelp("deploy");
+    expect(help).toContain("deploy status");
+    expect(help).toContain("deploy record");
+    expect(help).toContain("deploy run");
     expect(README).toContain("deploy status");
     expect(README).toContain("deploy run");
   });

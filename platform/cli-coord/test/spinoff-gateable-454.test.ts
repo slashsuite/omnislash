@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import {
   enqueueSpinoff,
   gateableFactsFor,
@@ -297,9 +297,10 @@ describe("ob spinoff gateable CLI (454)", () => {
 
 describe("docs (454)", () => {
   test("HELP and README name spinoff gateable", () => {
-    expect(HELP).toContain("spinoff gateable");
+    const help = renderSubcommandHelp("spinoff", "gateable");
+    expect(help).toContain("spinoff gateable");
     expect(README).toContain("spinoff gateable");
-    expect(HELP).toContain("locked path table");
+    expect(help).toContain("locked path table");
     expect(README).toContain("locked path table");
   });
 });

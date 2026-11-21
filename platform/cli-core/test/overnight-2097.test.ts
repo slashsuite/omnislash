@@ -15,7 +15,7 @@ import { OB_API_ROUTES } from "../../../apps/cli/src/api/contract.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import type { ApiTransport } from "../../../apps/cli/src/api/client.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { appendToSection, emptySummary, localToday, summaryProblems } from "../../../apps/cli/src/overnight.ts";
 
 const BASE = "https://ob.example.test";
@@ -171,7 +171,15 @@ describe("ob overnight over the API (OB-2097)", () => {
     }
     expect(API_ROUTED_COMMANDS.has("overnight")).toBe(true);
     expect(API_HANDLERS.overnight).toBeDefined();
-    for (const doc of [HELP, README]) {
+    const help = [
+      renderCommandHelp("overnight"),
+      renderSubcommandHelp("overnight", "start"),
+      renderSubcommandHelp("overnight", "decide"),
+      renderSubcommandHelp("overnight", "summary"),
+      renderSubcommandHelp("overnight", "show"),
+      renderSubcommandHelp("overnight", "list"),
+    ].join("\n");
+    for (const doc of [help, README]) {
       for (const s of ["overnight start", "overnight decide", "overnight summary", "overnight show", "overnight list", "--doubt", "--undo", "--night", "--check", "--since"]) {
         expect(doc).toContain(s);
       }

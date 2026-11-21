@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { unroutedRefusal } from "../../../apps/cli/src/api/routing.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import type { Loopback, TokenExchangeResponse } from "../../cli-sources/src/commands/google.ts";
@@ -73,11 +73,12 @@ function seams() {
 
 describe("docs (420)", () => {
   test("HELP says google auth RUNS on an API client, not unset-OMNISLASH_API", () => {
-    expect(HELP).toContain("google auth");
-    expect(HELP).toContain("SPLIT (420)");
-    expect(HELP).toContain("RUNS on THIS machine");
-    expect(HELP).not.toContain("'google auth' refuses BY NAME");
-    expect(HELP).not.toMatch(/google auth[\s\S]{0,200}unset OMNISLASH_API/);
+    const help = renderSubcommandHelp("google", "auth");
+    expect(help).toContain("google auth");
+    expect(help).toContain("Split over API");
+    expect(help).toContain("this machine");
+    expect(help).not.toContain("'google auth' refuses BY NAME");
+    expect(help).not.toMatch(/google auth[\s\S]{0,200}unset OMNISLASH_API/);
   });
 });
 
