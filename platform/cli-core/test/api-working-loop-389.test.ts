@@ -11,7 +11,7 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { __setCreateIssue, type CreatedIssue } from "../../../apps/cli/src/github-issues.ts";
@@ -101,8 +101,9 @@ describe("routing (389)", () => {
 
 describe("docs/HELP (389)", () => {
   test("HELP and README say landed runs git HERE, not on the API host", () => {
-    expect(HELP).toContain("issue landed");
-    expect(HELP).toContain("never send you to the API host");
+    const help = renderSubcommandHelp("issue", "landed");
+    expect(help).toContain("issue landed");
+    expect(help).toContain("never on the API host");
     expect(README).toContain("do **not** print \"run it on the API host\"");
     expect(README).toContain("ob add --issue");
   });

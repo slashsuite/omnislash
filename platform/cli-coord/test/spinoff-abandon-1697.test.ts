@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { enqueueSpinoff, refuseSubcommandRef, type EnqueueInput, type SpinoffRow, type StampInput } from "../src/commands/spinoff.ts";
 import { abandonRefusal, abandonSpinoff, abandonedError, isAbandoned, renderAbandon, type AbandonDeps } from "../src/spinoff-abandon.ts";
@@ -244,7 +244,7 @@ describe("ob spinoff abandon (CLI)", () => {
 describe("docs (1697)", () => {
   test("HELP and the README name spinoff abandon", () => {
     const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
-    for (const doc of [HELP, README]) {
+    for (const doc of [renderSubcommandHelp("spinoff", "abandon"), README]) {
       expect(doc).toContain("spinoff abandon");
       expect(doc).toContain("base_sha");
     }

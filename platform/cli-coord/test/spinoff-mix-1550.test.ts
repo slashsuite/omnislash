@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
 import { UsageError } from "../../../apps/cli/src/errors.ts";
@@ -185,9 +185,10 @@ describe("ob spinoff mix (CLI)", () => {
 describe("docs (1550)", () => {
   test("HELP and README name spinoff mix and the 50/30/20 target", () => {
     const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
-    expect(HELP).toContain("spinoff mix");
+    const help = renderSubcommandHelp("spinoff", "mix");
+    expect(help).toContain("spinoff mix");
     expect(README).toContain("spinoff mix");
-    expect(HELP).toContain("50/30/20");
+    expect(help).toContain("50/30/20");
     expect(README).toContain("50/30/20");
   });
 });

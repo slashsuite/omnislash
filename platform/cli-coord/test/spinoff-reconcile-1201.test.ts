@@ -12,7 +12,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { freshDb } from "../../../apps/cli/test/helpers.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
 import {
   commitsSinceBase,
@@ -213,8 +213,9 @@ describe("the two pure gates (1201)", () => {
 
 describe("docs (1201)", () => {
   test("HELP and README say the signal is a LANDING commit, and name the docs/chart exclusion", () => {
-    expect(HELP).toContain("never a 'chart('/'docs(' note");
-    expect(HELP).toContain("never one older than the row's captured base_sha, 1201");
+    const help = renderSubcommandHelp("spinoff", "reconcile");
+    expect(help).toContain("chart/docs");
+    expect(help).toContain("base_sha");
     expect(README).toContain("never a `docs(ob N): …` or `chart(…)` note");
     expect(README).toContain("never one older than the row's captured `base_sha`");
     expect(README).toContain("claims no landing at all");

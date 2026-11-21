@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { COMMAND_HELP, HELP, renderCommandHelp, renderEnvHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import type { T3Project } from "../../../apps/cli/src/t3/client.ts";
 import { readyingNote, renderReadyNoteOutcome, spikeAnsweredNote, spikeClosedNote } from "../../../apps/cli/src/t3/dispatch.ts";
 import { buildT3Tree, indexT3Rows, renderT3Tree, threadObLabel, type T3ThreadView } from "../../../apps/cli/src/t3/read.ts";
@@ -135,7 +135,14 @@ describe("the clean-repo guard (OB-2256 Done when 6)", () => {
 describe("help, README and skills (OB-2256 Done when 2 and 7)", () => {
   test("ob --help and apps/cli/README.md say architect, never planner", () => {
     expect(HELP).not.toMatch(PLANNER);
-    expect(HELP).toContain("--architect");
+    expect(renderEnvHelp()).not.toMatch(PLANNER);
+    for (const [cmd, spec] of Object.entries(COMMAND_HELP)) {
+      expect(renderCommandHelp(cmd)).not.toMatch(PLANNER);
+      for (const sub of Object.keys(spec.subcommands ?? {})) {
+        expect(renderSubcommandHelp(cmd, sub)).not.toMatch(PLANNER);
+      }
+    }
+    expect(renderSubcommandHelp("spinoff", "check")).toContain("--architect");
     const readme = readFileSync(join(ROOT, "apps/cli/README.md"), "utf8");
     expect(readme).not.toMatch(PLANNER);
   });

@@ -13,7 +13,7 @@ import {
 import { acquireLease, leaseStatus, listAllLeaseResources, releaseAllLeases } from "../src/lease.ts";
 import { enqueueSpinoff, listSpinoffs } from "../src/commands/spinoff.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 
 const LEASES = [
   "app:widget",
@@ -177,10 +177,11 @@ describe("CLI: ob agents reset (437)", () => {
   });
 
   test("HELP and README warn this is a full wipe", () => {
-    expect(HELP).toContain("agents reset [--dry-run]");
-    expect(HELP).toContain("WIPE");
-    expect(HELP).toContain("no --yes");
-    expect(HELP).toContain("Live processes stay up");
+    const help = renderSubcommandHelp("agents", "reset");
+    expect(help).toContain("agents reset [--dry-run]");
+    expect(help).toContain("WIPE");
+    expect(help).toContain("no --yes");
+    expect(help).toContain("Live processes stay up");
     const readme = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
     expect(readme).toContain("`agents reset [--dry-run]`");
     expect(readme).toContain("Full wipe of the agent registry AND every lease");

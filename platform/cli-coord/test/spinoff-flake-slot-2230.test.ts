@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { fakeRepoDir, freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp } from "../../../apps/cli/src/cli.ts";
 import { createItem, editItem } from "../../../apps/cli/src/items.ts";
 import { decisionsForItem } from "../../../apps/cli/src/decisions.ts";
 import { PRIORITY_FLAKE, PRIORITY_MEDIUM } from "../../../apps/cli/src/priority.ts";
@@ -428,7 +428,7 @@ describe("ob agent heartbeat moves the expiry of every lease the agent holds (OB
 describe("the docs name flake:slot and --no-flake-slot (OB-2230)", () => {
   test("ob --help and the README", () => {
     const readme = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
-    for (const doc of [HELP, readme]) {
+    for (const doc of [renderCommandHelp("spinoff"), readme]) {
       expect(doc).toContain("flake:slot");
       expect(doc).toContain("--no-flake-slot");
     }

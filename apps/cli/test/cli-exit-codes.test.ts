@@ -31,7 +31,8 @@ describe("ob exit codes (#134)", () => {
   test("a command's own --help exits 0 without running the command", async () => {
     const r = await runCli(freshDbPath(), ["close", "--help"]);
     expect(r.code).toBe(0);
-    expect(r.out).toContain("OmniSlash personal task tracker");
+    expect(r.out).toContain("ob close —");
+    expect(r.out).not.toContain("OmniSlash personal task tracker");
     expect(r.err).toBe("");
   });
 

@@ -13,7 +13,7 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderCommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import type { WhatsappHit } from "../../cli-whatsapp/src/ingest/whatsapp.ts";
@@ -77,10 +77,11 @@ describe("routing (366)", () => {
 
 describe("docs/HELP mention the split (366)", () => {
   test("HELP names the served half and that refusals name this machine", () => {
-    expect(HELP).toContain("whatsapp search");
-    expect(HELP).toContain("whatsapp recent");
-    expect(HELP).toContain("WHATSAPP IS SERVED (366, OB-1809)");
-    expect(HELP).toContain("THIS machine");
+    const help = renderCommandHelp("whatsapp");
+    expect(help).toContain("search");
+    expect(help).toContain("recent");
+    expect(help).toContain("Served over the API");
+    expect(help).toContain("API host");
   });
 
   test("README names the endpoints", () => {

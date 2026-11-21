@@ -318,15 +318,17 @@ describe("ob google — CLI wiring (129)", () => {
     expect(r.err).not.toContain("unknown google subcommand");
   });
 
-  test("`ob --help` lists the google auth command", async () => {
-    const r = await runCli(freshDbPath(), ["--help"]);
+  test("`ob google --help` lists the google auth command", async () => {
+    const r = await runCli(freshDbPath(), ["google", "--help"]);
+    expect(r.code).toBe(0);
     expect(r.out).toContain("google auth");
   });
 
-  test("`ob --help` lists google auth-url (1305)", async () => {
-    const r = await runCli(freshDbPath(), ["--help"]);
+  test("`ob google auth-url --help` lists hosted google auth-url (1305)", async () => {
+    const r = await runCli(freshDbPath(), ["google", "auth-url", "--help"]);
+    expect(r.code).toBe(0);
     expect(r.out).toContain("google auth-url");
-    expect(r.out).toContain("HOSTED");
+    expect(r.out).toMatch(/hosted/i);
   });
 });
 

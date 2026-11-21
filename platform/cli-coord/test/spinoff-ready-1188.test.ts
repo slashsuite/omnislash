@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli, omnislashTeamFor } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { T3Error, type T3SendInput } from "../../../apps/cli/src/t3/client.ts";
 import {
   __setReadyNoteRetryMs,
@@ -262,13 +262,14 @@ describe("alreadyLandedRefusal (1188)", () => {
 
 describe("docs (1188)", () => {
   test("HELP and README name both refusals, the repeat exception, and that neither stamps nor sends", () => {
-    expect(HELP).toContain("refuses when that worktree does NOT EXIST or the row has already LANDED (1188)");
+    const help = renderSubcommandHelp("spinoff", "handoff");
+    expect(help).toContain("missing checkouts");
+    expect(help).toContain("already-landed");
+    expect(help).toContain("Repeat handoff");
+    expect(help).toContain("releases builder leases");
     expect(README).toContain("it refuses when that worktree does not exist, or the row has already LANDED");
-    expect(HELP).toContain("REPEAT on a row ALREADY handed-off whose checkout is gone still releases");
     expect(README).toContain("a **repeat** on a row that is *already* `handed-off` whose checkout is gone still releases");
-    for (const text of [HELP, README]) {
-      expect(text).toContain("nothing to gate; <ticket> landed as <sha>");
-      expect(text).toContain("no stamp, no note");
-    }
+    expect(README).toContain("nothing to gate; <ticket> landed as <sha>");
+    expect(README).toContain("no stamp, no note");
   });
 });

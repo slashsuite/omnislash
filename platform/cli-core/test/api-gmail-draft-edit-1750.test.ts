@@ -9,7 +9,7 @@ import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
-import { HELP } from "../../../apps/cli/src/cli.ts";
+import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { FakeDraftClient } from "../../cli-sources/test/fake-draft-client.ts";
@@ -48,9 +48,15 @@ const scratch = () => mkdtempSync(join(process.env.TMPDIR || tmpdir(), "ob-1750-
 
 describe("docs (OB-1750)", () => {
   test("HELP and README name the three commands, --confirm on delete and the routes", () => {
-    for (const doc of [HELP, README]) {
+    const help = [
+      renderSubcommandHelp("gmail", "drafts"),
+      renderSubcommandHelp("gmail", "draft-edit"),
+      renderSubcommandHelp("gmail", "draft-delete"),
+    ].join("\n");
+    for (const doc of [help, README]) {
       for (const c of ["gmail drafts", "gmail draft-edit", "gmail draft-delete"]) expect(doc).toContain(c);
     }
+    expect(help).toContain("--confirm");
     expect(README).toContain("/api/ob/gmail/drafts/:id/edit");
     expect(README).toContain("draft-delete");
   });

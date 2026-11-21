@@ -8,7 +8,7 @@ Core tracking is zero-network. On top of it sit read-only **source connectors** 
 Calendar / WhatsApp), an agent **coordination** layer (leases, the agent registry, spinoffs), and
 an **automation** layer (a daemon that runs on launchd on macOS and on a systemd user timer on Linux, a live dashboard, and off-machine backup).
 
-> This is the authoritative user guide. `ob --help` is the always-current flat quick-reference.
+> This is the authoritative user guide. `ob --help` gives the compact command overview; `ob <command> [subcommand] --help` and `ob help env` provide focused reference pages.
 
 ---
 
@@ -268,11 +268,12 @@ reads its expected cadence from it too. `ob jobs` reports what each of them last
   is outstanding, and retries a bounded number of times on **`SQLITE_BUSY` only** (223): a deterministic
   failure surfaces on the first attempt with its cause, rather than being re-proved six times under a
   "concurrent access" headline that was not true.
-- **Requested help exits `0`** (#134): `ob --help`, `ob help` and `ob <command> --help` print the
-  help text on **stdout** and exit `0`, because asking for help is not a usage error. That makes
-  `ob --help >/dev/null && echo OK` a valid "does `ob` load?" probe, which is exactly what the
-  repo's pre-land gate checks. A **bare `ob`** with no command is still a usage error: it prints
-  the same help (stdout, so it stays pipeable) and exits `2`, since no command was requested.
+- **Requested help exits `0`** (#134): `ob --help`, `ob -h`, `ob help`, `ob <command> [subcommand] --help`,
+  `ob help <command> [subcommand]`, and `ob help env` print focused help on **stdout** and exit `0`,
+  because asking for help is not a usage error. That makes `ob --help >/dev/null && echo OK` a valid
+  "does `ob` load?" probe, which is what the repo's pre-land gate checks. Unknown help targets
+  (`ob help nope`, `ob project nope --help`) print an error on stderr and exit `2`. A **bare `ob`**
+  with no command is still a usage error: it prints the root overview on stdout and exits `2`.
 - **Relative time windows:** because parsing is strict, a leading-dash value must use `=`, e.g.
   `--since=-7d` (not `--since -7d`). `--since` accepts ISO, `YYYY-MM-DD`, or `-Nd`.
 
