@@ -754,16 +754,18 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0:0:0
  *    checked here rather than assumed from 220 having landed, so the two tickets can land in either
  *    order without a window where the page takes a paste over cleartext.
  */
-export function writeGate(origin: RequestOrigin): WriteGate {
+export function writeGate(origin: RequestOrigin, refusal: (origin: RequestOrigin) => string = credentialRefusal): WriteGate {
   const host = origin.hostname.toLowerCase();
   if (origin.proto === "https:") return { allowed: true, via: "tls", reason: "the connection is TLS" };
   if (LOOPBACK_HOSTS.has(host)) {
     return { allowed: true, via: "loopback", reason: "the connection is loopback, so the value never reaches a network" };
   }
-  return {
-    allowed: false,
-    reason: `refusing to accept a credential over ${origin.proto}//${origin.hostname}: a pasted token would cross the network in the clear. Reach the dashboard over https (ob 220), or paste it on the machine itself with \`ob secret set\``,
-  };
+  return { allowed: false, reason: refusal(origin) };
+}
+
+/** The credential write's refusal; other writes behind the same gate (OS-146: model routes) pass their own. */
+function credentialRefusal(origin: RequestOrigin): string {
+  return `refusing to accept a credential over ${origin.proto}//${origin.hostname}: a pasted token would cross the network in the clear. Reach the dashboard over https (ob 220), or paste it on the machine itself with \`ob secret set\``;
 }
 
 /** Read a request's real origin. Deliberately the connection's own URL, never x-forwarded-proto, which

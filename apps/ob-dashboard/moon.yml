@@ -30,3 +30,10 @@ tasks:
   typecheck:
     command: 'bunx tsc --noEmit'
     deps: ['generate-routes']
+  # OS-146: Playwright on the BUILT app (its webServer builds, then e2e/serve.ts) on a fresh temp store, Chromium
+  # desktop and phone.
+  # Not in CI's gate: run it locally under the browser lease, `ob lease run cpu:browser -- bunx moon run ob-dashboard:e2e`.
+  e2e:
+    command: 'bunx playwright test'
+    options:
+      cache: false
