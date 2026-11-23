@@ -2156,6 +2156,37 @@ describe("credit error → next models profile (OB-1970)", () => {
     db.close();
   });
 
+  test("OS-145: a route's effort reaches the models that take it; a quota move onto one that does not runs it at its default", async () => {
+    modelsFile(`{"active": "p", "profiles": {"p": {"routes": {"builder.medium": {"chain": ["claudeAgent:claude-sonnet-5-5", "claudeAgent:claude-haiku-5-5"], "effort": "low"}}}}}`);
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const repo = trackedRepo();
+    trackedDir(`${repo}.999`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo, options: { "claude-sonnet-5-5": [CLAUDE_EFFORT_OPTION] } }); // Haiku lists no effort here
+    const launch = fake.seam.launch;
+    const sent: Array<{ model: string; options: unknown }> = [];
+    setT3Seam({
+      ...fake.seam,
+      launch: async (i) => {
+        sent.push({ model: i.modelSelection.model, options: (i.modelSelection as { options?: unknown }).options });
+        return i.modelSelection.model === "claude-sonnet-5-5" ? Promise.reject(CREDIT()) : launch(i);
+      },
+    });
+    expect((await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", "--tier", "medium"])).code).toBe(0);
+    captureStderr();
+    const drained = await drainSpinoffs(db);
+    restoreStderr?.();
+    restoreStderr = null;
+    expect(drained.failed).toEqual([]);
+    expect(sent.map((x) => x.model)).toEqual(["claude-sonnet-5-5", "claude-haiku-5-5"]);
+    expect(sent[0]!.options).toEqual([{ id: "effort", value: "low" }]);
+    expect(sent[1]!.options ?? []).toEqual([]);
+    expect(stderr).toContain("does not take the route's effort low; it runs at its default");
+    expect((await listSpinoffs(db))[0]!.status).toBe("launched");
+    db.close();
+  });
+
   test("a non-credit error never falls back: a rate limit or an outage fails the row on profile A", async () => {
     for (const err of [
       new T3Error("refused", "rate limit exceeded, retry in 30s", undefined, "rate_limit_error"),

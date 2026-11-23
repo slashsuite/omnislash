@@ -47,12 +47,12 @@ export function routeTierModels(inputs: RouteInputs): Record<SpinoffTier, string
   return models;
 }
 
-/** `row` carrying the route's effort when it names none of its own (OS-145). Pure. */
-export function withRouteEffort<T extends { effort?: string | null }>(row: T, routeEffort: string | undefined): T {
-  if (!routeEffort) return row;
-  const own = row.effort;
-  if (own && !own.startsWith("default")) return row;
-  return { ...row, effort: routeEffort };
+/**
+ * `row` carrying the route's effort (OS-145). The launch applies it only when the row names no effort of its own and
+ * the model lists that level, so a fallback model without it still launches, at its default. Pure.
+ */
+export function withRouteEffort<T extends object>(row: T, routeEffort: string | undefined): T & { route_effort?: string } {
+  return routeEffort ? { ...row, route_effort: routeEffort } : row;
 }
 
 /** The key one attempt is recorded under in the state file. Pure. */

@@ -755,6 +755,8 @@ export interface T3DispatchRow {
   effort?: string | null;
   /** OB-1991: a model trial leg's own model, which beats the tier's (and any profile's). */
   trial_model?: string | null;
+  /** OS-145: the route's effort, used when the row names none and the model lists that level. */
+  route_effort?: string | null;
 }
 
 /** How many `t3_thread_list` pages the adoption scan will walk before giving up rather than guessing. */
@@ -1037,7 +1039,17 @@ export async function launchT3Spinoff(
   }
   // OB-1991: a trial leg launches on the trial's model for its leg, whatever the tier (or a profile) says.
   const models = row.trial_model ? { ...tierModels, [tier]: row.trial_model } : tierModels;
-  const resolved = await resolveModelAndEffort(seam, project, tier, models, rowEffort(row.effort));
+  const own = rowEffort(row.effort);
+  const routeEffort = own === undefined && row.route_effort && isSpinoffEffort(row.route_effort) ? row.route_effort : undefined;
+  let resolved = await resolveModelAndEffort(seam, project, tier, models, own ?? routeEffort);
+  if ("refusal" in resolved && routeEffort !== undefined) {
+    // OS-145: the route's effort is a preference across its chain; a model that does not take it runs at its default.
+    const plain = await resolveModelAndEffort(seam, project, tier, models, undefined);
+    if (!("refusal" in plain)) {
+      warn(`  ↳ ${row.ticket_ref}: ${models[tier]} does not take the route's effort ${routeEffort}; it runs at its default`);
+      resolved = plain;
+    }
+  }
   if ("refusal" in resolved) {
     throw new T3Error(
       "refused",
