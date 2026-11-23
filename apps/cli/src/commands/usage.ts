@@ -423,7 +423,7 @@ function providerOfComplex(env: Record<string, string | undefined>): string | nu
 }
 
 /** The pacing source a model's provider reads: Antigravity's cache for `antigravity`, else Claude's. Pure. */
-export function pacingSourceForModel(model: string): PacingSource {
+function pacingSourceForModel(model: string): PacingSource {
   return splitTierModel(model)?.providerInstanceId === "antigravity" ? ANTIGRAVITY_PACING : CLAUDE_PACING;
 }
 

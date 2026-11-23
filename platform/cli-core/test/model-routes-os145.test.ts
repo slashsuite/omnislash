@@ -219,4 +219,28 @@ describe("OS-145: model routes", () => {
       expect(bUse.err).toContain("this machine's models file sets active 'mine', which still wins here");
     });
   });
+
+  test("a named --profile is made ready, not live; `use` takes only server profiles; a mistyped local active is refused by name", async () => {
+    await withScratch((dir) => {
+      const db = join(dir, "server.sqlite");
+      const a = machine(dir, "a", db);
+      expect(a(["models", "set", "builder.medium", "antigravity:gemini-4-neon", "--profile", "neon"]).code).toBe(0);
+      expect(a(["models", "get", "builder.medium"]).out.trim()).toBe("claude-sonnet-5-5");
+      expect(a(["models", "show"]).out).not.toContain("active profile: neon");
+
+      const b = machine(dir, "b", db);
+      mkdirSync(join(dir, "b"), { recursive: true });
+      const bFile = join(dir, "b", "models.jsonc");
+      writeFileSync(bFile, JSON.stringify({ profiles: { mine: { routes: {} } } }));
+      const localOnly = b(["models", "use", "mine"]);
+      expect(localOnly.code).not.toBe(0);
+      expect(localOnly.err).toContain("only in this machine's models file");
+
+      writeFileSync(bFile, JSON.stringify({ active: "claud", profiles: { claude: { routes: { "builder.medium": { chain: ["claudeAgent:claude-opus-5-5"] } } } } }));
+      const typo = b(["models", "get", "builder.medium"]);
+      expect(typo.code).not.toBe(0);
+      expect(typo.err).toContain("'claud'");
+      expect(b(["models", "show"]).code).toBe(0); // show still reports it, so the typo can be found
+    });
+  });
 });

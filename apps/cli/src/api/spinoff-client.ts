@@ -439,6 +439,7 @@ function stampBody(input: StampInput) {
     effort: input.effort ?? null,
     raised: input.raised ?? false,
     error: input.error ?? null,
+    ...(input.route_moves?.length ? { route_moves: [...input.route_moves] } : {}),
   };
 }
 
@@ -815,6 +816,7 @@ async function launchEntryOverApi(
     return { status: "failed", row, threadId: null, model: null, error: claim.error };
   }
   let prep: LaunchPrep | null = null;
+  const routeMoves: Array<{ from: string; to: string; note: string }> = []; // OS-145: written on the trail by the host
   try {
     prep = prepareLaunchIn(cfg, row);
     const launcher = prep.launcher;
@@ -822,7 +824,7 @@ async function launchEntryOverApi(
     // OB-2075: the claim hands back the stored row; an urgent one launches on the tier the host listed.
     const launchRow = entry.urgent ? { ...row, tier: entry.row.tier } : row;
     const urgentNote = entry.urgent ? { raisedFrom: entry.raised_from ?? null } : null;
-    const effect = await withClaimHeartbeat(() => beat(row), () => launchRowIn(cfg, launcher, launchRow, entry.ticket_title, urgentNote));
+    const effect = await withClaimHeartbeat(() => beat(row), () => launchRowIn(cfg, launcher, launchRow, entry.ticket_title, urgentNote, routeMoves));
     const stamp: StampInput = {
       id: row.id,
       outcome: "launched",
@@ -833,13 +835,14 @@ async function launchEntryOverApi(
       model: effect.model ?? null,
       effort: effect.effort ?? null,
       raised: effect.raised,
+      route_moves: routeMoves,
     };
     const stampError = await stampOverApi(ctx, stamp);
     if (stampError) dbFailures.push({ ticket: row.ticket_ref, detail: launchNotStamped(row, stamp, stampError) });
     return { status: "launched", row: effect.adopted ? row : launchRow, threadId: effect.t3ThreadId ?? null, model: effect.model ?? null, effort: effect.effort ?? null, adopted: effect.adopted, error: null };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const stampError = await stampOverApi(ctx, { id: row.id, outcome: "failed", error: msg, ...prep });
+    const stampError = await stampOverApi(ctx, { id: row.id, outcome: "failed", error: msg, ...prep, route_moves: routeMoves });
     if (stampError) dbFailures.push({ ticket: row.ticket_ref, detail: claimNotStamped(row, msg, stampError) });
     return { status: "failed", row, threadId: null, model: null, error: msg };
   }

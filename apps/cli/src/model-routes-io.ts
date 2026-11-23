@@ -10,23 +10,18 @@ import { commandStore, getStore, type Store } from "./db/store.ts";
 import { loadModelsFile } from "./models-file.ts";
 import {
   ModelRoutesError,
-  activeProfileOf,
   emptyRouteInputs,
+  hasProfile,
   loadServerRoutes,
-  resolveReview,
+  profileOrderOf,
   resolveRoute,
-  routeAttempts,
   saveModelRoutes,
   type ModelRoutes,
   writeRoutesCache,
-  type ResolvedReview,
-  type ResolvedRoute,
-  type RouteAttempt,
   type RouteInputs,
 } from "./model-routes.ts";
 import { warn } from "./output.ts";
 import { ReviewReadersError, type ConfigIO } from "./review-readers.ts";
-import { defineSeam } from "./test-seams.ts";
 
 /** The store's config table as a ConfigIO. */
 export function storeConfigIo(db: Database | Store): ConfigIO {
@@ -43,20 +38,11 @@ export function apiConfigIo(client: Pick<ApiClient, "config" | "configSet">): Co
   };
 }
 
-/** A test's stand-in for the machine's config (null = the real one). */
-const ioSeam = defineSeam<ConfigIO | null>("model-routes-io.configIo", null);
-
-export function __setModelRoutesIo(io: ConfigIO | null): () => void {
-  return ioSeam.set(io);
-}
-
 /**
  * The config this machine's routes come from: the API when it is a client, else `db` (the command's own handle,
  * following the store switch) or the process store.
  */
 export async function machineConfigIo(db?: Database | Store): Promise<ConfigIO> {
-  const stub = ioSeam.get();
-  if (stub) return stub;
   const base = resolveApiBase();
   if (base) return apiConfigIo(new ApiClient({ base, token: resolveApiToken() }));
   if (db) return storeConfigIo("kind" in db ? db : await commandStore(db));
@@ -68,13 +54,14 @@ export async function machineConfigIo(db?: Database | Store): Promise<ConfigIO> 
  * `ModelsFileError` (never a silent launch on the defaults). A server that cannot be read leaves the local file and
  * the defaults, with ONE stderr line saying so (a stored value that does not parse throws its `ModelRoutesError`); `quiet` drops that line (pacing, `show`'s own report).
  */
-export async function loadRouteInputs(io: ConfigIO | null, opts: { quiet?: boolean } = {}): Promise<RouteInputs & { serverError: string | null }> {
+export async function loadRouteInputs(io: ConfigIO | null, opts: { quiet?: boolean; lenient?: boolean } = {}): Promise<RouteInputs & { serverError: string | null }> {
   const file = loadModelsFile();
   if (!io) return { ...emptyRouteInputs({ file }), serverError: "no server to read" };
+  let inputs: RouteInputs;
   try {
     const sr = await loadServerRoutes(io);
     writeRoutesCache(sr);
-    return { file, server: sr.server, legacyReaders: sr.legacyReaders, tierModels: sr.tierModels, serverError: null };
+    inputs = { file, server: sr.server, legacyReaders: sr.legacyReaders, tierModels: sr.tierModels };
   } catch (e) {
     // A stored value that does not parse is refused by name, never skipped.
     if (e instanceof ModelRoutesError || e instanceof ReviewReadersError) throw e;
@@ -82,32 +69,15 @@ export async function loadRouteInputs(io: ConfigIO | null, opts: { quiet?: boole
     if (!opts.quiet) warn(`model_routes could not be read from the server (${reason}); using ${file ? "the local models file and " : ""}the defaults`);
     return { ...emptyRouteInputs({ file }), serverError: reason };
   }
-}
-
-/** One route, resolved on this machine (`db` as for `machineConfigIo`). */
-export async function machineRoute(route: string, db?: Database | Store): Promise<ResolvedRoute> {
-  return resolveRoute(await loadRouteInputs(await ioOrNull(db)), route);
-}
-
-/** The attempts a launch of `route` makes on this machine, and the inputs (for the active profile's name). */
-export async function machineRouteAttempts(route: string, db?: Database | Store): Promise<{ attempts: RouteAttempt[]; active: string | null; inputs: RouteInputs }> {
-  const inputs = await loadRouteInputs(await ioOrNull(db));
-  return { attempts: routeAttempts(inputs, route), active: activeProfileOf(inputs).name, inputs };
-}
-
-/** The review readers in force on this machine. */
-export async function machineReview(db?: Database | Store): Promise<ResolvedReview> {
-  return resolveReview(await loadRouteInputs(await ioOrNull(db)));
-}
-
-/** The IO, or null (with the reason left to `loadRouteInputs`) when even opening it failed. */
-async function ioOrNull(db?: Database | Store): Promise<ConfigIO | null> {
-  try {
-    return await machineConfigIo(db);
-  } catch (e) {
-    warn(`model_routes: no config to read (${e instanceof Error ? e.message : String(e)}); using the local models file and the defaults`);
-    return null;
+  // Both layers were read, so a profile named as active or fallback that neither defines is a typo: refused by
+  // name, never a silent run on the defaults. `lenient` (`ob models show`) reports it instead.
+  if (!opts.lenient) {
+    const missing = profileOrderOf(inputs).filter((name) => !hasProfile(inputs, name));
+    if (missing.length > 0) {
+      throw new ModelRoutesError(`profile ${missing.map((m) => `'${m}'`).join(", ")} is named as active or fallback but neither ${file ? file.path : "the models file"} nor the server's model_routes defines it`);
+    }
   }
+  return { ...inputs, serverError: null };
 }
 
 /**

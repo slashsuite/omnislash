@@ -1898,6 +1898,8 @@ export interface StampInput {
   error?: string | null;
   /** 1515: why this stamp (a `--note` from the caller), recorded on the row's item. */
   decision?: DecisionOpts;
+  /** OS-145: a client launch's moves along its route, written on the item's Decisions trail by the host. */
+  route_moves?: ReadonlyArray<{ from: string; to: string; note: string }>;
 }
 
 /** A row `reclaim` took back from a machine that claimed it and never came back. */
@@ -2097,6 +2099,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
   }
   // The claim is answered either way, so nothing has to wait for its TTL to know this row is settled.
   await releaseLease(s, spinoffClaimKey(row.id), row.branch);
+  for (const m of input.route_moves ?? []) await recordRowDecision(s, row, m.from, m.to, { note: m.note });
   // 1515: the row's own move, on its item's trail — queued/launching -> building/landed.
   await recordRowDecision(
     s,
@@ -5473,15 +5476,26 @@ export async function launchRowIn(
   ticketTitle?: string | null,
   /** OB-2075: the item is urgent (the host sent the raised row), so an adopted thread keeps its model. */
   urgent?: { raisedFrom: string | null } | null,
+  /** OS-145: collects the moves along the route, which the caller's stamp carries to the host's Decisions trail. */
+  routeMoves?: Array<{ from: string; to: string; note: string }>,
 ): Promise<LaunchEffect> {
   const seam = await t3Seam();
-  // OS-145: the route inputs come from the server this client talks to; the Decisions line is left to the
-  // stderr warning here (a client has no store to write the trail to).
-  const outcome = await launchAcrossProfiles(row, await routeInputsOrRefuse(), (models, routeEffort) => {
-    const r = withRouteEffort(row, routeEffort);
-    refuseRaisedOpusHigh(r, models, urgent?.raisedFrom ?? null); // OB-2107
-    return launchT3Spinoff(seam, r, rowRepoPathIn(cfg, row.repo), ticketTitle ?? null, models, !!urgent);
-  });
+  const recordMove: RouteMoveRecorder | undefined = routeMoves
+    ? async (from, to, note) => {
+        routeMoves.push({ from, to, note });
+      }
+    : undefined;
+  const outcome = await launchAcrossProfiles(
+    row,
+    await routeInputsOrRefuse(),
+    (models, routeEffort) => {
+      const r = withRouteEffort(row, routeEffort);
+      refuseRaisedOpusHigh(r, models, urgent?.raisedFrom ?? null); // OB-2107
+      return launchT3Spinoff(seam, r, rowRepoPathIn(cfg, row.repo), ticketTitle ?? null, models, !!urgent);
+    },
+    [],
+    recordMove,
+  );
   if (urgent) warnUrgentTier(row.ticket_ref, urgent.raisedFrom, outcome.adopted);
   warn(
     outcome.adopted

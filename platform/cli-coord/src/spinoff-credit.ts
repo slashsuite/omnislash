@@ -193,7 +193,7 @@ export async function relaunchOnCreditFailure(
   deps: CreditRelaunchDeps,
 ): Promise<CreditRelaunch> {
   const attempts = routeAttempts(deps.inputs, `builder.${rowTier(row.tier)}`);
-  if (attempts.length < 2) return { kind: "none" };
+  if (attempts.length === 1 && attempts[0]!.profile === null) return { kind: "none" }; // no route set anywhere: as before OB-1970
   const read = await deps.seam.read(threadId, { afterPosition: 0, limit: FIRST_TURN_ITEMS });
   if (read.recentRuns.length > 1) return { kind: "none" }; // not the first turn: a relaunch would lose its work
   const match = creditErrorInItems(read.items);

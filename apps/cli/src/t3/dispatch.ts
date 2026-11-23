@@ -36,7 +36,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { asStore, type Store } from "../db/store.ts";
 import { warn } from "../output.ts";
 import { UsageError } from "../errors.ts";
-import { DEFAULT_TIER_MODELS, emptyHalfOf, isSpinoffTier, parseTierModels, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
+import { DEFAULT_TIER_MODELS, emptyHalfOf, isSpinoffTier, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
 import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
 import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
@@ -504,10 +504,6 @@ export { DEFAULT_TIER_MODELS, isSpinoffTier, parseTierModels } from "../models-f
 
 /** A dispatch that names no tier runs on this one: forgetting to rate costs Sonnet, not Opus. */
 export const DEFAULT_SPINOFF_TIER: SpinoffTier = "medium";
-
-
-/** Which half of a malformed `<provider>:<model>` value is empty, so the refusal can say it (1549). Pure. */
-
 
 /** The rejection for an unknown `--tier <value>`. Pure. */
 export function tierRejection(prefix: string, value: string): string {

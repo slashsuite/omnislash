@@ -12,7 +12,6 @@ import {
   activeProfileOf,
   addReader,
   checkEffort,
-  hasProfile,
   parseChain,
   profileOrderOf,
   removeReader,
@@ -95,7 +94,7 @@ function readersText(v: ReviewReaders): string[] {
 }
 
 async function show(ctx: Ctx): Promise<void> {
-  const inputs = await refusing(async () => loadRouteInputs(await io(ctx), { quiet: true }));
+  const inputs = await refusing(async () => loadRouteInputs(await io(ctx), { quiet: true, lenient: true }));
   const routes = resolveAllRoutes(inputs);
   const review = resolveReview(inputs);
   const active = activeProfileOf(inputs);
@@ -212,9 +211,11 @@ async function use(ctx: Ctx): Promise<void> {
   await refusing(async () => {
     let was: string | null = null;
     const { inputs } = await editModelRoutes(await io(ctx), (inputs) => {
-      if (!hasProfile(inputs, name)) {
-        const known = [...new Set([...Object.keys(inputs.server.profiles), ...Object.keys(inputs.file?.profiles ?? {})])];
-        throw new ModelRoutesError(`unknown profile '${name}': no layer defines it (profiles: ${known.join(", ") || "none"}); \`ob models set <route> <model> --profile ${name}\` creates it`);
+      // The server's active is every machine's, so it may only name a profile the server defines.
+      if (!Object.hasOwn(inputs.server.profiles, name)) {
+        const known = Object.keys(inputs.server.profiles);
+        const localOnly = inputs.file && Object.hasOwn(inputs.file.profiles, name) ? ` (it is only in this machine's models file: set "active" there for this machine)` : "";
+        throw new ModelRoutesError(`unknown profile '${name}': the server defines no such profile${localOnly} (server profiles: ${known.join(", ") || "none"}); \`ob models set <route> <model> --profile ${name}\` creates it`);
       }
       was = inputs.server.active;
       return withActive(inputs.server, name);

@@ -1351,6 +1351,15 @@ export interface StampSpinoffRequest {
   /** OB-2075: the launch ran an urgent item on complex (not an adopted thread); the host then records the row as complex. */
   raised?: boolean;
   error?: string | null;
+  /** OS-145: the moves this launch made along its route on a quota error, for the host to write on the Decisions trail. */
+  route_moves?: RouteMove[];
+}
+
+/** OS-145: one move along a route (models `from` -> `to`), with its Decisions line. */
+export interface RouteMove {
+  from: string;
+  to: string;
+  note: string;
 }
 
 export interface StampSpinoffResponse {

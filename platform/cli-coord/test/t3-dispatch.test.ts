@@ -52,6 +52,7 @@ import { itemDispatchRefs } from "../src/spinoff-item.ts";
 import {
   __setSh,
   __shIsReal,
+  claimSpinoffRow,
   cleanupWorktrees,
   drainSpinoffs,
   enqueueSpinoff,
@@ -62,6 +63,7 @@ import {
   reclaimSpinoffs,
   relaunchCreditFailures,
   stampArgv,
+  stampSpinoff,
   type SpinoffRow,
   type SpinoffLaunchConfig,
 } from "../src/commands/spinoff.ts";
@@ -1940,6 +1942,8 @@ describe("models file → builder model (OB-1969)", () => {
     // file here drops its own and the server's pick is the one in force.
     writeFileSync(path, readFileSync(path, "utf8").replace(/"active": "claude", \/\/ the first\n/, ""));
     const server = freshDbPath();
+    // `use` names a profile the server defines (every machine follows it); the file's `other` still supplies the model here
+    expect((await runCli(server, ["models", "set", "builder.simple", "claudeAgent:claude-sonnet-5-5", "--profile", "other"])).code).toBe(0);
     const used = await runCli(server, ["models", "use", "other"]);
     expect(used.code).toBe(0);
     expect(readFileSync(path, "utf8")).not.toContain('"active"');
@@ -2119,6 +2123,39 @@ describe("credit error → next models profile (OB-1970)", () => {
     }
   });
 
+  test("OS-145: an API-client launch collects its route moves, and the host's stamp writes them on the Decisions trail", async () => {
+    modelsFile(PROFILES);
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const ref = await createItem(db, { type: "task", title: "a client-routed build" });
+    const repo = trackedRepo();
+    const worktree = trackedDir(`${repo}.client-routed`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo });
+    const launch = fake.seam.launch;
+    setT3Seam({ ...fake.seam, launch: async (i) => (i.modelSelection.model === "claude-sonnet-5-5" ? Promise.reject(CREDIT()) : launch(i)) });
+    const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", ref, "--repo", repo, "--worktree", worktree, "--launcher", "t3", "--brief", "do it", "--tier", "medium"]);
+    expect(queued.code).toBe(0);
+    const row = (await listSpinoffs(db))[0]!;
+    await claimSpinoffRow(db, row.id);
+
+    // the client half: the launch moves along the route and hands the moves back instead of writing them
+    const cfg: SpinoffLaunchConfig = { repoCheckouts: {}, launcher: "t3", launcherByRepo: {}, engine: "claude" };
+    const moves: Array<{ from: string; to: string; note: string }> = [];
+    captureStderr();
+    await launchRowIn(cfg, T3_LAUNCHER, row, null, null, moves);
+    restoreStderr?.();
+    restoreStderr = null;
+    const line = "route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
+    expect(moves).toEqual([{ from: "claudeAgent:claude-sonnet-5-5", to: "claudeAgent:claude-haiku-5-5", note: line }]);
+    expect((await decisionsForItem(db, ref)).some((d) => (d.note ?? "").startsWith("route "))).toBe(false);
+
+    // the host half: the stamp carries them onto the trail
+    await stampSpinoff(db, { id: row.id, outcome: "launched", worktree, route_moves: moves });
+    expect((await decisionsForItem(db, ref)).map((d) => d.note ?? "")).toContain(line);
+    db.close();
+  });
+
   test("a non-credit error never falls back: a rate limit or an outage fails the row on profile A", async () => {
     for (const err of [
       new T3Error("refused", "rate limit exceeded, retry in 30s", undefined, "rate_limit_error"),
@@ -2161,8 +2198,8 @@ describe("credit error → next models profile (OB-1970)", () => {
   });
 
   /** A launched row whose first turn the mirror then reads as `failed` with `items` on its timeline. */
-  async function failedFirstTurn(items: T3ThreadRead["items"], runs = 1) {
-    modelsFile(PROFILES);
+  async function failedFirstTurn(items: T3ThreadRead["items"], runs = 1, profiles = PROFILES) {
+    modelsFile(profiles);
     const out = await dispatch(() => null);
     const thread = out.fake.threads[0]!;
     thread.status = "failed";
@@ -2226,6 +2263,18 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(after.error).toContain("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn: message:");
     expect(after.error).toContain("(profile other) (");
     expect(after.error).toContain("(profile third) (");
+    db.close();
+  });
+
+  test("OS-145: a one-model route whose first turn runs out of credits fails the row blocked, as a launch-time credit error does", async () => {
+    const ONE = `{"active": "claude", "profiles": {"claude": {"builder": {"medium": "claudeAgent:claude-sonnet-5-5"}}}}`;
+    const { db, fake, row } = await failedFirstTurn([creditItem], 1, ONE);
+    captureStderr();
+    await relaunchCreditFailures(db, (await reconcileT3Runs(db)).mirrored);
+    expect(fake.launches).toHaveLength(1);
+    const after = (await listSpinoffs(db)).find((r) => r.id === row.id)!;
+    expect(after.status).toBe("failed");
+    expect(after.error).toStartWith("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn:");
     db.close();
   });
 });

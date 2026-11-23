@@ -145,10 +145,6 @@ export function parseModelRoutes(raw: string | null | undefined): ModelRoutes {
   return validateModelRoutes(parsed);
 }
 
-export function serializeModelRoutes(v: ModelRoutes): string {
-  return JSON.stringify(validateModelRoutes(v));
-}
-
 // --- resolution ----------------------------------------------------------------------------------------------
 
 /** Everything a resolution reads. Built by `loadRouteInputs`, or by a test. */
@@ -371,8 +367,9 @@ export function writeProfile(inputs: RouteInputs, named?: string): string {
 function withProfile(v: ModelRoutes, profile: string, patch: (p: RoutesProfile) => RoutesProfile): ModelRoutes {
   const current = v.profiles[profile] ?? { routes: {} };
   const next: ModelRoutes = { ...v, profiles: { ...v.profiles, [profile]: patch(current) } };
-  // The first profile ever written becomes the active one, so a write on a fresh setting takes effect.
-  if (next.active === null) next.active = profile;
+  // A write with no profile named, on a fresh setting, lands on `default` and makes it active, so it takes effect.
+  // A profile named on purpose (`--profile`) is only made ready: `ob models use` puts it live.
+  if (next.active === null && profile === DEFAULT_PROFILE) next.active = profile;
   return validateModelRoutes(next);
 }
 
