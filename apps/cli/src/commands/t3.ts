@@ -9,6 +9,7 @@ import { resolveRepoFor } from "../../../../platform/cli-coord/src/commands/spin
 import { doneAgent } from "../../../../platform/cli-coord/src/agent.ts";
 import { addTeam, editTeam, getTeam, joinTeam, leaveTeam, listTeamViews, removeTeam, teamInUseRefusal, teamView } from "../team.ts";
 import { refuseUnreadFlags } from "./capture.ts";
+import { storeConfigIo } from "../model-routes-io.ts";
 import { consumeTeamHandoff, latestTeamHandoff, recordTeamHandoff } from "../team-handoff.ts";
 import { checkoutOf, runRole, runTeam, t3SubcommandReads, type TeamBackend } from "./t3-team.ts";
 import { BROADCAST_AUDIENCES, broadcast, renderBroadcast, type BroadcastAudience, type BroadcastReport } from "../t3/broadcast.ts";
@@ -517,6 +518,7 @@ export function storeTeamBackend(store: Ctx["db"] | NonNullable<Ctx["store"]>): 
     handoffConsume: async (team, id, newThreadId) => {
       await consumeTeamHandoff(store, team, id, newThreadId);
     },
+    configIo: storeConfigIo(store),
   };
 }
 

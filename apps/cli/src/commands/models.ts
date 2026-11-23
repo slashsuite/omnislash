@@ -1,68 +1,56 @@
-import { defineSeam } from "../test-seams.ts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
-import { print } from "../output.ts";
-import { settingFor } from "../settings.ts";
-import { resolveApiBase, resolveApiToken } from "../api/config.ts";
-import { ApiClient } from "../api/client.ts";
-import { DEFAULT_TIER_MODELS, parseTierModels } from "../t3/dispatch.ts";
-import {
-  DEFAULT_CHECKER,
-  DEFAULT_REVIEW_LEGS,
-  DEFAULT_REVIEW_MODELS,
-  canonicalLeg,
-  reviewModelFor,
-  ModelsFileError,
-  SPINOFF_TIERS,
-  activeProfile,
-  initModelsFile,
-  loadModelsFile,
-  modelsFilePath,
-  writeActive,
-  type ModelsFile,
-} from "../models-file.ts";
+import { print, warn } from "../output.ts";
+import { ModelsFileError, initModelsFile, loadModelsFile, modelsFilePath, type ModelsFile } from "../models-file.ts";
 import { CREDIT_HIT_WINDOW_HOURS, recentCreditHits } from "../models-credit.ts";
 import { formatTrendLine, legTrend, readLegRecords } from "../review-legs.ts";
+import { REVIEW_TIERS, ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
+import {
+  ModelRoutesError,
+  activeProfileOf,
+  addReader,
+  checkEffort,
+  hasProfile,
+  parseChain,
+  profileOrderOf,
+  removeReader,
+  resolveAllRoutes,
+  resolveReview,
+  resolveRoute,
+  serverReview,
+  setReaderTier,
+  sourceLabel,
+  withActive,
+  withProfileReview,
+  withRoute,
+  withoutRoute,
+  writeProfile,
+  type ResolvedRoute,
+  type RouteInputs,
+} from "../model-routes.ts";
+import { editModelRoutes, loadRouteInputs, machineConfigIo } from "../model-routes-io.ts";
+import { providerOverWeeklyLimit } from "./usage.ts";
 
 // -----------------------------------------------------------------------------
-// `ob models [show|list|use <profile>|init]` (OB-1969): the machine's models file. Runs on THIS machine,
-// because the file is local to the machine that launches. Only `show` looks at the tracker, for the
-// `spinoff_tier_models` setting, and only to say where each role's model came from.
+// `ob models` (OB-1969, OS-145): which model runs every use. One server setting, `model_routes`, holds the profiles
+// and their routes; this machine's models file (~/.config/ob/models.jsonc) overrides any route of any profile
+// here. Reads go to the API server when this machine is a client, else the store. Every write validates through
+// model-routes.ts. `list`, `init` and `legs` read only this machine.
 // -----------------------------------------------------------------------------
 
-type ModelSource = "file" | "setting" | "default";
-
-interface ModelRole {
-  role: string;
-  model: string;
-  source: ModelSource;
-  /** `file` only: the profile that supplied it. */
-  profile?: string;
-}
-
-const tierSettingSeam = defineSeam<((ctx: Ctx) => Promise<string | null>) | null>("commands/models.tierSettingReader", null);
-/** Test seam: replace the read of `spinoff_tier_models`; `null` puts the real read back. */
-export function __setTierSettingReader(r: ((ctx: Ctx) => Promise<string | null>) | null): void {
-  tierSettingSeam.set(r);
-}
-
-/** `spinoff_tier_models`, raw. `null` when this machine cannot read it (the caller says so). */
-async function readTierSetting(ctx: Ctx): Promise<string | null> {
-  const tierSettingReader = tierSettingSeam.get();
-  if (tierSettingReader) return tierSettingReader(ctx);
-  try {
-    const base = resolveApiBase();
-    if (base) {
-      const cfg = (await new ApiClient({ base, token: resolveApiToken() }).spinoffConfig()).config;
-      return cfg.tier_models ?? "";
-    }
-    return await settingFor(ctx.store ?? ctx.db, "spinoff_tier_models");
-  } catch {
-    return null;
-  }
-}
+const USAGE = [
+  "ob models show [--json]",
+  "ob models get <route>",
+  "ob models set <route> <model>[,<model>...] [--effort low|medium|high|xhigh|max] [--profile <p>]",
+  "ob models unset <route> [--profile <p>]",
+  "ob models use <profile>",
+  "ob models reader add <leg> <model> [--profile <p>]",
+  "ob models reader remove <leg> [--profile <p>]",
+  "ob models reader tier <tier> <leg>... [--profile <p>]",
+  "ob models list | init | legs [--days <n>]",
+].join("\n");
 
 function loadOrRefuse(): ModelsFile | null {
   try {
@@ -73,50 +61,60 @@ function loadOrRefuse(): ModelsFile | null {
   }
 }
 
-/** Every role, its model and where it came from. Pure given its inputs. */
-function describeRoles(file: ModelsFile | null, tierSetting: string): ModelRole[] {
-  const profile = activeProfile(file);
-  const parsed = parseTierModels(tierSetting);
-  if (parsed.error) throw new AppError(`${parsed.error}: fix it with \`ob config set spinoff_tier_models '<json>'\``);
-  // parseTierModels has already refused a non-JSON value, so this parse cannot fail.
-  const named = new Set(Object.keys(tierSetting.trim() ? (JSON.parse(tierSetting) as Record<string, unknown>) : {}));
-  const roles: ModelRole[] = [];
-  for (const tier of SPINOFF_TIERS) {
-    const fromFile = profile?.builder[tier];
-    if (fromFile) roles.push({ role: `builder.${tier}`, model: fromFile, source: "file", profile: file!.active });
-    else if (named.has(tier)) roles.push({ role: `builder.${tier}`, model: parsed.models[tier], source: "setting" });
-    else roles.push({ role: `builder.${tier}`, model: DEFAULT_TIER_MODELS[tier], source: "default" });
+/** Run `fn`, turning the routing module's own errors into named refusals. */
+async function refusing<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof ModelRoutesError || e instanceof ReviewReadersError || e instanceof ModelsFileError) throw new AppError(e.message);
+    throw e;
   }
-  roles.push(
-    profile?.checker
-      ? { role: "checker", model: profile.checker, source: "file", profile: file!.active }
-      : { role: "checker", model: DEFAULT_CHECKER, source: "default" },
-  );
-  // OB-2107: an alias (`review.sonnet`) is shown as the leg it feeds (`review.opus`), not as a leg of its own.
-  const legs = new Set<string>([...DEFAULT_REVIEW_LEGS, ...Object.keys(profile?.review ?? {}).map(canonicalLeg)]);
-  for (const leg of legs) {
-    const fromFile = reviewModelFor(profile?.review, leg);
-    const builtin = (DEFAULT_REVIEW_MODELS as Record<string, string>)[leg];
-    if (fromFile) roles.push({ role: `review.${leg}`, model: fromFile, source: "file", profile: file!.active });
-    else roles.push({ role: `review.${leg}`, model: builtin!, source: "default" });
-  }
-  return roles;
 }
 
-function sourceLabel(r: ModelRole): string {
-  return r.source === "file" ? `file (profile ${r.profile})` : r.source;
+async function io(ctx: Ctx) {
+  return machineConfigIo(ctx.store ?? ctx.db);
+}
+
+function profileFlag(ctx: Ctx): string | undefined {
+  return ctx.flags.profile;
+}
+
+function chainText(r: ResolvedRoute): string {
+  return `${r.chain.join(", ")}${r.effort ? ` (effort ${r.effort})` : ""}`;
+}
+
+function activeLine(inputs: RouteInputs): string {
+  const a = activeProfileOf(inputs);
+  if (a.name === null) return "active profile: (none: every route uses its default)";
+  const where = a.source === "local" ? `this machine's models file${a.hiddenServer ? `, hiding the server's '${a.hiddenServer}'` : ""}` : "server";
+  return `active profile: ${a.name} [${where}]${a.undefinedProfile ? " (no layer defines it: every route uses its default)" : ""}`;
+}
+
+function readersText(v: ReviewReaders): string[] {
+  return REVIEW_TIERS.map((t) => `  ${t.padEnd(7)} ${v.tiers[t].map((l) => `${l}=${v.readers[l]!.model}`).join(", ")}`);
 }
 
 async function show(ctx: Ctx): Promise<void> {
-  const file = loadOrRefuse();
-  const raw = await readTierSetting(ctx);
-  const roles = describeRoles(file, raw ?? "");
-  // OB-1970: profiles that hit a credit or quota error recently (the launch moved past them).
-  const hits = file ? recentCreditHits() : {};
+  const inputs = await refusing(async () => loadRouteInputs(await io(ctx), { quiet: true }));
+  const routes = resolveAllRoutes(inputs);
+  const review = resolveReview(inputs);
+  const active = activeProfileOf(inputs);
+  const hits = recentCreditHits();
   if (ctx.mode === "json") {
     print(
       JSON.stringify(
-        { file: modelsFilePath(), present: file !== null, active: file?.active ?? null, fallback: file?.fallback ?? [], credit_hits: hits, tier_setting_readable: raw !== null, roles },
+        {
+          file: modelsFilePath(),
+          present: inputs.file !== null,
+          active: active.name,
+          active_source: active.source,
+          hidden_server_active: active.hiddenServer ?? null,
+          order: profileOrderOf(inputs),
+          server_error: inputs.serverError,
+          credit_hits: hits,
+          routes: routes.map((r) => ({ route: r.route, profile: r.profile, chain: r.chain, effort: r.effort ?? null, source: r.source, label: sourceLabel(r) })),
+          review: { profile: review.profile, source: review.source, ...review.value },
+        },
         null,
         2,
       ),
@@ -124,21 +122,140 @@ async function show(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.mode === "quiet") {
-    print(roles.map((r) => `${r.role}\t${r.model}\t${r.source}`).join("\n"));
+    print(routes.map((r) => `${r.route}\t${r.chain.join(",")}\t${sourceLabel(r)}`).join("\n"));
     return;
   }
+  const order = profileOrderOf(inputs);
   const lines = [
-    file ? `models file: ${file.path}` : `models file: ${modelsFilePath()} (none: every role uses its setting or default)`,
-    file ? `active profile: ${file.active}${file.fallback.length ? `   fallback: ${file.fallback.join(", ")}` : ""}` : "active profile: (none)",
-    "",
+    inputs.file ? `models file: ${inputs.file.path}` : `models file: ${modelsFilePath()} (none)`,
+    activeLine(inputs),
+    ...(order.length > 1 ? [`fallback order: ${order.join(" -> ")}`] : []),
   ];
+  if (inputs.serverError) lines.push(`note: model_routes could not be read from the server (${inputs.serverError}); showing this machine's file and the defaults`);
   if (Object.keys(hits).length > 0) {
-    lines.splice(2, 0, `out of credits in the last ${CREDIT_HIT_WINDOW_HOURS}h: ${Object.entries(hits).map(([p, at]) => `${p} (${at})`).join(", ")}`);
+    lines.push(`out of credits in the last ${CREDIT_HIT_WINDOW_HOURS}h: ${Object.entries(hits).map(([p, at]) => `${p} (${at})`).join(", ")}`);
   }
-  const width = Math.max(...roles.map((r) => r.role.length));
-  for (const r of roles) lines.push(`${r.role.padEnd(width)}  ${r.model}   [${sourceLabel(r)}]`);
-  if (raw === null) lines.push("", "note: spinoff_tier_models could not be read from this machine, so a builder tier shown as [default] may be set there");
+  lines.push("");
+  const width = Math.max(...routes.map((r) => r.route.length));
+  for (const r of routes) lines.push(`${r.route.padEnd(width)}  ${chainText(r)}   [${sourceLabel(r)}]`);
+  lines.push("", `review readers [${review.source}]:`, ...readersText(review.value));
   print(lines.join("\n"));
+}
+
+/** `ob models get <route>`: the model to run now. The chain's first entry whose provider is under its weekly limit. */
+async function get(ctx: Ctx): Promise<void> {
+  const route = ctx.args[1];
+  if (!route) throw new UsageError("usage: ob models get <route>");
+  const r = await refusing(async () => resolveRoute(await loadRouteInputs(await io(ctx)), route));
+  print(pickUnderLimit(r.chain));
+}
+
+/** The first model whose provider is not over its weekly limit; the first model when none is, or a reading fails. */
+export function pickUnderLimit(chain: readonly string[], over: (model: string) => boolean | null = (m) => providerOverWeeklyLimit(m)): string {
+  for (const model of chain) {
+    let o: boolean | null;
+    try {
+      o = over(model);
+    } catch {
+      o = null;
+    }
+    if (o === null) return chain[0]!;
+    if (!o) return model;
+  }
+  return chain[0]!;
+}
+
+/** The one-line warning a server write owes when this machine's file hides it. */
+function localHidesWarning(inputs: RouteInputs, profile: string, route: string): void {
+  const f = inputs.file?.profiles[profile];
+  if (!f) return;
+  const r = resolveRoute({ ...inputs, server: { ...inputs.server, active: profile }, file: { ...inputs.file!, active: profile } }, route);
+  if (r.source === "local") warn(`note: this machine's models file sets ${route} for profile '${profile}', so here it still runs ${r.chain.join(", ")}`);
+}
+
+async function set(ctx: Ctx): Promise<void> {
+  const [, route, models] = ctx.args;
+  if (!route || !models) throw new UsageError("usage: ob models set <route> <model>[,<model>...] [--effort <lvl>] [--profile <p>]");
+  const rawEffort = ctx.flags.effort;
+  const named = profileFlag(ctx);
+  await refusing(async () => {
+    const chain = parseChain(models);
+    const effort = rawEffort === undefined ? undefined : checkEffort(rawEffort);
+    let profile = "";
+    const { inputs } = await editModelRoutes(await io(ctx), (inputs) => {
+      profile = writeProfile(inputs, named);
+      return withRoute(inputs.server, profile, route, chain, effort);
+    });
+    print(`${route} = ${chain.join(", ")}${effort ? ` (effort ${effort})` : ""} [server, profile ${profile}]`);
+    localHidesWarning(inputs, profile, route);
+  });
+}
+
+async function unset(ctx: Ctx): Promise<void> {
+  const route = ctx.args[1];
+  if (!route) throw new UsageError("usage: ob models unset <route> [--profile <p>]");
+  const named = profileFlag(ctx);
+  await refusing(async () => {
+    let profile = "";
+    const { inputs } = await editModelRoutes(await io(ctx), (inputs) => {
+      profile = writeProfile(inputs, named);
+      return withoutRoute(inputs.server, profile, route);
+    });
+    const now = resolveRoute({ ...inputs, server: { ...inputs.server, active: profile }, file: inputs.file ? { ...inputs.file, active: profile } : null }, route);
+    print(`${route} unset in profile ${profile}: now ${chainText(now)} [${sourceLabel(now)}]`);
+  });
+}
+
+async function use(ctx: Ctx): Promise<void> {
+  const name = ctx.args[1];
+  if (!name) throw new UsageError("usage: ob models use <profile>");
+  await refusing(async () => {
+    let was: string | null = null;
+    const { inputs } = await editModelRoutes(await io(ctx), (inputs) => {
+      if (!hasProfile(inputs, name)) {
+        const known = [...new Set([...Object.keys(inputs.server.profiles), ...Object.keys(inputs.file?.profiles ?? {})])];
+        throw new ModelRoutesError(`unknown profile '${name}': no layer defines it (profiles: ${known.join(", ") || "none"}); \`ob models set <route> <model> --profile ${name}\` creates it`);
+      }
+      was = inputs.server.active;
+      return withActive(inputs.server, name);
+    });
+    print(`active profile: ${name} on the server (was ${was ?? "none"})`);
+    const local = inputs.file?.active ?? null;
+    if (local && local !== name) warn(`note: this machine's models file sets active '${local}', which still wins here (remove its "active" to follow the server)`);
+  });
+}
+
+async function reader(ctx: Ctx): Promise<void> {
+  const [, verb, ...rest] = ctx.args;
+  const named = profileFlag(ctx);
+  const change = (v: ReviewReaders): ReviewReaders => {
+    if (verb === "add") {
+      const [leg, model] = rest;
+      if (!leg || !model) throw new UsageError("usage: ob models reader add <leg> <model>");
+      return addReader(v, leg, model);
+    }
+    if (verb === "remove") {
+      const [leg] = rest;
+      if (!leg) throw new UsageError("usage: ob models reader remove <leg>");
+      return removeReader(v, leg);
+    }
+    if (verb === "tier") {
+      const [tier, ...legs] = rest;
+      if (!tier || legs.length === 0) throw new UsageError("usage: ob models reader tier <tier> <leg>...");
+      return setReaderTier(v, tier, legs);
+    }
+    throw new UsageError(`unknown models reader subcommand '${verb ?? ""}' (add|remove|tier)`);
+  };
+  await refusing(async () => {
+    let profile = "";
+    const { next } = await editModelRoutes(await io(ctx), (inputs) => {
+      profile = writeProfile(inputs, named);
+      return withProfileReview(inputs.server, profile, change(serverReview(inputs, profile).value));
+    });
+    const review = next.profiles[profile]!.review!;
+    if (ctx.mode === "json") return print(JSON.stringify({ profile, ...review }, null, 2));
+    print([`review readers [server, profile ${profile}]:`, ...readersText(review)].join("\n"));
+  });
 }
 
 function list(ctx: Ctx): void {
@@ -153,23 +270,6 @@ function list(ctx: Ctx): void {
   if (ctx.mode === "json") print(JSON.stringify({ file: file.path, present: true, active: file.active, profiles: names, credit_hits: hits }, null, 2));
   else if (ctx.mode === "quiet") print(names.join("\n"));
   else print(names.map((n) => `${n === file.active ? "*" : " "} ${n}${hits[n] ? `   (out of credits at ${hits[n]})` : ""}`).join("\n"));
-}
-
-function use(ctx: Ctx): void {
-  const name = ctx.args[1];
-  if (!name) throw new UsageError("usage: ob models use <profile>");
-  const file = loadOrRefuse();
-  if (!file) throw new AppError(`no models file at ${modelsFilePath()}: \`ob models init\` creates one, then \`ob models use ${name}\``);
-  if (!file.profiles[name]) {
-    throw new AppError(`unknown profile '${name}' in ${file.path} (profiles: ${Object.keys(file.profiles).join(", ")})`);
-  }
-  try {
-    writeActive(file.path, name);
-  } catch (e) {
-    if (e instanceof ModelsFileError) throw new AppError(e.message);
-    throw e;
-  }
-  print(`active profile: ${name} (was ${file.active}) in ${file.path}`);
 }
 
 function init(): void {
@@ -193,9 +293,13 @@ function legs(ctx: Ctx): void {
 export async function cmdModels(ctx: Ctx): Promise<void> {
   const sub = ctx.args[0] ?? "show";
   if (sub === "show") return show(ctx);
-  if (sub === "list") return list(ctx);
+  if (sub === "get") return get(ctx);
+  if (sub === "set") return set(ctx);
+  if (sub === "unset") return unset(ctx);
   if (sub === "use") return use(ctx);
+  if (sub === "reader") return reader(ctx);
+  if (sub === "list") return list(ctx);
   if (sub === "init") return init();
   if (sub === "legs") return legs(ctx);
-  throw new UsageError(`unknown models subcommand '${sub}' (show|list|use <profile>|init|legs)`);
+  throw new UsageError(`unknown models subcommand '${sub}'\n${USAGE}`);
 }

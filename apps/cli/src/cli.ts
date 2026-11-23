@@ -326,6 +326,7 @@ export const FLAGS = {
   check: { type: "boolean" },
   tier: { type: "string" },
   effort: { type: "string" }, // OB-1815: spinoff --effort low|medium|high|xhigh|max
+  profile: { type: "string" }, // OS-145: ob models set|unset|reader --profile <p>
   answers: { type: "string" },
   shareable: { type: "string" },
   adguard: { type: "boolean" },

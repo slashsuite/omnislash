@@ -166,7 +166,7 @@ export function creditErrorOf(err: CreditErrorInput | null | undefined): CreditM
 
 /** The profiles a launch tries, in order: the active one, then `fallback` (duplicates dropped). Pure. */
 export function profileOrder(file: ModelsFile): string[] {
-  return [...new Set([file.active, ...file.fallback])];
+  return [...new Set([...(file.active ? [file.active] : []), ...file.fallback])];
 }
 
 // --- the state file ---------------------------------------------------------

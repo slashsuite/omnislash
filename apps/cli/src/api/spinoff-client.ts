@@ -954,8 +954,8 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     // OB-2075: an urgent ticket runs on complex, so the level is checked against that tier's model.
     const effortTier = (await apiItemUrgent(ctx.client, ticketRef)) ? "complex" : (tier ?? DEFAULT_SPINOFF_TIER);
     // OB-2107: `queue` skips the T3 half (the launch checks it) but not the Opus-high check, which needs no T3.
-    if (queueOnly) refuseOpusHigh(tierModelsOrRefuse(cfg.tierModels), effortTier, effort, flag(ctx, "opus-high"));
-    else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortTier, tierModelsOrRefuse(cfg.tierModels), effort, flag(ctx, "opus-high"));
+    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(), effortTier, effort, flag(ctx, "opus-high"));
+    else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortTier, await tierModelsOrRefuse(), effort, flag(ctx, "opus-high"));
   }
   const mode: SpinoffMode = "interactive";
   let custom = flag(ctx, "brief");

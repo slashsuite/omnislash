@@ -1,91 +1,157 @@
-// OB-1970: a spinoff launch that hits an out-of-credits account moves to the next models profile.
+// OB-1970, OS-145: a spinoff launch that hits an out-of-credits account moves along its route's chain.
 //
-// Two places see the error:
+// A row launches on route `builder.<tier>` (OS-145): the active profile's chain, entry by entry, then the same
+// route in each `fallback` profile, each model tried once (`routeAttempts`). Two places see the error:
 //   1. the launch itself (T3 refuses `t3_thread_launch` with a credit or quota error), handled by
 //      `launchAcrossProfiles` inside the launch call, and
 //   2. the first turn's run, which T3 starts and then ends `failed` with a provider error item. The run
 //      mirror sees that afterwards; `relaunchOnCreditFailure` settles the dead thread and launches the same
-//      row again on the next profile.
+//      row again on the next attempt.
 //
-// Each row is launched at most ONCE per profile: the profiles it ran on live in the local models state file
-// (`models-state.json`), so a relaunch skips them. Only a credit or quota error moves a launch; every other
-// failure is thrown exactly as before. When every profile is spent the row fails with a refusal naming each
-// profile tried.
+// Each row is launched at most ONCE per attempt: the attempts it ran on live in the local models state file
+// (`models-state.json`, as `<profile>|<model>`), so a relaunch skips them. Only a credit or quota error moves a
+// launch; every other failure is thrown exactly as before. Each move records `route <name>: <from> -> <to> (quota)`
+// on the ticket's Decisions trail when the caller can write it. When every attempt is spent the row fails with a
+// refusal naming each one tried.
 
 import { warn } from "../../../apps/cli/src/output.ts";
 import { AppError } from "../../../apps/cli/src/errors.ts";
-import { ModelsFileError, SPINOFF_TIERS, loadModelsFile, type ModelsFile, type ModelsProfile, type SpinoffTier } from "../../../apps/cli/src/models-file.ts";
-import { creditErrorOf, profileOrder, recordCreditHit, recordRowProfile, rowProfiles, type CreditMatch } from "../../../apps/cli/src/models-credit.ts";
-import type { T3LaunchOutcome, T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
+import { ModelsFileError, SPINOFF_TIERS, type SpinoffTier } from "../../../apps/cli/src/models-file.ts";
+import { creditErrorOf, recordCreditHit, recordRowProfile, rowProfiles, type CreditMatch } from "../../../apps/cli/src/models-credit.ts";
+import { ModelRoutesError, activeProfileOf, resolveRouteIn, routeAttempts, routeMoveNote, type RouteAttempt, type RouteInputs } from "../../../apps/cli/src/model-routes.ts";
+import { loadRouteInputs, machineConfigIo } from "../../../apps/cli/src/model-routes-io.ts";
+import type { Database } from "bun:sqlite";
+import type { Store } from "../../../apps/cli/src/db/store.ts";
+import { rowTier, type T3LaunchOutcome, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 
-/** The models file, or a refusal naming it (never a silent launch on the defaults). */
-export function modelsFileOrRefuse(): ModelsFile | null {
+/**
+ * The route inputs on this machine (the local models file, the server's `model_routes` and `spinoff_tier_models`),
+ * or a refusal naming what does not parse (never a silent launch on the defaults). An unreachable server leaves
+ * the file and the defaults, with one stderr line.
+ */
+export async function routeInputsOrRefuse(db?: Database | Store): Promise<RouteInputs> {
   try {
-    return loadModelsFile();
+    return await loadRouteInputs(await machineConfigIo(db));
   } catch (e) {
     if (e instanceof ModelsFileError) throw new AppError(`${e.message}: fix it (\`ob models show\`) or move it aside, then re-run the drain`);
+    if (e instanceof ModelRoutesError) throw new AppError(`${e.message}: fix it (\`ob models show\`), then re-run the drain`);
     throw e;
   }
 }
 
-/** `base` with the profile's builder tiers laid over it, tier by tier (OB-1969). Pure. */
-export function withProfileTiers(base: Readonly<Record<SpinoffTier, string>>, profile: ModelsProfile | null): Record<SpinoffTier, string> {
-  const models = { ...base };
-  for (const tier of SPINOFF_TIERS) if (profile?.builder[tier]) models[tier] = profile.builder[tier]!;
+/** Every tier's first model in the active profile: the tier map a launch carries for the tiers it is not on. Pure. */
+export function routeTierModels(inputs: RouteInputs): Record<SpinoffTier, string> {
+  const active = activeProfileOf(inputs).name;
+  const models = {} as Record<SpinoffTier, string>;
+  for (const tier of SPINOFF_TIERS) models[tier] = resolveRouteIn(inputs, `builder.${tier}`, active).chain[0]!;
   return models;
 }
 
-/** The `(profile X)` the row's model stamp carries when it ran on a fallback profile. Pure. */
-function stampWithProfile(model: string, profile: string, file: ModelsFile): string {
-  return profile === file.active ? model : `${model} (profile ${profile})`;
+/** `row` carrying the route's effort when it names none of its own (OS-145). Pure. */
+export function withRouteEffort<T extends { effort?: string | null }>(row: T, routeEffort: string | undefined): T {
+  if (!routeEffort) return row;
+  const own = row.effort;
+  if (own && !own.startsWith("default")) return row;
+  return { ...row, effort: routeEffort };
 }
 
-interface ProfileTry {
-  profile: string;
+/** The key one attempt is recorded under in the state file. Pure. */
+export function attemptKey(a: RouteAttempt): string {
+  return `${a.profile ?? ""}|${a.model}`;
+}
+
+/** The `(profile X)` the row's model stamp carries when it ran on a fallback profile. Pure. */
+function stampWithProfile(model: string, profile: string | null, active: string | null): string {
+  return profile === null || profile === active ? model : `${model} (profile ${profile})`;
+}
+
+interface AttemptTry {
+  /** `attemptKey` of the attempt. */
+  key: string;
+  label: string;
   reason: string;
 }
 
-/** The refusal when every profile is spent: blocked on credits, each profile and its error named. Pure. */
-function exhaustedMessage(ticket: string, tried: readonly ProfileTry[]): string {
-  const list = tried.map((t) => `${t.profile} (${t.reason})`).join("; ");
-  return `blocked: every models profile is out of credits for ${ticket}: tried ${list}. Top up an account or add a profile to "fallback" (\`ob models show\`), then re-dispatch`;
+function labelOf(a: RouteAttempt): string {
+  return a.profile ? `${a.model} (profile ${a.profile})` : a.model;
 }
 
-/** What the refusal says about one profile: the code, or the phrase the last-resort match found. Short, so a
- *  refusal naming every profile still fits the row's error column. */
+/** The refusal when every attempt is spent: blocked on credits, each attempt and its error named. Pure. */
+function exhaustedMessage(ticket: string, route: string, tried: readonly AttemptTry[]): string {
+  const list = tried.map((t) => `${t.label} (${t.reason})`).join("; ");
+  return `blocked: every model on route ${route} is out of credits for ${ticket}: tried ${list}. Top up an account, or add a model to the chain or a profile to "fallback" (\`ob models set ${route} <model>,<model>\`), then re-dispatch`;
+}
+
+/** What the refusal says about one attempt: the code, or the phrase the last-resort match found. Short, so a
+ *  refusal naming every attempt still fits the row's error column. */
 function reasonOf(match: CreditMatch): string {
   return match.by === "code" ? match.match : `message: "${match.match}"`;
 }
 
+/** Records one move along a route on the ticket's Decisions trail (the caller knows the store, or has none). */
+export type RouteMoveRecorder = (from: string, to: string, note: string) => Promise<void>;
+
+/** A row's launch: the tier map (its own tier on this attempt's model) and the route's effort, for a row with none. */
+export type RouteLaunch = (models: Record<SpinoffTier, string>, routeEffort: string | undefined) => Promise<T3LaunchOutcome>;
+
 /**
- * Launch `row` on the first profile that has credit (OB-1970). `launch` is the real launch for one tier map.
- * No models file: one launch on `base`, as before. With one: the active profile, then `fallback`, skipping
- * `prior` (profiles this row already ran on and spent). Each attempt is recorded against the row first.
+ * Launch `row` on the first attempt of route `builder.<tier>` that has credit (OB-1970, OS-145). Attempts already
+ * spent (`prior`) are skipped, and each attempt is recorded against the row before it runs. With no profile
+ * anywhere there is one attempt and its error is thrown as it came, as before.
  */
 export async function launchAcrossProfiles(
-  row: { id: number; ticket_ref: string },
-  base: Readonly<Record<SpinoffTier, string>>,
-  launch: (models: Record<SpinoffTier, string>) => Promise<T3LaunchOutcome>,
-  prior: readonly ProfileTry[] = [],
-  file: ModelsFile | null = modelsFileOrRefuse(),
+  row: { id: number; ticket_ref: string; tier?: string | null },
+  inputs: RouteInputs,
+  launch: RouteLaunch,
+  prior: readonly AttemptTry[] = [],
+  recordMove?: RouteMoveRecorder,
 ): Promise<T3LaunchOutcome & { profile: string | null }> {
-  if (!file) return { ...(await launch({ ...base })), profile: null };
-  const tried: ProfileTry[] = [...prior];
-  for (const profile of profileOrder(file)) {
-    if (tried.some((t) => t.profile === profile)) continue;
-    recordRowProfile(row.id, profile);
+  const tier = rowTier(row.tier);
+  const route = `builder.${tier}`;
+  const base = routeTierModels(inputs);
+  const active = activeProfileOf(inputs).name;
+  const attempts = routeAttempts(inputs, route);
+  if (attempts.length === 1 && attempts[0]!.profile === null) {
+    return { ...(await launch({ ...base, [tier]: attempts[0]!.model }, undefined)), profile: null };
+  }
+  const tried: AttemptTry[] = [...prior];
+  let last: RouteAttempt | null = null;
+  for (const attempt of attempts) {
+    const key = attemptKey(attempt);
+    if (tried.some((t) => t.key === key)) continue;
+    if (last) await noteMove(recordMove, route, last.model, attempt.model);
+    else if (tried.length > 0) await noteMove(recordMove, route, modelOfKey(tried[tried.length - 1]!.key), attempt.model);
+    recordRowProfile(row.id, key);
+    const effort = resolveRouteIn(inputs, route, attempt.profile).effort;
     try {
-      const outcome = await launch(withProfileTiers(base, file.profiles[profile]!));
-      if (tried.length > 0) warn(`  ↳ ${row.ticket_ref}: ${tried[tried.length - 1]!.profile} out of credits, relaunched on ${profile}`);
-      return { ...outcome, model: stampWithProfile(outcome.model, profile, file), profile };
+      const outcome = await launch({ ...base, [tier]: attempt.model }, effort);
+      if (tried.length > 0) warn(`  ↳ ${row.ticket_ref}: ${tried[tried.length - 1]!.label} out of credits, relaunched on ${labelOf(attempt)}`);
+      return { ...outcome, model: stampWithProfile(outcome.model, attempt.profile, active), profile: attempt.profile };
     } catch (err) {
       const match = creditErrorOf(err as { code?: string; message?: string });
       if (!match) throw err;
-      recordCreditHit(profile);
-      tried.push({ profile, reason: reasonOf(match) });
+      if (attempt.profile) recordCreditHit(attempt.profile);
+      tried.push({ key, label: labelOf(attempt), reason: reasonOf(match) });
+      last = attempt;
     }
   }
-  throw new AppError(exhaustedMessage(row.ticket_ref, tried));
+  throw new AppError(exhaustedMessage(row.ticket_ref, route, tried));
+}
+
+function modelOfKey(key: string): string {
+  return key.slice(key.indexOf("|") + 1);
+}
+
+/** One move's Decisions line, and the same line on stderr. A trail that cannot be written never stops the launch. */
+async function noteMove(record: RouteMoveRecorder | undefined, route: string, from: string, to: string): Promise<void> {
+  const note = routeMoveNote(route, from, to);
+  warn(`  ↳ ${note}`);
+  if (!record) return;
+  try {
+    await record(from, to, note);
+  } catch (err) {
+    warn(`  ⚠ ${note}: not written to the Decisions trail: ${(err as Error).message}`);
+  }
 }
 
 /** The credit error in a thread's error items, or null. T3's error items carry text only, so this is the text match. */
@@ -104,41 +170,46 @@ const FIRST_TURN_ITEMS = 50;
 export interface CreditRelaunchDeps {
   seam: T3Seam;
   /** Launch the row on one tier map (the same launch the drain makes). */
-  launch: (models: Record<SpinoffTier, string>) => Promise<T3LaunchOutcome>;
-  /** `spinoff_tier_models` over the defaults, without any profile. */
-  base: Readonly<Record<SpinoffTier, string>>;
+  launch: RouteLaunch;
+  /** The route inputs (`routeInputsOrRefuse`). */
+  inputs: RouteInputs;
   /** Record the new thread on the row (still `launched`). */
   relaunched: (outcome: T3LaunchOutcome) => Promise<void>;
   /** Fail the row with this reason. */
   fail: (reason: string) => Promise<void>;
-  file?: ModelsFile | null;
+  recordMove?: RouteMoveRecorder;
 }
 
-export type CreditRelaunch = { kind: "none" } | { kind: "relaunched"; profile: string; threadId: string } | { kind: "failed"; reason: string } | { kind: "skipped"; reason: string };
+export type CreditRelaunch = { kind: "none" } | { kind: "relaunched"; profile: string | null; threadId: string } | { kind: "failed"; reason: string } | { kind: "skipped"; reason: string };
 
 /**
- * A row whose FIRST turn ended `failed` on a credit error is relaunched on the next profile (OB-1970). A
- * later turn, a non-credit failure or a machine with no models file is left alone (`none`): the mirror has
- * already recorded the failed run, which is the old behaviour.
+ * A row whose FIRST turn ended `failed` on a credit error is relaunched on the route's next attempt (OB-1970). A
+ * later turn, a non-credit failure or a route with a single attempt is left alone (`none`): the mirror has already
+ * recorded the failed run, which is the old behaviour.
  */
 export async function relaunchOnCreditFailure(
-  row: { id: number; ticket_ref: string },
+  row: { id: number; ticket_ref: string; tier?: string | null },
   threadId: string,
   deps: CreditRelaunchDeps,
 ): Promise<CreditRelaunch> {
-  const file = deps.file === undefined ? modelsFileOrRefuse() : deps.file;
-  if (!file) return { kind: "none" };
+  const attempts = routeAttempts(deps.inputs, `builder.${rowTier(row.tier)}`);
+  if (attempts.length < 2) return { kind: "none" };
   const read = await deps.seam.read(threadId, { afterPosition: 0, limit: FIRST_TURN_ITEMS });
   if (read.recentRuns.length > 1) return { kind: "none" }; // not the first turn: a relaunch would lose its work
   const match = creditErrorInItems(read.items);
   if (!match) return { kind: "none" };
   const ran = rowProfiles(row.id);
-  const spent = ran[ran.length - 1] ?? file.active;
-  recordCreditHit(spent);
-  const prior: ProfileTry[] = [...new Set([...ran, spent])].map((profile) => ({
-    profile,
-    reason: profile === spent ? `first turn: ${reasonOf(match)}` : "out of credits earlier",
-  }));
+  const spentKey = ran[ran.length - 1] ?? attemptKey(attempts[0]!);
+  const spent = attempts.find((a) => attemptKey(a) === spentKey);
+  if (spent?.profile) recordCreditHit(spent.profile);
+  const prior: AttemptTry[] = [...new Set([...ran, spentKey])].map((key) => {
+    const a = attempts.find((x) => attemptKey(x) === key);
+    return {
+      key,
+      label: a ? labelOf(a) : key,
+      reason: key === spentKey ? `first turn: ${reasonOf(match)}` : "out of credits earlier",
+    };
+  });
   try {
     await deps.seam.settle(threadId); // the dead thread would otherwise hold the worktree
   } catch (err) {
@@ -146,7 +217,7 @@ export async function relaunchOnCreditFailure(
   }
   let outcome: Awaited<ReturnType<typeof launchAcrossProfiles>>;
   try {
-    outcome = await launchAcrossProfiles(row, deps.base, deps.launch, prior, file);
+    outcome = await launchAcrossProfiles(row, deps.inputs, deps.launch, prior, deps.recordMove);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     await deps.fail(reason);
@@ -154,5 +225,5 @@ export async function relaunchOnCreditFailure(
   }
   // A live thread exists now: an error recording it is the caller's to report, never a reason to fail the row.
   await deps.relaunched(outcome); // launchAcrossProfiles printed the named "out of credits, relaunched on" line
-  return { kind: "relaunched", profile: outcome.profile ?? file.active, threadId: outcome.threadId };
+  return { kind: "relaunched", profile: outcome.profile, threadId: outcome.threadId };
 }

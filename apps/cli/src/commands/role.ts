@@ -27,7 +27,9 @@ import type { Database } from "bun:sqlite";
 import type { Store } from "../db/store.ts";
 import { markRoleMessagesRead } from "../inbox.ts";
 import { pacingSource, t3Cache } from "./usage.ts";
-import { activeComplexModel } from "../models-file.ts";
+import { resolveRoute } from "../model-routes.ts";
+import { loadRouteInputs, storeConfigIo } from "../model-routes-io.ts";
+import type { ConfigIO } from "../review-readers.ts";
 import { existsSync } from "node:fs";
 import { rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { parseTeamRole } from "../team-handoff.ts";
@@ -73,6 +75,8 @@ export interface RoleBackend {
   note(team: string, role: TeamRole, body: string): Promise<RoleRun>;
   /** OS-56: mark inbox messages read by a run, once its start brief listed them. */
   readMessages(team: string, role: TeamRole, ids: number[], by: string): Promise<unknown>;
+  /** OS-145: the config `model_routes` is read from (absent: this machine's models file and the defaults only). */
+  configIo?: ConfigIO;
 }
 
 export interface RoleRunCtx {
@@ -86,16 +90,15 @@ export interface RoleRunCtx {
 const ROLE_SUBCOMMANDS = "start|status|end|brief|note|tick";
 
 /**
- * The model a role run opens on (OS-129): the active models profile's `builder.complex` model (when present
- * with an explicit provider), else Claude Opus, at the model's default effort (no options sent). The provider
- * is always named, so a run never depends on the T3 project's own default model (a project may have none).
+ * The model a role run opens on (OS-145): route `role.<role>` of the active models profile, whose default is the
+ * profile's builder.complex when one names it, else Claude Opus (`claudeAgent:claude-opus-5-5`), at the model's
+ * default effort (no options sent). The provider is always named, so a run never depends on the T3 project's own
+ * default model (a project may have none).
  */
 const ROLE_RUN_TIER = "complex";
-const DEFAULT_ROLE_RUN_MODEL = `claudeAgent:${DEFAULT_TIER_MODELS[ROLE_RUN_TIER]}`;
 
-function roleRunModel(): string {
-  const active = activeComplexModel();
-  return active ? `${active.providerInstanceId}:${active.model}` : DEFAULT_ROLE_RUN_MODEL;
+async function roleRunModel(backend: RoleBackend, role: TeamRole): Promise<string> {
+  return resolveRoute(await loadRouteInputs(backend.configIo ?? null), `role.${role}`).chain[0]!;
 }
 
 /** The first message a new run's thread gets: the role's skill, a blank line, then the brief. Pure. */
@@ -272,7 +275,7 @@ export async function startRoleRun(backend: RoleBackend, teamName: string, role:
   const cwd = await repoPath();
   const project = t3ProjectFor(await seam.projects(), cwd);
   if (!project) throw new AppError(`no T3 project is registered for ${cwd}; register the checkout as a T3 project (\`t3 project add ${cwd}\`)`);
-  const roleModel = roleRunModel();
+  const roleModel = await roleRunModel(backend, role);
   const resolved = await resolveModelAndEffort(seam, project, ROLE_RUN_TIER, { ...DEFAULT_TIER_MODELS, [ROLE_RUN_TIER]: roleModel }, undefined);
   if ("refusal" in resolved) {
     throw new AppError(`${resolved.refusal.reason}; a role run opens on ${roleModel}, which this machine's T3 must list (\`ob t3 doctor\`)`);
@@ -524,6 +527,7 @@ export function storeRoleBackend(store: Database | Store): RoleBackend {
     noteShown: (team, runId) => markRoleNoteShown(store, team, runId),
     note: (team, role, body) => writeRoleNote(store, team, role, body),
     readMessages: (team, role, ids, by) => markRoleMessagesRead(store, team, role, ids, by),
+    configIo: storeConfigIo(store),
   };
 }
 

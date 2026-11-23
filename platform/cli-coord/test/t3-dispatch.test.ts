@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb, freshDbPath, psTable, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { setConfig } from "../../../apps/cli/src/config.ts";
+import { getConfig, setConfig } from "../../../apps/cli/src/config.ts";
+import { storeConfigIo, teamRoleModelFrom } from "../../../apps/cli/src/model-routes-io.ts";
 import { T3Error, T3_THREAD_STATUSES, type T3Capabilities, type T3LaunchInput, type T3LaunchResult, type T3Project, type T3SendInput, type T3Thread, type T3ThreadListResult, type T3ThreadRead } from "../../../apps/cli/src/t3/client.ts";
 import {
   T3_DEFAULT_RUNTIME_MODE,
@@ -1290,6 +1291,29 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
     expect(fake2.calls.launch).toBe(0);
   });
 
+  test("OS-145: `ob models use claude` changes the server's active, and a role thread opens on that profile's role.architect", async () => {
+    const repo = trackedRepo();
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const antigravityProvider = [{ providerInstanceId: "antigravity", displayName: "Antigravity", models: [{ id: "gemini-4-neon" }], constraints: [] }];
+    expect((await runCli(dbPath, ["models", "set", "role.architect", "antigravity:gemini-4-neon", "--profile", "neon"])).code).toBe(0);
+    expect((await runCli(dbPath, ["models", "set", "role.architect", "claudeAgent:claude-sonnet-5-5", "--profile", "claude"])).code).toBe(0);
+    expect((await runCli(dbPath, ["models", "use", "neon"])).code).toBe(0);
+    const used = await runCli(dbPath, ["models", "use", "claude"]);
+    expect(used.code).toBe(0);
+    expect(used.out).toContain("active profile: claude on the server (was neon)");
+    expect(JSON.parse((await getConfig(db, "model_routes"))!).active).toBe("claude");
+
+    const fake = fakeT3({ repoPath: repo, extraProviders: antigravityProvider });
+    setT3Seam(fake.seam);
+    const roleModel = await teamRoleModelFrom(storeConfigIo(db), "architect");
+    expect(roleModel).toBe("claudeAgent:claude-sonnet-5-5");
+    const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, roleModel });
+    expect(out.created).toBe(true);
+    expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-sonnet-5-5" });
+    db.close();
+  });
+
   test("OS-129: opens on the active profile's builder.complex model and falls back to the project default when unusable", async () => {
     const saved = process.env.OB_MODELS_FILE;
     const dir = trackedDir(mkdtempSync(join(tmpdir(), "ob-team-models-")));
@@ -1311,7 +1335,8 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
         const db = freshDb();
         const fake = fakeT3({ repoPath: repo, defaultModel, extraProviders: antigravityProvider });
         setT3Seam(fake.seam);
-        const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "muse", members: ["omnislash"], repoPath: repo });
+        const roleModel = await teamRoleModelFrom(null, "muse"); // role.* follows builder.complex (OS-145)
+        const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "muse", members: ["omnislash"], repoPath: repo, roleModel });
         expect(out.created).toBe(true);
         expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "antigravity", model: "gemini-4-neon" });
       }
@@ -1321,7 +1346,9 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
       const db = freshDb();
       const fake = fakeT3({ repoPath: repo, extraProviders: antigravityProvider });
       setT3Seam(fake.seam);
-      const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo });
+      const roleModel = await teamRoleModelFrom(null, "architect");
+      expect(roleModel).toBeUndefined();
+      const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, roleModel });
       expect(out.created).toBe(true);
       expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-opus-5-5" });
     } finally {
@@ -1885,7 +1912,7 @@ describe("models file → builder model (OB-1969)", () => {
     return path;
   }
 
-  async function dispatch(tier: string, opts: { catalog?: string[]; tierModels?: string } = {}) {
+  async function dispatch(tier: string, opts: { catalog?: string[]; tierModels?: string; routes?: string } = {}) {
     const dbPath = freshDbPath();
     const db = openDb(dbPath);
     const repo = trackedRepo();
@@ -1894,6 +1921,7 @@ describe("models file → builder model (OB-1969)", () => {
     const fake = fakeT3({ repoPath: repo, catalog: opts.catalog });
     setT3Seam(fake.seam);
     if (opts.tierModels !== undefined) await setConfig(db, "spinoff_tier_models", opts.tierModels);
+    if (opts.routes !== undefined) await setConfig(db, "model_routes", opts.routes);
     const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", "--tier", tier]);
     const drained = queued.code === 0 ? await drainSpinoffs(db) : null;
     const row = (await listSpinoffs(db))[0] ?? null;
@@ -1908,11 +1936,18 @@ describe("models file → builder model (OB-1969)", () => {
     restoreSeam?.();
     restoreSh?.();
 
-    const used = await runCli(freshDbPath(), ["models", "use", "other"]);
+    // OS-145: `use` writes the server's active profile; a local `active` would win on this machine, so the
+    // file here drops its own and the server's pick is the one in force.
+    writeFileSync(path, readFileSync(path, "utf8").replace(/"active": "claude", \/\/ the first\n/, ""));
+    const server = freshDbPath();
+    const used = await runCli(server, ["models", "use", "other"]);
     expect(used.code).toBe(0);
-    expect(readFileSync(path, "utf8")).toContain('"active": "other"');
+    expect(readFileSync(path, "utf8")).not.toContain('"active"');
+    const stored = openDb(server);
+    expect(JSON.parse((await getConfig(stored, "model_routes"))!).active).toBe("other");
 
-    const { fake, drained, row, db, dbPath } = await dispatch("simple");
+    const { fake, drained, row, db, dbPath } = await dispatch("simple", { routes: (await getConfig(stored, "model_routes"))! });
+    stored.close();
     expect(drained!.failed).toEqual([]);
     expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-sonnet-5-5" });
     expect(row!.model).toBe("claudeAgent:claude-sonnet-5-5"); // a provider-qualified tier is stamped qualified (1549)
@@ -2040,10 +2075,48 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(fake.launches).toHaveLength(1);
     expect(row.status).toBe("launched");
     expect(row.model).toBe("claudeAgent:claude-haiku-5-5 (profile other)");
-    expect(stderr).toContain("999: claude out of credits, relaunched on other");
+    expect(stderr).toContain("999: claudeAgent:claude-sonnet-5-5 (profile claude) out of credits, relaunched on claudeAgent:claude-haiku-5-5 (profile other)");
     expect(recentCreditHits()).toHaveProperty("claude");
-    expect(rowProfiles(row.id)).toEqual(["claude", "other"]);
+    expect(rowProfiles(row.id)).toEqual(["claude|claudeAgent:claude-sonnet-5-5", "other|claudeAgent:claude-haiku-5-5"]);
+    expect(stderr).toContain("route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)");
     db.close();
+  });
+
+  test("OS-145: a quota move writes `route <name>: <from> -> <to> (quota)` on the ticket's Decisions trail; a non-quota error does not move", async () => {
+    modelsFile(PROFILES);
+    for (const [refuse, moved] of [
+      [CREDIT, true],
+      [() => new T3Error("refused", "overloaded", undefined, "orchestration_error"), false],
+    ] as const) {
+      const dbPath = freshDbPath();
+      const db = openDb(dbPath);
+      const ref = await createItem(db, { type: "task", title: "a routed build" });
+      const repo = trackedRepo();
+      const worktree = trackedDir(`${repo}.routed`);
+      stubGit();
+      const fake = fakeT3({ repoPath: repo });
+      const launch = fake.seam.launch;
+      setT3Seam({ ...fake.seam, launch: async (i) => (i.modelSelection.model === "claude-sonnet-5-5" ? Promise.reject(refuse()) : launch(i)) });
+      const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", ref, "--repo", repo, "--worktree", worktree, "--launcher", "t3", "--brief", "do it", "--tier", "medium"]);
+      expect(queued.code).toBe(0);
+      captureStderr();
+      await drainSpinoffs(db);
+      restoreStderr?.();
+      restoreStderr = null;
+      const notes = (await decisionsForItem(db, ref)).map((d) => d.note ?? "");
+      const line = "route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
+      if (moved) {
+        expect(notes).toContain(line);
+        expect(fake.launches.map((l) => l.modelSelection.model)).toEqual(["claude-haiku-5-5"]);
+      } else {
+        expect(notes.some((n) => n.startsWith("route "))).toBe(false);
+        expect(fake.launches).toHaveLength(0);
+        expect((await listSpinoffs(db))[0]!.status).toBe("failed");
+      }
+      db.close();
+      restoreSeam?.();
+      restoreSh?.();
+    }
   });
 
   test("a non-credit error never falls back: a rate limit or an outage fails the row on profile A", async () => {
@@ -2071,9 +2144,9 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(attempts).toEqual(["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]);
     expect(row.status).toBe("failed");
     const error = drained.failed[0]!.error;
-    expect(error).toStartWith("blocked: every models profile is out of credits for 999: tried claude (");
-    expect(error).toContain("; other (");
-    expect(error).toContain("; third (");
+    expect(error).toStartWith("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (");
+    expect(error).toContain("; claudeAgent:claude-haiku-5-5 (profile other) (");
+    expect(error).toContain("; claudeAgent:claude-opus-5-5 (profile third) (");
     expect(Object.keys(recentCreditHits()).sort()).toEqual(["claude", "other", "third"]);
     db.close();
   });
@@ -2121,7 +2194,7 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(after.status).toBe("launched");
     expect(after.t3_thread_id).toBe("t3-2");
     expect(after.model).toBe("claudeAgent:claude-haiku-5-5 (profile other)");
-    expect(stderr).toContain("999: claude out of credits, relaunched on other");
+    expect(stderr).toContain("999: claudeAgent:claude-sonnet-5-5 (profile claude) out of credits, relaunched on claudeAgent:claude-haiku-5-5 (profile other)");
     db.close();
   });
 
@@ -2150,9 +2223,9 @@ describe("credit error → next models profile (OB-1970)", () => {
     await relaunchCreditFailures(db, (await reconcileT3Runs(db)).mirrored);
     const after = (await listSpinoffs(db)).find((r) => r.id === row.id)!;
     expect(after.status).toBe("failed");
-    expect(after.error).toContain("blocked: every models profile is out of credits for 999: tried claude (first turn: message:");
-    expect(after.error).toContain("other (");
-    expect(after.error).toContain("third (");
+    expect(after.error).toContain("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn: message:");
+    expect(after.error).toContain("(profile other) (");
+    expect(after.error).toContain("(profile third) (");
     db.close();
   });
 });
