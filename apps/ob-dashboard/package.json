@@ -20,6 +20,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.3.5",
     "@tanstack/router-cli": "^1.168.0",
     "@tanstack/router-plugin": "^1.132.0",

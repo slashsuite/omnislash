@@ -5,3 +5,5 @@ routeTree.gen.ts
 .tanstack
 dist
 *.log
+test-results/
+playwright-report/

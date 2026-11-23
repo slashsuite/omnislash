@@ -19,7 +19,10 @@ export function ObFrame({ children }: { children: ReactNode }) {
         <>
           <Tabs
             label="Pages"
-            items={[{ label: "Tokens", selected: pathname === "/tokens", href: "/tokens" }]}
+            items={[
+              { label: "Tokens", selected: pathname === "/tokens", href: "/tokens" },
+              { label: "Models", selected: pathname === "/models", href: "/models" },
+            ]}
           />
           <AlertBell />
           <LiveBadge />

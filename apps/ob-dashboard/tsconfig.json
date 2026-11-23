@@ -1,5 +1,5 @@
 {
-  "include": ["src", "test", "serve.ts", "serve-handler.ts", "provided-store.ts"],
+  "include": ["src", "test", "serve.ts", "serve-handler.ts", "provided-store.ts", "e2e", "playwright.config.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

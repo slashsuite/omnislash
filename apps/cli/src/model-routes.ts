@@ -406,6 +406,19 @@ export function withActive(v: ModelRoutes, profile: string): ModelRoutes {
   return validateModelRoutes({ ...v, active: checkProfileName(profile, "profile") });
 }
 
+/**
+ * Put `name` live for everyone (`ob models use`, the dashboard's Models page). The server's active is every
+ * machine's, so it may only name a profile the server defines; one only in this machine's file is refused by name.
+ */
+export function useProfile(inputs: RouteInputs, name: string): ModelRoutes {
+  if (!Object.hasOwn(inputs.server.profiles, name)) {
+    const known = Object.keys(inputs.server.profiles);
+    const localOnly = inputs.file && Object.hasOwn(inputs.file.profiles, name) ? ` (it is only in this machine's models file: set "active" there for this machine)` : "";
+    throw new ModelRoutesError(`unknown profile '${name}': the server defines no such profile${localOnly} (server profiles: ${known.join(", ") || "none"}); \`ob models set <route> <model> --profile ${name}\` creates it`);
+  }
+  return withActive(inputs.server, name);
+}
+
 /** `review` written onto `profile`, starting from what that profile runs on the server today. */
 export function withProfileReview(v: ModelRoutes, profile: string, review: ReviewReaders): ModelRoutes {
   return withProfile(v, profile, (p) => ({ ...p, review: validateReviewReaders(review) }));

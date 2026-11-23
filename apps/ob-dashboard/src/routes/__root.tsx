@@ -1,4 +1,5 @@
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
 import { appShellRootClassFor } from "@hackcove/ui-react";
@@ -24,6 +25,10 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // OS-146: the ready marker browser tests wait on (ob-ui-testing rule 2): set once React has hydrated.
+  useEffect(() => {
+    document.documentElement.dataset.hydrated = "true";
+  }, []);
   return (
     <html lang="en" className={appShellRootClassFor("dark")}>
       <head>
