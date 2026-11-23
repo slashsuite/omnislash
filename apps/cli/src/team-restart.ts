@@ -16,6 +16,14 @@ import {
 } from "./t3/dispatch.ts";
 import { teamRoleAgentId, teamThreadIdOf, TEAM_ROLES, type TeamRole, type TeamView } from "./team.ts";
 import type { HandoffFilter, TeamHandoff } from "./team-handoff.ts";
+import { teamRoleModelFrom } from "./model-routes-io.ts";
+import type { ConfigIO } from "./review-readers.ts";
+
+/** `{ roleModel }` for ensureTeamThread when route role.<role> names one, else nothing (the project default). */
+export async function roleModelFor(io: ConfigIO | undefined, role: TeamRole): Promise<{ roleModel?: string }> {
+  const model = await teamRoleModelFrom(io ?? null, role);
+  return model ? { roleModel: model } : {};
+}
 
 /** The store half a restart reads and writes: the team, its role rows and its handoffs. */
 export interface RestartBackend {
@@ -30,6 +38,8 @@ export interface RestartBackend {
   handoffConsume(team: string, id: number, newThreadId: string): Promise<void>;
   /** Where a new thread opens when the old thread's T3 project cannot be read: the cwd's checkout. */
   cwdRepo(): Promise<string>;
+  /** OS-145: the config `model_routes` is read from (absent: this machine's models file and the defaults only). */
+  configIo?: ConfigIO;
 }
 
 export interface RestartOptions {
@@ -302,6 +312,7 @@ export async function restartTeamRole(backend: RestartBackend, team: TeamView, r
       repoPath,
       seam,
       seedMessage: teamRestartSeedMessage(team.name, role, team.members, repoPath, { body: handoff.body, oldThreadId }),
+      ...(await roleModelFor(backend.configIo, role)),
     });
     if (!outcome.created) {
       return out({ oldThreadId, result: "failed", reason: `no new thread was opened (${outcome.message}); handoff ${handoff.id} stays held, re-run to resume`, newThreadId: null, handoffId: handoff.id });

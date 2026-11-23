@@ -1553,23 +1553,48 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
 
   models: {
     section: "Reviews & Models",
-    summary: "Inspect and switch active model profiles in models.jsonc",
-    usage: ["models [show|list|use <profile>|init|legs]"],
+    summary: "Which model runs every use: routes, profiles, chains, review readers",
+    usage: ["models [show|get|set|unset|use|reader|list|init|legs]"],
     subcommands: {
       show: {
-        summary: "Print active profile and resolved model per role",
-        usage: ["models [show]"],
-        examples: ["models show"],
+        summary: "Print the active profile and every route, labelled local, server or default",
+        usage: ["models [show] [--json]"],
+        examples: ["models show", "models show --json"],
       },
-      list: {
-        summary: "List defined profiles and mark the active one",
-        usage: ["models list"],
-        examples: ["models list"],
+      get: {
+        summary: "Print the model a route runs now (first chain entry under its weekly limit)",
+        usage: ["models get <route>"],
+        examples: ["models get sweep.first", "models get builder.medium"],
+      },
+      set: {
+        summary: "Set a route's fallback chain (and effort) in a server profile",
+        usage: ["models set <route> <model>[,<model>...] [--effort <level>] [--profile <p>]"],
+        flags: [
+          { flag: "--effort <level>", description: "low, medium, high, xhigh or max" },
+          { flag: "--profile <p>", description: "The profile to write (default: the active one, else 'default')" },
+        ],
+        examples: ["models set builder.medium claudeAgent:claude-opus-5-5,antigravity:gemini-4-neon", "models set job.nightly claude-haiku-5-5 --effort low"],
+      },
+      unset: {
+        summary: "Remove a route from a server profile (it falls back to its default)",
+        usage: ["models unset <route> [--profile <p>]"],
+        examples: ["models unset builder.medium"],
       },
       use: {
-        summary: "Switch the active profile in models.jsonc",
+        summary: "Make a profile active on the server (a local active wins on its machine)",
         usage: ["models use <profile>"],
-        examples: ["models use antigravity"],
+        examples: ["models use claude"],
+      },
+      reader: {
+        summary: "Add or remove a review reader, or set the readers a tier runs",
+        usage: ["models reader add <leg> <model>", "models reader remove <leg>", "models reader tier <tier> <leg>..."],
+        flags: [{ flag: "--profile <p>", description: "The profile to write (default: the active one)" }],
+        examples: ["models reader add glm glm-5.3-flash", "models reader tier simple glm"],
+      },
+      list: {
+        summary: "List this machine's models-file profiles and mark its active one",
+        usage: ["models list"],
+        examples: ["models list"],
       },
       init: {
         summary: "Copy models.example.jsonc to ~/.config/ob/models.jsonc",
@@ -1583,8 +1608,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["models legs --days 7"],
       },
     },
-    examples: ["models show", "models use default", "models legs"],
-    notes: ["Runs locally even on an API client; override file path with OB_MODELS_FILE."],
+    examples: ["models show", "models get sweep.first", "models use claude", "models legs"],
+    notes: [
+      "Routes: builder.<tier>, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
+      "Precedence: the local models file, then the server's model_routes, then the default.",
+      "A launch moves along a route's chain only on a credit or quota error.",
+      "On a client, reads and writes go to the API server; OB_MODELS_FILE moves the local file.",
+    ],
   },
 
   usage: {

@@ -1,15 +1,14 @@
 import type { Ctx } from "../ctx.ts";
 import type { Flags } from "../ctx.ts";
-import { getConfig, setConfig } from "../config.ts";
+import { editModelRoutes, loadRouteInputs, storeConfigIo } from "../model-routes-io.ts";
+import { ModelRoutesError, resolveReview, serverReview, withProfileReview, writeProfile } from "../model-routes.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, type Mode } from "../output.ts";
 import {
   REVIEW_TIERS,
   ReviewReadersError,
   isReviewTier,
-  loadReviewReaders,
   readersForTier,
-  saveReviewReaders,
   withReader,
   withTier,
   withoutReader,
@@ -18,8 +17,9 @@ import {
 } from "../review-readers.ts";
 
 // -----------------------------------------------------------------------------
-// `ob review readers` (OB-2173): which skeptical-review readers run, on which model, per task tier. The
-// value is the server's `review_readers` setting, the one the dashboard's Reviewers page edits. The same
+// `ob review readers` (OB-2173): which skeptical-review readers run, on which model, per task tier. Since
+// OS-145 the value is the active models profile's `review` in `model_routes` (the old `review_readers` setting is
+// read only as its default; `ob models reader` writes the same value). The same
 // code runs locally (the store) and in API mode (the API client), through a ConfigIO.
 // -----------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ function table(v: ReviewReaders, stored: boolean): string {
     (l) =>
       `${l.padEnd(w)}  ${v.readers[l]!.model.padEnd(mw)}  ${REVIEW_TIERS.map((t) => (v.tiers[t].includes(l) ? "on" : "-").padEnd(t.length)).join("  ")}`.trimEnd(),
   );
-  const note = stored ? [] : ["(review_readers is unset: these are the defaults)"];
+  const note = stored ? [] : ["(no profile sets review readers: these are the defaults)"];
   return [head, ...rows, ...note].join("\n");
 }
 
@@ -50,7 +50,8 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
   const sub = args[1];
   try {
     if (sub === undefined) {
-      const { stored, value } = await loadReviewReaders(io);
+      // OS-145: the active models profile's readers (`model_routes`), the local file's legs laid over them.
+      const { stored, value } = resolveReview(await loadRouteInputs(io));
       if (flags.tier !== undefined) {
         const tier = tierOf(flags.tier, "--tier");
         const list = readersForTier(value, tier);
@@ -64,19 +65,26 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
       else print(table(value, stored));
       return;
     }
+    // Writes land on the active profile's `review` in `model_routes` (OS-145), never on `review_readers`.
+    const write = async (change: (v: ReviewReaders) => ReviewReaders): Promise<ReviewReaders> => {
+      const { next, inputs } = await editModelRoutes(io, (inputs) => {
+        const profile = writeProfile(inputs);
+        return withProfileReview(inputs.server, profile, change(serverReview(inputs, profile).value));
+      });
+      return next.profiles[writeProfile(inputs)]!.review!;
+    };
     if (sub === "set") {
       const leg = args[2];
       if (!leg || !flags.model) throw new UsageError("review readers set requires <leg> --model <id>");
-      const { value } = await loadReviewReaders(io);
-      const next = await saveReviewReaders(io, withReader(value, leg, flags.model));
+      const model = flags.model;
+      const next = await write((v) => withReader(v, leg, model));
       print(mode === "json" ? JSON.stringify(next, null, 2) : `${leg} ${next.readers[leg]!.model}`);
       return;
     }
     if (sub === "rm") {
       const leg = args[2];
       if (!leg) throw new UsageError("review readers rm requires <leg>");
-      const { value } = await loadReviewReaders(io);
-      const next = await saveReviewReaders(io, withoutReader(value, leg));
+      const next = await write((v) => withoutReader(v, leg));
       print(mode === "json" ? JSON.stringify(next, null, 2) : `removed ${leg}`);
       return;
     }
@@ -84,13 +92,12 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
       const tier = tierOf(args[2], "review readers tier <tier>");
       const legs = args.slice(3);
       if (legs.length === 0) throw new UsageError("review readers tier requires <tier> <leg>... (at least one reader)");
-      const { value } = await loadReviewReaders(io);
-      const next = await saveReviewReaders(io, withTier(value, tier, legs));
+      const next = await write((v) => withTier(v, tier, legs));
       print(mode === "json" ? JSON.stringify(next, null, 2) : `${tier}: ${next.tiers[tier].join(" ")}`);
       return;
     }
   } catch (e) {
-    if (e instanceof ReviewReadersError) throw new AppError(e.message);
+    if (e instanceof ReviewReadersError || e instanceof ModelRoutesError) throw new AppError(e.message);
     throw e;
   }
   throw new UsageError(`unknown review readers subcommand '${sub}' (set|rm|tier)`);
@@ -98,8 +105,5 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
 
 export async function cmdReview(ctx: Ctx): Promise<void> {
   const store = ctx.store ?? ctx.db;
-  await runReview(ctx.args, ctx.flags, ctx.mode, {
-    get: (k) => getConfig(store, k),
-    set: (k, v) => setConfig(store, k, v),
-  });
+  await runReview(ctx.args, ctx.flags, ctx.mode, storeConfigIo(store));
 }

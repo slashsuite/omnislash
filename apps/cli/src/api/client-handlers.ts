@@ -12,6 +12,7 @@
 // in miniature -- a command that ran, exited 0, and did not do what it said.
 //
 // There is no database here and no fallback to one. An unreachable API is an error (map decision D2).
+import { apiConfigIo } from "../model-routes-io.ts";
 import { stageIn } from "../stage.ts";
 import { checkoutOf, runRole, runTeam, t3SubcommandReads, type TeamBackend } from "../commands/t3-team.ts";
 import { AppError, UsageError } from "../errors.ts";
@@ -686,6 +687,7 @@ function apiTeamBackend(ctx: ApiCtx): TeamBackend {
 		handoffConsume: async (team, id, newThreadId) => {
 			await client.teamHandoffConsume(team, id, newThreadId);
 		},
+		configIo: apiConfigIo(client),
 	};
 }
 
@@ -750,6 +752,8 @@ export function apiRoleBackend(ctx: ApiCtx): import("../commands/role.ts").RoleB
 		},
 		note: async (team, role, body) => (await client.roleNote(team, { role, body })).run,
 		readMessages: async (team, role, ids, by) => (await client.roleMessagesRead(team, role, ids, by)).messages,
+		// OS-145: `model_routes` is the server's config row.
+		configIo: apiConfigIo(client),
 	};
 }
 
@@ -1269,12 +1273,7 @@ async function apiCreds(ctx: ApiCtx): Promise<void> {
 
 /** OB-2173: `ob review readers` over the config endpoint (the review_readers key). */
 async function apiReview(ctx: ApiCtx): Promise<void> {
-	await runReview(ctx.args, ctx.flags, ctx.mode, {
-		get: async (k) => (await ctx.client.config(k)).config[0]?.value ?? null,
-		set: async (k, v) => {
-			await ctx.client.configSet({ key: k, value: v });
-		},
-	});
+	await runReview(ctx.args, ctx.flags, ctx.mode, apiConfigIo(ctx.client));
 }
 
 async function apiConfig(ctx: ApiCtx): Promise<void> {

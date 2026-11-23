@@ -7,7 +7,8 @@ import { print } from "../output.ts";
 import { defineSeam } from "../test-seams.ts";
 import { resolveApiBase, resolveApiToken } from "../api/config.ts";
 import { ApiClient } from "../api/client.ts";
-import { activeComplexModel } from "../models-file.ts";
+import { loadModelsFile, splitTierModel } from "../models-file.ts";
+import { readRoutesCache, resolveRoute } from "../model-routes.ts";
 
 // -----------------------------------------------------------------------------
 // `ob usage day` (OB-2278): where the Claude tokens went over a window, read from the transcripts Claude
@@ -403,7 +404,27 @@ const CLAUDE_PACING: PacingSource = {
  * models file, no `builder.complex`, or a bare id). Never throws.
  */
 export function pacingSource(env: Record<string, string | undefined> = process.env): PacingSource {
-  return activeComplexModel(env)?.providerInstanceId === "antigravity" ? ANTIGRAVITY_PACING : CLAUDE_PACING;
+  return providerOfComplex(env) === "antigravity" ? ANTIGRAVITY_PACING : CLAUDE_PACING;
+}
+
+/**
+ * The provider of route builder.complex's first model (OS-145), from the local models file and the last
+ * `model_routes` this machine read (a sync read: pacing never waits on the network). Null for a bare id, or a
+ * malformed file. Never throws.
+ */
+function providerOfComplex(env: Record<string, string | undefined>): string | null {
+  try {
+    const file = loadModelsFile(env);
+    const first = resolveRoute({ file, legacyReaders: null, ...readRoutesCache(env) }, "builder.complex").chain[0];
+    return first ? (splitTierModel(first)?.providerInstanceId ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The pacing source a model's provider reads: Antigravity's cache for `antigravity`, else Claude's. Pure. */
+function pacingSourceForModel(model: string): PacingSource {
+  return splitTierModel(model)?.providerInstanceId === "antigravity" ? ANTIGRAVITY_PACING : CLAUDE_PACING;
 }
 
 /** `usageLimits.checkedAt`, falling back to the top-level `checkedAt`, or null. Pure. */
@@ -442,6 +463,17 @@ function readWeekly(file: string, now: Date, windowId: string): WeeklyWindow | n
   } catch {
     return null;
   }
+}
+
+/**
+ * OS-145 (`ob models get`): is `model`'s provider over its weekly limit, from the same T3 cache pacing reads?
+ * True at 100% used or more, false under it, null when the cache cannot be read (the caller then takes the
+ * chain's first model).
+ */
+export function providerOverWeeklyLimit(model: string, now: Date = new Date(), env: Record<string, string | undefined> = process.env): boolean | null {
+  const source = pacingSourceForModel(model);
+  const w = readWeekly(t3Cache(env, source), now, source.windowId);
+  return w ? w.usedPercent >= 100 : null;
 }
 
 // --- the command ---------------------------------------------------------------

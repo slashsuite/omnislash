@@ -71,8 +71,9 @@ A reader the owner left on is run; it is not skipped in advance because `ob cred
 
 Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall time, model, diff size, exit, tokens where the tool leaves them) to `review-legs.jsonl` beside the models file, and `ob models legs` prints the trend per model per day. Run the leg from your rebased worktree so the diff size is right.
 
-- **Where a leg's model comes from.** `review-leg.ts` reads `review_readers` once
-  (`ob review readers --json`): a leg named there runs on that model, with one attempt (no profile fallback).
+- **Where a leg's model comes from.** `review-leg.ts` reads the readers in force once
+  (`ob review readers --json`: the active profile's `review` in `model_routes`, set with `ob models reader`, else the
+  old `review_readers` key): a leg named there runs on that model, with one attempt (no profile fallback).
   Otherwise the machine's `~/.config/ob/models.jsonc` (`ob models show`, the active profile's `review` map), then the
   built-in table. An `antigravity:` model runs through `agy`, an `opencode/` or `opencode-go/` model runs through opencode, anything else through claude. A leg
   whose model comes from the setting prints `review-leg: <leg> runs <model> (review_readers)` on stderr. If the setting cannot be read (API down) it says so

@@ -29,6 +29,51 @@ export function splitTierModel(value: string): { providerInstanceId: string | nu
   return { providerInstanceId, model };
 }
 
+/** The tier → model map when `spinoff_tier_models` sets nothing. Overridable per tier. */
+export const DEFAULT_TIER_MODELS: Readonly<Record<SpinoffTier, string>> = {
+  complex: "claude-opus-5-5",
+  medium: "claude-sonnet-5-5",
+  simple: "claude-haiku-5-5",
+};
+
+export function isSpinoffTier(s: string): s is SpinoffTier {
+  return (SPINOFF_TIERS as readonly string[]).includes(s);
+}
+
+export function emptyHalfOf(value: string): "provider" | "model" | "provider or model" {
+  if (/^\s*:/.test(value)) return "provider";
+  if (/:\s*$/.test(value)) return "model";
+  return "provider or model";
+}
+
+/**
+ * The `spinoff_tier_models` setting, read over the defaults: a JSON object naming the model for any of the
+ * tiers (`{"simple":"claude-haiku-5-5"}`); a tier it leaves out keeps its default. Malformed JSON, an
+ * unknown tier or a non-string model is an ERROR, not an empty map — a typo here would otherwise send a
+ * build to the default without a word. Pure.
+ */
+export function parseTierModels(raw: string | null | undefined): { models: Record<SpinoffTier, string>; error: string | null } {
+  const models = { ...DEFAULT_TIER_MODELS };
+  const text = (raw ?? "").trim();
+  if (!text) return { models, error: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { models, error: `spinoff_tier_models is not JSON: ${text}` };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { models, error: `spinoff_tier_models must be a JSON object of tier → model, got ${text}` };
+  }
+  for (const [tier, model] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!isSpinoffTier(tier)) return { models, error: `spinoff_tier_models names '${tier}', which is not a tier (${SPINOFF_TIERS.join("|")})` };
+    if (typeof model !== "string" || !model.trim()) return { models, error: `spinoff_tier_models.${tier} must be a model id string` };
+    if (!splitTierModel(model.trim())) return { models, error: `spinoff_tier_models.${tier} '${model.trim()}' has an empty ${emptyHalfOf(model.trim())} — a qualified value needs a provider AND a model around the first colon, or a bare model id` };
+    models[tier] = model.trim();
+  }
+  return { models, error: null };
+}
+
 /** The skeptical-review legs' built-in models. `review-leg.ts` and `ob models show` both read this one table. */
 export const DEFAULT_REVIEW_MODELS = {
   neon: "antigravity:gemini-4-neon",
@@ -69,16 +114,79 @@ export const DEFAULT_CHECKER = "claude-haiku-5-5";
 /** The file did not parse or does not make sense. The message names the file and what is wrong. */
 export class ModelsFileError extends Error {}
 
+// --- OS-145: model routes --------------------------------------------------------------------------------
+// The fixed route names, effort levels and one route's spec live here (not in model-routes.ts) because this
+// file parses a local file's `routes` and must stay free of every other ob import.
+
+/** Every route with a fixed name. `job.<name>` routes are open-ended (see `isRouteName`). */
+export const FIXED_ROUTES = [
+  "builder.simple",
+  "builder.medium",
+  "builder.complex",
+  "checker",
+  "role.architect",
+  "role.sentinel",
+  "role.muse",
+  "sweep.first",
+  "sweep.escalate",
+  "subagent.explore",
+  "subagent.fixup",
+] as const;
+export type FixedRoute = (typeof FIXED_ROUTES)[number];
+
+/** A daily scheduled prompt's route: `job.` and a lowercase name. */
+export const JOB_ROUTE = /^job\.[a-z0-9-]+$/;
+
+export function isRouteName(name: string): boolean {
+  return (FIXED_ROUTES as readonly string[]).includes(name) || JOB_ROUTE.test(name);
+}
+
+/** The route-name refusal, naming every fixed route and the job form. Pure. */
+export function routeNameRejection(name: string): string {
+  return `'${name}' is not a route (use ${FIXED_ROUTES.join(", ")} or job.<name>, a name of lowercase letters, digits and dashes)`;
+}
+
+/** The effort levels a route may name. Anything else is refused by name; omitted means the launcher's default. */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type RouteEffort = (typeof EFFORT_LEVELS)[number];
+
+export function isRouteEffort(v: string): v is RouteEffort {
+  return (EFFORT_LEVELS as readonly string[]).includes(v);
+}
+
+/** One route: the models tried in order (a credit or quota error moves to the next), and an optional effort. */
+export interface RouteSpec {
+  chain: string[];
+  effort?: RouteEffort;
+}
+
+/** A route's spec checked: a non-empty chain of model ids and a known effort. Throws `ModelsFileError` naming `where`. Pure. */
+export function checkRouteSpec(where: string, v: unknown): RouteSpec {
+  if (!isObject(v)) throw new ModelsFileError(`${where} must be an object with a "chain" list`);
+  if (!Array.isArray(v.chain) || v.chain.length === 0) throw new ModelsFileError(`${where}.chain must be a list of at least one model id`);
+  const chain = v.chain.map((m, i) => modelString(where, `chain[${i}]`, m));
+  const spec: RouteSpec = { chain: [...new Set(chain)] };
+  if (v.effort !== undefined) {
+    if (typeof v.effort !== "string" || !isRouteEffort(v.effort)) throw new ModelsFileError(`${where}.effort '${String(v.effort)}' is not an effort level (use ${EFFORT_LEVELS.join(", ")})`);
+    spec.effort = v.effort;
+  }
+  for (const key of Object.keys(v)) if (key !== "chain" && key !== "effort") throw new ModelsFileError(`${where} has an unknown key '${key}' (use chain, effort)`);
+  return spec;
+}
+
 export interface ModelsProfile {
   builder: Partial<Record<SpinoffTier, string>>;
   checker?: string;
   /** Review leg name (`neon`, `opus`, `deepseek`, `luna`, ...; `sonnet` is read as `opus`) to model id. */
   review: Record<string, string>;
+  /** OS-145: route overrides for this machine (`builder.medium`, `role.architect`, `job.<name>`, ...). */
+  routes: Record<string, RouteSpec>;
 }
 
 export interface ModelsFile {
   path: string;
-  active: string;
+  /** The profile this machine runs, overriding the server's `model_routes.active` (OS-145). Null when the file names none. */
+  active: string | null;
   fallback: string[];
   profiles: Record<string, ModelsProfile>;
 }
@@ -137,7 +245,14 @@ function modelString(path: string, where: string, v: unknown): string {
   return model;
 }
 
-/** Parse and validate the file's text. Throws `ModelsFileError` naming `path` and the fault. Pure. */
+/**
+ * Parse and validate the file's text. Throws `ModelsFileError` naming `path` and the fault. Pure.
+ *
+ * OS-145: the file is a per-machine override of the server's `model_routes`, so `"active"`, `"fallback"` and
+ * `"profiles"` are each optional, and a profile they name may be defined on the server instead of here (the
+ * resolver refuses one defined nowhere). Each profile may add `"routes"`; `builder`, `checker` and `review` keep
+ * working and map to builder.*, checker and the review readers.
+ */
 export function parseModelsFile(text: string, path: string): ModelsFile {
   let raw: unknown;
   try {
@@ -146,12 +261,12 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
     throw new ModelsFileError(`${path} is not valid JSON with comments: ${(e as Error).message}`);
   }
   if (!isObject(raw)) throw new ModelsFileError(`${path}: the top level must be a JSON object`);
-  if (typeof raw.active !== "string" || !raw.active.trim()) throw new ModelsFileError(`${path}: "active" must name a profile`);
-  if (!isObject(raw.profiles) || Object.keys(raw.profiles).length === 0) throw new ModelsFileError(`${path}: "profiles" must be an object with at least one profile`);
+  if (raw.active !== undefined && (typeof raw.active !== "string" || !raw.active.trim())) throw new ModelsFileError(`${path}: "active" must name a profile`);
+  if (raw.profiles !== undefined && !isObject(raw.profiles)) throw new ModelsFileError(`${path}: "profiles" must be an object of profile name to profile`);
   const profiles: Record<string, ModelsProfile> = {};
-  for (const [name, p] of Object.entries(raw.profiles)) {
+  for (const [name, p] of Object.entries((raw.profiles ?? {}) as Record<string, unknown>)) {
     if (!isObject(p)) throw new ModelsFileError(`${path}: profile '${name}' must be an object`);
-    const profile: ModelsProfile = { builder: {}, review: {} };
+    const profile: ModelsProfile = { builder: {}, review: {}, routes: {} };
     if (p.builder !== undefined) {
       if (!isObject(p.builder)) throw new ModelsFileError(`${path}: profile '${name}'.builder must be an object of tier to model`);
       for (const [tier, model] of Object.entries(p.builder)) {
@@ -166,19 +281,22 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
       if (!isObject(p.review)) throw new ModelsFileError(`${path}: profile '${name}'.review must be an object of leg to model`);
       for (const [leg, model] of Object.entries(p.review)) profile.review[leg] = modelString(path, `profile '${name}'.review.${leg}`, model);
     }
+    if (p.routes !== undefined) {
+      if (!isObject(p.routes)) throw new ModelsFileError(`${path}: profile '${name}'.routes must be an object of route to {chain, effort}`);
+      for (const [route, spec] of Object.entries(p.routes)) {
+        if (!isRouteName(route)) throw new ModelsFileError(`${path}: profile '${name}'.routes: ${routeNameRejection(route)}`);
+        profile.routes[route] = checkRouteSpec(`${path}: profile '${name}'.routes.${route}`, spec);
+      }
+    }
     profiles[name] = profile;
   }
-  const active = raw.active.trim();
-  if (!Object.hasOwn(profiles, active)) throw new ModelsFileError(`${path}: "active" names profile '${active}', which is not defined (profiles: ${Object.keys(profiles).join(", ")})`);
+  const active = typeof raw.active === "string" ? raw.active.trim() : null;
   let fallback: string[] = [];
   if (raw.fallback !== undefined) {
-    if (!Array.isArray(raw.fallback) || raw.fallback.some((f) => typeof f !== "string")) {
+    if (!Array.isArray(raw.fallback) || raw.fallback.some((f) => typeof f !== "string" || !f.trim())) {
       throw new ModelsFileError(`${path}: "fallback" must be an array of profile names`);
     }
     fallback = (raw.fallback as string[]).map((f) => f.trim());
-    for (const f of fallback) {
-      if (!Object.hasOwn(profiles, f)) throw new ModelsFileError(`${path}: "fallback" names profile '${f}', which is not defined (profiles: ${Object.keys(profiles).join(", ")})`);
-    }
   }
   return { path, active, fallback, profiles };
 }
@@ -201,64 +319,7 @@ export function loadModelsFile(env: Record<string, string | undefined> = process
 
 /** The active profile of a loaded file, or `null` for no file. */
 export function activeProfile(file: ModelsFile | null): ModelsProfile | null {
-  return file && Object.hasOwn(file.profiles, file.active) ? file.profiles[file.active]! : null;
-}
-
-/**
- * The active profile's complex-tier model, split into its provider instance and model id (OS-129).
- * Returns `null` when there is no models file, it is malformed/unreadable, the active profile names
- * no `builder.complex`, or that value is a bare model id with no provider. Never throws, so pacing
- * (`ob next`, `ob usage`, `ob role brief`) and role-thread launches can fall back cleanly.
- */
-export function activeComplexModel(
-  env: Record<string, string | undefined> = process.env,
-): { providerInstanceId: string; model: string } | null {
-  let file: ModelsFile | null;
-  try {
-    file = loadModelsFile(env);
-  } catch {
-    return null;
-  }
-  const raw = activeProfile(file)?.builder.complex;
-  if (!raw) return null;
-  const split = splitTierModel(raw);
-  if (!split || !split.providerInstanceId) return null;
-  return { providerInstanceId: split.providerInstanceId, model: split.model };
-}
-
-/**
- * Set `"active"` by editing that one value in the raw text, so comments and layout survive. The key is
- * found in the comment-blanked copy (same offsets), so a commented-out `"active": "x"` is never the one
- * edited. Throws when the file has no `"active"` string. Pure.
- */
-export function setActiveInText(text: string, profile: string, path = "models file"): string {
-  const blank = stripJsonComments(text);
-  // Walk the blanked copy tracking brace/bracket depth and strings, so only a TOP-LEVEL "active" key
-  // (depth 1) is edited, never one nested inside a profile.
-  let depth = 0;
-  for (let i = 0; i < blank.length; i++) {
-    const c = blank[i]!;
-    if (c === "{" || c === "[") depth++;
-    else if (c === "}" || c === "]") depth--;
-    else if (c === '"') {
-      let j = i + 1;
-      while (j < blank.length && blank[j] !== '"' && blank[j] !== "\n") j += blank[j] === "\\" ? 2 : 1;
-      if (depth === 1 && blank.slice(i + 1, j) === "active") {
-        const m = /^\s*:\s*"((?:[^"\\\n]|\\.)*)"/.exec(blank.slice(j + 1));
-        if (m) {
-          const valueStart = j + 1 + m[0].lastIndexOf('"' + m[1] + '"');
-          return text.slice(0, valueStart) + JSON.stringify(profile) + text.slice(valueStart + m[1]!.length + 2);
-        }
-      }
-      i = j;
-    }
-  }
-  throw new ModelsFileError(`${path}: no top-level "active" value to edit`);
-}
-
-/** Write `profile` as the active one in the file at `path`. */
-export function writeActive(path: string, profile: string): void {
-  writeFileSync(path, setActiveInText(readFileSync(path, "utf8"), profile, path));
+  return file && file.active !== null && Object.hasOwn(file.profiles, file.active) ? file.profiles[file.active]! : null;
 }
 
 /** Copy `from` to `path`, creating the directory. The caller has already refused an existing file. */

@@ -36,7 +36,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { asStore, type Store } from "../db/store.ts";
 import { warn } from "../output.ts";
 import { UsageError } from "../errors.ts";
-import { activeComplexModel, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
+import { DEFAULT_TIER_MODELS, emptyHalfOf, isSpinoffTier, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
 import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
 import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
@@ -499,27 +499,11 @@ export interface ModelResolution {
  * costs. The tier picks the model instead; the architect's rubric for it lives in the ob-architect skill.
  */
 export { SPINOFF_TIERS, splitTierModel, type SpinoffTier };
+// OS-145: the tier defaults and the setting parser moved to models-file.ts, which the route resolver shares.
+export { DEFAULT_TIER_MODELS, isSpinoffTier, parseTierModels } from "../models-file.ts";
 
 /** A dispatch that names no tier runs on this one: forgetting to rate costs Sonnet, not Opus. */
 export const DEFAULT_SPINOFF_TIER: SpinoffTier = "medium";
-
-/** The tier → model map when `spinoff_tier_models` sets nothing. Overridable per tier. */
-export const DEFAULT_TIER_MODELS: Readonly<Record<SpinoffTier, string>> = {
-  complex: "claude-opus-5-5",
-  medium: "claude-sonnet-5-5",
-  simple: "claude-haiku-5-5",
-};
-
-/** Which half of a malformed `<provider>:<model>` value is empty, so the refusal can say it (1549). Pure. */
-function emptyHalfOf(value: string): "provider" | "model" | "provider or model" {
-  if (/^\s*:/.test(value)) return "provider";
-  if (/:\s*$/.test(value)) return "model";
-  return "provider or model";
-}
-
-export function isSpinoffTier(s: string): s is SpinoffTier {
-  return (SPINOFF_TIERS as readonly string[]).includes(s);
-}
 
 /** The rejection for an unknown `--tier <value>`. Pure. */
 export function tierRejection(prefix: string, value: string): string {
@@ -597,11 +581,11 @@ export function effortRejection(prefix: string, value: string): string {
 
 /**
  * The level a ROW asks for: the word `queue` recorded, or undefined for a row that named none. The column
- * also holds what a launch STAMPED (`high`, `default (high)`, `default (none listed)`), so a `default (...)`
- * text reads as "none named". Any other value is a refusal, never a guess (as `rowTier`).
+ * also holds what a launch STAMPED (`high`, `default (high)`, `default (none listed)`, `route (low)`), so a
+ * `default (...)` or `route (...)` text reads as "none named": a relaunch takes the route's effort afresh (OS-145). Any other value is a refusal, never a guess (as `rowTier`).
  */
 function rowEffort(raw: string | null | undefined): SpinoffEffort | undefined {
-  if (raw === null || raw === undefined || raw === "" || raw.startsWith("default")) return undefined;
+  if (raw === null || raw === undefined || raw === "" || raw.startsWith("default") || raw.startsWith("route")) return undefined;
   if (isSpinoffEffort(raw)) return raw;
   throw new T3Error("refused", effortRejection("the row's effort", raw), `re-dispatch with --effort ${SPINOFF_EFFORTS.join("|")}`);
 }
@@ -636,33 +620,6 @@ function effortFor(model: T3ProviderModel | undefined, modelId: string, requeste
   return { resolution: { options: [{ id: option.id, value: requested }], stamp: requested }, error: null };
 }
 
-/**
- * The `spinoff_tier_models` setting, read over the defaults: a JSON object naming the model for any of the
- * tiers (`{"simple":"claude-haiku-5-5"}`); a tier it leaves out keeps its default. Malformed JSON, an
- * unknown tier or a non-string model is an ERROR, not an empty map — a typo here would otherwise send a
- * build to the default without a word. Pure.
- */
-export function parseTierModels(raw: string | null | undefined): { models: Record<SpinoffTier, string>; error: string | null } {
-  const models = { ...DEFAULT_TIER_MODELS };
-  const text = (raw ?? "").trim();
-  if (!text) return { models, error: null };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { models, error: `spinoff_tier_models is not JSON: ${text}` };
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { models, error: `spinoff_tier_models must be a JSON object of tier → model, got ${text}` };
-  }
-  for (const [tier, model] of Object.entries(parsed as Record<string, unknown>)) {
-    if (!isSpinoffTier(tier)) return { models, error: `spinoff_tier_models names '${tier}', which is not a tier (${SPINOFF_TIERS.join("|")})` };
-    if (typeof model !== "string" || !model.trim()) return { models, error: `spinoff_tier_models.${tier} must be a model id string` };
-    if (!splitTierModel(model.trim())) return { models, error: `spinoff_tier_models.${tier} '${model.trim()}' has an empty ${emptyHalfOf(model.trim())} — a qualified value needs a provider AND a model around the first colon, or a bare model id` };
-    models[tier] = model.trim();
-  }
-  return { models, error: null };
-}
 
 /**
  * The model a launch runs on (1480): the TIER's model, on the T3 project's own provider instance.
@@ -798,6 +755,8 @@ export interface T3DispatchRow {
   effort?: string | null;
   /** OB-1991: a model trial leg's own model, which beats the tier's (and any profile's). */
   trial_model?: string | null;
+  /** OS-145: the route's effort, used when the row names none and the model lists that level. */
+  route_effort?: string | null;
 }
 
 /** How many `t3_thread_list` pages the adoption scan will walk before giving up rather than guessing. */
@@ -1080,7 +1039,17 @@ export async function launchT3Spinoff(
   }
   // OB-1991: a trial leg launches on the trial's model for its leg, whatever the tier (or a profile) says.
   const models = row.trial_model ? { ...tierModels, [tier]: row.trial_model } : tierModels;
-  const resolved = await resolveModelAndEffort(seam, project, tier, models, rowEffort(row.effort));
+  const own = rowEffort(row.effort);
+  const routeEffort = own === undefined && row.route_effort && isSpinoffEffort(row.route_effort) ? row.route_effort : undefined;
+  let resolved = await resolveModelAndEffort(seam, project, tier, models, own ?? routeEffort);
+  if ("refusal" in resolved && routeEffort !== undefined) {
+    // OS-145: the route's effort is a preference across its chain; a model that does not take it runs at its default.
+    const plain = await resolveModelAndEffort(seam, project, tier, models, undefined);
+    if (!("refusal" in plain)) {
+      warn(`  ↳ ${row.ticket_ref}: ${models[tier]} does not take the route's effort ${routeEffort}; it runs at its default`);
+      resolved = plain;
+    }
+  }
   if ("refusal" in resolved) {
     throw new T3Error(
       "refused",
@@ -1088,7 +1057,8 @@ export async function launchT3Spinoff(
       resolved.refusal.remedy,
     );
   }
-  const { model, effort } = resolved;
+  const { model } = resolved;
+  const effort = own === undefined && resolved.effort.options ? { ...resolved.effort, stamp: `route (${resolved.effort.stamp})` } : resolved.effort;
 
   const existing = await findThreadForWorktree(seam, project.id, row);
   const stamp = model.stamp ?? model.selection.model;
@@ -1253,6 +1223,11 @@ export async function ensureTeamThread(
     seam?: T3Seam;
     /** The first message a NEW thread gets in place of `teamSeedMessage` (`ob t3 team restart`'s handoff seed, OB-2257). */
     seedMessage?: string;
+    /**
+     * OS-145: the model a NEW thread opens on, route `role.<role>` (`teamRoleModel`). Absent opens on the T3
+     * project's default model, which is what a route nobody set means for a team thread.
+     */
+    roleModel?: string;
   },
 ): Promise<TeamThreadOutcome> {
   const seam = input.seam ?? (await t3Seam());
@@ -1331,13 +1306,12 @@ export async function ensureTeamThread(
       `register the checkout as a T3 project`,
     );
   }
-  const profile = activeComplexModel();
-  const tierModel = profile ? `${profile.providerInstanceId}:${profile.model}` : undefined;
+  const tierModel = input.roleModel;
   const caps = tierModel ? await capabilitiesWithModel(seam, project, tierModel) : await seam.capabilities();
   const model = modelSelectionFor(project, caps, tierModel);
   if (!model.selection) {
     const remedy = model.tierConfig
-      ? `set builder.complex (${tierModel}) in the active models profile (\`ob models show\`) to one T3 lists`
+      ? `set role.${role} (${tierModel}) to a model T3 lists (\`ob models set role.${role} <model>\`)`
       : `set ${project.title}'s default model in T3 Code (Project settings, model)`;
     throw new T3Error("refused", `${model.error ?? "no model resolved"}; ${remedy}`, remedy);
   }

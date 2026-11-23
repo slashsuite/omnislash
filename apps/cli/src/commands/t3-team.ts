@@ -10,7 +10,7 @@ import type { Project } from "../project.ts";
 import { parseProjectList, parseTeamLabel, TEAM_ROLES, teamRoleAgentId, type Team, type TeamRole, type TeamView } from "../team.ts";
 import { unpinTeamThreads } from "../team-thread.ts";
 import { parseTeamRole, type TeamHandoff } from "../team-handoff.ts";
-import { forwardLateHandoff, RESTART_DEFAULT_TIMEOUT_MS, restartTeams, type RestartBackend, type RoleRestartOutcome } from "../team-restart.ts";
+import { forwardLateHandoff, RESTART_DEFAULT_TIMEOUT_MS, restartTeams, roleModelFor, type RestartBackend, type RoleRestartOutcome } from "../team-restart.ts";
 import { T3_THREAD_ENV } from "../../../../platform/cli-coord/src/lease-wait-title.ts";
 import { bodyFromFlags } from "./doc.ts";
 import { ensureTeamThread, t3Seam, type AgentRegistry, type T3Seam, type TeamThreadOutcome } from "../t3/dispatch.ts";
@@ -390,6 +390,7 @@ export async function runRole(ctx: TeamRunCtx, backend: TeamBackend, role: TeamR
     repoPath,
     ...(thread ? { adoptThreadId: thread } : {}),
     ...(seam ? { seam } : {}),
+    ...(thread ? {} : await roleModelFor(backend.configIo, role)),
   });
   const teamCreated = writeTeam ? await writeTeam() : null;
   if (ctx.mode === "json") print(JSON.stringify({ ...outcome, team_created: teamCreated !== null }, null, 2));

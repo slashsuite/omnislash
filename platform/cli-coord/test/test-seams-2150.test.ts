@@ -122,7 +122,6 @@ test("every exported test seam is defined with defineSeam", async () => {
       "github-issues.setIssueState",
       "t3/dispatch.t3Seam",
       "t3/read.rowSource",
-      "commands/models.tierSettingReader",
     ]),
   );
 });

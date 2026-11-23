@@ -362,7 +362,7 @@ Measure twice, cut once. After the drill-down and before `ob spinoff`, score the
 | size | clearly several builds | large for one PR | fits one PR |
 
 1. **Seal yours.** Write your scores, expected files and a two-sentence "does" in scratch, away from the ticket (`ob note` appends to the body) and away from the text the checker reads.
-2. **Run the checker.** On the model `ob models show` names for `checker` (the active profile of `~/.config/ob/models.jsonc`, else Haiku), through your harness (on Claude: `Agent`, type `Explore`, `model:` that model, foreground; this short read-only check is the one in-process subagent an architect runs), or the cheapest model on another provider. A checker that fails says so and never counts as a pass. Give it exactly the text the builder's launch gets (`ob spinoff brief <ref>`; no architect score appears in it), then:
+2. **Run the checker.** On the model `ob models get checker` prints (route `checker`: this machine's `~/.config/ob/models.jsonc`, then the server's `model_routes`, else Haiku), through your harness (on Claude: `Agent`, type `Explore`, `model:` that model, foreground; this short read-only check is the one in-process subagent an architect runs), or the cheapest model on another provider. A checker that fails says so and never counts as a pass. Give it exactly the text the builder's launch gets (`ob spinoff brief <ref>`; no architect score appears in it), then:
 
    ```
    You are checking a ticket before a builder starts it. You have only the text below, and read-only access to
@@ -405,7 +405,7 @@ A spike is a bounded investigation for what cannot be found by reading: it takes
 
 Every `ob spinoff <ref>` carries **`--tier complex|medium|simple`**, and the tier picks the builder's model:
 complex: Opus, medium: Opus, simple: Haiku (`claudeAgent:claude-haiku-5-5`)
-(`~/.config/ob/models.jsonc` and `spinoff_tier_models` override any of them). Rate it yourself; do not ask the owner to.
+(route `builder.<tier>`: `ob models get builder.medium` prints it, and `ob models set builder.<tier> <model>,<fallback>` changes it for everyone). Rate it yourself; do not ask the owner to.
 
 **No Sonnet anywhere.** Sonnet's results were unimpressive, so Opus on the default effort level replaces it. The medium tier runs Opus, and every Opus build runs at its default effort: send no `--effort` unless a failed build earns one more level (below). A machine whose `models.jsonc` still names Sonnet for a tier or a review leg is changed to Opus.
 

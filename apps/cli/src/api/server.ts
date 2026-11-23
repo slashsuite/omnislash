@@ -250,6 +250,16 @@ function optBool(o: Record<string, unknown>, key: string): boolean | undefined {
   return v as boolean;
 }
 
+/** OS-145: a stamp's `route_moves`, each `{from, to, note}` of strings; anything else is refused. */
+function optRouteMoves(o: Record<string, unknown>): Array<{ from: string; to: string; note: string }> | undefined {
+  const v = o.route_moves;
+  if (v === undefined || v === null) return undefined;
+  const ok = (m: unknown): m is { from: string; to: string; note: string } =>
+    typeof m === "object" && m !== null && ["from", "to", "note"].every((k) => typeof (m as Record<string, unknown>)[k] === "string");
+  if (!Array.isArray(v) || !v.every(ok)) bad("'route_moves' must be an array of {from, to, note} strings");
+  return v.map((m) => ({ from: m.from, to: m.to, note: m.note }));
+}
+
 function optStringArray(o: Record<string, unknown>, key: string): string[] | undefined {
   const v = o[key];
   if (v === undefined || v === null) return undefined;
@@ -1281,6 +1291,7 @@ async function route(
           effort: optString(body, "effort") ?? null,
           raised: optBool(body, "raised") ?? false,
           error: optString(body, "error") ?? null,
+          route_moves: optRouteMoves(body),
         }),
       );
     }

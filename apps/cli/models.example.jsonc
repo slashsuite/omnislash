@@ -1,6 +1,7 @@
-// ob models file (OB-1969). Copy to ~/.config/ob/models.jsonc with `ob models init`.
-// One file says which model runs what, grouped into profiles (one per account).
-// `ob models use <profile>` changes "active"; `ob models show` prints what runs where.
+// ob models file (OB-1969): this machine's LOCAL OVERRIDE. Copy to ~/.config/ob/models.jsonc with `ob models init`.
+// Since OS-145 the shared setting is the server's `model_routes` (`ob models set|use|reader` write it); anything
+// this file names wins over it on this machine only, and its "active" wins over the server's here.
+// `ob models show` prints every route with where it came from (local, server or default).
 // Model values use the <provider>:<model> form for builders: the provider is a T3 provider
 // instance id, a bare id runs on the T3 project's own provider. Model ids only: no secret here.
 {
@@ -20,6 +21,10 @@
       },
       // The blind scorer in the planner's measure-twice step.
       "checker": "claude-haiku-5-5",
+      // Any route, as a fallback chain with an optional effort (OS-145). Routes: builder.simple|medium|complex,
+      // checker, role.architect|sentinel|muse, sweep.first, sweep.escalate, subagent.explore, subagent.fixup,
+      // job.<name>. An entry here beats the same route in "builder" / "checker" above.
+      // "routes": { "role.architect": { "chain": ["claudeAgent:claude-opus-5-5"], "effort": "high" } },
       // The skeptical-review legs. An antigravity: id runs through agy, an opencode/ or opencode-go/ id
       // runs through opencode, anything else through claude, so a profile may move a leg between
       // providers. Default legs when review_readers is unset are `neon` and `opus` (`deepseek` and

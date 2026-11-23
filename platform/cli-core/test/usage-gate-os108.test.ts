@@ -117,27 +117,6 @@ describe("the gate's reading (OS-108)", () => {
 });
 
 describe("OS-129: active models profile pacing (Antigravity vs Claude)", () => {
-  test("activeComplexModel splits qualified builder.complex and returns null on absent/malformed/bare profiles", async () => {
-    const { activeComplexModel } = await import("../../../apps/cli/src/models-file.ts");
-    const dir = mkdtempSync(join(tmpdir(), "ob-os129-models-"));
-    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
-
-    const write = (name: string, body: string) => {
-      const p = join(dir, name);
-      writeFileSync(p, body);
-      return p;
-    };
-
-    expect(activeComplexModel({ OB_MODELS_FILE: join(dir, "missing.jsonc") })).toBeNull();
-    expect(activeComplexModel({ OB_MODELS_FILE: write("bad.jsonc", "{ not json") })).toBeNull();
-    expect(activeComplexModel({ OB_MODELS_FILE: write("no-complex.jsonc", JSON.stringify({ active: "a", profiles: { a: { builder: { simple: "antigravity:gemini-4-neon" } } } })) })).toBeNull();
-    expect(activeComplexModel({ OB_MODELS_FILE: write("bare.jsonc", JSON.stringify({ active: "a", profiles: { a: { builder: { complex: "gemini-4-neon" } } } })) })).toBeNull();
-    expect(activeComplexModel({ OB_MODELS_FILE: write("ag.jsonc", JSON.stringify({ active: "antigravity", profiles: { antigravity: { builder: { complex: "antigravity:gemini-4-neon" } } } })) })).toEqual({
-      providerInstanceId: "antigravity",
-      model: "gemini-4-neon",
-    });
-  });
-
   test("pacingSource and t3Cache pick antigravity.json/gemini-weekly for Antigravity and claudeAgent.json/seven_day otherwise; OB_USAGE_T3_CACHE wins", async () => {
     const { pacingSource, t3Cache } = await import("../../../apps/cli/src/commands/usage.ts");
     const dir = mkdtempSync(join(tmpdir(), "ob-os129-src-"));

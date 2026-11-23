@@ -144,6 +144,9 @@ export interface Flags {
   "spawn-failed"?: boolean;
   /** 1205: `ob spinoff handoff --no-note`, stamp only; the caller IS the architect the note would go to. */
   "no-note"?: boolean;
+  /** OS-145: `ob models set <route> <models> --effort <lvl> --profile <p>` (spinoff reads --effort too). */
+  effort?: string;
+  profile?: string;
   /** OB-2107: `ob spinoff <ref> --opus-high '<his ask>'`, the owner's quoted ask to run Opus above its default effort. */
   "opus-high"?: string;
   /** OB-1991: the model trial's flags (`ob spinoff <ref> --no-trial`, `ob spinoff trial ...`). */

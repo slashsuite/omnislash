@@ -65,8 +65,7 @@ import {
   workHasLanded,
   type Commit,
 } from "../../../../apps/cli/src/tracker-link.ts";
-import { activeProfile } from "../../../../apps/cli/src/models-file.ts";
-import { launchAcrossProfiles, modelsFileOrRefuse, relaunchOnCreditFailure, withProfileTiers } from "../spinoff-credit.ts";
+import { launchAcrossProfiles, relaunchOnCreditFailure, routeInputsOrRefuse, routeTierModels, withRouteEffort, type RouteMoveRecorder } from "../spinoff-credit.ts";
 import { readSpinoffTokens, readOpencodeSpinoffTokens, readRowTokens, tokensForRow, type TokenReader, formatTokens, rootOpencodeSessionId, tokenSourceFor, type TokenUsage } from "../spinoff-tokens.ts";
 import { parseSince, reportMix } from "../spinoff-mix.ts";
 import { abandonSpinoff, renderAbandon, type AbandonDeps } from "../spinoff-abandon.ts";
@@ -87,7 +86,6 @@ import {
   refuseRaisedOpusHigh,
   announceReadyNote,
   isSpinoffTier,
-  parseTierModels,
   tierFitLine,
   tierFitOf,
   tierRejection,
@@ -886,7 +884,7 @@ export async function enqueueSpinoff(
     // The ask is the quote the dispatch's own note carries, so the API's enqueue is checked the same way.
     if (active.status === "pending" && !isTrialRow(active) && ((wantTier && wantTier !== active.tier) || (input.effort && input.effort !== active.effort))) {
       const tier: SpinoffTier = wantTier ?? priorTier ?? DEFAULT_SPINOFF_TIER;
-      refuseOpusHigh(tierModelsOrRefuse(await settingFor(s, "spinoff_tier_models")), tier, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
+      refuseOpusHigh(await tierModelsOrRefuse(s), tier, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
     }
     if (wantTier && wantTier !== active.tier && active.status === "pending") {
       await s.q.update(s.t.spinoff).set({ tier: wantTier }).where(eq(s.t.spinoff.id, active.id));
@@ -1320,10 +1318,12 @@ export async function t3LauncherFor(db: Database | Store, row: SpinoffRow): Prom
   // after queueing, or a row queued before the rule). The stamp records the raise on the row; an adopted
   // thread keeps its own model.
   const { row: launchRow, urgent, raisedFrom } = await urgentLaunchRow(db, row);
-  const outcome = await launchAcrossProfiles(launchRow, settingTierModelsOrRefuse(await settingFor(db, "spinoff_tier_models")), (models) => {
-    refuseRaisedOpusHigh(launchRow, models, raisedFrom); // OB-2107
-    return launchT3Spinoff(seam, launchRow, repoPath, title, models, urgent);
-  });
+  // OS-145: the row's route `builder.<tier>`, moving along its chain on a quota error.
+  const outcome = await launchAcrossProfiles(launchRow, await routeInputsOrRefuse(db), (models, routeEffort) => {
+    const r = withRouteEffort(launchRow, routeEffort);
+    refuseRaisedOpusHigh(r, models, raisedFrom); // OB-2107
+    return launchT3Spinoff(seam, r, repoPath, title, models, urgent);
+  }, [], routeMoveRecorder(db, row));
   if (urgent) warnUrgentTier(row.ticket_ref, raisedFrom, outcome.adopted);
   warn(
     outcome.adopted
@@ -1414,18 +1414,16 @@ export function renderLaunchedLine(row: SpinoffRow, threadId: string | null, mod
  * it: the launcher's throw is what stamps the row `failed` with the reason, and a malformed map must not
  * quietly launch every tier at its default.
  */
-export function tierModelsOrRefuse(raw: string | null | undefined): Record<SpinoffTier, string> {
-  // OB-1969: the machine's models file wins over the setting, tier by tier; a tier it leaves out keeps the
-  // setting's or the default. The file is local to the machine that launches, so this is read here and
-  // never over the API. A file that does not parse refuses by name rather than launching on the defaults.
-  return withProfileTiers(settingTierModelsOrRefuse(raw), activeProfile(modelsFileOrRefuse()));
+export async function tierModelsOrRefuse(db?: Database | Store): Promise<Record<SpinoffTier, string>> {
+  // OS-145: each tier's route `builder.<tier>` in the active profile (local file, then the server's
+  // `model_routes`, then `spinoff_tier_models` over the defaults), first chain entry. A value that does not parse
+  // refuses by name rather than launching on the defaults.
+  return routeTierModels(await routeInputsOrRefuse(db));
 }
 
-/** `spinoff_tier_models` over the defaults, with no models-file profile laid over it (OB-1970), or a throw. */
-export function settingTierModelsOrRefuse(raw: string | null | undefined): Record<SpinoffTier, string> {
-  const { models, error } = parseTierModels(raw);
-  if (error) throw new AppError(`${error}: fix it with \`ob config set spinoff_tier_models '<json>'\` (or set it to '' for the defaults), then re-run the drain`);
-  return models;
+/** OS-145: a move along a row's route, written to its ticket's Decisions trail. */
+export function routeMoveRecorder(db: Database | Store, row: SpinoffRow): RouteMoveRecorder {
+  return (from, to, note) => recordRowDecision(db, row, from, to, { note });
 }
 
 /** One row of `probeArgv`'s output. */
@@ -1900,6 +1898,8 @@ export interface StampInput {
   error?: string | null;
   /** 1515: why this stamp (a `--note` from the caller), recorded on the row's item. */
   decision?: DecisionOpts;
+  /** OS-145: a client launch's moves along its route, written on the item's Decisions trail by the host. */
+  route_moves?: ReadonlyArray<{ from: string; to: string; note: string }>;
 }
 
 /** A row `reclaim` took back from a machine that claimed it and never came back. */
@@ -2099,6 +2099,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
   }
   // The claim is answered either way, so nothing has to wait for its TTL to know this row is settled.
   await releaseLease(s, spinoffClaimKey(row.id), row.branch);
+  for (const m of input.route_moves ?? []) await recordRowDecision(s, row, m.from, m.to, { note: m.note });
   // 1515: the row's own move, on its item's trail — queued/launching -> building/landed.
   await recordRowDecision(
     s,
@@ -3107,14 +3108,13 @@ export async function landedTicketRefs(
 export async function relaunchCreditFailures(db: Database | Store, mirrored: readonly T3MirrorEntry[]): Promise<void> {
   const failed = mirrored.filter((m) => m.status === "failed");
   if (failed.length === 0) return;
-  let file: ReturnType<typeof modelsFileOrRefuse>;
+  let inputs: Awaited<ReturnType<typeof routeInputsOrRefuse>>;
   try {
-    file = modelsFileOrRefuse();
+    inputs = await routeInputsOrRefuse(db);
   } catch (err) {
     warn(`  ⚠ credit-fallback check skipped: ${(err as Error).message}`);
     return;
   }
-  if (!file) return; // no models file: nothing to fall back to, and nothing asked of T3
   const s = asStore(db);
   for (const entry of failed) {
     try {
@@ -3130,10 +3130,10 @@ export async function relaunchCreditFailures(db: Database | Store, mirrored: rea
       const repoPath = await rowRepoPathFor(db, row.repo);
       const title = await ticketTitleFor(db, row.ticket_ref, row.item_id);
       const result = await relaunchOnCreditFailure(row, entry.threadId, {
-        file,
+        inputs,
         seam,
-        base: settingTierModelsOrRefuse(await settingFor(db, "spinoff_tier_models")),
-        launch: (models) => launchT3Spinoff(seam, row, repoPath, title, models),
+        launch: (models, routeEffort) => launchT3Spinoff(seam, withRouteEffort(row, routeEffort), repoPath, title, models),
+        recordMove: routeMoveRecorder(db, row),
         relaunched: async (outcome) => {
           await moveSpinoff(s, row.id, "launched", { t3_thread_id: outcome.threadId, t3_run_id: outcome.runId, model: outcome.model, effort: outcome.effort, tier: row.tier }, ["launched"]);
           await registerAgent(s, { id: builderIdOf(row), ticket: legRef(row.ticket_ref, row.trial_leg), branch: row.branch, sessionId: outcome.threadId, ttlS: AGENT_LEASE_TTL_S });
@@ -5476,12 +5476,26 @@ export async function launchRowIn(
   ticketTitle?: string | null,
   /** OB-2075: the item is urgent (the host sent the raised row), so an adopted thread keeps its model. */
   urgent?: { raisedFrom: string | null } | null,
+  /** OS-145: collects the moves along the route, which the caller's stamp carries to the host's Decisions trail. */
+  routeMoves?: Array<{ from: string; to: string; note: string }>,
 ): Promise<LaunchEffect> {
   const seam = await t3Seam();
-  const outcome = await launchAcrossProfiles(row, settingTierModelsOrRefuse(cfg.tierModels), (models) => {
-    refuseRaisedOpusHigh(row, models, urgent?.raisedFrom ?? null); // OB-2107
-    return launchT3Spinoff(seam, row, rowRepoPathIn(cfg, row.repo), ticketTitle ?? null, models, !!urgent);
-  });
+  const recordMove: RouteMoveRecorder | undefined = routeMoves
+    ? async (from, to, note) => {
+        routeMoves.push({ from, to, note });
+      }
+    : undefined;
+  const outcome = await launchAcrossProfiles(
+    row,
+    await routeInputsOrRefuse(),
+    (models, routeEffort) => {
+      const r = withRouteEffort(row, routeEffort);
+      refuseRaisedOpusHigh(r, models, urgent?.raisedFrom ?? null); // OB-2107
+      return launchT3Spinoff(seam, r, rowRepoPathIn(cfg, row.repo), ticketTitle ?? null, models, !!urgent);
+    },
+    [],
+    recordMove,
+  );
   if (urgent) warnUrgentTier(row.ticket_ref, urgent.raisedFrom, outcome.adopted);
   warn(
     outcome.adopted
@@ -6313,7 +6327,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   if (effort !== undefined) {
     const effortTier = (await itemIsUrgent(store, await ticketItemIdFor(store, ticketRef))) ? "complex" : (tier ?? DEFAULT_SPINOFF_TIER);
     // OB-2107: the Opus-high check needs no T3, so `queue` runs it too (the split client forwards --opus-high).
-    if (queueOnly) refuseOpusHigh(tierModelsOrRefuse(await settingFor(store, "spinoff_tier_models")), effortTier, effort, flag(ctx, "opus-high"));
+    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(store), effortTier, effort, flag(ctx, "opus-high"));
     else await refuseUnusableEffortFor(store, repo, effortTier, effort, flag(ctx, "opus-high"));
   }
   // The thread's FIRST item is the work order itself (1162): the ticket's title + what to build +
@@ -6413,7 +6427,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
  * model map are the ones a launch from here would read, so the check and the launch agree.
  */
 async function refuseUnusableEffortFor(db: Database | Store, repo: string, tier: SpinoffTier, effort: SpinoffEffort, opusHighAsk?: string): Promise<void> {
-  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), tier, tierModelsOrRefuse(await settingFor(db, "spinoff_tier_models")), effort, opusHighAsk);
+  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), tier, await tierModelsOrRefuse(db), effort, opusHighAsk);
 }
 
 /** A pending row's recorded effort, or undefined when it names none (or one no longer known). */
