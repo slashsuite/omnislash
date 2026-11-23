@@ -1,6 +1,6 @@
 # OmniSlash facts
 
-Checked against main at 0a075b3 on 2026-11-23.
+Checked against main at 6611546 on 2026-11-23.
 
 ## What it is
 OmniSlash is a command-line tool for keeping track of tickets, projects and the agents that work on them.
