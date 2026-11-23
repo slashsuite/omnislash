@@ -2187,6 +2187,41 @@ describe("credit error → next models profile (OB-1970)", () => {
     db.close();
   });
 
+  test("OS-145: a route's effort is stamped as the route's, so a first-turn credit relaunch onto a model without it runs at its default", async () => {
+    modelsFile(`{"active": "p", "profiles": {"p": {"routes": {"builder.medium": {"chain": ["claudeAgent:claude-sonnet-5-5", "claudeAgent:claude-haiku-5-5"], "effort": "low"}}}}}`);
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const repo = trackedRepo();
+    trackedDir(`${repo}.999`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo, options: { "claude-sonnet-5-5": [CLAUDE_EFFORT_OPTION] } });
+    setT3Seam(fake.seam);
+    expect((await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", "--tier", "medium"])).code).toBe(0);
+    captureStderr();
+    expect((await drainSpinoffs(db)).failed).toEqual([]);
+    expect((await listSpinoffs(db))[0]!.effort).toBe("route (low)");
+    const thread = fake.threads[0]!;
+    thread.status = "failed";
+    thread.activeRunId = null;
+    const read = fake.seam.read;
+    setT3Seam({
+      ...fake.seam,
+      read: async (threadId, o) => {
+        const base = await read(threadId, o);
+        return threadId === thread.threadId ? { ...base, items: [creditItem], recentRuns: [{ runId: "run-x0", status: "failed" }] } : base;
+      },
+    });
+    await relaunchCreditFailures(db, (await reconcileT3Runs(db)).mirrored);
+    restoreStderr?.();
+    restoreStderr = null;
+    expect(fake.launches.map((l) => l.modelSelection.model)).toEqual(["claude-sonnet-5-5", "claude-haiku-5-5"]);
+    expect((fake.launches[1]!.modelSelection as { options?: unknown }).options ?? []).toEqual([]);
+    const after = (await listSpinoffs(db))[0]!;
+    expect(after.status).toBe("launched");
+    expect(after.effort).toBe("default (none listed)");
+    db.close();
+  });
+
   test("a non-credit error never falls back: a rate limit or an outage fails the row on profile A", async () => {
     for (const err of [
       new T3Error("refused", "rate limit exceeded, retry in 30s", undefined, "rate_limit_error"),

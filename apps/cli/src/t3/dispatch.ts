@@ -581,11 +581,11 @@ export function effortRejection(prefix: string, value: string): string {
 
 /**
  * The level a ROW asks for: the word `queue` recorded, or undefined for a row that named none. The column
- * also holds what a launch STAMPED (`high`, `default (high)`, `default (none listed)`), so a `default (...)`
- * text reads as "none named". Any other value is a refusal, never a guess (as `rowTier`).
+ * also holds what a launch STAMPED (`high`, `default (high)`, `default (none listed)`, `route (low)`), so a
+ * `default (...)` or `route (...)` text reads as "none named": a relaunch takes the route's effort afresh (OS-145). Any other value is a refusal, never a guess (as `rowTier`).
  */
 function rowEffort(raw: string | null | undefined): SpinoffEffort | undefined {
-  if (raw === null || raw === undefined || raw === "" || raw.startsWith("default")) return undefined;
+  if (raw === null || raw === undefined || raw === "" || raw.startsWith("default") || raw.startsWith("route")) return undefined;
   if (isSpinoffEffort(raw)) return raw;
   throw new T3Error("refused", effortRejection("the row's effort", raw), `re-dispatch with --effort ${SPINOFF_EFFORTS.join("|")}`);
 }
@@ -1057,7 +1057,8 @@ export async function launchT3Spinoff(
       resolved.refusal.remedy,
     );
   }
-  const { model, effort } = resolved;
+  const { model } = resolved;
+  const effort = own === undefined && resolved.effort.options ? { ...resolved.effort, stamp: `route (${resolved.effort.stamp})` } : resolved.effort;
 
   const existing = await findThreadForWorktree(seam, project.id, row);
   const stamp = model.stamp ?? model.selection.model;
