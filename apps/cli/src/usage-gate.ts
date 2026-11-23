@@ -7,9 +7,9 @@ import { print, type Mode } from "./output.ts";
  * The critical-only line (OS-108, OS-129). At this share of the active models profile's weekly usage or above,
  * until the window resets, only critical tickets are worked: `ob next` lists only them and a dispatch or
  * send-back of anything else is refused. Jacobus, 2026-11-20: "when we reach 95% of the weekly usage, we will
- * only do critical tickets."
+ * only do critical tickets." Raised to 98% by Jacobus, 2026-11-23: "5% is still a lot of usage."
  */
-const CRITICAL_ONLY_PERCENT = 95;
+const CRITICAL_ONLY_PERCENT = 98;
 
 /** The cache is T3's; older than this, its numbers are not trusted to say the line is not crossed. */
 const USAGE_CACHE_MAX_AGE_MIN = 60;

@@ -1,4 +1,4 @@
-// OS-108: `ob next` answers to the weekly Claude usage. At 95% or more, until the window resets, it lists only
+// OS-108: `ob next` answers to the weekly Claude usage. At 98% or more, until the window resets, it lists only
 // critical items after one line saying why; a missing, windowless or stale cache says "usage unknown" once and
 // never blocks. In-process against fresh SQLite databases and usage-cache fixtures (`OB_USAGE_T3_CACHE`).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -50,13 +50,13 @@ async function seeded(): Promise<string> {
 type Row = { title: string; effective_priority: string };
 
 describe("ob next at the critical-only line (OS-108)", () => {
-  test("96% with the reset tomorrow: the one line, then only critical items", async () => {
-    cache({ usedPercent: 96 });
+  test("99% with the reset tomorrow: the one line, then only critical items", async () => {
+    cache({ usedPercent: 99 });
     const dbPath = await seeded();
     const human = await runCli(dbPath, ["next"]);
     expect(human.code).toBe(0);
     const first = human.out.split("\n")[0]!;
-    expect(first).toMatch(/^Weekly Claude usage is 96% \(resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d\): critical only\.$/);
+    expect(first).toMatch(/^Weekly Claude usage is 99% \(resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d\): critical only\.$/);
     expect(human.out).toContain("item critical");
     expect(human.out).not.toContain("item urgent");
     expect(human.out).not.toContain("item medium");
@@ -67,8 +67,8 @@ describe("ob next at the critical-only line (OS-108)", () => {
   });
 
   test.each([
-    ["94%", { usedPercent: 94 }],
-    ["96% with the reset in the past", { usedPercent: 96, resetsInMs: -HOUR }],
+    ["97%", { usedPercent: 97 }],
+    ["99% with the reset in the past", { usedPercent: 99, resetsInMs: -HOUR }],
   ] as const)("%s prints the normal list and no line", async (_label, opts) => {
     cache(opts);
     const dbPath = await seeded();
@@ -101,18 +101,18 @@ describe("ob next at the critical-only line (OS-108)", () => {
 });
 
 describe("the gate's reading (OS-108)", () => {
-  test("active at exactly 95, inactive at 94.9", () => {
+  test("active at exactly 98, inactive at 97.9", () => {
     const now = new Date();
-    expect(criticalOnlyGate(now, cache({ usedPercent: 95 }))).toMatchObject({ unknown: false, active: true, usedPercent: 95 });
-    expect(criticalOnlyGate(now, cache({ usedPercent: 94.9 }))).toMatchObject({ unknown: false, active: false });
+    expect(criticalOnlyGate(now, cache({ usedPercent: 98 }))).toMatchObject({ unknown: false, active: true, usedPercent: 98 });
+    expect(criticalOnlyGate(now, cache({ usedPercent: 97.9 }))).toMatchObject({ unknown: false, active: false });
   });
 
   test("the line names the usage and the reset in local weekday and HH:MM", () => {
     const at = new Date(2026, 10, 24, 3, 0); // a Tuesday, 03:00 local
     expect(resetWhen(at.toISOString())).toBe("Tue 03:00");
-    expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString() })).toBe("Weekly Claude usage is 96% (resets Tue 03:00): critical only.");
-    expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString(), provider: "claude" })).toBe("Weekly Claude usage is 96% (resets Tue 03:00): critical only.");
-    expect(criticalOnlyLine({ usedPercent: 96, resetsAt: at.toISOString(), provider: "antigravity" })).toBe("Weekly Gemini usage is 96% (resets Tue 03:00): critical only.");
+    expect(criticalOnlyLine({ usedPercent: 99, resetsAt: at.toISOString() })).toBe("Weekly Claude usage is 99% (resets Tue 03:00): critical only.");
+    expect(criticalOnlyLine({ usedPercent: 99, resetsAt: at.toISOString(), provider: "claude" })).toBe("Weekly Claude usage is 99% (resets Tue 03:00): critical only.");
+    expect(criticalOnlyLine({ usedPercent: 99, resetsAt: at.toISOString(), provider: "antigravity" })).toBe("Weekly Gemini usage is 99% (resets Tue 03:00): critical only.");
   });
 });
 
@@ -208,7 +208,7 @@ describe("OS-129: active models profile pacing (Antigravity vs Claude)", () => {
           checkedAt: new Date(now - 60_000).toISOString(),
           windows: [
             { id: "gemini-5h", usedPercent: 12, resetsAt: new Date(now + HOUR).toISOString(), windowDurationMins: 300 },
-            { id: "gemini-weekly", usedPercent: 96, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 },
+            { id: "gemini-weekly", usedPercent: 99, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 },
           ],
         },
       }),
@@ -217,7 +217,7 @@ describe("OS-129: active models profile pacing (Antigravity vs Claude)", () => {
     const dbPath = await seeded();
     const human = await runCli(dbPath, ["next"]);
     expect(human.code).toBe(0);
-    expect(human.out.split("\n")[0]).toMatch(/^Weekly Gemini usage is 96% \(resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d\): critical only\.$/);
+    expect(human.out.split("\n")[0]).toMatch(/^Weekly Gemini usage is 99% \(resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d\): critical only\.$/);
     expect(human.out).toContain("item critical");
     expect(human.out).not.toContain("item urgent");
 
@@ -227,11 +227,11 @@ describe("OS-129: active models profile pacing (Antigravity vs Claude)", () => {
       JSON.stringify({
         checkedAt: new Date(now - 60_000).toISOString(),
         usageLimits: {
-          windows: [{ id: "gemini-weekly", usedPercent: 97, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 }],
+          windows: [{ id: "gemini-weekly", usedPercent: 99, resetsAt: new Date(now + 24 * HOUR).toISOString(), windowDurationMins: 10080 }],
         },
       }),
     );
-    expect(criticalOnlyGate(new Date(now))).toMatchObject({ unknown: false, active: true, usedPercent: 97, provider: "antigravity" });
+    expect(criticalOnlyGate(new Date(now))).toMatchObject({ unknown: false, active: true, usedPercent: 99, provider: "antigravity" });
 
     // Missing gemini-weekly window reads as unknown (never blocks)
     resetUsageUnknownWarning();
