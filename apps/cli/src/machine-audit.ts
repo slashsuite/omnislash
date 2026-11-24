@@ -128,13 +128,7 @@ export async function machineAudit(store: Store, opts: MachineAuditOptions = {})
     .orderBy(asc(t.event.ts), asc(t.event.id));
   const groups = new Map<string, WouldRefuseGroup>();
   for (const e of events) {
-    let p: Record<string, unknown>;
-    try {
-      const parsed: unknown = readJson<unknown>(e.payload ?? "{}");
-      p = parsed !== null && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-    } catch {
-      p = {};
-    }
+    const p = readJson<unknown>(e.payload ?? "{}") as Record<string, unknown>;
     const str = (v: unknown): string => (v === null || v === undefined ? "?" : String(v));
     const machine = str(p.machine);
     const from = str(p.from);

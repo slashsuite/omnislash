@@ -1,7 +1,7 @@
 // OS-170: `ob machine audit` lists items and spinoff rows in states their machine lacks, spinoff rows parked in
 // `launching`/`launched`, and the would-refuse events grouped. Read-only. Fresh SQLite file per test; the API
 // leg runs the real server over that store through an in-process transport, so no network is touched.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
@@ -28,6 +28,7 @@ const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOStr
 
 const paths: string[] = [];
 const scratch = mkdtempSync(join(process.env.TMPDIR ?? process.cwd(), "ob-machine-audit-170-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 afterEach(() => {
   for (const p of paths.splice(0)) for (const f of [p, `${p}-wal`, `${p}-shm`]) rmSync(f, { force: true });
 });
