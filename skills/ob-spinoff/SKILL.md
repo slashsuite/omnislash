@@ -210,7 +210,7 @@ Once the build is committed, finish in this order. It is the only normal complet
 - **(c) Open the PR: load `ob-land` and follow its builder steps (1 to 3, 4a) up to `gh pr create`.** `git fetch origin && git rebase origin/main`,
   re-run the local-only checks (§3) if the rebase brought anything in (CI re-runs typecheck and test on the pushed head), run the land guard with `--subject`, `git push -u origin <branch>` (a branch
   pushed before uses `--force-with-lease` against the pre-rebase SHA, above), and `gh pr create --base main`; on a T3 thread register it with
-  `link_pull_request`. `blocked` / `partial`: no PR.
+  `link_pull_request`, then run `ob spinoff phase <ticket> pr_ci` (OS-183: the dashboard's phase; a refusal is noted, not a stop), and again after every later push to the open PR. `blocked` / `partial`: no PR.
   - **Title (file-pr, adapted).** The title is the squash subject: a ticket-scoped Conventional Commit that says **why the change
     matters**, not what it touches. `fix(<KEY>-1234): my new-worktree default was ignored on existing worktrees`, not
     `fix(<KEY>-1234): remove buildContextualThreadOptions`. Keep the builder's type.

@@ -154,6 +154,7 @@ export const SPINOFF_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "handoff",
   "ready",
   "state",
+  "phase",
   "trial",
   "tokens",
 ]);

@@ -1,0 +1,1 @@
+ALTER TABLE "spinoff" ADD COLUMN "phase" text;

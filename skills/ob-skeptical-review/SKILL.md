@@ -170,6 +170,10 @@ A reader that wanders burns its turns and time (one DeepSeek leg made 101 calls 
 Launch **one background leg per model**, each from its own brief file, none told what the others said. Run
 them from the worktree under review:
 
+On a builder's diff, first mark the row as in review, so the dashboard shows it (OS-183):
+`ob spinoff phase <ticket> reviewing`. A refusal (the row is handed off, or has no row) is not a reason to stop:
+note it and run the review.
+
 Read the readers for the row's complexity first (`ob spinoff show <ticket>` prints `complexity N/10`; a row with no
 score reads as 5), and run exactly those:
 

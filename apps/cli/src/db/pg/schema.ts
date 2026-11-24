@@ -619,6 +619,11 @@ export const spinoff = pgTable("spinoff", {
 	// the routing key (`tier` is now only the label of its band, still written beside it). NULL = queued before
 	// this: the row reads its tier's alias value (simple 2, medium 5, complex 8), or 5 with no tier either.
 	complexity: integer(),
+	// appended by migration 0005_spinoff_phase (OS-183, ADD COLUMN lands last): the role phase inside the status,
+	// moved by the spinoff phase machine (platform/state-machine/src/spinoff-phase.ts): reviewing | pr_ci |
+	// updating_pr while launched, gating | owner_merge_call while ready-for-gate. NULL in every other status, and
+	// on every row from before this migration (no backfill: a guessed phase is worse than none).
+	phase: text(),
 },
 (table) => [
 	// PARTIAL, matching the SQLite original: only ONE active spinoff per ticket, while any
