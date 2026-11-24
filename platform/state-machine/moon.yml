@@ -1,0 +1,13 @@
+$schema: '../../.moon/cache/schemas/project.json'
+
+# OS-168: the item and spinoff lifecycles as XState v5 machines, used as pure functions only
+# (docs/spikes/state-machine-library.md). No callers yet. The parity test reads the live tables in
+# apps/cli/src/status.ts and platform/cli-coord, so it depends on both.
+tags: ['ob-ts']
+dependsOn: ['cli', 'cli-coord']
+
+tasks:
+  test:
+    script: 'bun --bun vitest run ${OB_TEST_REPORT_DIR:+--reporter=default --reporter=junit --outputFile.junit=$OB_TEST_REPORT_DIR/state-machine.xml}'
+  typecheck:
+    command: 'bunx tsc --noEmit'

@@ -1,0 +1,12 @@
+{
+  "name": "@omnislash/state-machine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "xstate": "5.33.4"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.0"
+  }
+}
