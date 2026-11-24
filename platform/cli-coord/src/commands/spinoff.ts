@@ -6310,9 +6310,11 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
         : await announceReadyForRow(store, result.row, state, builderNote, result.tierFit, result.already, result.spike === true, spikeDoc);
     const rendered = renderReadyNoteOutcome(note);
     if (ctx.mode === "json") {
-      print(JSON.stringify({ ...readyResultJson(result, state), spike: result.spike === true, ...(spikeDoc ? { pr_url: spikeDoc.prUrl } : {}), architect_note: note }, null, 2));
+      print(JSON.stringify({ ...readyResultJson(result, state), spike: result.spike === true, ...(spikeDoc ? { pr_url: spikeDoc.prUrl } : {}), architect_note: note, pixelslash_review_owed: ci.owed ?? [] }, null, 2));
     } else {
       print(result.spike ? formatSpikeReport(result.row, spikeDoc ?? {}) : formatReadyReport(result.row, state, result.already));
+      // OB-2544: a pending PixelSlash review is not CI; the handoff goes through and names what the architect owes.
+      for (const owed of ci.owed ?? []) print(`  ${owed}`);
       if (!tierFit) print(TIER_FIT_HINT);
       if (rendered.warning) warn(rendered.line);
       else print(rendered.line);

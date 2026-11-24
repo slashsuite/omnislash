@@ -147,7 +147,7 @@ The verdict goes on the row (`ob spinoff state <ticket> <verdict> --gate '<line>
 ticket with `ob spinoff handoff <ticket> --report <file>`, where the architect reads them (`ob-spinoff` §4c). The handoff
 refuses a branch, commit or PR that carries ob, and the land guard refuses the same in a squash subject or body.
 
-**Wait for CI before the handoff.** `gh pr checks <N> --watch` until every check on the PR head is green. A failing check
+**Wait for CI before the handoff.** `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` until every check on the PR head is green (PixelSlash is a review, not CI: `ob-babysit-pr`): a pending PixelSlash review is named as owed, not waited on; a failed one blocks. A failing check
 is fixed on the branch (push, watch again) or reported as a flake (`ob-spinoff` §3), never handed off, and "I think it is done" is not
 the trigger. `ob spinoff handoff` reads the rollup and refuses a pending or failing PR, a PR head that is not your HEAD and a `gh` it
 cannot read (`COULD NOT READ CI`); `--ci-unchecked '<why>'` is the recorded override for a CI that cannot be read at all.
@@ -202,19 +202,18 @@ gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" -q '.check_runs[] | select
 A repo or PR with no CI keeps the local gate in full.
 
 **UI review wait.** If `git diff --name-only origin/main...<pr head> -- apps/ob-dashboard/src` prints
-any file, the PR touches the dashboard, so run `gh pr checks <pr> --watch` and wait for it to finish before the
-merge. It waits on every check on the PR, the UISlash UI review included. Otherwise skip the wait.
+any file, the PR touches the dashboard, so run `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <pr> --until green` and wait for it to finish before the
+merge. It waits on every check on the PR, the UISlash UI review included, except a pending PixelSlash review, which it names as owed (PixelSlash is a review, not CI: `ob-babysit-pr`). Otherwise skip the wait.
 
-Read the result of `gh pr checks`:
+Read the result of `pr-wait`:
 
-- **Every check passed:** go on to the merge.
-- **A check failed:** exit 1 with a listed failing check is a failure. **Layer 1 (a raw colour, a local
+- **Every check passed (exit 0):** go on to the merge, after the PixelSlash review it names as owed, if any.
+- **A check failed:** exit 1 naming a failing check is a failure. **Layer 1 (a raw colour, a local
   stylesheet, a look-alike `@hackcove/ui` component) means send it back to the builder (`ob spinoff sendback <ref> --note '<the failing rule and the lines>'`) to fix on the branch,
   not merge:** the fix is the lines the PR adds; the gate runs again, the builder pushes, and you wait again.
 - **A rule is a false positive:** leave the PR open and unmerged and file the rule to the UISlash architect.
   The architect decides; a `needs-human` handoff would merge past the failure.
-- **No checks listed yet:** the check can take a few seconds to appear after `gh pr create`. Run it again.
-  An empty list is not a pass and not a failure.
+- **No checks listed yet:** `pr-wait` reads that as pending and keeps waiting until the `gate` check appears.
 
 Layer 2 (the model review) is advisory and warns or skips, so it never fails the wait.
 
