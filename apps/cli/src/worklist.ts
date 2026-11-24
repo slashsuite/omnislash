@@ -12,7 +12,7 @@ import type { Database } from "bun:sqlite";
 import type { Store } from "./db/store.ts";
 import { AppError } from "./errors.ts";
 import { getFocusProject } from "./config.ts";
-import { queryItems, triageCount, type ItemRow } from "./items.ts";
+import { queryItems, triageCount, triageCountIn, type ItemRow } from "./items.ts";
 import { getProject, listProjects } from "./project.ts";
 import { teamMembersIn, listTeams } from "./team.ts";
 import { effectivePriority, kindRank, prioritySortRank } from "./priority.ts";
@@ -117,7 +117,7 @@ export function sortItems(items: ItemRow[], focusProject: string | null, by: Ite
  * (a name or id, OB-2083) narrows it to one project's queue; an unknown one is an error, since an
  * empty queue for a typo would read as "nothing to do".
  */
-export async function nextWorklist(db: Database | Store, opts: { project?: string } = {}): Promise<NextResult> {
+export async function nextWorklist(db: Database | Store, opts: { project?: string; allowedProjects?: ReadonlySet<string> } = {}): Promise<NextResult> {
   const focusProject = await getFocusProject(db);
   let projectId: string | undefined;
   // `!== undefined`, not truthiness: `--project "$SLUG"` with an empty variable must error, not print every project's queue.
@@ -126,16 +126,19 @@ export async function nextWorklist(db: Database | Store, opts: { project?: strin
     if (!p) throw new AppError(`no project '${opts.project}' (see: ob project list)`);
     projectId = p.id;
   }
-  const items = await queryItems(db, { open: true, projectId });
+  let items = await queryItems(db, { open: true, projectId });
+  // OS-178: a scoped API token sees only its projects, its triage count included.
+  const allowed = opts.allowedProjects;
+  if (allowed) items = items.filter((i) => i.project_id !== null && allowed.has(i.project_id));
   return {
     items: sortWorklist(items, focusProject),
     focusProject,
-    triageCount: await triageCount(db),
+    triageCount: allowed ? await triageCountIn(db, allowed) : await triageCount(db),
   };
 }
 
 /** The `ob list` read: filter, resolve the project name, sort, cap. */
-export async function listWorklist(db: Database | Store, query: ItemQuery): Promise<WorklistResult> {
+export async function listWorklist(db: Database | Store, query: ItemQuery, opts: { allowedProjects?: ReadonlySet<string> } = {}): Promise<WorklistResult> {
   let projectId: string | undefined;
   if (query.project) {
     const p = await getProject(db, query.project);
@@ -153,6 +156,8 @@ export async function listWorklist(db: Database | Store, query: ItemQuery): Prom
     since: query.since,
     updatedAfter: query.updatedAfter,
   });
+  const allowed = opts.allowedProjects;
+  if (allowed) items = items.filter((i) => i.project_id !== null && allowed.has(i.project_id));
   if (query.kind) items = items.filter((i) => i.project_kind === query.kind);
   if (query.team) {
     const members = new Set(teamMembersIn(query.team, (await listTeams(db)).map((t) => t.name), await listProjects(db)).map((p) => p.id));

@@ -374,6 +374,7 @@ import {
   type GmailMessageRead,
 } from "../../../../platform/cli-sources/src/gmail-message.ts";
 import { ApiFault } from "./fault.ts";
+import { inScope, type ProjectScope } from "../project-scope.ts";
 
 /**
  * OB-1754: the OB-1751 refusal, on the server. In API mode the CLI sends what the human typed, so a bare number that is
@@ -381,17 +382,30 @@ import { ApiFault } from "./fault.ts";
  * Every item endpoint is called with typed input (the dashboard does not use them), so there is no trusted bypass.
  * A 400 `invalid_request`: the client prints the message and exits non-zero.
  */
-async function refuseAmbiguousBareNumber(store: Store, id: string): Promise<void> {
+async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: ProjectScope): Promise<void> {
   const collision = await bareNumberCollision(store, id);
-  if (collision) throw new ApiFault("invalid_request", 400, bareNumberCollisionMessage(collision));
+  if (!collision) return;
+  // OS-178: the collision message names both items, so a scoped token gets one that names neither.
+  if (scope) throw new ApiFault("invalid_request", 400, `'${id}' is ambiguous; ask for the item by its ref`);
+  throw new ApiFault("invalid_request", 400, bareNumberCollisionMessage(collision));
 }
 
-/** `trusted`: `id` is an internal id this handler already resolved (an earlier `requireItem`, or a row it just created), not typed input. */
-async function requireItem(store: Store, id: string, opts: { trusted?: boolean } = {}) {
-  if (!opts.trusted) await refuseAmbiguousBareNumber(store, id);
+/**
+ * `trusted`: `id` is an internal id this handler already resolved (an earlier `requireItem`, or a row it just created), not typed input.
+ * `scope` (OS-178): a scoped token's projects. An item outside them is the same 404 as a missing one, so its existence does not leak.
+ */
+async function requireItem(store: Store, id: string, opts: { trusted?: boolean; scope?: ProjectScope } = {}) {
+  if (!opts.trusted) await refuseAmbiguousBareNumber(store, id, opts.scope);
   const item = await getItem(store, id);
-  if (!item) throw new ApiFault("not_found", 404, `no item '${id}'`);
+  if (!item || !inScope(opts.scope, item.project_id)) throw new ApiFault("not_found", 404, `no item '${id}'`);
   return item;
+}
+
+/** OS-178: a `?project=` a scoped token names must be one of its projects; any other is the unknown-project 404. */
+async function requireScopedProject(store: Store, scope: ProjectScope | undefined, project: string | undefined): Promise<void> {
+  if (!scope || project === undefined) return;
+  const p = await getProject(store, project);
+  if (!p || !scope.ids.has(p.id)) throw new ApiFault("not_found", 404, `no project '${project}'`);
 }
 
 export async function health(store: Store): Promise<HealthResponse> {
@@ -910,8 +924,9 @@ export async function googleCallback(
   return { ok: true, refreshToken: Boolean(resp.refresh_token) };
 }
 
-export async function next(store: Store, project?: string): Promise<NextResponse> {
-  const { items, focusProject, triageCount } = await nextWorklist(store, { project });
+export async function next(store: Store, project?: string, scope?: ProjectScope): Promise<NextResponse> {
+  await requireScopedProject(store, scope, project);
+  const { items, focusProject, triageCount } = await nextWorklist(store, { project, allowedProjects: scope?.ids });
   return {
     items: items.map((i) => itemView(i, focusProject)),
     triage_count: triageCount,
@@ -919,8 +934,9 @@ export async function next(store: Store, project?: string): Promise<NextResponse
   };
 }
 
-export async function items(store: Store, query: ItemQuery): Promise<ItemsResponse> {
-  const { items: rows, focusProject } = await listWorklist(store, query).catch((e) => {
+export async function items(store: Store, query: ItemQuery, scope?: ProjectScope): Promise<ItemsResponse> {
+  await requireScopedProject(store, scope, query.project);
+  const { items: rows, focusProject } = await listWorklist(store, query, { allowedProjects: scope?.ids }).catch((e) => {
     if (e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     throw e;
   });
@@ -971,9 +987,19 @@ export async function create(
   return { id, item: itemView(row, await getFocusProject(store)), issue: created };
 }
 
-export async function item(store: Store, id: string): Promise<ItemResponse> {
-  id = (await requireItem(store, id)).id; // so a missing item is a 404 rather than itemDetail's own throw
-  return { item: await itemDetail(store, id) };
+export async function item(store: Store, id: string, scope?: ProjectScope): Promise<ItemResponse> {
+  id = (await requireItem(store, id, { scope })).id; // so a missing item is a 404 rather than itemDetail's own throw
+  const detail = await itemDetail(store, id);
+  if (scope) {
+    // OS-178: links (parents and children among them) to an item outside the scope are dropped, not named.
+    const kept = [];
+    for (const l of detail.links) {
+      const other = await getItem(store, l.other);
+      if (other && inScope(scope, other.project_id)) kept.push(l);
+    }
+    detail.links = kept;
+  }
+  return { item: detail };
 }
 
 /**
@@ -1144,10 +1170,10 @@ export async function tags(store: Store, id: string, req: TagsRequest): Promise<
   return { id, ref: await refOf(store, id), tags: await getTags(store, id) };
 }
 
-export async function search(store: Store, q: string): Promise<SearchResponse> {
+export async function search(store: Store, q: string, scope?: ProjectScope): Promise<SearchResponse> {
   let ids: string[];
   try {
-    ids = await searchItemIds(store, q);
+    ids = await searchItemIds(store, q, { allowedProjects: scope?.ids });
   } catch {
     // The query text is echoed because the CLIENT wrote it; nothing about the store leaks through here.
     throw new ApiFault("invalid_request", 400, `invalid search query: ${q}`);
@@ -1816,8 +1842,9 @@ import {
 import { recentSlackMessages } from "../commands/slack.ts";
 import { and, count, eq } from "drizzle-orm";
 
-export async function projects(store: Store): Promise<ProjectsResponse> {
-  return { projects: await listProjects(store) };
+export async function projects(store: Store, scope?: ProjectScope): Promise<ProjectsResponse> {
+  const all = await listProjects(store);
+  return { projects: scope ? all.filter((p) => scope.ids.has(p.id)) : all };
 }
 
 export async function projectCreate(store: Store, req: ProjectCreateRequest): Promise<ProjectCreateResponse> {

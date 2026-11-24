@@ -23,7 +23,7 @@
 // text is edited. Postgres is ordered explicitly by the item id as a number, which is creation order and
 // is at least stable. What a caller can rely on on both engines is the SET of ids, not their sequence.
 import type { Database } from "bun:sqlite";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { asStore, type Store } from "./db/store.ts";
 
 /**
@@ -34,7 +34,22 @@ import { asStore, type Store } from "./db/store.ts";
  * anything it does not recognise as a term, so an unparseable query returns no rows rather than an
  * error. That is a small, deliberate improvement rather than a divergence worth undoing.
  */
-export async function searchItemIds(db: Database | Store, query: string): Promise<string[]> {
+export async function searchItemIds(db: Database | Store, query: string, opts: { allowedProjects?: ReadonlySet<string> } = {}): Promise<string[]> {
+  const ids = await searchAll(db, query);
+  const allowed = opts.allowedProjects;
+  if (!allowed) return ids;
+  // OS-178: a scoped API token finds only items in its projects.
+  if (ids.length === 0 || allowed.size === 0) return [];
+  const s = asStore(db);
+  const rows = (await s.q
+    .select({ id: s.t.item.id, project_id: s.t.item.project_id })
+    .from(s.t.item)
+    .where(inArray(s.t.item.id, ids))) as Array<{ id: string; project_id: string | null }>;
+  const keep = new Set(rows.filter((r) => r.project_id !== null && allowed.has(r.project_id)).map((r) => r.id));
+  return ids.filter((id) => keep.has(id));
+}
+
+async function searchAll(db: Database | Store, query: string): Promise<string[]> {
   const s = asStore(db);
   if (s.kind === "sqlite") {
     // Unchanged from the pre-337 query: fts5 virtual tables cannot be modelled by the query builder, so
