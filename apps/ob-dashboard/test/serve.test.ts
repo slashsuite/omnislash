@@ -68,7 +68,7 @@ describe("the built OB dashboard (OB-2205)", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("<title>OB</title>");
-    expect(html).toContain("The OB dashboard.");
+    expect(html).toContain("To review");
     expect(html).toContain('rel="manifest"');
   });
 
