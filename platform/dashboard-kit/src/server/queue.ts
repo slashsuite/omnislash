@@ -54,7 +54,7 @@ export interface QueueView {
 export async function queueView(store: Store, ask: { team?: string; project?: string } = {}): Promise<QueueView> {
   const scope = await resolveScope(store, ask);
   const projectOf = new Map(scope.group.projects.map((p) => [p.id, p]));
-  const { items, focusProject } = await nextWorklist(store, { allowedProjects: new Set(scope.projectIds) });
+  const { items, focusProject } = await nextWorklist(store, scope.project ? { project: scope.project.id } : { allowedProjects: new Set(scope.projectIds) });
   const stamp = await itemsStamp(store);
   const tags = await tagsForItems(store, items.map((i) => i.id));
   const bands: QueueBand[] = RANK_ORDER.map((priority) => ({ priority, name: priorityName(priority), items: [] }));

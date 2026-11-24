@@ -6,7 +6,7 @@ import type { GroupProject, ProjectGroup } from "../../../../platform/dashboard-
 // when asked. Two Selects: the group, and "All projects" or one project in it. Both live in the URL
 // (`?team=slash&project=omnislash`); a new group drops the project, since it is not in that group.
 
-export const ALL_PROJECTS = "";
+const ALL_PROJECTS = "";
 
 export type GroupSearch = { team?: string; project?: string };
 

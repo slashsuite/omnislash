@@ -52,8 +52,8 @@ async function expectOrder(page: Page, want: Record<string, string[]>): Promise<
  * drop. The line starts just after the item and stops before every row, each band's end row included, so one
  * step up is a no-op (before the item itself) and two is before the item above.
  */
-async function keyMove(page: Page, title: string, steps: number): Promise<void> {
-  const saved = page.waitForResponse((r) => r.url().includes("/_serverFn/") && r.request().method() === "POST");
+async function keyMove(page: Page, title: string, steps: number, save = true): Promise<void> {
+  const saved = !save ? null : page.waitForResponse((r) => r.url().includes("/_serverFn/") && r.request().method() === "POST");
   // A tap on the title focuses the row (the grip's own .focus() is moved back to the row by the grid).
   await page.getByRole("row", { name: title, exact: true }).getByText(title, { exact: true }).click();
   await page.keyboard.press("ArrowRight");
@@ -63,7 +63,7 @@ async function keyMove(page: Page, title: string, steps: number): Promise<void> 
   await expect(page.locator("[aria-live]").getByText(/Started dragging/)).toBeAttached();
   for (let i = 0; i < Math.abs(steps); i++) await page.keyboard.press(steps > 0 ? "ArrowDown" : "ArrowUp");
   await page.keyboard.press("Enter");
-  await saved;
+  if (saved) await saved;
 }
 
 test.beforeEach(() => reseed());
@@ -90,6 +90,15 @@ test("the bare /queue opens on the Slash group with its projects merged, each ro
   await expect.poll(async () => (await shown(page, GROUP_LABEL)).high?.slice(0, 4)).toEqual([...seeded().high!, SIBLING_TITLE]);
   await expect(grid.getByRole("row", { name: SIBLING_TITLE, exact: true }).getByText(SIBLING_PROJECT, { exact: true })).toBeVisible();
   await expect(grid.getByRole("row", { name: "Band headings", exact: true }).getByText(QUEUE_PROJECT, { exact: true })).toBeVisible();
+});
+
+test("in the group view a move inside a band is refused with a hint, since a queue's order is per project", async ({ page }) => {
+  await openPage(page, "/queue");
+  const before = await shown(page, GROUP_LABEL);
+  // Two places up: before QUEUE_PROJECT's last high item, which setQueueOrder would refuse across projects.
+  await keyMove(page, SIBLING_TITLE, -2, false);
+  await expect(page.getByText(/pick a project to reorder its queue/)).toBeVisible();
+  await expect.poll(() => shown(page, GROUP_LABEL)).toEqual(before);
 });
 
 test("the Project select drills into one project of the group, and a reload keeps it", async ({ page }) => {

@@ -109,6 +109,15 @@ function Queue() {
 
   const bandOf = new Map(view.bands.map((b) => [b.name, b.priority]));
   const onReorder = (m: SortableMove) => {
+    // A queue's order is per project (setQueueOrder refuses a neighbour from another project), so the merged group
+    // view takes only a band change, as a priority change; ordering inside a band needs one project picked.
+    if (view.project === null) {
+      const from = view.bands.find((b) => b.items.some((i) => i.id === m.id))?.priority;
+      const to = m.section === undefined ? undefined : bandOf.get(m.section);
+      if (to !== undefined && to !== from) void write(() => setPriority({ data: { id: m.id, priority: to } }));
+      else setError("pick a project to reorder its queue; the group view only moves items between bands");
+      return;
+    }
     const move = m.target
       ? m.target.position === "before"
         ? { before: m.target.id }
@@ -125,7 +134,7 @@ function Queue() {
     <>
       <PageHeader
         title="Queue"
-        description="A group's open items in the order they will be worked, next on top, grouped by priority. Pick a project to see only its queue."
+        description="A group's open items in the order they will be worked, next on top, grouped by priority. Pick a project to see and reorder only its queue."
       />
       <Stack>
         <Cluster gap="sm">

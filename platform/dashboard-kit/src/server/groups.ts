@@ -6,11 +6,11 @@
 import type { Store } from "../../../../apps/cli/src/db/store.ts";
 import { AppError } from "../../../../apps/cli/src/errors.ts";
 import { getFocusProject } from "../../../../apps/cli/src/config.ts";
-import { listProjects } from "../../../../apps/cli/src/project.ts";
+import { getProject, listProjects } from "../../../../apps/cli/src/project.ts";
 import { listTeams } from "../../../../apps/cli/src/team.ts";
 
-/** The group of the projects in no team. Not a team name `ob t3 team add` could also take: it is listed last, and a real team called `other` wins. */
-export const OTHER_GROUP = "other";
+/** The group of the projects in no team. A leading `_` is outside the team-name grammar, so no team can take it. */
+export const OTHER_GROUP = "_other";
 /** The group a page opens on when the URL names none and the focus project is in no group. */
 export const DEFAULT_GROUP = "slash";
 
@@ -50,7 +50,7 @@ export async function projectGroups(store: Store): Promise<ProjectGroup[]> {
   for (const p of projects) (byId.get(p.team_name ?? "") ?? other).projects.push({ id: p.id, label: label(p) });
   for (const g of groups) g.projects.sort((a, b) => a.label.localeCompare(b.label));
   other.projects.sort((a, b) => a.label.localeCompare(b.label));
-  return [...groups, ...(byId.has(OTHER_GROUP) ? [] : [other])].filter((g) => g.projects.length > 0);
+  return [...groups, other].filter((g) => g.projects.length > 0);
 }
 
 /**
@@ -65,12 +65,12 @@ export async function resolveScope(store: Store, ask: { team?: string; project?:
   const groupOf = (projectId: string) => groups.find((g) => g.projects.some((p) => p.id === projectId));
 
   if (ask.project !== undefined) {
-    // By id, or by its name or label as `ob next --project` takes either.
-    for (const g of groups) {
-      const p = g.projects.find((x) => x.id === ask.project || x.label === ask.project);
-      if (p) return { groups, group: g, project: p, projectIds: [p.id] };
-    }
-    throw new AppError(`no project '${ask.project}'`);
+    // By id or name, as `ob next --project` takes either.
+    const found = await getProject(store, ask.project);
+    const group = found ? groupOf(found.id) : undefined;
+    const p = group?.projects.find((x) => x.id === found!.id);
+    if (!group || !p) throw new AppError(`no project '${ask.project}'`);
+    return { groups, group, project: p, projectIds: [p.id] };
   }
 
   const focus = await getFocusProject(store);

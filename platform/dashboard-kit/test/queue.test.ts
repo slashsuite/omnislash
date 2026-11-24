@@ -151,6 +151,28 @@ describe("queue by group", () => {
     expect(titles(await queueView(store, { team: OTHER_GROUP })).high).toEqual(["other-high"]);
   });
 
+  test("a team called other does not swallow the projects in no team", async () => {
+    const { store } = await teams();
+    await registerProject(store, { name: "Lab Work", kind: "side" });
+    await addTeam(store, { name: "other", projects: ["lab-work"] });
+    const groups = await projectGroups(store);
+    expect(groups.map((g) => [g.id, g.projects.map((p) => p.id)]).slice(-2)).toEqual([
+      ["slash", ["omnislash", "taskslash"]],
+      [OTHER_GROUP, ["other"]],
+    ]);
+    expect(groups.some((g) => g.id === "other")).toBe(true);
+    expect((await queueView(store, { project: "other" })).group.id).toBe(OTHER_GROUP);
+  });
+
+  test("?project= finds a project by id or by name, not by its display name alone", async () => {
+    const { store } = await teams();
+    await registerProject(store, { name: "Task Board", kind: "side", displayName: "Board" });
+    await addTeam(store, { name: "work", projects: ["task-board"] });
+    expect((await queueView(store, { project: "Task Board" })).project!.id).toBe("task-board");
+    expect((await queueView(store, { project: "task-board" })).group.id).toBe("work");
+    await expect(queueView(store, { project: "nope" })).rejects.toThrow("no project 'nope'");
+  });
+
   test("no team asked: the focus project's group, else Slash; an unknown team falls back the same way", async () => {
     const { store } = await teams();
     expect((await queueView(store)).group.id).toBe(DEFAULT_GROUP);
