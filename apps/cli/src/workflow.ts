@@ -101,21 +101,23 @@ export async function closeItem(db: Database | Store, id: string, decision: Deci
   else await transitionTo(db, it.id, "done", decision);
 }
 
-/** The validation half of a reopen (a reopen also requires the item to actually be closed). No write. */
+/** The door half of a reopen: a reopen requires the item to actually be closed. */
+function refuseUnlessReopenable(it: { id: string; type: string; status: string }): void {
+  refuseReference(it);
+  if (it.status !== "done") throw new AppError(`item '${it.id}' is not closed`);
+}
+
+/** The validation half of a reopen. No write. */
 export async function assertReopen(db: Database | Store, id: string): Promise<void> {
   const it = await requireItem(db, id);
-  id = it.id;
-  refuseReference(it);
-  if (it.status !== "done") throw new AppError(`item '${id}' is not closed`);
-  await assertTransition(db, id, "open");
+  refuseUnlessReopenable(it);
+  await assertTransition(db, it.id, "open");
 }
 
 export async function reopenItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
-  // The same checks as `assertReopen`, with only the edge shadowed.
-  refuseReference(it);
-  if (it.status !== "done") throw new AppError(`item '${id}' is not closed`);
+  refuseUnlessReopenable(it);
   await assertTransitionShadowed(db, it, "open", decision);
   await setStatus(db, id, "open");
   await recordDecision(db, id, "done", "open", decision);

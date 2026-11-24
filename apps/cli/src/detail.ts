@@ -1,5 +1,6 @@
 import { getFocusProject } from "./config.ts";
 import { eventsForItemFor, parsePayload } from "./events.ts";
+import { MACHINE_SHADOW_SOURCE } from "./machine-shadow.ts";
 import { getDetail, getItem, getLinearRef, getLinks, getTags, getTaskDetail, type LinkRow } from "./items.ts";
 import { decisionsForItem, type Decision } from "./decisions.ts";
 import { itemView } from "./output.ts";
@@ -87,7 +88,8 @@ export async function itemDetail(store: Store, id: string): Promise<ItemDetail> 
   const detail = await getDetail(store, row.type, id);
   const taskDetail = row.type === "task" ? await getTaskDetail(store, id) : null;
   const linear = await getLinearRef(store, id);
-  const events = await eventsForItemFor(store, id);
+  // OS-169: the state-machine shadow's rows are telemetry, not the item's activity.
+  const events = await eventsForItemFor(store, id, 50, { notSource: MACHINE_SHADOW_SOURCE });
 
   // Associated PRs: the github-source events carry the pr (+ url) in their payload. Collapse to the
   // distinct PRs, each keeping its most-recent event's type/ts (events already come newest-first).

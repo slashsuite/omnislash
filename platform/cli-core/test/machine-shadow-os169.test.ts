@@ -14,6 +14,8 @@ import { blockItem, moveItem, reopenItem, transitionTo, unblockItem } from "../.
 import { MACHINE_SHADOW_SOURCE, MACHINE_WOULD_REFUSE, machineShadowSeam } from "../../../apps/cli/src/machine-shadow.ts";
 import { decide } from "../../state-machine/src/decide.ts";
 import { buildItemBrief } from "../../../apps/cli/src/commands/brief.ts";
+import { itemDetail } from "../../../apps/cli/src/detail.ts";
+import { asStore } from "../../../apps/cli/src/db/store.ts";
 
 const paths: string[] = [];
 const restores: Array<() => void> = [];
@@ -247,7 +249,7 @@ describe("OS-169 shadow check: what is not checked", () => {
     expect(await shadowEvents(d)).toEqual([]);
   });
 
-  test("the item brief leaves the shadow's events out", async () => {
+  test("the item brief and the item detail leave the shadow's events out", async () => {
     const d = db();
     const id = await itemAt(d, "open");
     machineSays("refuse");
@@ -255,5 +257,7 @@ describe("OS-169 shadow check: what is not checked", () => {
     expect(await shadowEvents(d)).toHaveLength(1);
     const brief = await buildItemBrief(d, (await getItem(d, id))!);
     expect(brief.events.filter((e) => e.source === MACHINE_SHADOW_SOURCE)).toEqual([]);
+    const detail = await itemDetail(asStore(d), id);
+    expect(detail.events.filter((e) => e.source === MACHINE_SHADOW_SOURCE)).toEqual([]);
   });
 });
