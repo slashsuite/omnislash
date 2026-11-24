@@ -79,7 +79,8 @@ import {
   resetAgentsAndLeases,
   setAgentRun,
 } from "../../../../platform/cli-coord/src/agent.ts";
-import { plannedFilesFor, recordSpinoffCheck, refuseUncheckedDispatch } from "../../../../platform/cli-coord/src/spinoff-check.ts";
+import { declaredFilesFor, plannedFilesFor, recordSpinoffCheck, refuseUncheckedDispatch } from "../../../../platform/cli-coord/src/spinoff-check.ts";
+import { recordOverlap } from "../../../../platform/cli-coord/src/spinoff-overlap.ts";
 import {
   agentLauncherMap,
   claimSpinoffRow,
@@ -197,6 +198,8 @@ import type {
   SpinoffServingRequest,
   SpinoffPlannedFilesRequest,
   SpinoffPlannedFilesResponse,
+  SpinoffOverlapRequest,
+  SpinoffOverlapResponse,
   StampSpinoffRequest,
   StampSpinoffResponse,
   AcquireLeaseResponse,
@@ -1462,6 +1465,16 @@ export async function spinoffPlannedFiles(store: Store, req: SpinoffPlannedFiles
     planned.push({ id: row.id, files: await plannedFilesFor(store, row.ticket_ref, typeof row.item_id === "string" ? row.item_id : null) });
   }
   return { planned };
+}
+
+/** OS-47: the overlap warning's store half: declared files read, or the `overlap` decision written, here where the trail is. */
+export async function spinoffOverlap(store: Store, req: SpinoffOverlapRequest): Promise<SpinoffOverlapResponse> {
+  if (req.op === "record") {
+    return { op: "record", recorded: await recordOverlap(store, req.ticket_ref, req.rows, { note: req.note, actor: req.actor }) };
+  }
+  const declared: Array<{ ticket_ref: string; files: string[] | null }> = [];
+  for (const ref of req.refs) declared.push({ ticket_ref: ref.ticket_ref, files: await declaredFilesFor(store, ref.ticket_ref, ref.item_id) });
+  return { op: "declared", declared };
 }
 
 export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise<EnqueueSpinoffResponse> {

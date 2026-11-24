@@ -98,7 +98,7 @@ export const READ_COMMANDS: Record<string, ReadRule> = {
   "review-miss": { subs: ["top"] },
   log: { subs: ["list"] },
   issue: { bare: true, subs: ["list", "landed", "reconcile", "drift"] },
-  spinoff: { subs: ["list", "brief", "show"] },
+  spinoff: { subs: ["list", "brief", "show", "overlap"] },
   // ingested sources: the search/listing halves (`* sync` writes)
   gmail: { subs: ["search", "list"] },
   cal: { subs: ["agenda"] },
@@ -141,6 +141,7 @@ export const SPINOFF_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "cleanup",
   "brief",
   "check",
+  "overlap",
   "list",
   "show",
   "mix",

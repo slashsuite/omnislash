@@ -20,8 +20,9 @@ import {
 } from "../../../../apps/cli/src/settings.ts";
 import { registerAgent, listAgents, getAgent } from "../agent.ts";
 import { finishAgent } from "../agent-register.ts";
-import { plannedFilesFor, readCheckInput, recordSpinoffCheck, type CheckResult, refuseUncheckedDispatch, renderCheckResult } from "../spinoff-check.ts";
+import { declaredFilesFor, plannedFilesFor, readCheckInput, recordSpinoffCheck, type CheckResult, refuseUncheckedDispatch, renderCheckResult } from "../spinoff-check.ts";
 import { compareFiles, filesLine, type FilesComparison } from "../spinoff-files.ts";
+import { overlapFor, printOverlap, warnDispatchOverlap } from "../spinoff-overlap.ts";
 import { stateDisplayLines } from "../spinoff-state-reason.ts";
 import { BRANCH_SLUG_MAX, branchSlug, builderIdOf, cleanRepoLaunchLine, isObRepo, legRef, obLeaks, parseRecordableVerdict, refKey, renderLeaks, rowStateText, uniqueBranch, verdictStateFor, type Leak, type RowVerdict } from "../clean-repo.ts";
 import { IN_FLIGHT, STATE_VERDICT_TOKENS, spinoffStatusWord, toStoredSpinoffStatus, withStatusWord } from "../spinoff-vocab.ts";
@@ -1099,6 +1100,11 @@ function describeShFailure(cmd: string[], r: ShResult): string {
 /** The shell-runner seam — injectable so tests never fork a real `git`/`open`. */
 const shSeam = defineSeam<Sh>("cli-coord/spinoff.sh", realSh);
 const sh: Sh = (cmd, cwd, timeoutMs) => shSeam.get()(cmd, cwd, timeoutMs);
+/** OS-47: what the overlap check reads on this machine: the rows, their checkouts and git (`sh`, which the API client shares). */
+export function overlapSeams(db: Database | Store) {
+  return { sh, rows: () => listSpinoffs(db), repoPath: (repo: string) => rowRepoPathFor(db, repo) };
+}
+export const overlapSh: Sh = (cmd, cwd, timeoutMs) => sh(cmd, cwd, timeoutMs);
 /** Test seam: swap the shell runner; returns a restore fn. */
 export function __setSh(fn: Sh): () => void {
   return shSeam.set(fn);
@@ -6161,6 +6167,18 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     return;
   }
 
+  if (sub === "overlap") {
+    // OS-47: the dispatch's overlap lines for <ticket>, without the launch. Always exits 0.
+    const ref = await dispatchRefFor(store, ctx.args[1] ?? "");
+    if (!ref) throw new UsageError("spinoff overlap requires a <ticket-ref>");
+    const repoFlag = flag(ctx, "repo");
+    const own = (await listSpinoffs(store)).find((r) => r.ticket_ref === ref && IN_FLIGHT.has(r.status));
+    const repo = repoFlag ? await repoForRow(store, repoFlag) : (own?.repo ?? (await ticketProjectRepoFor(store, ref))?.repo ?? process.cwd());
+    const result = await overlapFor({ ref, repo, itemId: await ticketItemIdFor(store, ref) }, { ...overlapSeams(store), declared: (r, id) => declaredFilesFor(store, r, id) });
+    printOverlap({ ref, repo }, result, ctx.mode === "json");
+    return;
+  }
+
   if (sub === "check") {
     // OB-1825: record the measure-twice verdict the dispatch gate reads. ob never runs the checker.
     const { ref, architect, checker, resolutions } = spinoffCheckArgs(ctx);
@@ -6339,6 +6357,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // OB-1825: last, so a dispatch another check refuses leaves no stray `--no-check` on the trail.
   const uncheckedWarning = await refuseUncheckedDispatch(store, ticketRef, { noCheck, actor: flag(ctx, "holder") });
   if (uncheckedWarning) warn(`  ⚠ ${uncheckedWarning}`);
+  if (!queueOnly) await warnDispatchOverlap(store, { ref: ticketRef, repo }, { ...overlapSeams(store), noCheck, actor: flag(ctx, "holder") }); // OS-47: warns, never refuses
   if (overUsage) await recordOverUsage(store, ticketRef, overUsage, { actor: flag(ctx, "holder") });
 
   // OB-1991: while a model trial is active, a dispatch at its tier runs twice, same brief, one row per leg.
@@ -6506,6 +6525,8 @@ async function enqueueAndLaunchSplit(
   const parsed = parseStepAnswer<{ row: SpinoffRow; deduped: boolean; urgent?: boolean; raised_from?: SpinoffTier | null }>(queueArgv, outcome.stdout);
   if (!parsed.value?.row) throw new AppError(parsed.error ?? `'ob ${queueArgv.join(" ")}' answered no row`);
   const urgentNote = parsed.value.urgent ? { from: parsed.value.raised_from ?? null } : null; // OB-2075: the server decided it
+  // OS-47: read off this machine's replica and checkout; the trail is the server's, so the split client only prints.
+  await warnDispatchOverlap(ctx.db, { ref: parsed.value.row.ticket_ref, repo }, { ...overlapSeams(ctx.db), noCheck: flag(ctx, "no-check"), record: async () => {} });
   await launchAndReport(ctx, ctx.db, parsed.value.row, parsed.value.deduped === true, opts.tier !== undefined, opts.under, spinoffSteps(ctx, opts.under), urgentNote);
 }
 
