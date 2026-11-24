@@ -127,3 +127,18 @@ export function formatSpikeReport(
     architect,
   ].join("\n");
 }
+
+/**
+ * The refusal a spike's handoff earns without a clean claims review (OS-180), or null when the note carries one.
+ * A spike runs the skeptical review's claims mode on its report and notes before handoff, and says so with a
+ * `claims-review: <N> cut, 0 open (<legs>)` line in `--note` (text from `--report` counts: the CLI merges them).
+ * No line, or a last line with open findings, is refused. Pure.
+ */
+export function spikeClaimsReviewMissing(note: string | null | undefined): string | null {
+  // The last line is the verdict: a note or report may quote an earlier round's line before the final one.
+  const m = [...(note ?? "").matchAll(/claims-review:\s*(\d+) cut, (\d+) open/g)].at(-1);
+  if (!m) return "spike handoff needs a 'claims-review: N cut, 0 open' line in --note (run the claims review in ob-skeptical-review first). Nothing was handed off";
+  const open = Number(m[2]);
+  if (open > 0) return `claims review still has ${open} open: fix or strike each in the report or with a new ob note on the parent, then hand off again. Nothing was handed off`;
+  return null;
+}

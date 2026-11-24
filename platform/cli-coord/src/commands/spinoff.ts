@@ -72,7 +72,7 @@ import { launchAcrossProfiles, relaunchOnCreditFailure, routeInputsOrRefuse, rou
 import { readSpinoffTokens, readOpencodeSpinoffTokens, readRowTokens, tokensForRow, type TokenReader, formatTokens, rootOpencodeSessionId, tokenSourceFor, type TokenUsage } from "../spinoff-tokens.ts";
 import { parseSince, reportMix } from "../spinoff-mix.ts";
 import { abandonSpinoff, renderAbandon, type AbandonDeps } from "../spinoff-abandon.ts";
-import { assertSpikeDocsOnly, formatSpikeReport, isSpikeTagged, spikeEndError } from "../spinoff-spike.ts";
+import { assertSpikeDocsOnly, formatSpikeReport, isSpikeTagged, spikeClaimsReviewMissing, spikeEndError } from "../spinoff-spike.ts";
 import { renderSendBack, sendBackSpinoff, type SendBackDeps } from "../spinoff-sendback.ts";
 import { renderReopen, reopenSpinoff, type ReopenDeps } from "../spinoff-reopen.ts";
 import { isLandable, noteErrorLine, reportGateable, type GateableFacts, type GateableSource, type PlannedFiles } from "../spinoff-gateable.ts";
@@ -3586,6 +3586,10 @@ export async function markSpinoffReady(
   // so a client that did not check cannot stamp one by mistake.
   const spike = !already && isSpikeTagged(await spinoffTicketTagsFor(s, row.ticket_ref, row.item_id));
   if (spike) {
+    // OS-180: a spike's claims reach the architect only after a skeptical claims review; checked here, on the
+    // host, so the API's handoff holds to it too.
+    const claims = spikeClaimsReviewMissing(decision.note);
+    if (claims) throw new AppError(`spike ${row.ticket_ref}: ${claims}`);
     // --note still goes on the trail, as building → building: the row does not move.
     await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord(row.status), decision);
     const existing = await getAgent(s, builderIdOf(row));

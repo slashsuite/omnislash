@@ -236,6 +236,58 @@ wrong and nothing to cut, 1 = mostly broken or overbuilt). A reader that cannot 
 Cap each list at ~8 findings, `wrong` first; merge them yourself, ranked by agreement and keeping single-reader
 findings (Which models, Merge the lists yourself). No praise. No essay.
 
+## Claims review (spikes)
+
+A spike (a ticket tagged `spike`) ships no code, so there is no diff to read. What reaches the architect is
+its claims: the report it committed under `docs/`, and the `ob note`s it wrote on the parent ticket. Its numbers
+and file references drive build tickets (OS-180: HC-559's numbers drove four; OS-167 named a decision write in
+`moveSpinoff` that is not there), so the spike runs this review before its handoff.
+
+**The stance.** Every claim in the report and the notes is wrong until evidence clears it. A reader reports
+one of three findings, each with the claim quoted:
+
+- `wrong:` a file:line, symbol, behaviour or count that the code at the brief's sha contradicts. Quote what
+  is actually there (`git show <sha>:<path>`).
+- `unbacked:` a number or result whose command and output are not in the report or the worktree. Readers
+  cannot re-run anything (`READ_COMMANDS` in `review-leg.ts`), so they only look for the cited output; a
+  number with no output beside it is unbacked, however plausible.
+- `leap:` a recommendation or draft ticket that the evidence above it does not support. Name the step
+  that is missing.
+
+On a rebuttal brief (round 2 on) it first answers each prior finding, one line each, `accepted` or
+`rejected: <the evidence the answer misses>`. Then `ok` (say how many claims were read) or the findings, at most
+~8, `wrong` first, and `score: N/10`.
+
+**The brief recipe.** The same legs as a diff review, every one `ob review readers --tier <tier> -q` lists
+(How to run), each through `review-leg.ts` with its own brief file; `review-leg.ts` and `ob-reviewer.md` do
+not change. Fetch first, because readers cannot:
+
+```bash
+git fetch origin
+SHA=$(git rev-parse origin/main)
+legs=$(ob review readers --tier "$TIER" -q) && [ -n "$legs" ] || legs="neon opus"
+for leg in $legs; do
+  { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/{/^## Before/d;p;}' "$R/SKILL.md"
+    echo "Ref: check every claim against origin/main at $SHA (git show $SHA:<path>)."
+    echo "Scope: the claims below; read only the files they name, at that sha."
+    echo; echo "## The report"; cat docs/<the report>.md
+    echo; echo "## The notes on the parent"; ob show <parent>
+  } > "$D/review-<spike>-$leg.brief.md"
+  bun "$R/review-leg.ts" "$leg" < "$D/review-<spike>-$leg.brief.md" > "$D/review-<spike>-$leg.txt" 2>&1 &
+done; wait
+```
+
+With no report, the notes alone are the brief. A leg's recorded `diffSize` is the spike branch's diff and
+means nothing for a claims review; ignore it. Skipped and failed legs are reported as for a diff review.
+
+**Rounds.** Fix or strike each finding, then run the next round with the rebuttal pass above, at most 3
+rounds as for a build. A claim in the report is fixed by editing the report. A claim in a note is fixed by
+a new `ob note <parent>` that corrects or withdraws it (a note cannot be edited), and the next round's brief
+carries it. The spike hands off with `claims-review: <N> cut, 0 open (<leg>: <a>, <leg>: <b>)` in `--note`,
+naming every leg, for example `claims-review: 3 cut, 0 open (opus: 2, neon: 1)` (`ob-spinoff`, the spike
+paragraph). The handoff refuses a spike without that line or with open findings. It reads the last such line in
+the note and `--report` together, report last, so a report that records earlier rounds ends on the final one.
+
 ## Before the readers run (rounds, step a)
 
 Readers judge the diff they are handed, so hand them the current one. Before a round starts:
