@@ -5,6 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { FIXED_ROUTES } from "../../cli/src/models-file.ts";
+import { pagesNav } from "./nav.ts";
 import { cliEnv, MODELS_FILE } from "./world.ts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
@@ -40,9 +41,9 @@ const row = (page: Page, name: string) => page.getByRole("region", { name, exact
 
 test.beforeEach(() => reseed());
 
-test("the header's Models tab opens every route with where its model comes from", async ({ page }) => {
+test("the header's Models tab opens every route with where its model comes from", async ({ page }, info) => {
   await open(page, "/");
-  await page.getByRole("link", { name: "Models" }).click();
+  await (await pagesNav(page, info)).getByRole("link", { name: "Models", exact: true }).click();
   await expect(page).toHaveURL(/\/models$/);
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
 

@@ -1,4 +1,5 @@
-// OB-2208: Tokens (with the WhatsApp pairing panel) moved to the OB dashboard, and the OB header links to it.
+// OS-24: the OB header nav lists the pages that exist (Home, Alerts, Tokens, Models), in that order, and marks
+// the current one with aria-current. The e2e (e2e/home.spec.ts) checks the same at desktop and phone width.
 import { describe, expect, mock, test } from "bun:test";
 import { renderToString } from "react-dom/server";
 
@@ -9,14 +10,36 @@ void mock.module("../../../platform/dashboard-kit/src/lib/useRealtime.ts", () =>
 const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } = await import("@tanstack/react-router");
 const { ObFrame } = await import("../src/components/ObFrame.tsx");
 
-describe("ObFrame (OB-2208)", () => {
-  test("the header has a plain link to /tokens", async () => {
-    const router = createRouter({
-      routeTree: createRootRoute({ component: () => <ObFrame>page</ObFrame> }),
-      history: createMemoryHistory({ initialEntries: ["/"] }),
-    });
-    await router.load();
-    const html = renderToString(<RouterProvider router={router} />);
-    expect(html).toMatch(/<a[^>]*href="\/tokens"[^>]*>(?:(?!<\/a>).)*Tokens/s);
+async function header(path: string): Promise<string> {
+  const router = createRouter({
+    routeTree: createRootRoute({ component: () => <ObFrame>page</ObFrame> }),
+    history: createMemoryHistory({ initialEntries: [path] }),
   });
+  await router.load();
+  return renderToString(<RouterProvider router={router} />);
+}
+
+/** The Pages nav's links, in order, with whether each is marked current. */
+function navLinks(html: string): { href: string; label: string; current: boolean }[] {
+  const nav = /<nav[^>]*aria-label="Pages"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? "";
+  return [...nav.matchAll(/<a([^>]*)>(.*?)<\/a>/gs)].map(([, attrs, inner]) => ({
+    href: /href="([^"]*)"/.exec(attrs!)?.[1] ?? "",
+    label: inner!.replace(/<[^>]+>/g, ""),
+    current: /aria-current="page"/.test(attrs!),
+  }));
+}
+
+describe("ObFrame nav (OS-24)", () => {
+  for (const page of ["/", "/alerts", "/tokens", "/models"]) {
+    test(`on ${page} the nav marks ${page} as the current page`, async () => {
+      const links = navLinks(await header(page));
+      expect(links.map((l) => [l.href, l.label])).toEqual([
+        ["/", "Home"],
+        ["/alerts", "Alerts"],
+        ["/tokens", "Tokens"],
+        ["/models", "Models"],
+      ]);
+      expect(links.filter((l) => l.current).map((l) => l.href)).toEqual([page]);
+    });
+  }
 });

@@ -34,6 +34,12 @@ export const SEED_ROUTES = {
 /** OS-23: the last `ob creds check opencode-go` every test starts from: ok, at a fixed time. */
 export const SEED_CREDIT_AT = "2026-11-24T08:30:12.000Z";
 
+/** OS-24: the home page's world. A builder parked on a human for REVIEW_REF, and two items ranked into Today. */
+export const REVIEW_REF = "OS-1";
+export const REVIEW_TITLE = "Wire the home page";
+export const REVIEW_NOTE = "is the empty-state wording right?";
+export const FOCUS_TITLES = ["Ship the header nav", "Fix the drawer save"] as const;
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }
