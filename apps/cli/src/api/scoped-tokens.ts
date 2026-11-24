@@ -17,9 +17,9 @@ import { dirname, join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { tokenMatches } from "./token.ts";
 
-export const OB_API_TOKENS_FILE_ENV = "OB_API_TOKENS_FILE";
+const OB_API_TOKENS_FILE_ENV = "OB_API_TOKENS_FILE";
 
-export function defaultTokensPath(): string {
+function defaultTokensPath(): string {
   return join(homedir(), ".ob_api_tokens.json");
 }
 
@@ -108,7 +108,7 @@ export function sha256Hex(token: string): string {
  * The scoped entry a presented token matches, or null. Every entry is compared (no early exit), each in
  * constant time over the fixed-width digest.
  */
-export function matchScoped(presented: string | null, entries: readonly ScopedTokenEntry[]): ScopedTokenEntry | null {
+function matchScoped(presented: string | null, entries: readonly ScopedTokenEntry[]): ScopedTokenEntry | null {
   if (presented === null) return null;
   const digest = new Bun.CryptoHasher("sha256").update(presented).digest();
   let found: ScopedTokenEntry | null = null;
@@ -119,7 +119,7 @@ export function matchScoped(presented: string | null, entries: readonly ScopedTo
   return found;
 }
 
-export type AuthResult = { ok: true; principal: Principal } | { ok: false; disabledMessage: string | null };
+type AuthResult = { ok: true; principal: Principal } | { ok: false; disabledMessage: string | null };
 
 /**
  * Who presented this token. The admin token wins any match. A tokens file that is refused (permissions,

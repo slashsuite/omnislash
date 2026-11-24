@@ -559,19 +559,21 @@ export function createObApi(deps: ObApiDeps): (req: Request) => Promise<Response
       // OS-178: a scoped principal reaches only a GET on a route in one of its granted families. Deny by
       // default: a path with no OB_API_ROUTES entry is 403 too, so a route() branch someone forgot to list
       // fails safe.
-      let scope: ProjectScope | undefined;
+      const scopedProjects = principal.all ? null : principal.projects;
       if (!principal.all) {
         const entry = matchApiRoute(method, segments);
         if (!entry || method !== "GET" || !OB_API_SCOPABLE_FAMILIES.includes(entry.family) || !principal.families.includes(entry.family)) {
           return fail("forbidden", 403, `${method} ${url.pathname} is not granted to the token of '${principal.user}'`);
         }
-        scope = await projectScopeFor(await deps.store(), principal.projects);
       }
       // 1616: the store call has no timeout of its own (a leaked pool slot waits forever), so the request
       // does. The 504 names the call and the budget instead of the connection sitting open for 43 minutes.
-      const response = await withDeadline(`${method} ${url.pathname}`, apiTimeoutFor(rest, deps.requestTimeoutMs ?? API_REQUEST_TIMEOUT_MS), async () =>
-        route(await deps.store(), req, url, method, segments, deps, googleStates, scope),
-      );
+      const response = await withDeadline(`${method} ${url.pathname}`, apiTimeoutFor(rest, deps.requestTimeoutMs ?? API_REQUEST_TIMEOUT_MS), async () => {
+        const store = await deps.store();
+        // Inside the deadline: resolving the scope is a store call like any other.
+        const scope = scopedProjects ? await projectScopeFor(store, scopedProjects) : undefined;
+        return route(store, req, url, method, segments, deps, googleStates, scope);
+      });
       if (response) return response;
       // A local-only command (map D3) refuses BY NAME with its reason rather than as a generic miss, so a
       // client that tried to route one here is told it asked the wrong machine, not that it typo'd.
