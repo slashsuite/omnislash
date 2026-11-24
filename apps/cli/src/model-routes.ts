@@ -32,6 +32,8 @@ import {
   builderFormError,
   builderRangeOf,
   builderTierOf,
+  isComplexity,
+  rangeCoverError,
   rangeRoute,
   rangeText,
   type ComplexityRange,
@@ -64,6 +66,7 @@ import {
   parseReviewRange,
   withRange,
   type ConfigIO,
+  type ReviewRange,
   type ReviewReaders,
 } from "./review-readers.ts";
 
@@ -559,6 +562,30 @@ export function withRoute(v: ModelRoutes, profile: string, route: string, chain:
   return withProfile(v, profile, (p) => ({ ...p, routes: { ...p.routes, [route]: s } }));
 }
 
+/** One range of a whole builder set, as the dashboard's range editor sends it. */
+export interface BuilderRangeEdit extends ComplexityRange {
+  chain: string[];
+  effort?: RouteEffort;
+}
+
+/**
+ * Replace `profile`'s whole server builder set with `ranges` (OS-176, the dashboard's range editor). The set must
+ * cover 1-10 with no gap or overlap; a refusal is the same `rangeCoverError` text the CLI gives, under the
+ * `model_routes profile '<name>':` prefix `validateModelRoutes` puts on it. Checked on the list, so two equal
+ * ranges are an overlap rather than one silently replacing the other. Pure.
+ */
+export function withBuilderRanges(v: ModelRoutes, profile: string, ranges: readonly BuilderRangeEdit[]): ModelRoutes {
+  for (const r of ranges) {
+    if (!isComplexity(r.from) || !isComplexity(r.to) || r.from > r.to) {
+      throw new ModelRoutesError(`model_routes profile '${profile}': builder range ${String(r.from)}-${String(r.to)} must be whole numbers 1 to 10, from no higher than to`);
+    }
+  }
+  const cover = rangeCoverError(ranges);
+  if (cover) throw new ModelRoutesError(`model_routes profile '${profile}': ${cover}`);
+  const set = Object.fromEntries(ranges.map((r) => [rangeRoute(r), { chain: [...r.chain], ...(r.effort ? { effort: r.effort } : {}) }]));
+  return withProfile(v, profile, (p) => ({ ...p, routes: { ...withoutBuilder(p.routes), ...set } }));
+}
+
 /** `ob models unset builder`: the profile's whole builder set off the server, back to the defaults. */
 export const BUILDER_SET = "builder";
 
@@ -629,6 +656,16 @@ export function setReaderRange(current: ReviewReaders, range: string, legs: stri
   if (!r) throw new ModelRoutesError(`'${range}' is not a complexity range (use <from>-<to> inside 1-10, such as 4-6)`);
   try {
     return withRange(current, r, legs);
+  } catch (e) {
+    if (e instanceof ReviewReadersError) throw new ModelRoutesError(e.message);
+    throw e;
+  }
+}
+
+/** Replace every review range at once (OS-176, the dashboard's range editor). Throws ModelRoutesError with the CLI's gap and overlap text. */
+export function setReaderRanges(current: ReviewReaders, ranges: ReviewRange[]): ReviewReaders {
+  try {
+    return validateReviewReaders({ readers: current.readers, tiers: ranges });
   } catch (e) {
     if (e instanceof ReviewReadersError) throw new ModelRoutesError(e.message);
     throw e;

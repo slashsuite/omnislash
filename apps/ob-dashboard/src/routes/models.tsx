@@ -1,7 +1,28 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, type ChangeEvent } from "react";
-import { Button, Callout, Caption, Card, Checkbox, Cluster, Input, PageHeader, Pill, Select, Stack, Text, TextLink } from "@hackcove/ui-react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  Button,
+  Callout,
+  Caption,
+  Card,
+  Checkbox,
+  Cluster,
+  Input,
+  PageHeader,
+  Pill,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Text,
+  TextLink,
+} from "@hackcove/ui-react";
 import { checkedAtText, creditState } from "../lib/credit.ts";
+import { draftsOf, mergeNext, rangesOf, splitAt, type DraftRange } from "../lib/ranges.ts";
 import { getModels, saveModels, type ModelsOp, type ModelsPage, type ModelsView } from "../server/models.ts";
 
 // OS-146: the Models page over OS-145's model routing. It edits the server's `model_routes` setting, the one
@@ -166,25 +187,229 @@ function AddReader({ profile, send }: { profile: string; send: Send }) {
   );
 }
 
-/** One review range (OS-175) and a box per reader. Editing the ranges themselves (split, merge) is OS-176. */
-function RangeRow({ range, legs, view, send }: { range: string; legs: string[]; view: ModelsView; send: Send }) {
-  const s = useSend(send);
+/** Rows that start from the view's ranges and follow them when a save changes them, like `useDraft`. */
+function useRows<T>(from: DraftRange<T>[]) {
+  const key = JSON.stringify(from);
+  const [rows, setRows] = useState(from);
+  const [seen, setSeen] = useState(key);
+  if (seen !== key) {
+    setSeen(key);
+    setRows(from);
+  }
+  return [rows, setRows] as const;
+}
+
+/**
+ * A profile's whole set of ranges as a table (OS-176): each row's from and to, its value, a split at a number and
+ * a merge with the next row. Nothing is sent until the save, which sends the whole set; the server refuses a gap
+ * or an overlap with the CLI's own message.
+ */
+function RangeTable<T>({
+  kind,
+  rows,
+  setRows,
+  heads,
+  cells,
+  busy,
+  edited,
+}: {
+  kind: string;
+  rows: DraftRange<T>[];
+  setRows: (rows: DraftRange<T>[]) => void;
+  heads: string[];
+  cells: (row: DraftRange<T>, i: number, set: (value: T) => void) => ReactNode;
+  busy: boolean;
+  /** A row changed: clears the last save's "saved" and any refusal of a split or merge. */
+  edited: (refusal: string | null) => void;
+}) {
+  const [at, setAt] = useState<Record<number, string>>({});
+  const change = (next: DraftRange<T>[] | string) => {
+    if (typeof next === "string") return edited(next);
+    // A split or merge moves the rows under their "Split at" boxes; an edit in place keeps them.
+    if (next.length !== rows.length) setAt({});
+    setRows(next);
+    edited(null);
+  };
+  const put = (i: number, patch: Partial<DraftRange<T>>) => change(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
-    <Stack gap="xs">
-      <Cluster gap="sm">
-        <Text as="span" strong>{range}</Text>
-        {Object.keys(view.review.value.readers).map((leg) => (
-          <Checkbox
-            key={leg}
-            size="sm"
-            label={`${leg} on ${range}`}
-            checked={legs.includes(leg)}
-            disabled={s.busy}
-            onChange={(checked) =>
-              s.run({ op: "readerRange", profile: view.profile, range, legs: checked ? [...legs, leg] : legs.filter((l) => l !== leg) })
-            }
-          />
-        ))}
+    <Table label={`${kind} ranges`}>
+      <TableHead>
+        <TableRow>
+          <TableHeaderCell numeric>From</TableHeaderCell>
+          <TableHeaderCell numeric>To</TableHeaderCell>
+          {heads.map((h) => (
+            <TableHeaderCell key={h}>{h}</TableHeaderCell>
+          ))}
+          <TableHeaderCell>Split or merge</TableHeaderCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.map((row, i) => {
+          const name = `${kind} row ${i + 1}`;
+          return (
+            <TableRow key={i}>
+              <TableCell numeric>
+                <Input aria-label={`From, ${name}`} numeric inputMode="numeric" width="xs" value={row.from} disabled={busy} onChange={(e: ChangeEvent<HTMLInputElement>) => put(i, { from: e.target.value })} />
+              </TableCell>
+              <TableCell numeric>
+                <Input aria-label={`To, ${name}`} numeric inputMode="numeric" width="xs" value={row.to} disabled={busy} onChange={(e: ChangeEvent<HTMLInputElement>) => put(i, { to: e.target.value })} />
+              </TableCell>
+              {cells(row, i, (value) => put(i, { value }))}
+              <TableCell>
+                <Cluster gap="xs">
+                  <Input
+                    aria-label={`Split ${name} at`}
+                    placeholder="at"
+                    numeric
+                    inputMode="numeric"
+                    width="xs"
+                    value={at[i] ?? ""}
+                    disabled={busy}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setAt({ ...at, [i]: e.target.value })}
+                  />
+                  <Button size="sm" variant="outline" disabled={busy || !at[i]?.trim()} onClick={() => change(splitAt(rows, i, at[i] ?? ""))}>
+                    {`Split ${name}`}
+                  </Button>
+                  {i < rows.length - 1 && (
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => change(mergeNext(rows, i))}>
+                      {`Merge ${name} with next`}
+                    </Button>
+                  )}
+                </Cluster>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** The refusal of a split, a merge or a box that is not a number, or the save's outcome. */
+function useRangeSend(send: Send) {
+  const s = useSend(send);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const edited = (r: string | null) => {
+    setRefusal(r);
+    s.clear();
+  };
+  return { ...s, refusal, edited, error: refusal ?? s.error, run: (op: ModelsOp) => (setRefusal(null), s.run(op)) };
+}
+
+type BuilderValue = { chain: string; effort: string };
+
+/** The profile's builder ranges (OS-177): which model a builder launches on for each complexity score. */
+function BuilderRanges({ view, send }: { view: ModelsView; send: Send }) {
+  const bands = view.builder.bands;
+  const [rows, setRows] = useRows(draftsOf(bands, (b): BuilderValue => ({ chain: b.chain.join(", "), effort: b.effort ?? "" })));
+  const s = useRangeSend(send);
+  const profile = view.profile;
+  const save = () => {
+    const ranges = rangesOf(rows);
+    if (typeof ranges === "string") return s.edited(ranges);
+    void s.run({
+      op: "builderRanges",
+      profile,
+      ranges: ranges.map((r) => ({ from: r.from, to: r.to, chain: r.value.chain, ...(r.value.effort ? { effort: r.value.effort } : {}) })),
+    });
+  };
+  const onServer = bands.some((b) => b.source === "server");
+  return (
+    <Card title={`Builder ranges in ${profile}`} count={bands.length}>
+      <Stack gap="sm">
+        <Caption tone="muted">
+          The model a builder launches on, by the ticket's complexity (1-10). The ranges cover 1-10 with no gap or overlap.{" "}
+          {onServer ? "Set on the server for this profile." : "The defaults; a save stores the whole set in this profile."}
+          {view.builder.local && ` This host's models file (${view.file.path}) overrides them here; the editor sets the server value other machines use.`}
+        </Caption>
+        <RangeTable
+          kind="builder"
+          rows={rows}
+          setRows={setRows}
+          heads={["Models", "Effort"]}
+          busy={s.busy}
+          edited={s.edited}
+          cells={(row, i, set) => (
+            <>
+              <TableCell>
+                <Input
+                  aria-label={`Models, builder row ${i + 1}`}
+                  value={row.value.chain}
+                  placeholder="model, fallback model"
+                  spellCheck={false}
+                  disabled={s.busy}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => set({ ...row.value, chain: e.target.value })}
+                  width="fill"
+                />
+              </TableCell>
+              <TableCell>
+                <Select
+                  aria-label={`Effort, builder row ${i + 1}`}
+                  value={row.value.effort}
+                  disabled={s.busy}
+                  onChange={(e: ChangeEvent<HTMLSelectElement>) => set({ ...row.value, effort: e.target.value })}
+                  items={[{ value: "", label: "no effort" }, ...view.efforts.map((x) => ({ value: x, label: x }))]}
+                />
+              </TableCell>
+            </>
+          )}
+        />
+        <Cluster gap="xs">
+          <Button size="sm" disabled={s.busy} onClick={save}>
+            {s.busy ? "Saving…" : "Save builder ranges"}
+          </Button>
+          {onServer && (
+            <Button size="sm" variant="outline" disabled={s.busy} onClick={() => s.run({ op: "unsetRoute", profile, route: "builder" })}>
+              Unset builder ranges
+            </Button>
+          )}
+        </Cluster>
+        <Outcome error={s.error} saved={s.saved} />
+      </Stack>
+    </Card>
+  );
+}
+
+/** The review ranges (OS-175): which readers review a ticket, by its complexity. */
+function ReviewRanges({ view, send }: { view: ModelsView; send: Send }) {
+  const legs = Object.keys(view.review.value.readers);
+  const [rows, setRows] = useRows(draftsOf(view.review.value.tiers, (r) => [...r.legs]));
+  const s = useRangeSend(send);
+  const save = () => {
+    const ranges = rangesOf(rows);
+    if (typeof ranges === "string") return s.edited(ranges);
+    void s.run({ op: "readerRanges", profile: view.profile, ranges: ranges.map((r) => ({ from: r.from, to: r.to, legs: r.value })) });
+  };
+  return (
+    <Stack gap="sm">
+      <RangeTable
+        kind="review"
+        rows={rows}
+        setRows={setRows}
+        heads={["Readers"]}
+        busy={s.busy}
+        edited={s.edited}
+        cells={(row, i, set) => (
+          <TableCell>
+            <Cluster gap="sm">
+              {legs.map((leg) => (
+                <Checkbox
+                  key={leg}
+                  size="sm"
+                  label={`${leg} on review row ${i + 1}`}
+                  checked={row.value.includes(leg)}
+                  disabled={s.busy}
+                  onChange={(checked) => set(checked ? [...row.value, leg] : row.value.filter((l) => l !== leg))}
+                />
+              ))}
+            </Cluster>
+          </TableCell>
+        )}
+      />
+      <Cluster gap="xs">
+        <Button size="sm" disabled={s.busy} onClick={save}>
+          {s.busy ? "Saving…" : "Save review ranges"}
+        </Button>
       </Cluster>
       <Outcome error={s.error} saved={s.saved} />
     </Stack>
@@ -300,6 +525,7 @@ function Models() {
           This host's models file: {view.file.path} {view.file.present ? "(read; shown, never edited here)" : "(none)"}
         </Caption>
         <Profiles key={`${view.profile}:${view.active.name}:${view.profiles.join(",")}`} view={view} send={send} />
+        <BuilderRanges key={view.profile} view={view} send={send} />
         <Card title={`Routes in ${view.profile}`} count={view.routes.length}>
           <Stack gap="sm">
             {view.routes.map((r) => (
@@ -322,10 +548,7 @@ function Models() {
               <ReaderRow key={`${view.profile}:${leg}`} leg={leg} model={r.model} profile={view.profile} send={send} />
             ))}
             <AddReader key={`${view.profile}:${Object.keys(review.value.readers).join(",")}`} profile={view.profile} send={send} />
-            {review.value.tiers.map((r) => {
-              const range = r.from === r.to ? `${r.from}` : `${r.from}-${r.to}`;
-              return <RangeRow key={`${view.profile}:${range}`} range={range} legs={r.legs} view={view} send={send} />;
-            })}
+            <ReviewRanges key={view.profile} view={view} send={send} />
           </Stack>
         </Card>
       </Stack>

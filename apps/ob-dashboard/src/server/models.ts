@@ -62,6 +62,16 @@ const str = (v: unknown, name: string): string => {
   return v;
 };
 
+const num = (v: unknown, name: string): number => {
+  if (typeof v !== "number") throw new Error(`${name} must be a number`);
+  return v;
+};
+
+const list = (v: unknown, name: string): Array<Record<string, unknown>> => {
+  if (!Array.isArray(v)) throw new Error(`${name} must be a list`);
+  return v.map((e) => (e ?? {}) as Record<string, unknown>);
+};
+
 /** The op's shape only: the values themselves are model-routes.ts's to judge. */
 function shapeOf(d: unknown): ModelsOp {
   const o = (d ?? {}) as Record<string, unknown>;
@@ -77,9 +87,18 @@ function shapeOf(d: unknown): ModelsOp {
       return { op: "readerAdd", profile, leg: str(o.leg, "leg"), model: str(o.model, "model") };
     case "readerRemove":
       return { op: "readerRemove", profile, leg: str(o.leg, "leg") };
-    case "readerRange":
-      if (!Array.isArray(o.legs)) throw new Error("legs must be a list");
-      return { op: "readerRange", profile, range: str(o.range, "range"), legs: o.legs.map((l) => str(l, "leg")) };
+    case "builderRanges":
+      return {
+        op: "builderRanges",
+        profile,
+        ranges: list(o.ranges, "ranges").map((r) => ({ from: num(r.from, "from"), to: num(r.to, "to"), chain: str(r.chain, "chain"), ...(r.effort ? { effort: str(r.effort, "effort") } : {}) })),
+      };
+    case "readerRanges":
+      return {
+        op: "readerRanges",
+        profile,
+        ranges: list(o.ranges, "ranges").map((r) => ({ from: num(r.from, "from"), to: num(r.to, "to"), legs: list(r.legs, "legs").map((l) => str(l as unknown, "leg")) })),
+      };
     default:
       throw new Error("unknown op");
   }

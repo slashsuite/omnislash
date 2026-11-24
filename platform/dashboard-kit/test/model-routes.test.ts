@@ -44,8 +44,8 @@ describe("editModels gate", () => {
       const w = await seeded();
       const r = await editModels({ request: post(url), store: async () => w.store }, SET, null, "/nowhere");
       expect(r.ok).toBe(true);
-      const row = r.ok ? r.view.routes.find((x) => x.route === "builder.medium") : undefined;
-      expect(row).toMatchObject({ chain: ["sonnet", "haiku"], source: "server" });
+      const band = r.ok ? r.view.builder.bands.find((b) => b.from === 4 && b.to === 6) : undefined;
+      expect(band).toMatchObject({ chain: ["sonnet", "haiku"], source: "server" });
       expect(JSON.parse((await w.stored()) ?? "{}").profiles.claude.routes["builder.medium"].chain).toEqual(["sonnet", "haiku"]);
     });
   }
@@ -88,3 +88,54 @@ describe("editModels refusals come from model-routes.ts", () => {
   });
 });
 
+
+// OS-176: the range editor sends a profile's whole set of ranges at once.
+describe("editModels range sets", () => {
+  const ctx = (w: { store: Store }) => ({ request: post("https://d.test/"), store: async () => w.store });
+  const builder = (ranges: Array<{ from: number; to: number; chain: string; effort?: string }>): ModelsOp => ({ op: "builderRanges", profile: "claude", ranges });
+
+  test("the view shows the builder set as bands, and the other routes without builder.*", async () => {
+    const w = await seeded();
+    const r = await editModels(ctx(w), { op: "use", profile: "claude" }, null, "/nowhere");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.view.builder.bands.map((b) => [b.from, b.to, b.source])).toEqual([[1, 3, "default"], [4, 6, "default"], [7, 10, "server"]]);
+    expect(r.view.builder.local).toBe(false);
+    expect(r.view.routes.some((x) => x.route.startsWith("builder."))).toBe(false);
+  });
+
+  test("a whole builder set is stored in the range form, replacing the old tier keys", async () => {
+    const w = await seeded();
+    const r = await editModels(ctx(w), builder([{ from: 1, to: 4, chain: "haiku" }, { from: 5, to: 10, chain: "opus", effort: "high" }]), null, "/nowhere");
+    expect(r.ok).toBe(true);
+    expect(JSON.parse((await w.stored()) ?? "{}").profiles.claude.routes).toEqual({
+      "builder.1-4": { chain: ["haiku"] },
+      "builder.5-10": { chain: ["opus"], effort: "high" },
+    });
+  });
+
+  test("a gap is refused with the CLI's message and nothing is stored", async () => {
+    const w = await seeded();
+    const r = await editModels(ctx(w), builder([{ from: 1, to: 3, chain: "haiku" }, { from: 5, to: 10, chain: "opus" }]), null, "/nowhere");
+    expect(r).toEqual({ ok: false, error: "model_routes profile 'claude': builder ranges leave a gap at 4: the ranges must cover 1-10 with no gap" });
+    expect(await w.stored()).toBe(SEED);
+  });
+
+  test("an overlap, even of two equal ranges, is refused", async () => {
+    const w = await seeded();
+    const r = await editModels(ctx(w), builder([{ from: 1, to: 10, chain: "haiku" }, { from: 1, to: 10, chain: "opus" }]), null, "/nowhere");
+    expect(r).toEqual({ ok: false, error: expect.stringContaining("builder ranges 1-10 and 1-10 overlap at 1-10") });
+    expect(await w.stored()).toBe(SEED);
+  });
+
+  test("review ranges are replaced whole, and a gap is refused with the CLI's message", async () => {
+    const w = await seeded();
+    const ok = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["neon"] }, { from: 6, to: 10, legs: ["neon", "opus"] }] }, null, "/nowhere");
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.view.review.value.tiers.map((t) => [t.from, t.to, t.legs])).toEqual([[1, 5, ["neon"]], [6, 10, ["neon", "opus"]]]);
+    const before = await w.stored();
+    const gap = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["neon"] }, { from: 7, to: 10, legs: ["opus"] }] }, null, "/nowhere");
+    expect(gap).toEqual({ ok: false, error: "review ranges leave a gap at 6: the ranges must cover 1-10 with no gap" });
+    expect(await w.stored()).toBe(before);
+  });
+});

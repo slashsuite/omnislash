@@ -89,7 +89,7 @@ ob spinoff "<id>" \
   --repo "<repo path or slug>" \
   --branch "$BRANCH" \
   --worktree "$WORKTREE" \
-  --tier <complex|medium|simple> \
+  --complexity <1-10> \
   --brief - < /tmp/spinoff-brief.md
 ```
 
@@ -97,7 +97,7 @@ ob spinoff "<id>" \
 - **`--brief -`** reads the brief from stdin.
 - **`--repo`** takes a path or a slug. Pass it when cwd is not the target repo.
 - **`--branch "$BRANCH"`** keeps the builder on the branch step 3 created.
-- **`--tier`** picks the builder's model: `simple` → Haiku, `medium` → Sonnet, `complex` → Opus. Rate it yourself with the rubric in the `ob-architect` skill ("Rate every dispatch"). Omitted = `medium`, and the queue line says `tier: medium (default)`.
+- **`--complexity`** (1 to 10) picks the builder's model from the profile's builder ranges: 1-3 Haiku, 4-6 Opus, 7-10 Opus by default. Rate it yourself with the rubric in the `ob-architect` skill ("Rate every dispatch"). Omitted = 5, and the queue line says so.
 
 The session opens on the **ticket's own brief** (its title, what to build, acceptance and do not, then the directive to run `ob-spinoff`): the ask, never a self-gating procedure. You steer; you declare it done. `--agent` is a usage error.
 
@@ -105,7 +105,7 @@ The session opens on the **ticket's own brief** (its title, what to build, accep
 
 - **Ticket:** `<id>`: [title]
 - **Branch / worktree:** `[BRANCH]` at `[WORKTREE]`
-- **Tier:** `<tier>` (`<model>`). Say it, so the cost of the dispatch is visible.
+- **Complexity:** `<score>` (`<model>`). Say it, so the cost of the dispatch is visible.
 - **Launch:** `ob spinoff` opens a T3 thread bound to its worktree in the same invocation (the `t3` launcher) and prints the thread id. When another live session holds its `ticket:`/`worktree:` lease it refuses, names the holder and leaves no pending row; `--holder <id>` dispatches under your own hold.
 
 ## Spinoff mode (`--spinoff --parent <id>`)

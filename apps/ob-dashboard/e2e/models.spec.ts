@@ -21,8 +21,14 @@ function ob(...args: string[]): string {
 }
 
 type ShownRoute = { route: string; chain: string[]; effort: string | null; source: string };
-function shown(): { active: string; routes: ShownRoute[] } {
-  return JSON.parse(ob("show", "--json")) as { active: string; routes: ShownRoute[] };
+type ShownBand = { from: number; to: number; chain: string[]; effort: string | null; source: string };
+function shown(): { active: string; routes: ShownRoute[]; builder_ranges: ShownBand[] } {
+  return JSON.parse(ob("show", "--json")) as { active: string; routes: ShownRoute[]; builder_ranges: ShownBand[] };
+}
+
+/** The server's stored model_routes, as `ob config get` reads it: what a save wrote, byte for byte. */
+function stored(): unknown {
+  return JSON.parse(execFileSync("bun", ["../cli/src/index.ts", "config", "get", "model_routes"], { cwd: APP, env: cliEnv(), encoding: "utf8" }));
 }
 
 async function open(page: Page, path: string) {
@@ -47,11 +53,12 @@ test("the header's Models tab opens every route with where its model comes from"
   await expect(page).toHaveURL(/\/models$/);
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
 
-  for (const route of [...FIXED_ROUTES, "job.nightly"]) {
+  // The builder routes are the builder ranges (OS-176), not route rows.
+  for (const route of [...FIXED_ROUTES.filter((r) => !r.startsWith("builder.")), "job.nightly"]) {
     await expect(row(page, route).getByRole("textbox", { name: `Models for ${route}` })).toBeVisible();
   }
+  await expect(row(page, "builder.complex")).toHaveCount(0);
   await expect(row(page, "job.nightly").getByText("server", { exact: true })).toBeVisible();
-  await expect(row(page, "builder.complex").getByText("server", { exact: true })).toBeVisible();
   await expect(row(page, "role.architect").getByText("server (builder.complex)", { exact: true })).toBeVisible();
   await expect(row(page, "checker").getByText("default", { exact: true })).toBeVisible();
 
@@ -65,32 +72,91 @@ test("the header's Models tab opens every route with where its model comes from"
 
 test("a chain saved on the page is the server value the CLI reads", async ({ page }) => {
   await open(page, "/models");
-  const r = row(page, "builder.medium");
-  await r.getByRole("textbox", { name: "Models for builder.medium" }).fill("claude-sonnet-5-5, claude-haiku-5-5");
-  await save(page, () => r.getByRole("button", { name: "Save builder.medium" }).click());
+  const r = row(page, "job.nightly");
+  await r.getByRole("textbox", { name: "Models for job.nightly" }).fill("claude-sonnet-5-5, claude-haiku-5-5");
+  await save(page, () => r.getByRole("button", { name: "Save job.nightly" }).click());
   await expect(r.getByText("claude-sonnet-5-5 → claude-haiku-5-5", { exact: true })).toBeVisible();
   await expect(r.getByText("saved", { exact: true })).toBeVisible();
-  await expect(r.getByText("server", { exact: true })).toBeVisible();
 
-  expect(shown().routes.find((x) => x.route === "builder.medium")).toMatchObject({ chain: ["claude-sonnet-5-5", "claude-haiku-5-5"], source: "server" });
+  expect(shown().routes.find((x) => x.route === "job.nightly")).toMatchObject({ chain: ["claude-sonnet-5-5", "claude-haiku-5-5"], source: "server" });
 });
 
-test("an effort change is saved with the route", async ({ page }) => {
+const builder = (page: Page) => row(page, "Builder ranges in claude");
+const bands = () => shown().builder_ranges.map((b) => [b.from, b.to, b.chain.join(","), b.effort, b.source]);
+
+test("the builder ranges show as rows, and moving a boundary is the server value the CLI reads", async ({ page }) => {
   await open(page, "/models");
-  const r = row(page, "builder.complex");
-  await r.getByRole("combobox", { name: "Effort for builder.complex" }).selectOption("max");
-  await save(page, () => r.getByRole("button", { name: "Save builder.complex" }).click());
-  await expect(r.getByText("claude-opus-5-5 · max")).toBeVisible();
+  const b = builder(page);
+  await expect(b.getByRole("textbox", { name: /^From, builder row/ })).toHaveCount(3);
+  await expect(b.getByRole("textbox", { name: "From, builder row 3" })).toHaveValue("7");
+  await expect(b.getByRole("textbox", { name: "Models, builder row 3" })).toHaveValue("claude-opus-5-5");
+  await expect(b.getByRole("combobox", { name: "Effort, builder row 3" })).toHaveValue("high");
+
+  await b.getByRole("textbox", { name: "To, builder row 1" }).fill("4");
+  await b.getByRole("textbox", { name: "From, builder row 2" }).fill("5");
+  await b.getByRole("combobox", { name: "Effort, builder row 3" }).selectOption("max");
+  await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
+  await expect(b.getByText("saved", { exact: true })).toBeVisible();
+
+  const set = shown().builder_ranges;
+  expect(set.map((x) => [x.from, x.to, x.source])).toEqual([[1, 4, "server"], [5, 6, "server"], [7, 10, "server"]]);
+  expect(set[2]).toMatchObject({ chain: ["claude-opus-5-5"], effort: "max" });
 
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
-  await expect(row(page, "builder.complex").getByText("claude-opus-5-5 · max")).toBeVisible();
+  await expect(builder(page).getByRole("textbox", { name: "To, builder row 1" })).toHaveValue("4");
 });
 
-test("unsetting a route drops it back to the default", async ({ page }) => {
+test("a gap is refused with the CLI's message and nothing is stored", async ({ page }) => {
   await open(page, "/models");
-  await save(page, () => row(page, "builder.complex").getByRole("button", { name: "Unset builder.complex" }).click());
-  await expect(row(page, "builder.complex").getByText("default", { exact: true })).toBeVisible();
+  const before = stored();
+  const b = builder(page);
+  await b.getByRole("textbox", { name: "To, builder row 1" }).fill("2");
+  await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
+  await expect(b.getByRole("alert")).toHaveText("Not saved: model_routes profile 'claude': builder ranges leave a gap at 3: the ranges must cover 1-10 with no gap");
+  expect(stored()).toEqual(before);
+});
+
+test("a range split and merged back round-trips the stored value", async ({ page }) => {
+  await open(page, "/models");
+  const b = builder(page);
+  await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
+  await expect(b.getByText("saved", { exact: true })).toBeVisible();
+  const whole = stored();
+  const wholeBands = bands();
+
+  await test.step("split 7-10 at 9 and give 9-10 its own model", async () => {
+    await b.getByRole("textbox", { name: "Split builder row 3 at" }).fill("9");
+    await b.getByRole("button", { name: "Split builder row 3" }).click();
+    await expect(b.getByRole("textbox", { name: "To, builder row 3" })).toHaveValue("8");
+    await expect(b.getByRole("textbox", { name: "From, builder row 4" })).toHaveValue("9");
+    await b.getByRole("textbox", { name: "Models, builder row 4" }).fill("claude-sonnet-5-5");
+    await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
+    await expect(b.getByText("saved", { exact: true })).toBeVisible();
+    expect(bands().slice(2)).toEqual([
+      [7, 8, "claude-opus-5-5", "high", "server"],
+      [9, 10, "claude-sonnet-5-5", "high", "server"],
+    ]);
+  });
+
+  await test.step("merge 7-8 with 9-10: one 7-10 range on the first row's model", async () => {
+    await b.getByRole("button", { name: "Merge builder row 3 with next" }).click();
+    await expect(b.getByRole("textbox", { name: "To, builder row 3" })).toHaveValue("10");
+    await expect(b.getByRole("textbox", { name: "From, builder row 4" })).toHaveCount(0);
+    await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
+    await expect(b.getByText("saved", { exact: true })).toBeVisible();
+  });
+
+  expect(bands()).toEqual(wholeBands);
+  expect(stored()).toEqual(whole);
+});
+
+test("unsetting the builder ranges drops them back to the defaults", async ({ page }) => {
+  await open(page, "/models");
+  const b = builder(page);
+  await save(page, () => b.getByRole("button", { name: "Unset builder ranges" }).click());
+  await expect(b.getByRole("button", { name: "Unset builder ranges" })).toHaveCount(0);
+  expect(shown().builder_ranges.every((x) => x.source === "default")).toBe(true);
   await expect(row(page, "role.architect").getByText("default", { exact: true })).toBeVisible();
 });
 
@@ -119,26 +185,39 @@ test("a reader on a range is refused removal until it is taken off its ranges", 
   await expect(neon.getByRole("alert")).toContainText("Not saved: reader 'neon' is still on range 4-6, 7-10");
 
   await test.step("take neon off 4-6 and 7-10", async () => {
-    for (const range of ["4-6", "7-10"]) {
-      const box = page.getByRole("checkbox", { name: `neon on ${range}` });
-      // A click, not uncheck(): the box is controlled, so it changes once the save answers, not on the click.
-      await save(page, () => box.click());
-      await expect(box).not.toBeChecked();
-    }
+    for (const n of [2, 3]) await page.getByRole("checkbox", { name: `neon on review row ${n}` }).uncheck();
+    await save(page, () => page.getByRole("button", { name: "Save review ranges" }).click());
+    await expect(page.getByRole("checkbox", { name: "neon on review row 2" })).not.toBeChecked();
   });
 
   await save(page, () => row(page, "neon").getByRole("button", { name: "Remove reader neon" }).click());
   await expect(row(page, "neon")).toHaveCount(0);
 });
 
-test("a range change is saved", async ({ page }) => {
+test("a review range change is saved", async ({ page }) => {
   await open(page, "/models");
-  const box = page.getByRole("checkbox", { name: "neon on 1-3" });
-  await save(page, () => box.click()); // controlled: it changes when the save answers
-  await expect(box).toBeChecked();
+  await page.getByRole("checkbox", { name: "neon on review row 1" }).check();
+  await save(page, () => page.getByRole("button", { name: "Save review ranges" }).click());
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
-  await expect(page.getByRole("checkbox", { name: "neon on 1-3" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "neon on review row 1" })).toBeChecked();
+});
+
+test("review ranges split at a number, and an overlap is refused with the CLI's message", async ({ page }) => {
+  await open(page, "/models");
+  await page.getByRole("textbox", { name: "Split review row 3 at" }).fill("9");
+  await page.getByRole("button", { name: "Split review row 3" }).click();
+  await page.getByRole("checkbox", { name: "neon on review row 4" }).uncheck();
+  await save(page, () => page.getByRole("button", { name: "Save review ranges" }).click());
+  const review = JSON.parse(ob("show", "--json")).review as { tiers: Array<{ from: number; to: number; legs: string[] }> };
+  expect(review.tiers.slice(2)).toEqual([
+    { from: 7, to: 8, legs: ["neon", "opus"] },
+    { from: 9, to: 10, legs: ["opus"] },
+  ]);
+
+  await page.getByRole("textbox", { name: "From, review row 4" }).fill("8");
+  await save(page, () => page.getByRole("button", { name: "Save review ranges" }).click());
+  await expect(page.getByRole("alert")).toHaveText("Not saved: review ranges 7-8 and 8-10 overlap at 8: each score belongs to one range");
 });
 
 test("switching the active profile switches it for every machine", async ({ page }) => {

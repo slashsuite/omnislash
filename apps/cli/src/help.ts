@@ -854,7 +854,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
           { flag: "--opus-high <q>", description: "Owner ask quote required for Opus high+ effort" },
           { flag: "--brief <path>", description: "Brief file or '-' for stdin" },
-          { flag: "-m, --note <why>", description: "Tier rationale recorded on the Decisions trail" },
+          { flag: "-m, --note <why>", description: "Complexity rationale recorded on the Decisions trail" },
           { flag: "--holder <id>", description: "Dispatch under an existing ticket/worktree lease" },
           { flag: "--no-check <why>", description: "Override the drilled-ticket dispatch gate" },
           { flag: "--no-flake-slot <w>", description: "Bypass the machine-wide flake:slot lease" },
@@ -924,7 +924,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ['spinoff state APP-12 landable --gate "moon gate green; skeptical-review: 0 open"'],
       },
       mix: {
-        summary: "Report dispatch tier mix against the 50/30/20 simple/medium/complex target",
+        summary: "Report the dispatch mix by complexity band (1-3, 4-6, 7-10) against the 50/30/20 target",
         usage: ["spinoff mix [--since <date>]"],
         flags: [{ flag: "--since <date>", description: "Include rows requested on/after YYYY-MM-DD" }],
         examples: ["spinoff mix --since 2026-11-01"],
@@ -1135,7 +1135,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
       { flag: "--opus-high <q>", description: "Owner ask quote required for Opus at high+ effort" },
       { flag: "--brief <path>", description: "Custom brief file or '-' for stdin" },
-      { flag: "-m, --note <why>", description: "Tier rationale recorded on the Decisions trail" },
+      { flag: "-m, --note <why>", description: "Complexity rationale recorded on the Decisions trail" },
       { flag: "--holder <id>", description: "Dispatch under an existing lease holder" },
       { flag: "--no-check <why>", description: "Override the drilled-ticket dispatch gate" },
       { flag: "--no-flake-slot <w>", description: "Launch a flake ticket without taking the flake:slot lease" },
@@ -1639,7 +1639,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       get: {
         summary: "Print the model a route runs now (first chain entry under its weekly limit)",
         usage: ["models get <route>"],
-        examples: ["models get sweep.first", "models get builder.medium"],
+        examples: ["models get sweep.first", "models get builder.4-6"],
       },
       set: {
         summary: "Set a route's fallback chain (and effort) in a server profile",
@@ -1648,12 +1648,12 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--effort <level>", description: "low, medium, high, xhigh or max" },
           { flag: "--profile <p>", description: "The profile to write (default: the active one, else 'default')" },
         ],
-        examples: ["models set builder.medium claudeAgent:claude-opus-5-5,antigravity:gemini-4-neon", "models set job.nightly claude-haiku-5-5 --effort low"],
+        examples: ["models set builder.4-6 claudeAgent:claude-opus-5-5,antigravity:gemini-4-neon", "models set job.nightly claude-haiku-5-5 --effort low"],
       },
       unset: {
         summary: "Remove a route from a server profile (it falls back to its default)",
         usage: ["models unset <route> [--profile <p>]"],
-        examples: ["models unset builder.medium"],
+        examples: ["models unset builder.4-6"],
       },
       use: {
         summary: "Make a profile active on the server (a local active wins on its machine)",
@@ -1686,6 +1686,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ["models show", "models get sweep.first", "models use claude", "models legs"],
     notes: [
       "Builder routes: builder.<from>-<to>, covering 1-10; builder.simple|medium|complex read 1-3, 4-6, 7-10.",
+      "The dashboard's Models page edits, splits and merges the builder and review ranges as rows.",
       "Routes: builder.*, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
       "Precedence: the local models file, then the server's model_routes, then the default.",
       "A launch moves along a route's chain only on a credit or quota error.",
