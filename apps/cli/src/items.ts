@@ -289,7 +289,7 @@ async function touch(s: Store, id: string): Promise<void> {
 }
 
 /**
- * `closed_at` for a write to `status`. COALESCE on `done`, not an overwrite: `canTransition` allows done -> done,
+ * `closed_at` for a write to `status`. COALESCE on `done`, not an overwrite: the item machine allows done -> done,
  * so re-closing an already-closed item used to reset `closed_at` to today. The `issue-open-but-landed` drift row
  * (77) is precisely the already-done case and its printed remedy is `ob close <id>`, so following the tool's own
  * advice silently moved the completion date that reports and the journal read back. A reopen clears the column,

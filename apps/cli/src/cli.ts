@@ -348,6 +348,7 @@ export const FLAGS = {
   triage: { type: "boolean" },
   file: { type: "string", multiple: true },
   "no-github": { type: "boolean" },
+  repair: { type: "string" }, // OS-172: ob state <id> <to> --repair '<why>'
   "no-deliver": { type: "boolean" },
   book: { type: "string" },
   "external-id": { type: "string" },

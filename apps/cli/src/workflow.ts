@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { and, desc, eq, isNotNull, like, sql } from "drizzle-orm";
-import { AppError } from "./errors.ts";
+import { AppError, TransitionRefused } from "./errors.ts";
+import { decide } from "../../../platform/state-machine/src/decide.ts";
+import { itemMachineFor, moveEvent } from "../../../platform/state-machine/src/item.ts";
 import { clearBlock, clearTriage, editItem, getItem, queryItems, setBlocked, setStatus } from "./items.ts";
 import { getFocusProject } from "./config.ts";
 import { compareWithinBand } from "./worklist.ts";
@@ -10,8 +12,7 @@ import { nowIso } from "./db.ts";
 import { parsePayload, type EventRow } from "./events.ts";
 import { asStore, readNumber, type Store } from "./db/store.ts";
 import { item } from "./db/schema.ts";
-import { canTransition, isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
-import { shadowItemMove } from "./machine-shadow.ts";
+import { isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
 import { defineSeam } from "./test-seams.ts";
 
 /**
@@ -63,49 +64,56 @@ function refuseReference(it: { id: string; type: string }): void {
   }
 }
 
-/**
- * OS-169: today's edge check (`assertTransition`), then the machine's shadow check on the same move (after
- * the check, before the write). A refusal is shadowed as `refused` and rethrown unchanged. A door's own
- * precondition ("is not closed", "is not blocked") is thrown before this, so only the edge is compared.
- */
-async function assertTransitionShadowed(
-  db: Database | Store,
-  it: { id: string; type: string; status: string; project_kind: string | null },
-  to: string,
-  decision: DecisionOpts,
-): Promise<void> {
-  try {
-    await assertTransition(db, it.id, to);
-  } catch (e) {
-    if (e instanceof AppError) await shadowItemMove(db, it, to, "refused", { todayMessage: e.message, actor: decision.actor });
-    throw e;
-  }
-  await shadowItemMove(db, it, to, "allowed", { actor: decision.actor });
+/** True when the item's machine has a move from `from` to `to` (a self-move is one: `item.ts` declares it). */
+function machineAllows(type: string, kind: string | null, from: string, to: string): boolean {
+  return decide(itemMachineFor(type, kind), from, moveEvent(to)).ok;
 }
 
 /**
  * The validation half of a transition, with no write, so a `--dry-run` preview fails on exactly the
- * moves the real transition would reject instead of promising something impossible.
+ * moves the real transition would reject instead of promising something impossible. OS-172: the edge is
+ * the item's lifecycle machine (`platform/state-machine/src/item.ts`), the one definition of the item
+ * lifecycle. A refusal is `TransitionRefused` (why `machine`); a stored status the machine does not know
+ * is refused the same way, never thrown as a crash (`ob state <id> <to> --repair '<why>'` is the way out).
  */
 export async function assertTransition(db: Database | Store, id: string, to: string): Promise<void> {
   const it = await requireItem(db, id);
-  id = it.id;
   refuseReference(it);
   const kind = it.project_kind as Kind | null;
   if (!isValidStatus(to, it.type, kind)) {
     throw new AppError(`status '${to}' is not valid for this item (type=${it.type}, kind=${kind ?? "none"})`);
   }
-  if (!canTransition(it.status, to, it.type, kind)) {
-    throw new AppError(`cannot transition from '${it.status}' to '${to}'`);
-  }
+  const machine = itemMachineFor(it.type, kind);
+  const event = moveEvent(to);
+  const d = decide(machine, it.status, event);
+  if (d.ok) return;
+  const label = it.ref ?? it.id;
+  const known = Object.hasOwn(machine.states, it.status);
+  const message = known
+    ? `item '${label}' is ${it.status}: '${event}' is not a move from there`
+    : `item '${label}' is ${it.status}, which is not a state of '${machine.id}': '${event}' is not a move from there (on a local store: ob state ${label} <status> --repair '<why>')`;
+  throw new TransitionRefused(message, { machine: machine.id, id: it.id, from: it.status, event, why: d.why });
 }
 
 /** Validated status move: rejects a status the type/kind can't hold, and an edge the model forbids. */
+/** OS-172: the block's guard. A block with no reason is a blocked item nobody can act on. */
+function blockNeedsReason(it: { id: string; ref?: string | null; type: string; project_kind: string | null; status: string }): TransitionRefused {
+  return new TransitionRefused(`item '${it.ref ?? it.id}' is ${it.status}: a block needs a reason`, {
+    machine: itemMachineFor(it.type, it.project_kind).id,
+    id: it.id,
+    from: it.status,
+    event: moveEvent("blocked"),
+    why: "guard",
+  });
+}
+
 export async function transitionTo(db: Database | Store, id: string, to: string, decision: DecisionOpts = {}): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
-  await assertTransitionShadowed(db, it, to, decision);
+  await assertTransition(db, it.id, to);
   const from = it.status;
+  // OS-172: a block carries a reason, and transitionTo takes none, so a block goes through blockItem.
+  if (to === "blocked" && from !== "blocked") throw blockNeedsReason(it);
   await moveAtomically(db, id, from, to, async (tx) => {
     await setStatus(tx, id, from, to);
     // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
@@ -149,7 +157,7 @@ export async function reopenItem(db: Database | Store, id: string, decision: Dec
   const it = await requireItem(db, id);
   id = it.id;
   refuseUnlessReopenable(it);
-  await assertTransitionShadowed(db, it, "open", decision);
+  await assertTransition(db, it.id, "open");
   await moveAtomically(db, id, "done", "open", async (tx) => {
     await setStatus(tx, id, "done", "open");
     await recordDecision(tx, id, "done", "open", decision);
@@ -171,7 +179,9 @@ export async function blockItem(
   const it = await requireItem(db, id);
   id = it.id;
   if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
-  await assertTransitionShadowed(db, it, "blocked", decision);
+  await assertTransition(db, id, "blocked");
+  // OS-172: the block's guard. A block with no reason is a blocked item nobody can act on.
+  if (!reason?.trim()) throw blockNeedsReason(it);
   const from = it.status;
   // OS-26: the owner rides on the transition, so who a block waited on survives the block being cleared.
   const extra = owner ? { ...decision.extra, block_owner: owner } : decision.extra;
@@ -230,11 +240,11 @@ export async function unblockItem(
   const prior = opts.to === undefined ? await statusBeforeBlock(db, id) : null;
   const target =
     opts.to ??
-    (prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
+    (prior && prior !== "done" && isValidStatus(prior, it.type, kind) && machineAllows(it.type, kind, "blocked", prior)
       ? prior
       : "open");
   // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
-  await assertTransitionShadowed(db, it, target, decision);
+  await assertTransition(db, id, target);
   await moveAtomically(db, id, "blocked", target, async (tx) => {
     await clearBlock(tx, id, "blocked", target);
     if (target === "done") await clearTriage(tx, id);
@@ -245,7 +255,7 @@ export async function unblockItem(
 export type MoveResult = "blocked" | "unblocked" | "reopened" | "moved";
 
 /**
- * OS-169: no shadow check of its own. Every door below runs one (`blockItem`, `unblockItem`, `reopenItem`,
+ * No check of its own: every door below runs `assertTransition` (`blockItem`, `unblockItem`, `reopenItem`,
  * `transitionTo`), so each move is checked exactly once, on the door it takes.
  *
  * The one generic move (OB-1928) that `ob state <id> <to>` and the API `/state` `set` action share, so
@@ -276,6 +286,40 @@ export async function moveItem(
   }
   await transitionTo(db, id, to, decision);
   return "moved";
+}
+
+/**
+ * OS-172: the named, logged way out of a status the machine has no move from (a legacy or hand-written
+ * status, say). Skips the machine's edge check, but `to` must still be in the item's vocabulary, and the
+ * write is the guarded one (OS-171), so a move that raced it is still refused with `StatusRaced`. The trail
+ * records `repair: <why>` with `repair: true`. `done` and `blocked` are refused: a close has side effects
+ * and a block needs its reason, so repair to `open` and then close or block.
+ */
+export async function repairItem(
+  db: Database | Store,
+  id: string,
+  to: string,
+  why: string,
+  decision: DecisionOpts = {},
+): Promise<void> {
+  const it = await requireItem(db, id);
+  id = it.id;
+  refuseReference(it);
+  const reason = why.trim();
+  if (!reason) throw new AppError("a repair needs a reason");
+  if (to === "done" || to === "blocked") throw new AppError("repair to open, then close or block");
+  const kind = it.project_kind as Kind | null;
+  if (!isValidStatus(to, it.type, kind)) {
+    throw new AppError(`status '${to}' is not valid for this item (type=${it.type}, kind=${kind ?? "none"})`);
+  }
+  const from = it.status;
+  if (from === to) throw new AppError(`item '${it.ref ?? id}' is already ${to}: nothing to repair`);
+  await moveAtomically(db, id, from, to, async (tx) => {
+    // Leaving `blocked` clears the block fields with the same guarded write an unblock uses.
+    if (from === "blocked") await clearBlock(tx, id, from, to);
+    else await setStatus(tx, id, from, to);
+    await recordDecision(tx, id, from, to, { ...decision, note: decision.note?.trim() ? `repair: ${reason}; ${decision.note.trim()}` : `repair: ${reason}`, extra: { ...decision.extra, repair: true } });
+  });
 }
 
 /** Set a today-rank: an explicit rank, or the next slot (MAX(today_rank)+1) when omitted. Returns the rank. */
@@ -421,6 +465,7 @@ export async function setQueueOrder(
 
 /** The valid next statuses for an item (excluding its current one) — drives which drawer buttons enable. */
 export function validNextStatuses(type: string, kind: Kind | null, from: string): string[] {
-  // statusVocab is the universe of statuses this type/kind can hold; canTransition gates each edge.
-  return statusVocab(type, kind).filter((s) => s !== from && canTransition(from, s, type, kind));
+  // statusVocab is the universe of statuses this type/kind can hold; the machine gates each edge. An unknown
+  // stored status has no moves (decide refuses it), so the list is empty.
+  return statusVocab(type, kind).filter((s) => s !== from && machineAllows(type, kind, from, s));
 }

@@ -845,6 +845,8 @@ async function apiState(ctx: ApiCtx): Promise<void> {
 	const id = ctx.args[0];
 	const to = ctx.args[1];
 	if (!id || !to) throw new UsageError("state requires <id> <state>");
+	// OS-172: a repair is a CLI-only way out; over the API it would quietly become an ordinary checked move.
+	if (ctx.flags.repair !== undefined) throw new UsageError("--repair runs only against a local store, not over the API");
 	// `state <id> done` IS `close <id>` (#77): landing an item also closes its linked GitHub issue. The
 	// endpoint refuses `done` for exactly that reason, so the client routes it to the door that does the
 	// whole job rather than letting the refusal reach a human who meant to land something.

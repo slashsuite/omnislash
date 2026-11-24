@@ -1,13 +1,13 @@
 import { setup } from "xstate";
 
 /**
- * The item lifecycles (OS-168), one machine per table in apps/cli/src/status.ts. Written out here, not
- * imported: a platform package does not import apps/, and test/parity.test.ts checks every pair against
- * `canTransition` both ways, so the two copies cannot drift apart unnoticed.
+ * The item lifecycles (OS-168), the one definition of which item status moves are allowed: since OS-172
+ * `apps/cli/src/workflow.ts` decides every item move through these machines (`decide`). Each machine's
+ * states must match the type's vocabulary in apps/cli/src/status.ts, and test/parity.test.ts pins every
+ * from-to pair, so an edge change is a reviewed diff in both places.
  *
- * Events in this step are the target status, `to:<status>` (`moveEvent`). Named verbs (start, block,
- * close, ...) come in step 5 of the spike. A self-move (`to:<from>` from `from`) is an allowed no-op, as
- * `canTransition` allows it today.
+ * Events are the target status, `to:<status>` (`moveEvent`). A self-move (`to:<from>` from `from`) is an
+ * allowed no-op, so a retried close succeeds and records nothing.
  */
 type Table<S extends string> = Readonly<Record<S, readonly S[]>>;
 
@@ -65,9 +65,9 @@ const LEARNING = {
 // OB-2004: a reference document is not work, so it has one state and no moves out of it.
 const REFERENCE = { active: [] } as const satisfies Table<string>;
 
-/** A task of any kind (today's `BASIC_TRANSITIONS`; the kind does not change the table). */
+/** A task of any kind (the kind does not change the lifecycle). */
 export const taskMachine = tableMachine("task", "open", BASIC);
-/** `linear_ref` (today's `LINEAR_TRANSITIONS`). */
+/** `linear_ref`, with the QA states. */
 export const linearMachine = tableMachine("linear_ref", "open", LINEAR);
 export const roadmapMachine = tableMachine("roadmap", "active", ROADMAP);
 export const decisionMachine = tableMachine("decision", "draft", DECISION);
@@ -77,8 +77,8 @@ export const referenceMachine = tableMachine("reference", "active", REFERENCE);
 export type ItemMachine = typeof taskMachine;
 
 /**
- * The machine for an item of `type` and `kind`, chosen as `canTransition` chooses its table: the per-type
- * tables first, `linear_ref`, and the task lifecycle for anything else. `kind` is taken so a kind that
+ * The machine for an item of `type` and `kind`: the per-type machines first, `linear_ref`, and the task
+ * lifecycle for anything else. `kind` is taken so a kind that
  * gets its own table later has one place to go; today every kind gets the task machine.
  */
 export function itemMachineFor(type: string, _kind: string | null): ItemMachine {
