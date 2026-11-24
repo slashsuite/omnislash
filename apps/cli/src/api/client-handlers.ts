@@ -775,6 +775,7 @@ function apiTickBackend(ctx: ApiCtx): import("../commands/role-tick.ts").TickBac
 		teams: () => apiTeamBackend(ctx).list(),
 		checkouts: async () => launchConfig((await client.spinoffConfig()).config).repoCheckouts,
 		findings: async (team) => (await client.roleTick(team)).findings,
+		conflicts: async () => (await import("./spinoff-client.ts")).apiConflictSource(ctx),
 	};
 }
 

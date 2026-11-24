@@ -38,6 +38,7 @@ import { AppError, UsageError } from "../errors.ts";
 import { existsSync } from "node:fs";
 import { print, warn } from "../output.ts";
 import { overlapFor, printOverlap, warnDispatchOverlap, type DispatchOverlapDeps } from "../../../../platform/cli-coord/src/spinoff-overlap.ts";
+import { findBranchConflicts, renderConflictCheck, type ConflictDeps, type ConflictSource } from "../../../../platform/cli-coord/src/spinoff-conflicts.ts";
 import { IN_FLIGHT } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
 import { WORK_TAGS } from "../work-tags.ts";
 import { formatSpikeReport, isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
@@ -82,6 +83,7 @@ import {
   rowInDrainScope,
   tallyDrain,
   type DrainScope,
+  resolveRepoIn,
   rowRepoPathIn,
   mergedPrUrlFor,
   stampArgv,
@@ -1101,6 +1103,26 @@ function apiOverlapDeps(ctx: ApiCtx, cfg: SpinoffLaunchConfig): Omit<DispatchOve
   };
 }
 
+/** OS-48: where the conflict check runs on an API client: this machine's checkouts and git. */
+function apiConflictDeps(cfg: SpinoffLaunchConfig): ConflictDeps {
+  return { sh: overlapSh, repoPath: (repo) => rowRepoPathIn(cfg, repo) };
+}
+
+/**
+ * OS-48: the conflict source `role tick` reads over the API: the team's rows from the server, the checkouts and git
+ * here, and the notes written to the server's tickets.
+ */
+export async function apiConflictSource(ctx: ApiCtx): Promise<ConflictSource> {
+  const cfg = await config(ctx);
+  return {
+    ...apiConflictDeps(cfg),
+    rows: async (team) => apiTeamRows(ctx, cfg, team, (await ctx.client.spinoffs({})).spinoffs),
+    note: async (side, text) => {
+      await ctx.client.note(side.item_id ?? side.ref, { text });
+    },
+  };
+}
+
 async function apiDispatchOverlap(ctx: ApiCtx, cfg: SpinoffLaunchConfig, ticketRef: string, repo: string, itemId: string | null): Promise<void> {
   const deps = apiOverlapDeps(ctx, cfg);
   await warnDispatchOverlap(null, { ref: ticketRef, repo, itemId }, {
@@ -1453,6 +1475,16 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     const repo = flag(ctx, "repo") !== undefined || !own ? (await repoSlug(ctx, cfg, "spinoff overlap", ref)).slug : own.repo;
     const result = await overlapFor({ ref, repo, itemId: own?.item_id ?? null }, { ...deps, rows: async () => rows });
     printOverlap({ ref, repo }, result, ctx.mode === "json");
+    return;
+  }
+
+  if (sub === "conflicts") {
+    // OS-48: the rows come over the API, the test-merges run in this machine's checkouts. Records nothing.
+    const cfg = await config(ctx);
+    const repoFlag = flag(ctx, "repo");
+    const check = await findBranchConflicts((await ctx.client.spinoffs({})).spinoffs, apiConflictDeps(cfg), repoFlag ? resolveRepoIn(cfg, repoFlag) : undefined);
+    for (const w of check.warnings) warn(w);
+    print(renderConflictCheck(check, ctx.mode === "json"));
     return;
   }
 
