@@ -254,7 +254,9 @@ one of three findings, each with the claim quoted:
 - `leap:` a recommendation or draft ticket that the evidence above it does not support. Name the step
   that is missing.
 
-Then `ok` (say how many claims were read) or the findings, at most ~8, `wrong` first, and `score: N/10`.
+On a rebuttal brief (round 2 on) it first answers each prior finding, one line each, `accepted` or
+`rejected: <the evidence the answer misses>`. Then `ok` (say how many claims were read) or the findings, at most
+~8, `wrong` first, and `score: N/10`.
 
 **The brief recipe.** The same legs as a diff review, every one `ob review readers --tier <tier> -q` lists
 (How to run), each through `review-leg.ts` with its own brief file; `review-leg.ts` and `ob-reviewer.md` do
@@ -265,7 +267,7 @@ git fetch origin
 SHA=$(git rev-parse origin/main)
 legs=$(ob review readers --tier "$TIER" -q) && [ -n "$legs" ] || legs="neon opus"
 for leg in $legs; do
-  { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/p' "$R/SKILL.md"
+  { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/{/^## Before/d;p;}' "$R/SKILL.md"
     echo "Ref: check every claim against origin/main at $SHA (git show $SHA:<path>)."
     echo "Scope: the claims below; read only the files they name, at that sha."
     echo; echo "## The report"; cat docs/<the report>.md
@@ -282,7 +284,8 @@ means nothing for a claims review; ignore it. Skipped and failed legs are report
 rounds as for a build. A claim in the report is fixed by editing the report. A claim in a note is fixed by
 a new `ob note <parent>` that corrects or withdraws it (a note cannot be edited), and the next round's brief
 carries it. The spike hands off with `claims-review: <N> cut, 0 open (<leg>: <a>, <leg>: <b>)` in `--note`, naming every leg
-(`claims-review: 3 cut, 0 open (opus: 2, neon: 1)`)
+(`claims-review: 3 cut, 0 open (opus: 2, neon: 1)`). When the note or report quotes several rounds, the
+handoff reads the last line.
 (`ob-spinoff`, the spike paragraph); the handoff refuses a spike without that line or with open findings.
 
 ## Before the readers run (rounds, step a)

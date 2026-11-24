@@ -386,7 +386,8 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const { rowId } = await seedSpikeRow(s);
     fakeGit();
     restores.push(__setT3Seam(fakeSeam().seam));
-    // No claims-review line: a build is refused for its own reason, never the spike's (OS-180).
+    // No claims-review line: a build is refused for its own reason, never the spike's (OS-180). A clean build
+    // with no note reaching markSpinoffReady is spinoff-tier-fit-1552's "no rating leaves no tier-fit row".
     const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
     expect(res.code).toBe(1);
     expect(res.err).toContain("worktree is dirty");
@@ -448,6 +449,9 @@ describe("spikeClaimsReviewMissing (OS-180)", () => {
     expect(spikeClaimsReviewMissing("skeptical-review: 0 cut, 0 open")).toContain("needs a");
     expect(spikeClaimsReviewMissing("a; claims-review: 0 cut, 4 open (opus: 2, neon: 2)")).toContain("still has 4 open");
     expect(spikeClaimsReviewMissing("a; claims-review: 3 cut, 0 open (opus: 2, neon: 1)")).toBeNull();
+    // The last line is the verdict, whichever way the earlier round went.
+    expect(spikeClaimsReviewMissing("round 1: claims-review: 1 cut, 2 open\n\nclaims-review: 3 cut, 0 open (opus: 2, neon: 1)")).toBeNull();
+    expect(spikeClaimsReviewMissing("claims-review: 3 cut, 0 open\n\nclaims-review: 3 cut, 1 open (opus: 2, neon: 2)")).toContain("still has 1 open");
   });
 });
 
