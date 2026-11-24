@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
+import { lastCredentialCheck, type CredentialCheckRow } from "../../../cli/src/credentials.ts";
 import { ModelRoutesError } from "../../../cli/src/model-routes.ts";
 import { ModelsFileError, loadModelsFile, modelsFilePath, type ModelsFile } from "../../../cli/src/models-file.ts";
 import { configIo } from "../../../../platform/dashboard-kit/src/server/config-io.ts";
@@ -15,7 +16,8 @@ import { providedStore } from "../../provided-store.ts";
 // OS-146: the Models page's server functions over OS-145's `model_routes` setting. The store comes from serve.ts
 // (providedStore), never opened here. Every check of a value is model-routes.ts's, inside the kit's editModels; the
 // validators below only check the request's shape. This host's models file is read to show what it overrides and
-// is never written.
+// is never written. OS-23: the page also carries the OpenCode Go credit state, the last recorded
+// `ob creds check opencode-go` (the paid review readers run on it); the page never calls the provider itself.
 
 export type { ModelsView, ModelsOp, ModelsEditResult };
 
@@ -23,6 +25,8 @@ export interface ModelsPage {
   view: ModelsView;
   /** Why this host's models file was not read (it does not parse), or why the asked profile was not shown. */
   notes: string[];
+  /** The last recorded `ob creds check opencode-go`, or null when it was never checked. */
+  credit: CredentialCheckRow | null;
 }
 
 /** This host's models file, or null with the reason it could not be read (shown, not thrown). */
@@ -41,13 +45,15 @@ export const getModels = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<ModelsPage> => {
     const notes: string[] = [];
     const file = hostFile(notes);
-    const io = configIo(await providedStore());
+    const store = await providedStore();
+    const io = configIo(store);
+    const credit = await lastCredentialCheck(store, "opencode-go");
     try {
-      return { view: await loadModelsView(io, file, { profile: data.profile, filePath: modelsFilePath() }), notes };
+      return { view: await loadModelsView(io, file, { profile: data.profile, filePath: modelsFilePath() }), notes, credit };
     } catch (e) {
       if (!(e instanceof ModelRoutesError) || data.profile === undefined) throw e;
       notes.push(e.message);
-      return { view: await loadModelsView(io, file, { filePath: modelsFilePath() }), notes };
+      return { view: await loadModelsView(io, file, { filePath: modelsFilePath() }), notes, credit };
     }
   });
 

@@ -151,3 +151,23 @@ test("switching the active profile switches it for every machine", async ({ page
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
   await expect(page.getByRole("region", { name: "Routes in alt" })).toBeVisible();
 });
+
+test("the OpenCode Go credit shows its status and when it was last checked", async ({ page }) => {
+  await open(page, "/models");
+  const credit = page.getByText(/^OpenCode Go credit:/);
+  await expect(credit).toHaveText("OpenCode Go credit: ok");
+  await expect(page.getByText("Last checked 2026-11-24 08:30 UTC.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Tokens page" })).toHaveAttribute("href", "/tokens");
+
+  execFileSync("bun", ["e2e/seed.ts", "credit", "failed"], { cwd: APP, env: cliEnv() });
+  await page.reload();
+  await expect(page.locator("html[data-hydrated]")).toBeAttached();
+  await expect(credit).toHaveText("OpenCode Go credit: failed");
+  await expect(page.getByText("Last checked 2026-11-24 08:30 UTC (401 Unauthorized).", { exact: false })).toBeVisible();
+
+  execFileSync("bun", ["e2e/seed.ts", "credit", "none"], { cwd: APP, env: cliEnv() });
+  await page.reload();
+  await expect(page.locator("html[data-hydrated]")).toBeAttached();
+  await expect(credit).toHaveText("OpenCode Go credit: not checked yet");
+  await expect(page.getByText("Last checked", { exact: false })).toHaveCount(0);
+});

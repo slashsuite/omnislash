@@ -1,12 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, type ChangeEvent } from "react";
-import { Button, Callout, Caption, Card, Checkbox, Cluster, Input, PageHeader, Pill, Select, Stack, Text } from "@hackcove/ui-react";
+import { Button, Callout, Caption, Card, Checkbox, Cluster, Input, PageHeader, Pill, Select, Stack, Text, TextLink } from "@hackcove/ui-react";
+import { checkedAtText, creditState } from "../lib/credit.ts";
 import { getModels, saveModels, type ModelsOp, type ModelsPage, type ModelsView } from "../server/models.ts";
 
 // OS-146: the Models page over OS-145's model routing. It edits the server's `model_routes` setting, the one
 // `ob models` prints and changes, so a chain saved here is what every machine launches on (unless that machine's
 // own models file overrides it). Every value is checked on the server by model-routes.ts; the page sends what was
-// typed and shows the refusal word for word.
+// typed and shows the refusal word for word. OS-23: the OpenCode Go credit state (from omnibus's retired Reviewers
+// page) sits above the review readers, since the paid readers run on that account.
 
 type ModelsSearch = { profile?: string };
 
@@ -240,6 +242,25 @@ function Profiles({ view, send }: { view: ModelsView; send: Send }) {
   );
 }
 
+/** The OpenCode Go credit: its status and when it was last checked. Checking it again is the Tokens page's job. */
+function Credit({ credit }: { credit: ModelsPage["credit"] }) {
+  const state = creditState(credit);
+  return (
+    <Callout tone={state.tone} title={`OpenCode Go credit: ${state.label}`}>
+      {credit ? (
+        <>
+          Last checked <time dateTime={credit.checked_at}>{checkedAtText(credit.checked_at)}</time>
+          {state.tone !== "positive" && credit.detail ? ` (${credit.detail})` : ""}. Check it again on the <TextLink href="/tokens">Tokens page</TextLink>.
+        </>
+      ) : (
+        <>
+          Check it on the <TextLink href="/tokens">Tokens page</TextLink> or with ob creds check opencode-go.
+        </>
+      )}
+    </Callout>
+  );
+}
+
 function Models() {
   const loaded = Route.useLoaderData();
   const [page, setPage] = useState<ModelsPage>(loaded);
@@ -286,6 +307,7 @@ function Models() {
             ))}
           </Stack>
         </Card>
+        <Credit credit={page.credit} />
         <Card title={`Review readers in ${view.profile}`} count={Object.keys(review.value.readers).length}>
           <Stack gap="sm">
             <Caption tone="muted">
