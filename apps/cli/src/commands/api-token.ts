@@ -6,7 +6,6 @@ import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print } from "../output.ts";
 import {
-  SCOPED_ALLOWED_FAMILIES,
   TokensFileError,
   newToken,
   readTokensForEdit,
@@ -15,6 +14,7 @@ import {
   writeTokens,
   type ScopedTokenEntry,
 } from "../api/scoped-tokens.ts";
+import { OB_API_SCOPABLE_FAMILIES } from "../api/contract.ts";
 
 const USAGE = ["ob api-token add <user> --project <p>[,<p>...]", "ob api-token list [--json]", "ob api-token revoke <user>"].join("\n");
 
@@ -44,7 +44,7 @@ export async function cmdApiToken(ctx: Ctx): Promise<void> {
     const entries = read(path);
     if (entries.some((e) => e.user === user)) throw new AppError(`'${user}' already has a token; revoke it first (ob api-token revoke ${user})`);
     const token = newToken();
-    writeTokens([...entries, { user, sha256: sha256Hex(token), projects, families: [...SCOPED_ALLOWED_FAMILIES] }], path);
+    writeTokens([...entries, { user, sha256: sha256Hex(token), projects, families: [...OB_API_SCOPABLE_FAMILIES] }], path);
     // The one time the token is ever shown. stdout only, so it can be piped straight to its user.
     print(token);
     return;

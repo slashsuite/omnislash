@@ -382,18 +382,25 @@ import { inScope, type ProjectScope } from "../project-scope.ts";
  * Every item endpoint is called with typed input (the dashboard does not use them), so there is no trusted bypass.
  * A 400 `invalid_request`: the client prints the message and exits non-zero.
  */
-async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: ProjectScope): Promise<void> {
+/**
+ * Refuse a bare number that reads as two different items. Returns the id to look up.
+ *
+ * OS-178: with a scope, a reading the token cannot see is no reading at all. When only the OB-<n> item is
+ * visible the number means that item; when only the id item (or neither) is, it means the id, which then
+ * resolves or 404s as usual. Only when both are visible is it refused, with a message naming neither, since
+ * the full message carries ids and refs.
+ */
+async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: ProjectScope): Promise<string> {
   const collision = await bareNumberCollision(store, id);
-  if (!collision) return;
-  if (scope) {
-    // OS-178: a reading the token cannot see is no reading at all, so an out-of-scope OB-<n> never makes an
-    // in-scope bare id ambiguous (an item in a keyless project has no other handle). When both are visible
-    // the refusal names neither, since the full message carries ids and refs.
-    const keyItem = await getItem(store, collision.keyItem);
-    if (!keyItem || !inScope(scope, keyItem.project_id)) return;
-    throw new ApiFault("invalid_request", 400, `'${id}' is ambiguous; ask for the item by its ref`);
-  }
-  throw new ApiFault("invalid_request", 400, bareNumberCollisionMessage(collision));
+  if (!collision) return id;
+  if (!scope) throw new ApiFault("invalid_request", 400, bareNumberCollisionMessage(collision));
+  const visible = async (itemId: string) => {
+    const row = await getItem(store, itemId);
+    return row !== null && inScope(scope, row.project_id);
+  };
+  const [idVisible, keyVisible] = await Promise.all([visible(collision.idItem), visible(collision.keyItem)]);
+  if (idVisible && keyVisible) throw new ApiFault("invalid_request", 400, `'${id}' is ambiguous; ask for the item by its ref`);
+  return keyVisible ? collision.keyItem : id;
 }
 
 /**
@@ -401,8 +408,8 @@ async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: Proje
  * `scope` (OS-178): a scoped token's projects. An item outside them is the same 404 as a missing one, so its existence does not leak.
  */
 async function requireItem(store: Store, id: string, opts: { trusted?: boolean; scope?: ProjectScope } = {}) {
-  if (!opts.trusted) await refuseAmbiguousBareNumber(store, id, opts.scope);
-  const item = await getItem(store, id);
+  const lookup = opts.trusted ? id : await refuseAmbiguousBareNumber(store, id, opts.scope);
+  const item = await getItem(store, lookup);
   if (!item || !inScope(opts.scope, item.project_id)) throw new ApiFault("not_found", 404, `no item '${id}'`);
   return item;
 }
@@ -947,6 +954,8 @@ export async function next(store: Store, project?: string, scope?: ProjectScope)
 
 export async function items(store: Store, query: ItemQuery, scope?: ProjectScope): Promise<ItemsResponse> {
   await requireScopedProject(store, scope, query.project);
+  // OS-178: teams is an admin family, and an unknown team's 404 would tell a scoped token which names exist.
+  if (scope && query.team !== undefined) throw new ApiFault("forbidden", 403, "the team filter is not granted to a scoped token");
   const { items: rows, focusProject } = await listWorklist(store, query, { allowedProjects: scope?.ids }).catch((e) => {
     if (e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     throw e;

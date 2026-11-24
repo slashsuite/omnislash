@@ -3,8 +3,9 @@
 // Over a REAL Postgres store (the ob 325 harness), like api-352: the filter is asserted on the rows that come
 // back, not on the status code alone. The tokens file is a real file in a scratch directory, re-read per
 // request, so the permission refusal and `revoke` are the real code path.
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -18,7 +19,6 @@ import {
   matchApiRoute,
 } from "../../../apps/cli/src/api/contract.ts";
 import {
-  SCOPED_ALLOWED_FAMILIES,
   authenticate,
   loadScopedTokens,
   readTokensForEdit,
@@ -46,7 +46,7 @@ function tokensFile(entries: ScopedTokenEntry[], mode = 0o600): string {
   return path;
 }
 
-const alice = (projects: string[] = ["alpha"], families: string[] = [...SCOPED_ALLOWED_FAMILIES]): ScopedTokenEntry => ({
+const alice = (projects: string[] = ["alpha"], families: string[] = [...OB_API_SCOPABLE_FAMILIES]): ScopedTokenEntry => ({
   user: "alice",
   sha256: sha256Hex(ALICE),
   projects,
@@ -127,7 +127,6 @@ describe("route families are classified (OS-178)", () => {
     for (const f of scopable) expect(admin.has(f), `${f} is in both sets`).toBe(false);
     const unclassified = OB_API_ROUTES.filter((r) => !scopable.has(r.family) && !admin.has(r.family)).map((r) => `${r.method} ${r.path} (${r.family})`);
     expect(unclassified).toEqual([]);
-    expect([...scopable].sort()).toEqual([...SCOPED_ALLOWED_FAMILIES].sort());
   });
 
   test("the matcher maps every route to itself, and a literal segment beats a parameter", () => {
@@ -174,7 +173,7 @@ describe("the tokens file (OS-178)", () => {
     const load = loadScopedTokens(tokensFile([alice()]));
     expect(authenticate(ALICE, ADMIN, () => load)).toEqual({
       ok: true,
-      principal: { user: "alice", all: false, projects: ["alpha"], families: [...SCOPED_ALLOWED_FAMILIES] },
+      principal: { user: "alice", all: false, projects: ["alpha"], families: [...OB_API_SCOPABLE_FAMILIES] },
     });
     expect(authenticate("nope", ADMIN, () => load)).toEqual({ ok: false, disabledMessage: null });
     expect(authenticate(null, ADMIN, () => load)).toEqual({ ok: false, disabledMessage: null });
@@ -197,8 +196,7 @@ describe("ob api-token (OS-178)", () => {
       const token = out.join("").trim();
       expect(token.length).toBeGreaterThanOrEqual(43); // 32 bytes base64url
       const entries = readTokensForEdit(path);
-      expect(entries).toEqual([{ user: "carol", sha256: sha256Hex(token), projects: ["alpha", "beta"], families: [...SCOPED_ALLOWED_FAMILIES] }]);
-      const { statSync, readFileSync } = await import("node:fs");
+      expect(entries).toEqual([{ user: "carol", sha256: sha256Hex(token), projects: ["alpha", "beta"], families: [...OB_API_SCOPABLE_FAMILIES] }]);
       expect(statSync(path).mode & 0o777).toBe(0o600);
       expect(readFileSync(path, "utf8")).not.toContain(token);
 
@@ -228,7 +226,10 @@ describe("ob api-token (OS-178)", () => {
   test("a world-readable file is refused for editing, naming the path", () => {
     const path = tokensFile([alice()], 0o640);
     expect(() => readTokensForEdit(path)).toThrow(path);
+    // Rewriting it is the fix: the file comes back 0600 and loads.
     writeTokens([alice()], path);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readTokensForEdit(path)).toEqual([alice()]);
   });
 });
 
@@ -244,7 +245,7 @@ describe("a scoped token over the API (OS-178)", () => {
             continue;
           }
           const res = await call(concrete(r.path), { method: r.method, ...(r.method === "POST" ? { body: {} } : {}) });
-          const granted = r.method === "GET" && SCOPED_ALLOWED_FAMILIES.includes(r.family as never);
+          const granted = r.method === "GET" && OB_API_SCOPABLE_FAMILIES.includes(r.family);
           if (granted) expect(res.status, `${r.method} ${r.path}`).not.toBe(403);
           else {
             expect(res.status, `${r.method} ${r.path}`).toBe(403);
@@ -318,9 +319,33 @@ describe("a scoped token over the API (OS-178)", () => {
         expect(missing.status).toBe(404);
         expect(hidden.body.error.code).toBe(missing.body.error.code);
         expect((await call(`/items/${refs.loose}`)).status).toBe(404);
+        // teams is an admin family: an unknown team's 404 would name which teams exist.
+        expect((await call("/items?team=anything")).status).toBe(403);
         for (const p of ["/items?project=beta", "/next?project=beta", "/items?project=nope", "/next?project=nope"]) {
           expect((await call(p)).status, p).toBe(404);
         }
+      });
+    },
+    BUDGET,
+  );
+
+  test(
+    "a bare number is the item the token can see; only when it sees both readings is it refused, naming neither",
+    async () => {
+      // loose holds OB-<a1's id>. Scoped to alpha, the bare id is a1 (loose is out of scope).
+      await withScopedApi(tokensFile([alice(["alpha"])]), async ({ store, call, ids, refs, setPath }) => {
+        expect(refs.loose).toBe(`OB-${ids.a1}`);
+        expect((await call(`/items/${ids.a1}`)).body.item.id).toBe(ids.a1);
+        // Move loose into beta (it keeps OB-<n>): scoped to beta, the bare number is loose, not out-of-scope a1.
+        await store.q.update(store.t.item).set({ project_id: "beta" }).where(eq(store.t.item.id, ids.loose));
+        setPath(tokensFile([alice(["beta"])]));
+        expect((await call(`/items/${ids.a1}`)).body.item.id).toBe(ids.loose);
+        // Both visible: refused, and the message names neither item.
+        setPath(tokensFile([alice(["alpha", "beta"])]));
+        const both = await call(`/items/${ids.a1}`);
+        expect(both.status).toBe(400);
+        expect(both.text).not.toContain(refs.loose);
+        expect(both.text).not.toContain("zebra");
       });
     },
     BUDGET,

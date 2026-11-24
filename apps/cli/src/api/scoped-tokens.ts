@@ -11,7 +11,7 @@
 //
 // The file is re-read on every request that is not the admin's, so `ob api-token revoke` takes effect on the
 // next request without a restart.
-import { chmodSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -27,12 +27,6 @@ export function tokensPath(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env[OB_API_TOKENS_FILE_ENV]?.trim();
   return explicit ? explicit : defaultTokensPath();
 }
-
-/**
- * The route families a scoped token may be granted in OS-178, every one READ ONLY: a scoped principal is
- * refused every POST and DELETE whatever its families say. Writes and spinoffs come in OS-179.
- */
-export const SCOPED_ALLOWED_FAMILIES = ["items", "next", "search", "projects"] as const;
 
 /** One entry in the tokens file. */
 export interface ScopedTokenEntry {
@@ -156,7 +150,6 @@ export function readTokensForEdit(path: string = tokensPath()): ScopedTokenEntry
 export function writeTokens(entries: readonly ScopedTokenEntry[], path: string = tokensPath()): void {
   const tmp = join(dirname(path), `.ob_api_tokens.${process.pid}.${randomBytes(4).toString("hex")}.tmp`);
   writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, { mode: 0o600 });
-  chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 }
 

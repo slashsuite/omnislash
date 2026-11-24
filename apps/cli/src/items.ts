@@ -713,7 +713,6 @@ export async function triageInbox(db: Database | Store): Promise<ItemRow[]> {
     .orderBy(desc(s.t.item.created_at), asc(s.t.item.id))) as ItemRow[];
 }
 
-/** How many items are awaiting triage (drives the ob next / ob status banner). */
 /** OS-178: the triage count inside a set of projects (a scoped API token's view). */
 export async function triageCountIn(db: Database | Store, projectIds: ReadonlySet<string>): Promise<number> {
   if (projectIds.size === 0) return 0;
@@ -726,6 +725,7 @@ export async function triageCountIn(db: Database | Store, projectIds: ReadonlySe
   return readNumber(rows[0]?.n);
 }
 
+/** How many items are awaiting triage (drives the ob next / ob status banner). */
 export async function triageCount(db: Database | Store): Promise<number> {
   const s = asStore(db);
   const rows = (await s.q
