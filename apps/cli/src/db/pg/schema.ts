@@ -150,6 +150,8 @@ export const project = pgTable("project", {
 	stage: text(),
 	// OB-2255: the project's team, in 0046's `group_name` column (see the SQLite schema).
 	team_name: text("group_name"),
+	// OS-134: the lifecycle status (see the SQLite schema).
+	status: text().default("active").notNull(),
 },
 (table) => [
 	uniqueIndex("idx_project_key").on(table.key),

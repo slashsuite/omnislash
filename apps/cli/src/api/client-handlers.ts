@@ -63,7 +63,8 @@ import {
 	type GoogleAuthDeps,
 } from "../../../../platform/cli-sources/src/commands/google.ts";
 import { mergeGoogleToken, previousGoogleToken, type GoogleToken } from "../../../../platform/cli-sources/src/google.ts";
-import { parseProjectLabel, parseProjectPatch, projectRepoPrivate, renderProjectList } from "../commands/admin.ts";
+import { parseProjectLabel, parseProjectPatch, projectRepoPrivate, renderProjectList, visibleProjects } from "../commands/admin.ts";
+import { PROJECT_STATUS_ALIASES } from "../project-status.ts";
 import { briefQuiet, renderBrief, type AnyBrief } from "../commands/brief.ts";
 import { isJournalType, JOURNAL_TYPES, renderJournalCapture, renderJournalList } from "../commands/log.ts";
 import { renderJobs } from "../commands/jobs.ts";
@@ -1980,8 +1981,18 @@ async function apiProject(ctx: ApiCtx): Promise<void> {
 			icon: str(ctx.flags, "icon"),
 			displayName: str(ctx.flags, "display-name"),
 			stage: str(ctx.flags, "stage"),
+			status: str(ctx.flags, "status"),
 		});
 		const res = await ctx.client.projectEdit(name, patch);
+		emitId(ctx, res.project.id);
+		return;
+	}
+	// OS-134: `project pause|resume|archive <name>` are `project edit <name> --status paused|active|archived`.
+	const aliased = sub !== undefined ? PROJECT_STATUS_ALIASES[sub] : undefined;
+	if (aliased) {
+		const name = ctx.args[1];
+		if (!name) throw new UsageError(`project ${sub} requires a <name>`);
+		const res = await ctx.client.projectEdit(name, { status: aliased });
 		emitId(ctx, res.project.id);
 		return;
 	}
@@ -2006,13 +2017,13 @@ async function apiProject(ctx: ApiCtx): Promise<void> {
 		return;
 	}
 	if (sub === "list" || sub === undefined) {
-		const res = await ctx.client.projects();
-		if (ctx.mode === "json") print(JSON.stringify(res.projects, null, 2));
-		else if (ctx.mode === "quiet") print(res.projects.map((p) => p.id).join("\n"));
-		else print(renderProjectList(res.projects));
+		const projects = visibleProjects((await ctx.client.projects()).projects, ctx.flags.all === true); // OS-134
+		if (ctx.mode === "json") print(JSON.stringify(projects, null, 2));
+		else if (ctx.mode === "quiet") print(projects.map((p) => p.id).join("\n"));
+		else print(renderProjectList(projects));
 		return;
 	}
-	throw new UsageError(`unknown project subcommand '${sub}' (add|edit|rename|rm|list|rules|wire)`);
+	throw new UsageError(`unknown project subcommand '${sub}' (add|edit|pause|resume|archive|rename|rm|list|rules|wire)`);
 }
 
 /** OB-2006: the wiki pages are files on THIS machine; the project list, items and checkouts come over the API. */

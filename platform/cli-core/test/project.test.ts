@@ -242,7 +242,7 @@ describe("project --icon / --display-name (OB-2116)", () => {
     expect((await runCli(db, ["project", "edit", "pixelslash", "--display-name", "  "])).code).toBe(0);
     const bare = await runCli(db, ["project", "list"]);
     // neither set: both columns are empty (OB-2103 writes every column, so the stage stays the eighth)
-    expect(bare.out).toContain("pixelslash\tside\tpixelslash\t\tPS\t\t\t-\n");
+    expect(bare.out).toContain("pixelslash\tside\tpixelslash\t\tPS\t\t\t-\tactive\n");
   });
 
   test("add takes both; a ZWJ flag fits the icon cap, an over-long icon or name is a usage error", async () => {

@@ -253,6 +253,8 @@ export const FLAGS = {
   "no-flake-slot": { type: "string" },
   // OS-108: `ob spinoff <ref> --over-usage '<why>'`, past the critical-only usage line. A string, so an empty reason reaches the refusal.
   "over-usage": { type: "string" },
+  // OS-134: `ob spinoff <ref> --allow-paused '<why>'`, past a paused or archived project. A string, so an empty reason reaches the refusal.
+  "allow-paused": { type: "string" },
   // OB-2107: `ob spinoff <ref> --effort high --opus-high '<his ask>'`, the quote that lets Opus run above its default.
   "opus-high": { type: "string" },
   // OB-1991: the model trial. `ob spinoff <ref> --no-trial` is one build while a trial is active; `ob spinoff trial`

@@ -117,6 +117,7 @@ import {
 // The ob item a spinoff ref serves (1163) lives in its own module: this file imports the dispatcher and
 // the dispatcher resolves rows through the same helper, so importing it here would close a cycle back
 // into this file (measured: it makes T3_LAUNCHER a use-before-init at load time).
+import { pausedRowReason, recordAllowPaused, refusePausedProject } from "../spinoff-paused.ts";
 import { FLAKE_BOX_MARKER, FLAKE_SLOT_KEY, FLAKE_SLOT_TTL_S, flakeBoxParagraph, flakeBoxPresent, flakeSlotHeldMessage, flakeSlotKeyFor, flakeSlotRefFor, noFlakeBoxWarning, recordNoFlakeSlot, refuseHeldFlakeSlot, ticketIsFlake, withFlakeParagraph } from "../spinoff-flake.ts";
 import { collidingRefWarning, dispatchRefFor, refuseAmbiguousDispatchRef, rowItemId, spinoffRowsServingItem, ticketItemIdFor } from "../spinoff-item.ts";
 import { attachLegs, dispatchTrialPair, legBranch, noteLegHandoff, openPairs, noteLegSendback, noteTrialLanded, openPair, runTrialOp, trialPlanFor, voidPair, type TrialDeps } from "../spinoff-trial.ts";
@@ -2703,12 +2704,16 @@ export async function launchQueuedRow(
   under: string,
   steps: SpinoffSteps,
   readCommits: (repo: string) => Commit[] = originMainCommits,
+  pausedReleased = false,
 ): Promise<RowLaunch> {
   // Another live session holds this ticket/worktree (#97), so leave the row PENDING (not failed) and
   // report it.
   const hold = await foreignHold(db, await rowLeaseKeys(db, pending), [leaseHolderId(), pending.branch, builderIdOf(pending), under]);
   if (hold) return { kind: "blocked", blocked: { ticket: pending.ticket_ref, resource: hold.resource, holder: hold.holder } };
-  const reason = (await launchNotReadyFor(db, pending)) ?? (await alreadyLandedReason(db, pending, readCommits));
+  // OS-134: a paused or archived project's row stays pending unless an --allow-paused released this row. A
+  // dispatch that carries the override itself says so (`pausedReleased`): a split client's replica may not hold
+  // the trail line the server just wrote.
+  const reason = (pausedReleased ? null : await pausedRowReason(db, pending)) ?? (await launchNotReadyFor(db, pending)) ?? (await alreadyLandedReason(db, pending, readCommits));
   if (reason) return { kind: "not-ready", reason };
   // THE CLAIM: atomic, and on the server once there is one. Nothing local has happened yet, so losing
   // the race costs nothing and a claim that cannot be taken leaves no residue at all.
@@ -6449,6 +6454,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   const under = flag(ctx, "holder") ?? "";
   const noCheck = flag(ctx, "no-check");
   const noFlakeSlot = flag(ctx, "no-flake-slot"); // OB-2230
+  const allowPaused = flag(ctx, "allow-paused"); // OS-134
 
   if (!queueOnly && ctx.remote) {
     await enqueueAndLaunchSplit(ctx, ctx.remote, rawRef, { launcher: launcherFlag, complexity, effort, brief: custom, under });
@@ -6476,6 +6482,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   await refuseForeignHold(store, ticketRef, branch, worktree ?? worktreePath(repo, worktreeKeyOf({ repo, branch, ticket_ref: ticketRef })), under);
   // OB-2230: one flake fix on the whole machine. A held `flake:slot` refuses here, before the row exists.
   const flake = await refuseHeldFlakeSlot(store, ticketRef, [leaseHolderId(), branch, refKey(ticketRef), under], noFlakeSlot);
+  // OS-134: a paused or archived project's ticket refuses here, before the row exists, unless --allow-paused.
+  const paused = await refusePausedProject(store, ticketRef, allowPaused);
   // OS-108: past the critical-only usage line only a critical ticket is dispatched, refused here before the row exists.
   const overUsage = await refuseOverUsage({ ref: ticketRef, critical: async () => itemIsCritical(store, await ticketItemIdFor(store, ticketRef)), overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   if (flake && !queueOnly && !flakeBoxPresent()) warn(noFlakeBoxWarning(ticketRef));
@@ -6529,6 +6537,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
           trialModel: spec.model,
           decision: dispatchDecisionOf(ctx), // OB-2107: carries the --opus-high quote
         });
+        if (paused && allowPaused) await recordAllowPaused(store, queued.row, paused, allowPaused, under || null); // OS-134: before the launch reads it
         if (queued.deduped) {
           // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
           // launching, building or handed-off one is left as it is (nothing new is launched).
@@ -6572,6 +6581,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   if (collides) warn(collides);
   // OB-2230: the override is bound to THIS row on the trail, so the claim (here, a drain, or the server) reads it.
   if (flake && noFlakeSlot) await recordNoFlakeSlot(store, row, noFlakeSlot, under || null);
+  // OS-134: the same for --allow-paused, so a drain of this row (or the launch below) lets it through.
+  if (paused && allowPaused) await recordAllowPaused(store, row, paused, allowPaused, under || null);
   if (queueOnly) {
     if (ctx.mode === "json")
       print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort: row.effort, urgent, raised_from: raisedFrom, row }));
@@ -6648,7 +6659,7 @@ async function enqueueAndLaunchSplit(
   }
   if (repoFlag !== undefined) argv.push("--repo", repoFlag);
   // OB-2107: --opus-high crosses too: the server's `queue` re-checks it and puts the quote on the trail note.
-  for (const name of ["branch", "worktree", "holder", "note", "no-check", "no-flake-slot", "opus-high", "over-usage"] as const) {
+  for (const name of ["branch", "worktree", "holder", "note", "no-check", "no-flake-slot", "opus-high", "over-usage", "allow-paused"] as const) {
     const value = flag(ctx, name);
     if (value !== undefined) argv.push(`--${name}`, value);
   }
@@ -6687,7 +6698,9 @@ async function launchAndReport(
   steps: SpinoffSteps,
   urgent: UrgentTierNote | null = null,
 ): Promise<boolean> {
-  const r: RowLaunch = queued.status === "pending" ? await launchQueuedRow(db, queued, under, steps) : { kind: "raced" };
+  // OS-134: this dispatch's --allow-paused was checked (non-blank) and recorded before the launch.
+  const pausedReleased = (flag(ctx, "allow-paused") ?? "").trim() !== "";
+  const r: RowLaunch = queued.status === "pending" ? await launchQueuedRow(db, queued, under, steps, originMainCommits, pausedReleased) : { kind: "raced" };
   if (r.dbFailure) reportDbFailures(ctx, [r.dbFailure]);
   const row = r.kind === "launched" || r.kind === "failed" ? r.row : queued;
   const threadId = r.kind === "launched" ? (r.effect.t3ThreadId ?? null) : r.kind === "raced" ? (queued.t3_thread_id ?? null) : null;

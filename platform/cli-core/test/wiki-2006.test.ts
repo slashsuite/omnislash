@@ -281,7 +281,7 @@ describe("pure helpers", () => {
         args: ["gamma"],
         mode: "human",
         src: {
-          projects: async () => [{ id: "gamma", name: "gamma", kind: "side", git_remote: null, created_at: "", key: null, icon: null, display_name: null, stage: null, team_name: null }],
+          projects: async () => [{ id: "gamma", name: "gamma", kind: "side", git_remote: null, created_at: "", key: null, icon: null, display_name: null, stage: null, status: "active", team_name: null }],
           checkouts: async () => {
             throw new Error("config down");
           },
@@ -303,7 +303,7 @@ describe("pure helpers", () => {
         args: ["gamma"],
         mode: "human",
         src: {
-          projects: async () => [{ id: "gamma", name: "gamma", kind: "side", git_remote: null, created_at: "", key: "GA", icon: null, display_name: null, stage: null, team_name: null }],
+          projects: async () => [{ id: "gamma", name: "gamma", kind: "side", git_remote: null, created_at: "", key: "GA", icon: null, display_name: null, stage: null, status: "active", team_name: null }],
           checkouts: async () => ({}),
           tasks: async () => [
             { id: "1", type: "task", ref: "GA-1", title: "done one", status: "done", priority: "high", closed_at: "2026-01-02T00:00:00Z" },

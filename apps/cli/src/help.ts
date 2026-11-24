@@ -554,9 +554,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: ["project [list]", "project <subcommand> [args]"],
     subcommands: {
       list: {
-        summary: "List projects with kind, remote, ref key, labels, and stage",
-        usage: ["project [list]"],
-        examples: ["project list", "project list --json"],
+        summary: "List projects with kind, remote, ref key, labels, stage, and status",
+        usage: ["project [list] [--all] [--json]"],
+        flags: [{ flag: "--all", description: "Include archived projects (hidden by default)" }],
+        examples: ["project list", "project list --all --json"],
       },
       add: {
         summary: "Register a new project",
@@ -571,8 +572,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["project add web --kind product --key WEB --remote https://github.com/org/web"],
       },
       edit: {
-        summary: "Update a project's remote, kind, ref key, labels, or stage",
-        usage: ["project edit <name> [--remote <url>] [--kind <k>] [--key <KEY>] [--stage <s>]"],
+        summary: "Update a project's remote, kind, ref key, labels, stage, or status",
+        usage: ["project edit <name> [--remote <url>] [--kind <k>] [--key <KEY>] [--stage <s>] [--status <s>]"],
         flags: [
           { flag: "--remote <url>", description: "Update git remote URL" },
           { flag: "--kind <kind>", description: "Update project kind" },
@@ -580,8 +581,24 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--icon <emoji>", description: "Set or clear ('') icon label" },
           { flag: "--display-name <t>", description: "Set or clear ('') display name" },
           { flag: "--stage <stage>", description: "alpha, beta, rc, stable, legacy, or none" },
+          { flag: "--status <status>", description: "active, paused, or archived (held projects get no dispatch)" },
         ],
-        examples: ["project edit web --stage beta --icon 🌐"],
+        examples: ["project edit web --stage beta --icon 🌐", "project edit web --status paused"],
+      },
+      pause: {
+        summary: "Pause a project: no dispatch, left out of next and team loops",
+        usage: ["project pause <name>"],
+        examples: ["project pause web"],
+      },
+      resume: {
+        summary: "Set a paused or archived project back to active",
+        usage: ["project resume <name>"],
+        examples: ["project resume web"],
+      },
+      archive: {
+        summary: "Archive a project: paused, and hidden from project list without --all",
+        usage: ["project archive <name>"],
+        examples: ["project archive web"],
       },
       rename: {
         summary: "Rename a project slug in place while preserving item refs",
@@ -606,7 +623,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["project wire web --dir ~/dev/web"],
       },
     },
-    examples: ["project list", "project edit web --stage alpha", "project rules web"],
+    examples: ["project list", "project edit web --stage alpha", "project pause web", "project rules web"],
   },
 
   wiki: {
@@ -859,6 +876,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--no-check <why>", description: "Override the drilled-ticket dispatch gate" },
           { flag: "--no-flake-slot <w>", description: "Bypass the machine-wide flake:slot lease" },
           { flag: "--over-usage <why>", description: "Override the >=95% weekly usage gate" },
+          { flag: "--allow-paused <w>", description: "Queue a paused or archived project's ticket" },
           { flag: "--no-trial", description: "Launch a single build during an active model trial" },
         ],
         examples: ["spinoff queue APP-12 --complexity 5"],
@@ -1140,6 +1158,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--no-check <why>", description: "Override the drilled-ticket dispatch gate" },
       { flag: "--no-flake-slot <w>", description: "Launch a flake ticket without taking the flake:slot lease" },
       { flag: "--over-usage <why>", description: "Override the >=95% weekly usage gate (terminal only)" },
+      { flag: "--allow-paused <w>", description: "Dispatch a paused or archived project's ticket; the reason goes on the trail" },
       { flag: "--no-trial", description: "Run a single build while a model trial is active" },
     ],
     examples: [

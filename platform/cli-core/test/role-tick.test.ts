@@ -251,6 +251,13 @@ describe("ob role tick, locally", () => {
     expect(f.launches).toHaveLength(1);
   });
 
+  test("OS-134: a paused project's flake item writes nothing", async () => {
+    const h = await local();
+    await createItem(h.store, { type: "task", title: "a flaky test", projectId: "tickp", priority: PRIORITY_FLAKE });
+    expect((await h.run(["project", "pause", "tickp"])).code).toBe(0);
+    expect(await tickFindings(h.store, "t")).toEqual([]);
+  });
+
   test("an idle project whose top item is dispatch-ready: one row, keyed on the item's ref and updated_at", async () => {
     const h = await local();
     t3();

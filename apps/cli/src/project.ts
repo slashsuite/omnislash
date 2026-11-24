@@ -39,6 +39,8 @@ export interface Project {
   display_name: string | null;
   /** OB-2103: the release stage (`alpha|beta|rc|stable|legacy`, see stage.ts); null = not set, treated as beta. */
   stage: string | null;
+  /** OS-134: the lifecycle status, `active|paused|archived` (see project-status.ts); every row has one, default active. */
+  status: string;
   /** OB-2255: the team this project is in (`ob t3 team`); null = in no team, so its handoffs send no note. */
   team_name: string | null;
 }
@@ -138,6 +140,8 @@ export interface ProjectPatch {
   display_name?: string;
   /** OB-2103: the release stage (already parsed by `parseStage`); the empty string clears it. */
   stage?: string;
+  /** OS-134: the lifecycle status (already parsed by `parseProjectStatus`). */
+  status?: string;
 }
 
 /** The project after the edit, or null when no project is named `idOrName` (1621). */
@@ -150,12 +154,13 @@ export async function updateProject(
   return asStore(db).txn("edit the project", async (store) => {
     const existing = await getProject(store, idOrName);
     if (!existing) return null;
-    const set: { git_remote?: string; kind?: Kind; icon?: string | null; display_name?: string | null; stage?: string | null } = {};
+    const set: { git_remote?: string; kind?: Kind; icon?: string | null; display_name?: string | null; stage?: string | null; status?: string } = {};
     if (patch.remote !== undefined) set.git_remote = patch.remote;
     if (patch.kind !== undefined) set.kind = patch.kind;
     if (patch.icon !== undefined) set.icon = patch.icon || null;
     if (patch.display_name !== undefined) set.display_name = patch.display_name || null;
     if (patch.stage !== undefined) set.stage = patch.stage || null;
+    if (patch.status !== undefined) set.status = patch.status;
     if (Object.keys(set).length > 0) await store.q.update(store.t.project).set(set).where(eq(store.t.project.id, existing.id));
     if (patch.key !== undefined) await setProjectKey(store, existing.id, patch.key);
     return (await getProject(store, existing.id))!;
@@ -205,6 +210,7 @@ export async function renameProject(
       icon: project.icon,
       display_name: project.display_name,
       stage: project.stage,
+      status: project.status,
       team_name: project.team_name,
     });
     await s.q.update(s.t.item).set({ project_id: newId }).where(eq(s.t.item.project_id, project.id));

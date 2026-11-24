@@ -9,6 +9,7 @@
 // server.ts, and the human-readable rendering stays in the CLI where it belongs.
 import { builderIdOf, refKey } from "../../../../platform/cli-coord/src/clean-repo.ts";
 import { recordNoFlakeSlot, refuseHeldFlakeSlot } from "../../../../platform/cli-coord/src/spinoff-flake.ts";
+import { pausedRowReason, recordAllowPaused, refusePausedProject } from "../../../../platform/cli-coord/src/spinoff-paused.ts";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1528,6 +1529,8 @@ export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise
   // OB-2230: one flake fix on the whole machine. The slot lives here, so a held one refuses here, before the row.
   const flake = await refuseHeldFlakeSlot(store, req.ticket_ref, [req.branch, refKey(req.ticket_ref), req.actor ?? ""], req.no_flake_slot);
   // OB-1825: the gate runs here, on the host with the store, so an old client cannot skip it.
+  // OS-134: a paused or archived project's ticket refuses here, before the row, unless --allow-paused.
+  const paused = await refusePausedProject(store, req.ticket_ref, req.allow_paused);
   const warning = await refuseUncheckedDispatch(store, req.ticket_ref, { noCheck: req.no_check, actor: req.actor });
   const { row, deduped, collision, urgent, raisedFrom } = await enqueueSpinoff(store, {
     ticketRef: req.ticket_ref,
@@ -1553,6 +1556,7 @@ export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise
     trialModel: req.trial_model ?? null,
   });
   if (flake && req.no_flake_slot) await recordNoFlakeSlot(store, row, req.no_flake_slot, req.actor);
+  if (paused && req.allow_paused) await recordAllowPaused(store, row, paused, req.allow_paused, req.actor);
   // OS-108: the client checked the critical-only line (the usage cache is on its machine); the override goes on the trail here.
   if (req.over_usage?.trim()) await recordOverUsage(store, row.ticket_ref, req.over_usage, { actor: req.actor, spinoffRow: row.id, itemId: row.item_id });
   return { row, deduped, collision, warning, urgent, raised_from: raisedFrom, flake };
@@ -1589,6 +1593,7 @@ export async function spinoffLaunchable(store: Store, req: LaunchableRequest): P
       ticket_title: await ticketTitleFor(store, row.ticket_ref, row.item_id),
       raised_from: raised.raisedFrom,
       urgent: raised.urgent,
+      paused: await pausedRowReason(store, row), // OS-134
     });
   }
   return {
@@ -1910,7 +1915,7 @@ async function projectKeyFault<T>(run: () => Promise<T>): Promise<T> {
 export async function projectEdit(store: Store, name: string, req: ProjectEditRequest): Promise<ProjectEditResponse> {
   let patch;
   try {
-    patch = parseProjectPatch({ remote: req.remote, kind: req.kind, key: req.key, icon: req.icon, displayName: req.display_name, stage: req.stage });
+    patch = parseProjectPatch({ remote: req.remote, kind: req.kind, key: req.key, icon: req.icon, displayName: req.display_name, stage: req.stage, status: req.status });
   } catch (e) {
     throw new ApiFault("invalid_request", 400, (e as Error).message);
   }

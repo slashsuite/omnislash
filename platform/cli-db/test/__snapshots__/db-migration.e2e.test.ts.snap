@@ -1593,6 +1593,13 @@ exports[`DB migration safety-net (097) schema fingerprint is stable (golden the 
       "pk": 0,
       "type": "TEXT",
     },
+    {
+      "dflt": "'active'",
+      "name": "status",
+      "notnull": 1,
+      "pk": 0,
+      "type": "TEXT",
+    },
   ],
   "project_group": [
     {
