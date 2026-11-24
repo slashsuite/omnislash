@@ -67,7 +67,8 @@ describe("the built OB dashboard (OB-2205)", () => {
     const res = await fetch(`${base}/`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("<title>OB</title>");
+    expect(html).toContain("<title>OmniSlash</title>");
+    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="OmniSlash"');
     expect(html).toContain("To review");
     expect(html).toContain('rel="manifest"');
   });
@@ -86,15 +87,15 @@ describe("the built OB dashboard (OB-2205)", () => {
     else expect(metas[0]).toMatch(/^[0-9a-f]{40}(-dirty)?$/);
   });
 
-  test("serves its own manifest: name OB, id /ob, start_url /", async () => {
+  test("serves its own manifest: name OmniSlash, id /ob, start_url /", async () => {
     const res = await fetch(`${base}/manifest.webmanifest`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/manifest+json");
     expect(res.headers.get("cache-control")).toBe("no-cache");
     const m = await res.json();
     expect({ name: m.name, short_name: m.short_name, id: m.id, start_url: m.start_url }).toEqual({
-      name: "OB",
-      short_name: "OB",
+      name: "OmniSlash",
+      short_name: "OmniSlash",
       id: "/ob",
       start_url: "/",
     });

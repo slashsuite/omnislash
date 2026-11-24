@@ -1,5 +1,5 @@
-// The document-head tags that make the OB dashboard installable from the iPhone/iPad Home Screen, as
-// apps/dashboard/src/lib/pwa.ts does for the personal one. The title differs ("OB"), and the manifest's own
+// The document-head tags that make the OmniSlash dashboard installable from the iPhone/iPad Home Screen, as
+// apps/dashboard/src/lib/pwa.ts does for the personal one. The title differs ("OmniSlash"), and the manifest's own
 // `id` (/ob) is what keeps the two as separate Home Screen apps. Kept apart from the root route so a test can
 // read them without loading the stylesheet import.
 export const PWA_THEME_COLOR = "#181825";
@@ -11,7 +11,7 @@ export const PWA_META = [
   { name: "mobile-web-app-capable", content: "yes" },
   { name: "apple-mobile-web-app-capable", content: "yes" },
   { name: "apple-mobile-web-app-status-bar-style", content: "default" },
-  { name: "apple-mobile-web-app-title", content: "OB" },
+  { name: "apple-mobile-web-app-title", content: "OmniSlash" },
 ];
 
 export const PWA_LINKS = [
