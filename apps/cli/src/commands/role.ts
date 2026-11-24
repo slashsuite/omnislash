@@ -36,7 +36,6 @@ import { parseTeamRole } from "../team-handoff.ts";
 import { teamRoleAgentId, teamThreadTitle, type TeamRole, type TeamView } from "../team.ts";
 import { t3BaseUrl, T3Error } from "../t3/client.ts";
 import {
-  DEFAULT_TIER_MODELS,
   readTeamThread,
   readThreadHeader,
   resolveModelAndEffort,
@@ -91,11 +90,11 @@ const ROLE_SUBCOMMANDS = "start|status|end|brief|note|tick";
 
 /**
  * The model a role run opens on (OS-145): route `role.<role>` of the active models profile, whose default is the
- * profile's builder.complex when one names it, else Claude Opus (`claudeAgent:claude-opus-5-5`), at the model's
+ * profile's builder range covering 8 when one names it, else Claude Opus (`claudeAgent:claude-opus-5-5`), at the model's
  * default effort (no options sent). The provider is always named, so a run never depends on the T3 project's own
  * default model (a project may have none).
  */
-const ROLE_RUN_TIER = "complex";
+const ROLE_RUN_COMPLEXITY = 8;
 
 async function roleRunModel(backend: RoleBackend, role: TeamRole): Promise<string> {
   return resolveRoute(await loadRouteInputs(backend.configIo ?? null), `role.${role}`).chain[0]!;
@@ -276,7 +275,7 @@ export async function startRoleRun(backend: RoleBackend, teamName: string, role:
   const project = t3ProjectFor(await seam.projects(), cwd);
   if (!project) throw new AppError(`no T3 project is registered for ${cwd}; register the checkout as a T3 project (\`t3 project add ${cwd}\`)`);
   const roleModel = await roleRunModel(backend, role);
-  const resolved = await resolveModelAndEffort(seam, project, ROLE_RUN_TIER, { ...DEFAULT_TIER_MODELS, [ROLE_RUN_TIER]: roleModel }, undefined);
+  const resolved = await resolveModelAndEffort(seam, project, ROLE_RUN_COMPLEXITY, [{ from: 1, to: 10, model: roleModel }], undefined);
   if ("refusal" in resolved) {
     throw new AppError(`${resolved.refusal.reason}; a role run opens on ${roleModel}, which this machine's T3 must list (\`ob t3 doctor\`)`);
   }

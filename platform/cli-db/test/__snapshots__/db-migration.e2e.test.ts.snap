@@ -2365,6 +2365,13 @@ exports[`DB migration safety-net (097) schema fingerprint is stable (golden the 
       "pk": 0,
       "type": "TEXT",
     },
+    {
+      "dflt": null,
+      "name": "complexity",
+      "notnull": 0,
+      "pk": 0,
+      "type": "INTEGER",
+    },
   ],
   "spinoff_trial": [
     {
@@ -2464,6 +2471,20 @@ exports[`DB migration safety-net (097) schema fingerprint is stable (golden the 
       "notnull": 0,
       "pk": 0,
       "type": "TEXT",
+    },
+    {
+      "dflt": null,
+      "name": "complexity_from",
+      "notnull": 0,
+      "pk": 0,
+      "type": "INTEGER",
+    },
+    {
+      "dflt": null,
+      "name": "complexity_to",
+      "notnull": 0,
+      "pk": 0,
+      "type": "INTEGER",
     },
   ],
   "spinoff_trial_pair": [

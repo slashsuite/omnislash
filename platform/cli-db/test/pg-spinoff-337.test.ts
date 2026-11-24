@@ -24,6 +24,7 @@
 //
 // It uses the ob 325 harness: a real local cluster over a unix socket, no network and no live database.
 import { afterEach, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,6 +41,7 @@ import {
   enqueueSpinoff,
   launchNotReadyFor,
   listSpinoffs,
+  renderSpinoffShow,
   resolveRepoFor,
   rowLauncherNameFor,
   rowRepoPathFor,
@@ -214,6 +216,26 @@ async function exercise(store: Store, machine: Machine, captured: Captured): Pro
   const fourth = await drainSpinoffs(store);
   out.architectNotCounted = fourth.active;
 
+  // --- OS-177: the complexity column, written and read back through THIS engine ----------------------
+  // A named score is stored as the integer; a row with no score records the default 5; a row from before
+  // the column (complexity NULL, tier set) reads as its tier's alias value.
+  const scored = await enqueueSpinoff(store, {
+    ticketRef: "339",
+    repo: machine.repo,
+    branch: "build-339a",
+    worktree: machine.worktrees["build-339a"],
+    mode: "agent",
+    brief: "a scored row",
+    launcher: "t3",
+    complexity: 3,
+  });
+  await store.q.update(store.t.spinoff).set({ complexity: null, tier: "complex" }).where(eq(store.t.spinoff.id, second.row.id));
+  const byRef = new Map((await listSpinoffs(store)).map((r) => [r.ticket_ref, r]));
+  out.complexityStored = ["337", "338", "339"].map((ref) => [ref, byRef.get(ref)!.complexity ?? null, byRef.get(ref)!.tier ?? null]);
+  out.complexityType = typeof byRef.get("339")!.complexity;
+  out.scoredId = scored.row.id;
+  out.showRated = ["337", "338", "339"].map((ref) => renderSpinoffShow(byRef.get(ref)!, false).split("\n").find((l) => l.includes("rated:"))!.trim());
+
   return out;
 }
 
@@ -226,7 +248,7 @@ describe("ob spinoff agrees across the two engines (337 pass 5)", () => {
       const repo = join(dir, "acme");
       mkdirSync(join(repo, ".git"), { recursive: true });
       const worktrees: Record<string, string> = {};
-      for (const branch of ["build-337a", "build-338a", "build-93"]) {
+      for (const branch of ["build-337a", "build-338a", "build-339a", "build-93"]) {
         const path = join(dir, `acme.${branch}`);
         mkdirSync(path, { recursive: true });
         worktrees[branch] = path;
@@ -307,6 +329,18 @@ describe("ob spinoff agrees across the two engines (337 pass 5)", () => {
         ]);
         expect(fromSqlite.secondDrain).toEqual({ launched: [], remaining_pending: 0, active: 2 });
         expect(fromSqlite.architectNotCounted).toBe(2); // architect-* excluded from active
+        // OS-177: an integer on both engines; the NULL row (338, rewritten as a pre-column row) shows its alias
+        expect(fromSqlite.complexityType).toBe("number");
+        expect(fromSqlite.complexityStored).toEqual([
+          ["337", 5, "medium"],
+          ["338", null, "complex"],
+          ["339", 3, "simple"],
+        ]);
+        expect(fromSqlite.showRated).toEqual([
+          "rated:     complexity 5/10 (medium)",
+          "rated:     complexity 8/10 (complex, from tier complex)",
+          "rated:     complexity 3/10 (simple)",
+        ]);
       } finally {
         await pg?.close();
         await sqlite?.close();

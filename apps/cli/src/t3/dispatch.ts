@@ -36,7 +36,7 @@ import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { asStore, type Store } from "../db/store.ts";
 import { warn } from "../output.ts";
 import { UsageError } from "../errors.ts";
-import { DEFAULT_TIER_MODELS, emptyHalfOf, isSpinoffTier, SPINOFF_TIERS, splitTierModel, type SpinoffTier } from "../models-file.ts";
+import { DEFAULT_COMPLEXITY, DEFAULT_TIER_MODELS, TIER_COMPLEXITY, complexityOf, parseComplexity, emptyHalfOf, isSpinoffTier, modelForComplexity, bandFor, rangeRoute, SPINOFF_TIERS, splitTierModel, withModelAt, type BuilderModels, type SpinoffTier } from "../models-file.ts";
 import { getItem, getTags } from "../items.ts";
 import { getAgent, listAgents, registerAgent, setAgentRun } from "../../../../platform/cli-coord/src/agent.ts";
 import { isTeamRoleAgent, teamRoleAgentId, teamRoleOf, teamThreadIdOf, teamThreadTitle, type HandoffRoute, type Team, type TeamRole } from "../team.ts";
@@ -510,6 +510,28 @@ export function tierRejection(prefix: string, value: string): string {
   return `${prefix} '${value}' is not a tier — use one of ${SPINOFF_TIERS.join("|")} (no tier = ${DEFAULT_SPINOFF_TIER})`;
 }
 
+/** The note `--tier` prints now that the score is `--complexity` (OS-177). */
+export const TIER_ALIAS_NOTE = "ob: --tier is now --complexity; simple=2 medium=5 complex=8";
+
+/**
+ * A dispatch's score off `--complexity <1-10>` and its old alias `--tier <simple|medium|complex>` (OS-177):
+ * undefined when neither is named, the score otherwise. `--tier` prints `TIER_ALIAS_NOTE` through `note`; both
+ * flags, a score outside 1-10 and an unknown tier are UsageErrors (exit 2) before anything is read or written.
+ */
+export function dispatchComplexityFlags(complexity: string | undefined, tier: string | undefined, note: (line: string) => void = warn, prefix = "spinoff"): number | undefined {
+  if (complexity !== undefined && tier !== undefined) throw new UsageError(`${prefix}: pass --complexity <1-10> or --tier, not both (--tier is the old name of --complexity)`);
+  if (complexity !== undefined) {
+    const c = parseComplexity(complexity);
+    if (c === null) throw new UsageError(`${prefix} --complexity '${complexity}' is not a score: use a whole number 1-10 (no score = ${DEFAULT_COMPLEXITY})`);
+    return c;
+  }
+  if (tier === undefined) return undefined;
+  const t = tier.trim();
+  if (!isSpinoffTier(t)) throw new UsageError(tierRejection(`${prefix} --tier`, tier));
+  note(TIER_ALIAS_NOTE);
+  return TIER_COMPLEXITY[t];
+}
+
 /**
  * The builder's verdict on its own tier (`ob spinoff handoff --tier-fit`): was the tier it ran on right?
  * `lower` = it could have run on a cheaper tier, `higher` = it needed a more expensive one. Feeds 1548/1551.
@@ -556,6 +578,19 @@ export function rowTier(raw: string | null | undefined): SpinoffTier {
   if (raw === null || raw === undefined || raw === "") return DEFAULT_SPINOFF_TIER;
   if (isSpinoffTier(raw)) return raw;
   throw new T3Error("refused", tierRejection("the row's tier", raw), `re-dispatch with --tier ${SPINOFF_TIERS.join("|")}`);
+}
+
+/**
+ * The score a ROW launches at (OS-177): its stamped complexity, else its tier's alias value (a row queued before
+ * OS-177), else the default 5. A tier this build does not know is refused, as `rowTier` refuses it.
+ */
+export function rowComplexity(row: { complexity?: number | null; tier?: string | null }): number {
+  const c = complexityOf(row.complexity, row.tier);
+  if (c !== null) return c;
+  if (row.complexity !== null && row.complexity !== undefined) {
+    throw new T3Error("refused", `the row's complexity '${row.complexity}' is not a score 1-10`, "re-dispatch with --complexity <1-10>");
+  }
+  return TIER_COMPLEXITY[rowTier(row.tier)]; // rowTier refuses the unknown tier by name
 }
 
 // ---------------------------------------------------------------------------
@@ -749,8 +784,10 @@ export interface T3DispatchRow {
   branch: string;
   worktree: string;
   brief: string;
-  /** The tier the architect rated it (1480); absent/null launches as the default tier. */
+  /** The tier the architect rated it (1480): only the label now, and a NULL-complexity row's score (OS-177). */
   tier?: string | null;
+  /** OS-177: the score 1-10 that picks the builder band; absent/null reads the tier's alias value, else 5. */
+  complexity?: number | null;
   /** The effort `--effort` named at queue (OB-1815), or what a launch stamped; absent/null/`default (...)` names none. */
   effort?: string | null;
   /** OB-1991: a model trial leg's own model, which beats the tier's (and any profile's). */
@@ -838,31 +875,32 @@ interface LaunchRefusal {
 }
 
 /**
- * The model a tier launches on and the effort it runs at (OB-1815), resolved in one place so a launch and
+ * The model a builder at score `complexity` launches on (the band covering it, OS-177) and the effort it runs at (OB-1815), resolved in one place so a launch and
  * the pre-enqueue check of `--effort` cannot disagree. A refusal is returned, never thrown, because the
  * launch ends it with "re-run the drain" and the pre-enqueue check with "nothing was queued".
  */
 export async function resolveModelAndEffort(
   seam: T3Seam,
   project: T3Project,
-  tier: SpinoffTier,
-  tierModels: Readonly<Record<SpinoffTier, string>>,
+  complexity: number,
+  models: BuilderModels,
   requested: SpinoffEffort | undefined,
 ): Promise<{ model: ModelResolution & { selection: T3ModelSelection }; effort: EffortResolution } | { refusal: LaunchRefusal }> {
-  const caps = await capabilitiesWithModel(seam, project, tierModels[tier]);
-  const model = modelSelectionFor(project, caps, tierModels[tier]);
+  const bandModel = modelForComplexity(models, complexity);
+  const caps = await capabilitiesWithModel(seam, project, bandModel);
+  const model = modelSelectionFor(project, caps, bandModel);
   if (!model.selection) {
-    // Two different remedies: a tier model T3 cannot serve is ob's config; everything else is the T3 project's.
+    // Two different remedies: a band model T3 cannot serve is ob's config; everything else is the T3 project's.
     const remedy = model.tierConfig
-      ? `set that tier's model to one T3 lists: builder.${tier} in the active profile of the models file (\`ob models show\`, \`ob models use <profile>\`) or spinoff_tier_models.${tier} (\`ob config set spinoff_tier_models '{"${tier}":"<model>"}'\`), or re-dispatch with another --tier`
+      ? `set ${rangeRoute(bandFor(models, complexity))}, the builder range covering ${complexity}, to a model T3 lists (\`ob models show\`, \`ob models set ${rangeRoute(bandFor(models, complexity))} <model>\`, \`ob models use <profile>\`; an older spinoff_tier_models setting also feeds the 1-3, 4-6 and 7-10 bands), or re-dispatch with another --complexity`
       : `set ${project.title}'s default model in T3 Code (Project settings → model)`;
-    return { refusal: { reason: `${model.error ?? "no model resolved"} (tier ${tier})`, remedy } };
+    return { refusal: { reason: `${model.error ?? "no model resolved"} (complexity ${complexity})`, remedy } };
   }
   const instance = caps.providers.find((p) => p.providerInstanceId === model.selection!.instanceId);
   const listed = (instance?.models ?? []).find((m) => m.id === model.selection!.model);
   const effort = effortFor(listed, model.selection.model, requested);
   if (!effort.resolution) {
-    return { refusal: { reason: `${effort.error} (tier ${tier})`, remedy: "re-dispatch with a level the model lists, or without --effort" } };
+    return { refusal: { reason: `${effort.error} (complexity ${complexity})`, remedy: "re-dispatch with a level the model lists, or without --effort" } };
   }
   return { model: { ...model, selection: model.selection }, effort: effort.resolution };
 }
@@ -872,40 +910,45 @@ export const OPUS_HIGH_EFFORTS: readonly SpinoffEffort[] = ["high", "xhigh", "ma
 
 /**
  * Why a dispatch of an Opus model at `high` or above is refused (OB-2107: Opus runs on high only
- * when the owner explicitly asks for it), or null when it may go. `model` is the tier's model as
+ * when the owner explicitly asks for it), or null when it may go. `model` is the band's model as
  * configured (bare or `<provider>:<model>`); `ask` is the `--opus-high` quote of his ask. Pure.
  */
-export function opusHighRefusal(model: string, tier: SpinoffTier, effort: SpinoffEffort | undefined, ask: string | undefined): string | null {
+export function opusHighRefusal(model: string, complexity: number, effort: SpinoffEffort | undefined, ask: string | undefined): string | null {
   if (effort === undefined || !OPUS_HIGH_EFFORTS.includes(effort)) return null;
   const id = splitTierModel(model)?.model ?? model;
   if (!/opus/i.test(id)) return null;
   if (ask !== undefined && ask.trim() !== "") return null;
   return (
-    `not dispatched: tier ${tier} runs ${id}, and Opus runs above its default effort (--effort ${effort}) only when the owner explicitly asks for it. ` +
+    `not dispatched: complexity ${complexity} runs ${id}, and Opus runs above its default effort (--effort ${effort}) only when the owner explicitly asks for it. ` +
     `Re-dispatch without --effort, or pass --opus-high '<his ask, quoted>' to record that he asked. Nothing was queued.`
   );
 }
 
 /**
- * The launch-time half (OB-2107): the urgent rule raised the row's tier AFTER it was queued (OB-2075), so the
- * effort it was queued at was checked against another tier's model. Opus above its default is refused here,
+ * The launch-time half (OB-2107): the urgent rule raised the row's score AFTER it was queued (OB-2075, OS-177), so
+ * the effort it was queued at was checked against another band's model. Opus above its default is refused here,
  * never launched, because his ask (if any) was not for this model. Throws a T3 refusal; no-op otherwise.
  */
-export function refuseRaisedOpusHigh(row: { ticket_ref: string; tier: string | null; effort: string | null }, models: Readonly<Record<SpinoffTier, string>>, raisedFrom: string | null): void {
+export function refuseRaisedOpusHigh(
+  row: { ticket_ref: string; tier: string | null; complexity?: number | null; effort: string | null },
+  models: BuilderModels,
+  raisedFrom: number | null,
+): void {
   if (raisedFrom === null) return;
-  const tier = rowTier(row.tier);
-  if (!opusHighRefusal(models[tier], tier, rowEffort(row.effort), undefined)) return;
-  const id = splitTierModel(models[tier])?.model ?? models[tier];
+  const c = rowComplexity(row);
+  const bandModel = modelForComplexity(models, c);
+  if (!opusHighRefusal(bandModel, c, rowEffort(row.effort), undefined)) return;
+  const id = splitTierModel(bandModel)?.model ?? bandModel;
   throw new T3Error(
     "refused",
-    `${row.ticket_ref} is urgent, so it launches on tier ${tier} (${id}) instead of ${raisedFrom}, and it was queued at --effort ${row.effort}: Opus runs above its default only when the owner explicitly asks. Re-dispatch without --effort, or with --opus-high '<his ask, quoted>'`,
+    `${row.ticket_ref} is urgent, so it launches at complexity ${c} (${id}) instead of ${raisedFrom}, and it was queued at --effort ${row.effort}: Opus runs above its default only when the owner explicitly asks. Re-dispatch without --effort, or with --opus-high '<his ask, quoted>'`,
     `re-dispatch without --effort, or with --opus-high '<his ask, quoted>'`,
   );
 }
 
-/** Throw the Opus-high refusal for `tier` (OB-2107), or return. Pure; the `queue` half of a dispatch runs only this. */
-export function refuseOpusHigh(tierModels: Readonly<Record<SpinoffTier, string>>, tier: SpinoffTier, effort: SpinoffEffort | undefined, ask: string | undefined): void {
-  const refusal = opusHighRefusal(tierModels[tier], tier, effort, ask);
+/** Throw the Opus-high refusal for score `complexity` (OB-2107), or return. Pure; the `queue` half of a dispatch runs only this. */
+export function refuseOpusHigh(models: BuilderModels, complexity: number, effort: SpinoffEffort | undefined, ask: string | undefined): void {
+  const refusal = opusHighRefusal(modelForComplexity(models, complexity), complexity, effort, ask);
   if (refusal) throw new UsageError(refusal);
 }
 
@@ -913,11 +956,11 @@ export function refuseOpusHigh(tierModels: Readonly<Record<SpinoffTier, string>>
  * A model trial's legs carry their own model and effort (OB-1991), so a leg on Opus at `high` or above needs his
  * ask like any dispatch (OB-2107). Checked on the plan, before a pair opens or a leg is queued. Returns the plan.
  */
-export function refuseOpusHighTrial<P extends { a: { model: string; effort: string | null }; b: { model: string; effort: string | null } }>(plan: P | null, tier: SpinoffTier, ask: string | undefined): P | null {
+export function refuseOpusHighTrial<P extends { a: { model: string; effort: string | null }; b: { model: string; effort: string | null } }>(plan: P | null, complexity: number, ask: string | undefined): P | null {
   if (!plan) return plan;
   for (const leg of [plan.a, plan.b]) {
     const effort = leg.effort !== null && isSpinoffEffort(leg.effort) ? leg.effort : undefined;
-    const refusal = opusHighRefusal(leg.model, tier, effort, ask);
+    const refusal = opusHighRefusal(leg.model, complexity, effort, ask);
     if (refusal) throw new UsageError(`${refusal.replace(/^not dispatched: /, `not dispatched: the active model trial runs a leg on ${leg.model}#${leg.effort}; `)}`);
   }
   return plan;
@@ -942,22 +985,22 @@ export function withOpusHighNote<N extends string | null | undefined>(note: N, a
 }
 
 /**
- * Refuse a `--effort` the tier's model cannot take, BEFORE the row is queued (OB-1815): the launch resolves
+ * Refuse a `--effort` the band's model cannot take, BEFORE the row is queued (OB-1815): the launch resolves
  * the model after the enqueue, which is too late to leave no pending row. Runs on the machine with T3, only
  * when `--effort` is named, and throws a refusal that says nothing was queued.
  */
 export async function refuseUnusableEffort(
   seam: T3Seam,
   repoPath: string,
-  tier: SpinoffTier,
-  tierModels: Readonly<Record<SpinoffTier, string>>,
+  complexity: number,
+  models: BuilderModels,
   effort: SpinoffEffort,
   opusHighAsk?: string,
 ): Promise<void> {
   // OB-2107: Opus above its default needs his ask, checked before T3 is asked anything.
-  refuseOpusHigh(tierModels, tier, effort, opusHighAsk);
+  refuseOpusHigh(models, complexity, effort, opusHighAsk);
   const project = await refuseUnregisteredT3Project(seam, repoPath);
-  const resolved = await resolveModelAndEffort(seam, project, tier, tierModels, effort);
+  const resolved = await resolveModelAndEffort(seam, project, complexity, models, effort);
   if ("refusal" in resolved) {
     throw new UsageError(`not dispatched: ${resolved.refusal.reason} — ${resolved.refusal.remedy}. Nothing was queued.`);
   }
@@ -1013,10 +1056,10 @@ export function spinoffLaunchPlan(input: {
  * the branch, as before — so it is optional and is never consulted for adoption (the worktree is the
  * identity).
  *
- * `tierModels` is the tier → model map (`spinoff_tier_models` over `DEFAULT_TIER_MODELS`, 1480), read by
- * the caller where config is at hand. The row's tier picks the model; the project picks the provider.
+ * `tierModels` is the builder bands (OS-177; the old tier → model map still reads as the tier bands), read by
+ * the caller where config is at hand. The row's score picks the band's model; the project picks the provider.
  *
- * `keepThreadModel` (OB-2075): the tier was RAISED by the urgent rule, not asked for by a human, so a thread
+ * `keepThreadModel` (OB-2075): the score was RAISED by the urgent rule, not asked for by a human, so a thread
  * the worktree already has is adopted on whatever model it runs instead of being refused as a re-dispatch at
  * another tier.
  */
@@ -1025,10 +1068,10 @@ export async function launchT3Spinoff(
   row: T3DispatchRow,
   repoPath: string,
   ticketTitle?: string | null,
-  tierModels: Readonly<Record<SpinoffTier, string>> = DEFAULT_TIER_MODELS,
+  tierModels: BuilderModels = DEFAULT_TIER_MODELS,
   keepThreadModel = false,
 ): Promise<T3LaunchOutcome> {
-  const tier = rowTier(row.tier);
+  const complexity = rowComplexity(row);
   const project = t3ProjectFor(await seam.projects(), repoPath);
   if (!project) {
     throw new T3Error(
@@ -1037,16 +1080,16 @@ export async function launchT3Spinoff(
       `register the checkout as a T3 project (\`t3 project add ${repoPath}\`)`,
     );
   }
-  // OB-1991: a trial leg launches on the trial's model for its leg, whatever the tier (or a profile) says.
-  const models = row.trial_model ? { ...tierModels, [tier]: row.trial_model } : tierModels;
+  // OB-1991: a trial leg launches on the trial's model for its leg, whatever the band (or a profile) says.
+  const models = row.trial_model ? withModelAt(tierModels, complexity, row.trial_model) : tierModels;
   const own = rowEffort(row.effort);
   const routeEffort = own === undefined && row.route_effort && isSpinoffEffort(row.route_effort) ? row.route_effort : undefined;
-  let resolved = await resolveModelAndEffort(seam, project, tier, models, own ?? routeEffort);
+  let resolved = await resolveModelAndEffort(seam, project, complexity, models, own ?? routeEffort);
   if ("refusal" in resolved && routeEffort !== undefined) {
     // OS-145: the route's effort is a preference across its chain; a model that does not take it runs at its default.
-    const plain = await resolveModelAndEffort(seam, project, tier, models, undefined);
+    const plain = await resolveModelAndEffort(seam, project, complexity, models, undefined);
     if (!("refusal" in plain)) {
-      warn(`  ↳ ${row.ticket_ref}: ${models[tier]} does not take the route's effort ${routeEffort}; it runs at its default`);
+      warn(`  ↳ ${row.ticket_ref}: ${modelForComplexity(models, complexity)} does not take the route's effort ${routeEffort}; it runs at its default`);
       resolved = plain;
     }
   }
@@ -1071,7 +1114,7 @@ export async function launchT3Spinoff(
     const onModel = providerDiffers ? `${existing.providerInstanceId}:${existing.model}` : existing.model;
     throw new T3Error(
       "refused",
-      `${row.worktree} already has T3 thread ${existing.threadId} on ${onModel}, and this row asks for tier ${tier} (${stamp}) — settle that thread in T3 Code first, then re-run the drain`,
+      `${row.worktree} already has T3 thread ${existing.threadId} on ${onModel}, and this row asks for complexity ${complexity} (${stamp}) — settle that thread in T3 Code first, then re-run the drain`,
       `settle T3 thread ${existing.threadId}, then re-run the drain`,
     );
   }

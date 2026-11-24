@@ -200,6 +200,16 @@ describe("Done when 2: one row when there is no pairing (OB-1991)", () => {
       expect((await rowsOf(dbPath)).length).toBe(1);
     }
   });
+  test("OS-177: a trial started with --range 4-4 pairs a score of 4 only; 3 and 7 dispatch single", async () => {
+    for (const [score, legs] of [["4", 2], ["3", 1], ["7", 1]] as const) {
+      const { dbPath, id } = await ticket();
+      expect((await start(dbPath, "--target", "20", "--range", "4-4")).code).toBe(0);
+      const d = await dispatch(dbPath, id, fakeRepoDir(), ["--complexity", score]);
+      expect(d.code).toBe(0);
+      expect(d.launches.length).toBe(legs);
+      expect((await rowsOf(dbPath)).length).toBe(legs);
+    }
+  });
 });
 
 describe("Done when 3: blind labels (OB-1991)", () => {

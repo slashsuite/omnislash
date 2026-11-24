@@ -625,6 +625,10 @@ export const spinoff = sqliteTable("spinoff", {
 	// architect thread, as `<iso time> <reason>`, after the handoff retried once. A later note that is sent
 	// clears it. NULL = the last note went (or none was tried); `ob spinoff gateable` and `show` print it.
 	note_error: text("note_error"),
+	// appended by migration 0004_spinoff_complexity (OS-177, ADD COLUMN lands last): the architect's 1-10 score,
+	// the routing key (`tier` is now only the label of its band, still written beside it). NULL = queued before
+	// this: the row reads its tier's alias value (simple 2, medium 5, complex 8), or 5 with no tier either.
+	complexity: integer(),
 },
 (table) => [
 	// PARTIAL, as 0000 created it: one ACTIVE spinoff per ticket, any number of finished ones. The
@@ -653,6 +657,10 @@ export const spinoff_trial = sqliteTable("spinoff_trial", {
 	started_at: text("started_at").notNull(),
 	ended_at: text("ended_at"),
 	end_reason: text("end_reason"),
+	// appended by migration 0004_spinoff_complexity (OS-177): the complexity range the trial runs on (`--range 4-6`);
+	// a dispatch whose score falls inside it runs twice. NULL = started before this: the range is the tier's band.
+	complexity_from: integer("complexity_from"),
+	complexity_to: integer("complexity_to"),
 });
 
 // OB-1991: one pair of a trial: the ticket, the two spinoff rows, the blind label of leg a (`X` or `Y`, leg b

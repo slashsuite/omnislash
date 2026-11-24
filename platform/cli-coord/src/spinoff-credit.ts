@@ -1,7 +1,8 @@
 // OB-1970, OS-145: a spinoff launch that hits an out-of-credits account moves along its route's chain.
 //
-// A row launches on route `builder.<tier>` (OS-145): the active profile's chain, entry by entry, then the same
-// route in each `fallback` profile, each model tried once (`routeAttempts`). Two places see the error:
+// A row launches on the builder band covering its complexity (OS-145, OS-177): the active profile's chain for that
+// band, entry by entry, then the band covering the same score in each `fallback` profile, each model tried once
+// (`builderAttempts`). Two places see the error:
 //   1. the launch itself (T3 refuses `t3_thread_launch` with a credit or quota error), handled by
 //      `launchAcrossProfiles` inside the launch call, and
 //   2. the first turn's run, which T3 starts and then ends `failed` with a provider error item. The run
@@ -16,13 +17,13 @@
 
 import { warn } from "../../../apps/cli/src/output.ts";
 import { AppError } from "../../../apps/cli/src/errors.ts";
-import { ModelsFileError, SPINOFF_TIERS, type SpinoffTier } from "../../../apps/cli/src/models-file.ts";
+import { ModelsFileError, withModelAt, type BuilderModels, type RangeModel } from "../../../apps/cli/src/models-file.ts";
 import { creditErrorOf, recordCreditHit, recordRowProfile, rowProfiles, type CreditMatch } from "../../../apps/cli/src/models-credit.ts";
-import { ModelRoutesError, activeProfileOf, resolveRouteIn, routeAttempts, routeMoveNote, type RouteAttempt, type RouteInputs } from "../../../apps/cli/src/model-routes.ts";
+import { ModelRoutesError, activeProfileOf, builderAttempts, builderModelsOf, routeMoveNote, type RouteAttempt, type RouteInputs } from "../../../apps/cli/src/model-routes.ts";
 import { loadRouteInputs, machineConfigIo } from "../../../apps/cli/src/model-routes-io.ts";
 import type { Database } from "bun:sqlite";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
-import { rowTier, type T3LaunchOutcome, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
+import { rowComplexity, type T3LaunchOutcome, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 
 /**
  * The route inputs on this machine (the local models file, the server's `model_routes` and `spinoff_tier_models`),
@@ -39,12 +40,9 @@ export async function routeInputsOrRefuse(db?: Database | Store): Promise<RouteI
   }
 }
 
-/** Every tier's first model in the active profile: the tier map a launch carries for the tiers it is not on. Pure. */
-export function routeTierModels(inputs: RouteInputs): Record<SpinoffTier, string> {
-  const active = activeProfileOf(inputs).name;
-  const models = {} as Record<SpinoffTier, string>;
-  for (const tier of SPINOFF_TIERS) models[tier] = resolveRouteIn(inputs, `builder.${tier}`, active).chain[0]!;
-  return models;
+/** Every builder band's first model in the active profile: the bands a launch carries (OS-177). Pure. */
+export function routeTierModels(inputs: RouteInputs): RangeModel[] {
+  return builderModelsOf(inputs);
 }
 
 /**
@@ -91,40 +89,41 @@ function reasonOf(match: CreditMatch): string {
 /** Records one move along a route on the ticket's Decisions trail (the caller knows the store, or has none). */
 export type RouteMoveRecorder = (from: string, to: string, note: string) => Promise<void>;
 
-/** A row's launch: the tier map (its own tier on this attempt's model) and the route's effort, for a row with none. */
-export type RouteLaunch = (models: Record<SpinoffTier, string>, routeEffort: string | undefined) => Promise<T3LaunchOutcome>;
+/** A row's launch: the builder bands (its own score's band on this attempt's model) and the band's effort, for a row with none. */
+export type RouteLaunch = (models: BuilderModels, routeEffort: string | undefined) => Promise<T3LaunchOutcome>;
 
 /**
- * Launch `row` on the first attempt of route `builder.<tier>` that has credit (OB-1970, OS-145). Attempts already
+ * Launch `row` on the first attempt of the builder band covering its complexity that has credit (OB-1970, OS-145,
+ * OS-177). Attempts already
  * spent (`prior`) are skipped, and each attempt is recorded against the row before it runs. With no profile
  * anywhere there is one attempt and its error is thrown as it came, as before.
  */
 export async function launchAcrossProfiles(
-  row: { id: number; ticket_ref: string; tier?: string | null },
+  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null },
   inputs: RouteInputs,
   launch: RouteLaunch,
   prior: readonly AttemptTry[] = [],
   recordMove?: RouteMoveRecorder,
 ): Promise<T3LaunchOutcome & { profile: string | null }> {
-  const tier = rowTier(row.tier);
-  const route = `builder.${tier}`;
-  const base = routeTierModels(inputs);
+  const c = rowComplexity(row);
+  const base = builderModelsOf(inputs);
   const active = activeProfileOf(inputs).name;
-  const attempts = routeAttempts(inputs, route);
+  const attempts = builderAttempts(inputs, c);
+  const route = attempts[0]!.route;
   if (attempts.length === 1 && attempts[0]!.profile === null) {
-    return { ...(await launch({ ...base, [tier]: attempts[0]!.model }, undefined)), profile: null };
+    return { ...(await launch(withModelAt(base, c, attempts[0]!.model), undefined)), profile: null };
   }
   const tried: AttemptTry[] = [...prior];
   let last: RouteAttempt | null = null;
   for (const attempt of attempts) {
     const key = attemptKey(attempt);
     if (tried.some((t) => t.key === key)) continue;
+    // The row's own range names the move (OS-177): a fallback profile may split the builder differently.
     if (last) await noteMove(recordMove, route, last.model, attempt.model);
     else if (tried.length > 0) await noteMove(recordMove, route, modelOfKey(tried[tried.length - 1]!.key), attempt.model);
     recordRowProfile(row.id, key);
-    const effort = resolveRouteIn(inputs, route, attempt.profile).effort;
     try {
-      const outcome = await launch({ ...base, [tier]: attempt.model }, effort);
+      const outcome = await launch(withModelAt(base, c, attempt.model), attempt.effort);
       if (tried.length > 0) warn(`  ↳ ${row.ticket_ref}: ${tried[tried.length - 1]!.label} out of credits, relaunched on ${labelOf(attempt)}`);
       return { ...outcome, model: stampWithProfile(outcome.model, attempt.profile, active), profile: attempt.profile };
     } catch (err) {
@@ -169,7 +168,7 @@ const FIRST_TURN_ITEMS = 50;
 
 export interface CreditRelaunchDeps {
   seam: T3Seam;
-  /** Launch the row on one tier map (the same launch the drain makes). */
+  /** Launch the row on one set of builder bands (the same launch the drain makes). */
   launch: RouteLaunch;
   /** The route inputs (`routeInputsOrRefuse`). */
   inputs: RouteInputs;
@@ -188,11 +187,11 @@ export type CreditRelaunch = { kind: "none" } | { kind: "relaunched"; profile: s
  * recorded the failed run, which is the old behaviour.
  */
 export async function relaunchOnCreditFailure(
-  row: { id: number; ticket_ref: string; tier?: string | null },
+  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null },
   threadId: string,
   deps: CreditRelaunchDeps,
 ): Promise<CreditRelaunch> {
-  const attempts = routeAttempts(deps.inputs, `builder.${rowTier(row.tier)}`);
+  const attempts = builderAttempts(deps.inputs, rowComplexity(row));
   if (attempts.length === 1 && attempts[0]!.profile === null) return { kind: "none" }; // no route set anywhere: as before OB-1970
   const read = await deps.seam.read(threadId, { afterPosition: 0, limit: FIRST_TURN_ITEMS });
   if (read.recentRuns.length > 1) return { kind: "none" }; // not the first turn: a relaunch would lose its work

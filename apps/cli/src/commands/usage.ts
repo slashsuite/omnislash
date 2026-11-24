@@ -408,7 +408,7 @@ export function pacingSource(env: Record<string, string | undefined> = process.e
 }
 
 /**
- * The provider of route builder.complex's first model (OS-145), from the local models file and the last
+ * The provider of route builder.complex's first model (OS-145): the builder band covering complexity 8 (OS-177), from the local models file and the last
  * `model_routes` this machine read (a sync read: pacing never waits on the network). Null for a bare id, or a
  * malformed file. Never throws.
  */

@@ -7,6 +7,7 @@
 import { readFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import type { Store } from "./db/store.ts";
+import { complexityLabel, complexityOf } from "./models-file.ts";
 import { asStore } from "./db/store.ts";
 import { getFocusProject } from "./config.ts";
 import { queryItems, type ItemRow } from "./items.ts";
@@ -46,6 +47,8 @@ export interface BriefRow {
   ticket_ref: string;
   status: string;
   tier: string | null;
+  /** OS-177: the row's score 1-10 (its tier's alias for an older row). */
+  complexity: number | null;
   branch: string;
   worktree: string;
   repo: string;
@@ -125,6 +128,7 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
       ticket_ref: r.ticket_ref,
       status: r.status,
       tier: r.tier,
+      complexity: complexityOf(r.complexity, r.tier),
       branch: r.branch,
       worktree: r.worktree,
       repo: r.repo,
@@ -244,7 +248,7 @@ export function renderRoleBrief(f: RoleBriefFacts): string {
   section("Pacing", [pacingLine(f.pacing)]);
   section(
     "Rows in flight",
-    capped(f.rows, (r) => `${r.ticket_ref} ${spinoffStatusWord(r.status)}, tier ${r.tier ?? "medium"}, branch ${r.branch}`),
+    capped(f.rows, (r) => `${r.ticket_ref} ${spinoffStatusWord(r.status)}, ${r.complexity === null ? "complexity -" : complexityLabel(r.complexity)}, branch ${r.branch}`),
   );
   section(
     "PRs to gate",

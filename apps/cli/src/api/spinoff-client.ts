@@ -62,7 +62,6 @@ import {
   renderLaunchedLine,
   renderQueuedLine,
   type UrgentTierNote,
-  tierFlag,
   tierModelsOrRefuse,
   effortFlag,
   prepareLaunchIn,
@@ -151,7 +150,8 @@ import { ApiError, usageOn400, type ApiClient } from "./client.ts";
 import { flakeBoxPresent, noFlakeBoxWarning } from "../../../../platform/cli-coord/src/spinoff-flake.ts";
 import type { ApiCtx } from "./client-handlers.ts";
 import type { EnqueueSpinoffRequest, SpinoffConfig } from "./contract.ts";
-import { DEFAULT_SPINOFF_TIER, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type SpinoffTier, type ReadyNoteOutcome } from "../t3/dispatch.ts";
+import { DEFAULT_COMPLEXITY, URGENT_COMPLEXITY, tierOfComplexity } from "../models-file.ts";
+import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type SpinoffTier, type ReadyNoteOutcome } from "../t3/dispatch.ts";
 
 // --- the refusals: they name THIS machine, never the API host ----------------
 //
@@ -825,7 +825,7 @@ async function launchEntryOverApi(
     const launcher = prep.launcher;
     const beat = apiSpinoffSteps(ctx.client).heartbeatClaim;
     // OB-2075: the claim hands back the stored row; an urgent one launches on the tier the host listed.
-    const launchRow = entry.urgent ? { ...row, tier: entry.row.tier } : row;
+    const launchRow = entry.urgent ? { ...row, tier: entry.row.tier, complexity: entry.row.complexity ?? null } : row;
     const urgentNote = entry.urgent ? { raisedFrom: entry.raised_from ?? null } : null;
     const effect = await withClaimHeartbeat(() => beat(row), () => launchRowIn(cfg, launcher, launchRow, entry.ticket_title, urgentNote, routeMoves));
     const stamp: StampInput = {
@@ -944,7 +944,8 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   // OB-2130: a checkout T3 has no project for would fail at launch, after the row and the worktree exist.
   if (!queueOnly) await refuseUnregisteredT3Project(await t3Seam(), fromProject?.repo ?? rowRepoPathIn(cfg, repo));
   const branch = flag(ctx, "branch") ?? (await apiDefaultBranch(ctx, cfg, repo, ticketRef));
-  const tier = tierFlag(flag(ctx, "tier")); // 1480
+  // OS-177: `--complexity` is the routing key; `--tier` is its alias, with one stderr note. Both: exit 2.
+  const complexity = dispatchComplexityFlags(flag(ctx, "complexity"), flag(ctx, "tier"));
   const effort = effortFlag(flag(ctx, "effort")); // OB-1815
   const under = flag(ctx, "holder") ?? "";
   // 1589: a foreign hold is refused BEFORE the enqueue, so a refused dispatch leaves no pending row behind.
@@ -957,11 +958,12 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   await refuseOverUsage({ ref: ticketRef, critical: async () => (await apiItemPriority(ctx.client, ticketRef)) === "critical", overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   // OB-1815: and an effort the tier's model cannot take, for the same reason. T3 is on this machine.
   if (effort !== undefined) {
-    // OB-2075: an urgent ticket runs on complex, so the level is checked against that tier's model.
-    const effortTier = (await apiItemUrgent(ctx.client, ticketRef)) ? "complex" : (tier ?? DEFAULT_SPINOFF_TIER);
+    // OB-2075, OS-177: an urgent ticket runs at complexity 7 or more, so the level is checked against that band's model.
+    const named = complexity ?? DEFAULT_COMPLEXITY;
+    const effortC = (await apiItemUrgent(ctx.client, ticketRef)) ? Math.max(named, URGENT_COMPLEXITY) : named;
     // OB-2107: `queue` skips the T3 half (the launch checks it) but not the Opus-high check, which needs no T3.
-    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(), effortTier, effort, flag(ctx, "opus-high"));
-    else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortTier, await tierModelsOrRefuse(), effort, flag(ctx, "opus-high"));
+    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(), effortC, effort, flag(ctx, "opus-high"));
+    else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortC, await tierModelsOrRefuse(), effort, flag(ctx, "opus-high"));
   }
   const mode: SpinoffMode = "interactive";
   let custom = flag(ctx, "brief");
@@ -984,7 +986,9 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     mode,
     brief,
     launcher: launcherFlag ?? null,
-    tier: tier ?? null,
+    // OS-177: the score, and its tier label so a host older than OS-177 still records a tier.
+    complexity: complexity ?? null,
+    tier: complexity !== undefined ? tierOfComplexity(complexity) : null,
     effort: effort ?? null,
     note: withOpusHighNote(flag(ctx, "note"), flag(ctx, "opus-high")) ?? null, // OB-2107
     no_check: flag(ctx, "no-check") ?? null,
@@ -1001,14 +1005,14 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     const paired = await dispatchTrialPair({
       plan: async () => {
         // an older server without the trial route has no trial: a single build
-        const res = await ctx.client.spinoffTrial({ op: "plan", tier: tier ?? DEFAULT_SPINOFF_TIER }).catch((e: unknown) => {
+        const res = await ctx.client.spinoffTrial({ op: "plan", complexity: complexity ?? DEFAULT_COMPLEXITY, tier: tierOfComplexity(complexity ?? DEFAULT_COMPLEXITY) }).catch((e: unknown) => {
           if (e instanceof ApiError && e.status === 404) return null;
           throw e;
         });
         // OB-2230: a flake ticket runs no trial: two legs would be two flake fixes on one machine. Read only while a
         // trial is active, so an ordinary dispatch keeps its one item read (1190).
         if (res?.op === "plan" && res.plan && (await apiItemPriority(ctx.client, ticketRef)) === "flake") return null;
-        return refuseOpusHighTrial(res?.op === "plan" ? res.plan : null, tier ?? DEFAULT_SPINOFF_TIER, flag(ctx, "opus-high")); // OB-2107
+        return refuseOpusHighTrial(res?.op === "plan" ? res.plan : null, complexity ?? DEFAULT_COMPLEXITY, flag(ctx, "opus-high")); // OB-2107
       },
       open: async (plan) => {
         const res = await ctx.client.spinoffTrial({ op: "open", trial_id: plan.trial.id, ticket_ref: ticketRef, repo });
@@ -1031,11 +1035,11 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
           // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
           // launching, building or handed-off one is left as it is (nothing new is launched).
           const was = queued.row.status;
-          await launchOverApi(ctx, cfg, queued.row, true, tier !== undefined, under);
+          await launchOverApi(ctx, cfg, queued.row, true, complexity !== undefined, under);
           const outcome = was === "pending" ? "launched as a single build" : "nothing new was launched";
           return { row: null, launched: false, error: `${ticketRef} already had ${spinoffStatusWord(was)} row #${queued.row.id}, ${outcome}`, settled: true };
         }
-        return { row: queued.row, launched: await launchOverApi(ctx, cfg, queued.row, false, tier !== undefined, under) };
+        return { row: queued.row, launched: await launchOverApi(ctx, cfg, queued.row, false, complexity !== undefined, under) };
       },
       void: async (id, reason) => {
         await ctx.client.spinoffTrial({ op: "void", pair_id: id, reason });
@@ -1052,7 +1056,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   }
 
   const { row, deduped, collision, warning, urgent, raised_from, flake } = await usageOn400(ctx.client.enqueueSpinoff(body));
-  const urgentNote = urgent ? { from: (raised_from ?? null) as SpinoffTier | null } : null;
+  const urgentNote = urgent ? { from: raised_from ?? null } : null;
   if (warning) warn(`  ⚠ ${warning}`); // OB-1825
   if (flake && !queueOnly && !body.flake_box) warn(noFlakeBoxWarning(row.ticket_ref)); // OB-2230
   if (!queueOnly) await apiDispatchOverlap(ctx, cfg, row.ticket_ref, repo, row.item_id ?? null); // OS-47: warns, never refuses
@@ -1062,12 +1066,12 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   if (collides) warn(collides);
   if (queueOnly) {
     if (ctx.mode === "json")
-      print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), deduped, launcher: row.launcher, tier: row.tier, effort: row.effort, urgent: urgent ?? false, raised_from: raised_from ?? null, row }));
+      print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort: row.effort, urgent: urgent ?? false, raised_from: raised_from ?? null, row }));
     else if (ctx.mode === "quiet") print(String(row.id));
-    else print(renderQueuedLine(row, deduped, tier !== undefined, urgentNote));
+    else print(renderQueuedLine(row, deduped, complexity !== undefined, urgentNote));
     return;
   }
-  await launchOverApi(ctx, cfg, row, deduped, tier !== undefined, under, urgentNote);
+  await launchOverApi(ctx, cfg, row, deduped, complexity !== undefined, under, urgentNote);
 }
 
 /**
@@ -1177,7 +1181,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   const { row, threadId, model, error } = outcome;
   const effort = outcome.effort ?? row.effort ?? null;
   if (ctx.mode === "json") {
-    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: outcome.status, deduped, launcher: row.launcher, tier: row.tier, effort, t3_thread_id: threadId, model, error }));
+    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: outcome.status, deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort, t3_thread_id: threadId, model, error }));
   } else if (ctx.mode === "quiet") {
     print(threadId ?? String(row.id));
   } else if (outcome.status === "launched") {

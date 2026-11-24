@@ -325,6 +325,8 @@ export const FLAGS = {
   add: { type: "string" },
   check: { type: "boolean" },
   tier: { type: "string" },
+  range: { type: "string" }, // OS-177: spinoff trial start --range 4-6
+  complexity: { type: "string" }, // OS-177: spinoff --complexity 1-10, the routing key (--tier is its alias)
   effort: { type: "string" }, // OB-1815: spinoff --effort low|medium|high|xhigh|max
   profile: { type: "string" }, // OS-145: ob models set|unset|reader --profile <p>
   answers: { type: "string" },

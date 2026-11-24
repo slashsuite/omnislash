@@ -1388,7 +1388,7 @@ describe("spinoff tier → model (1480)", () => {
     for (const [tier, model] of [["simple", "claude-haiku-5-5"], ["medium", "claude-sonnet-5-5"], ["complex", "claude-opus-5-5"]] as const) {
       const { fake, queued, drained, row, db } = await dispatch(["--tier", tier]);
       expect(queued.code).toBe(0);
-      expect(queued.out).toContain(`tier: ${tier}`);
+      expect(queued.out).toMatch(new RegExp(`complexity \\d+/10 \\(${tier}\\)`));
       expect(queued.out).not.toContain("(default)");
       expect(drained!.failed).toEqual([]);
       expect(fake.launches).toHaveLength(1);
@@ -1403,16 +1403,16 @@ describe("spinoff tier → model (1480)", () => {
 
   test("no --tier → medium (Sonnet), and the queue line says it was the default", async () => {
     const { fake, queued, row, dbPath, db } = await dispatch([]);
-    expect(queued.out).toContain("tier: medium (default)");
+    expect(queued.out).toContain("complexity 5/10 (medium, default)");
     expect(fake.launches[0]!.modelSelection.model).toBe("claude-sonnet-5-5");
     expect(row!.tier).toBe("medium");
     expect(row!.model).toBe("claude-sonnet-5-5");
     // `ob spinoff show` prints both
     const shown = await runCli(dbPath, ["spinoff", "show", String(row!.id)]);
-    expect(shown.out).toContain("tier:      medium");
+    expect(shown.out).toContain("rated:     complexity 5/10 (medium)");
     expect(shown.out).toContain("model:     claude-sonnet-5-5");
     // list and gateable carry them too
-    expect((await runCli(dbPath, ["spinoff", "list"])).out).toContain("\tmedium\tclaude-sonnet-5-5\t");
+    expect((await runCli(dbPath, ["spinoff", "list"])).out).toContain("\t5/10\tclaude-sonnet-5-5\t");
     db.close();
   });
 
@@ -1430,7 +1430,8 @@ describe("spinoff tier → model (1480)", () => {
     expect(fake.launches).toHaveLength(0);
     expect(drained!.failed).toHaveLength(1);
     expect(drained!.failed[0]!.error).toContain("does not list model 'claude-haiku-5-5'");
-    expect(drained!.failed[0]!.error).toContain("tier simple");
+    expect(drained!.failed[0]!.error).toContain("(complexity 2)");
+    expect(drained!.failed[0]!.error).toContain("set builder.1-3, the builder range covering 2");
     expect(drained!.failed[0]!.error).toContain("spinoff_tier_models");
     expect(row!.status).toBe("failed");
     expect(row!.model).toBeNull();
@@ -1473,7 +1474,7 @@ describe("spinoff tier → model (1480)", () => {
     const stalled = threadOf({ threadId: "t3-haiku", title: "999", worktreePath: worktree, model: "claude-haiku-5-5" });
     const fake = fakeT3({ repoPath: repo, threads: [stalled] });
     const row = { id: 5, ticket_ref: "999", repo, branch: "999", worktree, brief: "b", tier: "complex" };
-    await expect(launchT3Spinoff(fake.seam, row, repo)).rejects.toThrow(/t3-haiku on claude-haiku-5-5.*tier complex \(claude-opus-5-5\).*settle that thread/);
+    await expect(launchT3Spinoff(fake.seam, row, repo)).rejects.toThrow(/t3-haiku on claude-haiku-5-5.*complexity 8 \(claude-opus-5-5\).*settle that thread/);
     expect(fake.launches).toHaveLength(0);
 
     // once the old thread is settled, the same row launches fresh on Opus
@@ -1550,7 +1551,7 @@ describe("spinoff tier → model (1480)", () => {
     const noProvider = await dispatch(["--tier", "simple"], { tierModels: '{"simple":"nowhere:some-model"}' });
     expect(noProvider.fake.launches).toHaveLength(0);
     expect(noProvider.drained!.failed[0]!.error).toContain("does not advertise the provider instance 'nowhere'");
-    expect(noProvider.drained!.failed[0]!.error).toContain("spinoff_tier_models.simple");
+    expect(noProvider.drained!.failed[0]!.error).toContain("builder.1-3");
     expect(noProvider.row!.model).toBeNull();
     noProvider.db.close();
     restoreSeam?.();
@@ -1559,7 +1560,7 @@ describe("spinoff tier → model (1480)", () => {
     const noModel = await dispatch(["--tier", "simple"], { tierModels: '{"simple":"opencode:opencode-go/nope"}' });
     expect(noModel.fake.launches).toHaveLength(0);
     expect(noModel.drained!.failed[0]!.error).toContain("does not list model 'opencode-go/nope' on provider 'opencode'");
-    expect(noModel.drained!.failed[0]!.error).toContain("spinoff_tier_models.simple");
+    expect(noModel.drained!.failed[0]!.error).toContain("builder.1-3");
     noModel.db.close();
   });
 
@@ -1590,7 +1591,7 @@ describe("spinoff tier → model (1480)", () => {
 
     const onClaude = threadOf({ threadId: "t3-claude", title: "999", worktreePath: worktree, model: DEEPSEEK, providerInstanceId: "claudeAgent" });
     const blocked = fakeT3({ repoPath: repo, threads: [onClaude] });
-    await expect(launchT3Spinoff(blocked.seam, row, repo, undefined, tierModels)).rejects.toThrow(/t3-claude on claudeAgent:opencode-go\/deepseek-v4\.1-flash.*tier simple.*settle that thread/);
+    await expect(launchT3Spinoff(blocked.seam, row, repo, undefined, tierModels)).rejects.toThrow(/t3-claude on claudeAgent:opencode-go\/deepseek-v4\.1-flash.*complexity 2.*settle that thread/);
     expect(blocked.launches).toHaveLength(0);
 
     const onOpencode = threadOf({ threadId: "t3-ds", title: "999", worktreePath: worktree, model: DEEPSEEK, providerInstanceId: "opencode" });
@@ -1802,7 +1803,7 @@ describe("spinoff --effort high on Opus needs --opus-high (OB-2107)", () => {
   test("an urgent ticket runs on complex (Opus) whatever --tier says, so --effort high is refused there too", async () => {
     const { db, r, row } = await dispatchItem(["--tier", "simple", "--effort", "high"], PRIORITY_URGENT);
     expect(r.code).not.toBe(0);
-    expect(r.err).toContain("tier complex runs claude-opus-5-5");
+    expect(r.err).toContain("complexity 7 runs claude-opus-5-5");
     expect(row).toBeNull();
     db.close();
   });
@@ -1859,27 +1860,27 @@ describe("spinoff --effort high on Opus needs --opus-high (OB-2107)", () => {
   test("a launch the urgent rule raised to Opus refuses an effort queued above its default", () => {
     const models = { complex: `claudeAgent:${OPUS}`, medium: `claudeAgent:${OPUS}`, simple: `claudeAgent:${HAIKU}` } as const;
     const raised = { ticket_ref: "OB-1", tier: "complex", effort: "high" };
-    expect(() => refuseRaisedOpusHigh(raised, models, "simple")).toThrow(/urgent.*--opus-high/);
+    expect(() => refuseRaisedOpusHigh(raised, models, 2)).toThrow(/urgent.*--opus-high/);
     expect(() => refuseRaisedOpusHigh(raised, models, null)).not.toThrow(); // not raised: checked at dispatch
-    expect(() => refuseRaisedOpusHigh({ ...raised, effort: null }, models, "simple")).not.toThrow();
-    expect(() => refuseRaisedOpusHigh({ ...raised, effort: "medium" }, models, "simple")).not.toThrow();
+    expect(() => refuseRaisedOpusHigh({ ...raised, effort: null }, models, 2)).not.toThrow();
+    expect(() => refuseRaisedOpusHigh({ ...raised, effort: "medium" }, models, 2)).not.toThrow();
   });
 
   test("a model trial with an Opus leg on high needs --opus-high before a pair opens", () => {
     const plan = { a: { model: `claudeAgent:${OPUS}`, effort: "high" }, b: { model: `claudeAgent:${HAIKU}`, effort: "high" } };
-    expect(() => refuseOpusHighTrial(plan, "medium", undefined)).toThrow(/model trial.*--opus-high/);
-    expect(refuseOpusHighTrial(plan, "medium", "trial it high")).toBe(plan);
-    expect(refuseOpusHighTrial({ ...plan, a: { model: OPUS, effort: null } }, "medium", undefined)).not.toBeNull();
-    expect(refuseOpusHighTrial(null, "medium", undefined)).toBeNull();
+    expect(() => refuseOpusHighTrial(plan, 5, undefined)).toThrow(/model trial.*--opus-high/);
+    expect(refuseOpusHighTrial(plan, 5, "trial it high")).toBe(plan);
+    expect(refuseOpusHighTrial({ ...plan, a: { model: OPUS, effort: null } }, 5, undefined)).not.toBeNull();
+    expect(refuseOpusHighTrial(null, 5, undefined)).toBeNull();
   });
 
   test("the pure check: only Opus, only high and above, and an empty quote is no ask", () => {
-    expect(opusHighRefusal(OPUS, "complex", "high", undefined)).toContain("--opus-high");
-    expect(opusHighRefusal(`claudeAgent:${OPUS}`, "medium", "max", "  ")).toContain("--opus-high");
-    expect(opusHighRefusal(OPUS, "complex", "medium", undefined)).toBeNull();
-    expect(opusHighRefusal(OPUS, "complex", undefined, undefined)).toBeNull();
-    expect(opusHighRefusal(HAIKU, "simple", "max", undefined)).toBeNull();
-    expect(opusHighRefusal(OPUS, "complex", "xhigh", "he asked")).toBeNull();
+    expect(opusHighRefusal(OPUS, 8, "high", undefined)).toContain("--opus-high");
+    expect(opusHighRefusal(`claudeAgent:${OPUS}`, 5, "max", "  ")).toContain("--opus-high");
+    expect(opusHighRefusal(OPUS, 8, "medium", undefined)).toBeNull();
+    expect(opusHighRefusal(OPUS, 8, undefined, undefined)).toBeNull();
+    expect(opusHighRefusal(HAIKU, 2, "max", undefined)).toBeNull();
+    expect(opusHighRefusal(OPUS, 8, "xhigh", "he asked")).toBeNull();
     expect(withOpusHighNote(undefined, "go high")).toBe(`opus-high on the owner's ask: "go high"`);
     expect(withOpusHighNote("why", undefined)).toBe("why");
   });
@@ -1987,7 +1988,7 @@ describe("models file → builder model (OB-1969)", () => {
     expect(fake.launches).toHaveLength(0);
     const err = drained!.failed[0]!.error;
     expect(err).toContain("does not list model 'claude-haiku-5-5'");
-    expect(err).toContain("builder.simple in the active profile of the models file");
+    expect(err).toContain("set builder.1-3, the builder range covering 2");
     db.close();
   });
 });
@@ -2082,7 +2083,7 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(stderr).toContain("999: claudeAgent:claude-sonnet-5-5 (profile claude) out of credits, relaunched on claudeAgent:claude-haiku-5-5 (profile other)");
     expect(recentCreditHits()).toHaveProperty("claude");
     expect(rowProfiles(row.id)).toEqual(["claude|claudeAgent:claude-sonnet-5-5", "other|claudeAgent:claude-haiku-5-5"]);
-    expect(stderr).toContain("route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)");
+    expect(stderr).toContain("route builder.4-6: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)");
     db.close();
   });
 
@@ -2108,7 +2109,7 @@ describe("credit error → next models profile (OB-1970)", () => {
       restoreStderr?.();
       restoreStderr = null;
       const notes = (await decisionsForItem(db, ref)).map((d) => d.note ?? "");
-      const line = "route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
+      const line = "route builder.4-6: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
       if (moved) {
         expect(notes).toContain(line);
         expect(fake.launches.map((l) => l.modelSelection.model)).toEqual(["claude-haiku-5-5"]);
@@ -2146,7 +2147,7 @@ describe("credit error → next models profile (OB-1970)", () => {
     await launchRowIn(cfg, T3_LAUNCHER, row, null, null, moves);
     restoreStderr?.();
     restoreStderr = null;
-    const line = "route builder.medium: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
+    const line = "route builder.4-6: claudeAgent:claude-sonnet-5-5 -> claudeAgent:claude-haiku-5-5 (quota)";
     expect(moves).toEqual([{ from: "claudeAgent:claude-sonnet-5-5", to: "claudeAgent:claude-haiku-5-5", note: line }]);
     expect((await decisionsForItem(db, ref)).some((d) => (d.note ?? "").startsWith("route "))).toBe(false);
 
@@ -2247,7 +2248,7 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(attempts).toEqual(["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]);
     expect(row.status).toBe("failed");
     const error = drained.failed[0]!.error;
-    expect(error).toStartWith("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (");
+    expect(error).toStartWith("blocked: every model on route builder.4-6 is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (");
     expect(error).toContain("; claudeAgent:claude-haiku-5-5 (profile other) (");
     expect(error).toContain("; claudeAgent:claude-opus-5-5 (profile third) (");
     expect(Object.keys(recentCreditHits()).sort()).toEqual(["claude", "other", "third"]);
@@ -2326,7 +2327,7 @@ describe("credit error → next models profile (OB-1970)", () => {
     await relaunchCreditFailures(db, (await reconcileT3Runs(db)).mirrored);
     const after = (await listSpinoffs(db)).find((r) => r.id === row.id)!;
     expect(after.status).toBe("failed");
-    expect(after.error).toContain("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn: message:");
+    expect(after.error).toContain("blocked: every model on route builder.4-6 is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn: message:");
     expect(after.error).toContain("(profile other) (");
     expect(after.error).toContain("(profile third) (");
     db.close();
@@ -2340,13 +2341,139 @@ describe("credit error → next models profile (OB-1970)", () => {
     expect(fake.launches).toHaveLength(1);
     const after = (await listSpinoffs(db)).find((r) => r.id === row.id)!;
     expect(after.status).toBe("failed");
-    expect(after.error).toStartWith("blocked: every model on route builder.medium is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn:");
+    expect(after.error).toStartWith("blocked: every model on route builder.4-6 is out of credits for 999: tried claudeAgent:claude-sonnet-5-5 (profile claude) (first turn:");
     db.close();
   });
 });
 
 // Last in the file on purpose (OB-2145): bun runs every test file of a project in ONE process, in directory
 // order, so a stub this file leaves installed is what the next file's real `git` calls get.
+describe("OS-177: a 1-10 complexity score picks the builder range", () => {
+  const HAIKU = "claude-haiku-5-5";
+  const SONNET_M = "claude-sonnet-5-5";
+  const OPUS_M = "claude-opus-5-5";
+  // A custom split: 1-3, a single score 4, and 5-10.
+  const SPLIT = `{
+  "active": "claude",
+  "fallback": ["claude", "other"],
+  "profiles": {
+    "claude": { "routes": {
+      "builder.1-3": { "chain": ["claudeAgent:${HAIKU}"] },
+      "builder.4-4": { "chain": ["claudeAgent:${SONNET_M}"] },
+      "builder.5-10": { "chain": ["claudeAgent:${OPUS_M}"] }
+    } },
+    "other": { "routes": { "builder.1-10": { "chain": ["claudeAgent:${HAIKU}"] } } }
+  }
+}
+`;
+  let savedEnv: string | undefined;
+  let usedFile = false;
+  afterEach(() => {
+    if (!usedFile) return;
+    usedFile = false;
+    if (savedEnv === undefined) delete process.env.OB_MODELS_FILE;
+    else process.env.OB_MODELS_FILE = savedEnv;
+  });
+  function modelsFile(text: string): void {
+    savedEnv = process.env.OB_MODELS_FILE;
+    usedFile = true;
+    const dir = trackedDir(mkdtempSync(join(tmpdir(), "ob-models-")));
+    writeFileSync(join(dir, "models.jsonc"), text);
+    process.env.OB_MODELS_FILE = join(dir, "models.jsonc");
+  }
+
+  async function dispatch(args: string[], refuse?: (model: string) => Error | null) {
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const ref = await createItem(db, { type: "task", title: "a scored build" });
+    const repo = trackedRepo();
+    const worktree = trackedDir(`${repo}.scored`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo });
+    const attempts: string[] = [];
+    const launch = fake.seam.launch;
+    fake.seam = {
+      ...fake.seam,
+      launch: async (input) => {
+        attempts.push(input.modelSelection.model);
+        const err = refuse?.(input.modelSelection.model);
+        if (err) throw err;
+        return launch(input);
+      },
+    };
+    setT3Seam(fake.seam);
+    const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", ref, "--repo", repo, "--worktree", worktree, "--launcher", "t3", "--brief", "do it", ...args]);
+    const drained = queued.code === 0 ? await drainSpinoffs(db) : null;
+    const row = (await listSpinoffs(db))[0] ?? null;
+    return { db, dbPath, ref, fake, attempts, queued, drained, row };
+  }
+
+  test("--complexity 3 routes on the model covering 3, and the row records the score", async () => {
+    const { fake, queued, drained, row, db } = await dispatch(["--complexity", "3"]);
+    expect(queued.code).toBe(0);
+    expect(queued.out).toContain("complexity 3/10 (simple)");
+    expect(queued.err).not.toContain("--tier is now --complexity");
+    expect(drained!.failed).toEqual([]);
+    expect(fake.launches.map((l) => l.modelSelection.model)).toEqual([HAIKU]);
+    expect(row!.complexity).toBe(3);
+    expect(row!.tier).toBe("simple");
+    db.close();
+  });
+
+  test("--tier simple routes the same way and prints the alias note; both flags together exit 2", async () => {
+    const alias = await dispatch(["--tier", "simple"]);
+    expect(alias.queued.code).toBe(0);
+    expect(alias.queued.err).toContain("--tier is now --complexity; simple=2 medium=5 complex=8");
+    expect(alias.fake.launches.map((l) => l.modelSelection.model)).toEqual([HAIKU]);
+    expect(alias.row!.complexity).toBe(2);
+    alias.db.close();
+
+    const both = await dispatch(["--tier", "simple", "--complexity", "3"]);
+    expect(both.queued.code).toBe(2);
+    expect(both.row).toBeNull();
+    both.db.close();
+  });
+
+  test("a score outside 1-10 is a usage refusal, and nothing is queued", async () => {
+    for (const bad of ["0", "11", "3.5", "high"]) {
+      const { queued, row, db } = await dispatch(["--complexity", bad]);
+      expect(queued.code).toBe(2);
+      expect(row).toBeNull();
+      db.close();
+    }
+  });
+
+  test("a custom split (1-3, 4, 5-10) routes 3, 4 and 7 on their own ranges", async () => {
+    modelsFile(SPLIT);
+    const got: Array<[number, string, string | null]> = [];
+    for (const c of [3, 4, 7]) {
+      const { fake, drained, row, db } = await dispatch(["--complexity", String(c)]);
+      expect(drained!.failed).toEqual([]);
+      got.push([c, fake.launches[0]!.modelSelection.model, row!.model]);
+      db.close();
+      restoreSeam?.();
+      restoreSh?.();
+    }
+    expect(got).toEqual([
+      [3, HAIKU, `claudeAgent:${HAIKU}`],
+      [4, SONNET_M, `claudeAgent:${SONNET_M}`],
+      [7, OPUS_M, `claudeAgent:${OPUS_M}`],
+    ]);
+  });
+
+  test("on the custom split, a credit error at 4 falls back to the range covering 4 in the next profile", async () => {
+    modelsFile(SPLIT);
+    const credit = () => new T3Error("refused", "Claude: Your credit balance is too low to access the API", undefined, "orchestration_error");
+    const { attempts, drained, row, db, ref } = await dispatch(["--complexity", "4"], (m) => (m === SONNET_M ? credit() : null));
+    expect(drained!.failed).toEqual([]);
+    expect(attempts).toEqual([SONNET_M, HAIKU]);
+    expect(row!.model).toBe(`claudeAgent:${HAIKU} (profile other)`);
+    const notes = (await decisionsForItem(db, ref)).map((d) => d.note ?? "");
+    expect(notes).toContain(`route builder.4-4: claudeAgent:${SONNET_M} -> claudeAgent:${HAIKU} (quota)`);
+    db.close();
+  });
+});
+
 describe("t3 dispatch leaves the shell runner as it found it (OB-2145)", () => {
   test("after every test above, the real runner is installed", () => {
     expect(__shIsReal()).toBe(true);

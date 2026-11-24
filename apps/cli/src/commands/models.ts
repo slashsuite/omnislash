@@ -3,13 +3,16 @@ import { join } from "node:path";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, warn } from "../output.ts";
-import { ModelsFileError, initModelsFile, loadModelsFile, modelsFilePath, type ModelsFile } from "../models-file.ts";
+import { ModelsFileError, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, tierOfComplexity, type ModelsFile } from "../models-file.ts";
 import { CREDIT_HIT_WINDOW_HOURS, recentCreditHits } from "../models-credit.ts";
 import { formatTrendLine, legTrend, readLegRecords } from "../review-legs.ts";
 import { REVIEW_TIERS, ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
 import {
+  BUILDER_SET,
   ModelRoutesError,
   activeProfileOf,
+  builderBandAt,
+  builderBandsIn,
   addReader,
   checkEffort,
   parseChain,
@@ -26,6 +29,7 @@ import {
   withRoute,
   withoutRoute,
   writeProfile,
+  type BuilderBand,
   type ResolvedRoute,
   type RouteInputs,
 } from "../model-routes.ts";
@@ -43,7 +47,7 @@ const USAGE = [
   "ob models show [--json]",
   "ob models get <route>",
   "ob models set <route> <model>[,<model>...] [--effort low|medium|high|xhigh|max] [--profile <p>]",
-  "ob models unset <route> [--profile <p>]",
+  "ob models unset <route>|builder [--profile <p>]",
   "ob models use <profile>",
   "ob models reader add <leg> <model> [--profile <p>]",
   "ob models reader remove <leg> [--profile <p>]",
@@ -82,6 +86,29 @@ function chainText(r: ResolvedRoute): string {
   return `${r.chain.join(", ")}${r.effort ? ` (effort ${r.effort})` : ""}`;
 }
 
+/**
+ * What `show` calls a band. The standard split (1-3, 4-6, 7-10) keeps its tier names (`builder.simple`), so a file in
+ * use today prints exactly as it did before OS-177; any other split prints its ranges with their tier labels
+ * (`builder.4-4 (medium)`).
+ */
+function bandName(b: BuilderBand, standard: boolean): string {
+  if (standard) return `builder.${tierOfComplexity(b.from)}`;
+  const label = tierOfComplexity(b.from) === tierOfComplexity(b.to) ? tierOfComplexity(b.from) : `${tierOfComplexity(b.from)}-${tierOfComplexity(b.to)}`;
+  return `${b.route} (${label})`;
+}
+
+function bandChainText(b: BuilderBand): string {
+  return `${b.chain.join(", ")}${b.effort ? ` (effort ${b.effort})` : ""}`;
+}
+
+/** The score a builder route's own band is found by: a range's low end, or a tier's alias value. Null for any other route. */
+function builderScoreOf(route: string): number | null {
+  const range = builderRangeOf(route);
+  if (range) return range.from;
+  const tier = builderTierOf(route);
+  return tier ? TIER_COMPLEXITY[tier] : null;
+}
+
 function activeLine(inputs: RouteInputs): string {
   const a = activeProfileOf(inputs);
   if (a.name === null) return "active profile: (none: every route uses its default)";
@@ -98,6 +125,7 @@ async function show(ctx: Ctx): Promise<void> {
   const routes = resolveAllRoutes(inputs);
   const review = resolveReview(inputs);
   const active = activeProfileOf(inputs);
+  const bands = builderBandsIn(inputs, active.name);
   const hits = recentCreditHits();
   if (ctx.mode === "json") {
     print(
@@ -111,7 +139,9 @@ async function show(ctx: Ctx): Promise<void> {
           order: profileOrderOf(inputs),
           server_error: inputs.serverError,
           credit_hits: hits,
+          // builder.simple|medium|complex stay here as the bands covering 2, 5 and 8 (the dashboard reads them until OS-177 part C).
           routes: routes.map((r) => ({ route: r.route, profile: r.profile, chain: r.chain, effort: r.effort ?? null, source: r.source, label: sourceLabel(r) })),
+          builder_ranges: bands.map((b) => ({ route: b.route, from: b.from, to: b.to, chain: b.chain, effort: b.effort ?? null, source: b.source })),
           review: { profile: review.profile, source: review.source, ...review.value },
         },
         null,
@@ -121,7 +151,7 @@ async function show(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.mode === "quiet") {
-    print(routes.map((r) => `${r.route}\t${r.chain.join(",")}\t${sourceLabel(r)}`).join("\n"));
+    print([...bands.map((b) => `${b.route}\t${b.chain.join(",")}\t${b.source}`), ...routes.filter((r) => !r.route.startsWith("builder.")).map((r) => `${r.route}\t${r.chain.join(",")}\t${sourceLabel(r)}`)].join("\n"));
     return;
   }
   const order = profileOrderOf(inputs);
@@ -135,8 +165,12 @@ async function show(ctx: Ctx): Promise<void> {
     lines.push(`out of credits in the last ${CREDIT_HIT_WINDOW_HOURS}h: ${Object.entries(hits).map(([p, at]) => `${p} (${at})`).join(", ")}`);
   }
   lines.push("");
-  const width = Math.max(...routes.map((r) => r.route.length));
-  for (const r of routes) lines.push(`${r.route.padEnd(width)}  ${chainText(r)}   [${sourceLabel(r)}]`);
+  // The builder set prints as its ranges (OS-177), each with its tier label; the other routes as before.
+  const others = routes.filter((r) => !r.route.startsWith("builder."));
+  const standard = bands.length === 3 && bands.every((b) => b.from === TIER_BANDS[tierOfComplexity(b.from)].from && b.to === TIER_BANDS[tierOfComplexity(b.from)].to);
+  const width = Math.max(...others.map((r) => r.route.length), ...bands.map((b) => bandName(b, standard).length));
+  for (const b of bands) lines.push(`${bandName(b, standard).padEnd(width)}  ${bandChainText(b)}   [${b.source}]`);
+  for (const r of others) lines.push(`${r.route.padEnd(width)}  ${chainText(r)}   [${sourceLabel(r)}]`);
   lines.push("", `review readers [${review.source}]:`, ...readersText(review.value));
   print(lines.join("\n"));
 }
@@ -168,6 +202,12 @@ export function pickUnderLimit(chain: readonly string[], over: (model: string) =
 function localHidesWarning(inputs: RouteInputs, profile: string, route: string): void {
   const f = inputs.file?.profiles[profile];
   if (!f) return;
+  const score = builderScoreOf(route);
+  if (score !== null) {
+    const b = builderBandAt(inputs, score, profile);
+    if (b.source === "local") warn(`note: this machine's models file sets ${b.route} for profile '${profile}', so here complexity ${score} still runs ${b.chain.join(", ")}`);
+    return;
+  }
   const r = resolveRoute({ ...inputs, server: { ...inputs.server, active: profile }, file: { ...inputs.file!, active: profile } }, route);
   if (r.source === "local") warn(`note: this machine's models file sets ${route} for profile '${profile}', so here it still runs ${r.chain.join(", ")}`);
 }
@@ -183,7 +223,7 @@ async function set(ctx: Ctx): Promise<void> {
     let profile = "";
     const { inputs } = await editModelRoutes(await io(ctx), (inputs) => {
       profile = writeProfile(inputs, named);
-      return withRoute(inputs.server, profile, route, chain, effort);
+      return withRoute(inputs.server, profile, route, chain, effort, inputs.tierModels);
     });
     print(`${route} = ${chain.join(", ")}${effort ? ` (effort ${effort})` : ""} [server, profile ${profile}]`);
     localHidesWarning(inputs, profile, route);
@@ -200,6 +240,11 @@ async function unset(ctx: Ctx): Promise<void> {
       profile = writeProfile(inputs, named);
       return withoutRoute(inputs.server, profile, route);
     });
+    if (route === BUILDER_SET) {
+      const now = builderBandsIn(inputs, profile);
+      print(`builder unset in profile ${profile}: now ${now.map((b) => `${b.route} ${bandChainText(b)} [${b.source}]`).join("; ")}`);
+      return;
+    }
     const now = resolveRoute({ ...inputs, server: { ...inputs.server, active: profile }, file: inputs.file ? { ...inputs.file, active: profile } : null }, route);
     print(`${route} unset in profile ${profile}: now ${chainText(now)} [${sourceLabel(now)}]`);
   });

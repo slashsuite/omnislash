@@ -1,6 +1,7 @@
 import type { Mode } from "../../../apps/cli/src/output.ts";
 import { UsageError } from "../../../apps/cli/src/errors.ts";
-import { DEFAULT_SPINOFF_TIER, isSpinoffTier, type SpinoffTier } from "../../../apps/cli/src/t3/dispatch.ts";
+import { DEFAULT_SPINOFF_TIER, type SpinoffTier } from "../../../apps/cli/src/t3/dispatch.ts";
+import { complexityOf, tierOfComplexity } from "../../../apps/cli/src/models-file.ts";
 import { WORK_TAGS } from "../../../apps/cli/src/work-tags.ts";
 import type { SpinoffRow } from "./commands/spinoff.ts";
 import { isAbandoned } from "./spinoff-abandon.ts";
@@ -14,10 +15,9 @@ import { IN_FLIGHT } from "./spinoff-vocab.ts";
 
 export const TIER_TARGET: Readonly<Record<SpinoffTier, number>> = { simple: 50, medium: 30, complex: 20 };
 const TIER_ORDER: readonly SpinoffTier[] = ["simple", "medium", "complex"];
-const TIER_RANK: Readonly<Record<SpinoffTier, number>> = { simple: 0, medium: 1, complex: 2 };
 
 /** The columns this report reads. A projection of `SpinoffRow`, so a renamed column fails typecheck here. */
-export type MixSource = Pick<SpinoffRow, "id" | "ticket_ref" | "repo" | "status" | "error" | "request_at" | "item_id" | "tier" | "model">;
+export type MixSource = Pick<SpinoffRow, "id" | "ticket_ref" | "repo" | "status" | "error" | "request_at" | "item_id" | "tier" | "complexity" | "model">;
 
 /** item id -> the work tags on it. */
 export type MixTags = Map<string, string[]>;
@@ -72,8 +72,16 @@ function blank(): Outcome {
   return { count: 0, landed: 0, redispatched_higher: 0, blocked: 0, in_flight: 0 };
 }
 
+/** The row's score (OS-177): its complexity, or its tier stamp's alias for a row from before the column. Null = unrated. */
+function scoreOf(row: MixSource): number | null {
+  if (row.complexity == null && !row.tier) return null; // pre-0034: never folded into the default
+  return complexityOf(row.complexity, row.tier);
+}
+
+/** The band the row's score falls in (1-3 simple, 4-6 medium, 7-10 complex), or null for an unrated row. */
 function tierOf(row: MixSource): SpinoffTier | null {
-  return row.tier && isSpinoffTier(row.tier) ? row.tier : null;
+  const c = scoreOf(row);
+  return c === null ? null : tierOfComplexity(c);
 }
 
 function tally(o: Outcome, status: string, redispatched: boolean): void {
@@ -117,10 +125,10 @@ export function redispatchedHigher(rows: MixSource[]): Set<number> {
       // folded into `medium` in the tier share.
       const tier = tierOf(row);
       if (!tier) continue;
-      const rank = TIER_RANK[tier];
+      const rank = TIER_ORDER.indexOf(tier);
       const escalated = list.slice(i + 1).some((later) => {
         const laterTier = tierOf(later);
-        return laterTier !== null && TIER_RANK[laterTier] > rank;
+        return laterTier !== null && TIER_ORDER.indexOf(laterTier) > rank;
       });
       if (escalated) out.add(row.id);
     }

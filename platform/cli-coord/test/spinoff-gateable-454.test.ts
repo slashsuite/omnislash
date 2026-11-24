@@ -114,6 +114,14 @@ describe("assessGateable injected name-only lists (454)", () => {
     expect(renderGateableList([], "quiet")).toBe("");
   });
 
+  test("OS-177: a row prints its score as complexity N/10, and a NULL score reads its tier's alias value", () => {
+    const facts = { missing: false, state: "State: landable", paths: [] };
+    const scored = renderGateableList([assessGateable(src({ complexity: 3, tier: "simple", model: "m" }), facts)], "human");
+    expect(scored).toContain("  complexity 3/10 · model: m");
+    const legacy = renderGateableList([assessGateable(src({ complexity: null, tier: "complex" }), facts)], "human");
+    expect(legacy).toContain("  complexity 8/10 · model: -");
+  });
+
   test("one ready landable with unknown-app paths", () => {
     const row = assessGateable(src(), {
       missing: false,

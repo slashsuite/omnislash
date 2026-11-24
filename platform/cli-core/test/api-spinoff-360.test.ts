@@ -2087,3 +2087,32 @@ describe("`ob spinoff abandon` over the API (1697)", () => {
     expect(s.calls.filter((c) => c.method === "POST")).toEqual([]);
   });
 });
+
+describe("OS-177: the served queue carries the complexity score", () => {
+  test(
+    "a client sending complexity stores it; a tier-only client is accepted and routes by its alias; a bad score is refused",
+    async () => {
+      await withApi(async ({ call }) => {
+        const base = { no_check: "a test fixture", repo: "omnislash", mode: "agent", brief: "do it" };
+        const scored = await call("/spinoffs", { body: { ...base, ticket_ref: "1771", branch: "build-1771", complexity: 3 } });
+        expect(scored.status).toBe(201);
+        expect([scored.body.row.complexity, scored.body.row.tier]).toEqual([3, "simple"]);
+
+        const tierOnly = await call("/spinoffs", { body: { ...base, ticket_ref: "1772", branch: "build-1772", tier: "complex" } });
+        expect(tierOnly.status).toBe(201);
+        expect(tierOnly.body.row.tier).toBe("complex");
+        expect(tierOnly.body.row.complexity).toBe(8); // the tier's alias value, stored
+
+        const listed = await call("/spinoffs?status=pending");
+        const byRef = Object.fromEntries(listed.body.spinoffs.map((r: { ticket_ref: string; complexity: number | null }) => [r.ticket_ref, r.complexity]));
+        expect(byRef["1771"]).toBe(3);
+
+        for (const bad of [0, 11, 3.5, "high"]) {
+          const refused = await call("/spinoffs", { body: { ...base, ticket_ref: "1773", branch: "build-1773", complexity: bad } });
+          expect(refused.status).toBe(400);
+        }
+      });
+    },
+    60_000,
+  );
+});

@@ -94,7 +94,7 @@ function maximalFacts(): RoleBriefFacts {
       { role: "sentinel", agent_id: "sentinel-slash", thread_id: "thread-s" },
       { role: "muse", agent_id: "muse-slash", thread_id: "thread-m" },
     ],
-    rows: n(25).map((i) => ({ id: i, ticket_ref: `PS-${i}`, status: "launched", tier: "complex", branch: `ps-${i}`, worktree: `/w/ps-${i}`, repo: "p1" })),
+    rows: n(25).map((i) => ({ id: i, ticket_ref: `PS-${i}`, status: "launched", tier: "complex", complexity: 8, branch: `ps-${i}`, worktree: `/w/ps-${i}`, repo: "p1" })),
     inbox: n(30).map((i) => message(i, `${"x".repeat(400)}\nsecond line`)),
     asks: n(12).map((i) => ({ id: `ps-${i}`, note: "is the empty-state wording right?" })),
     next: n(3).map((i) => ({ ref: `PS-${100 + i}`, priority: "high", title: `queued item ${i}` })),
@@ -130,7 +130,7 @@ describe("renderRoleBrief", () => {
       "Project p2: alpha",
     ]);
     expect(sectionOf(text, "## Pacing")).toEqual(["44% used, 22% of the week gone, resets 2026-11-24T00:00:00Z; ahead"]);
-    expect(sectionOf(text, "## Rows in flight")).toEqual(["PS-1 building, tier complex, branch ps-1", "PS-2 building, tier complex, branch ps-2"]);
+    expect(sectionOf(text, "## Rows in flight")).toEqual(["PS-1 building, complexity 8/10, branch ps-1", "PS-2 building, complexity 8/10, branch ps-2"]);
     expect(sectionOf(text, "## PRs to gate")).toEqual(["PS-1 ps-1: State: landable", "PS-2 ps-2: worktree missing"]);
     expect(sectionOf(text, "## Unread inbox")).toEqual(["#3 from owner (message): first line"]);
     expect(sectionOf(text, "## Open asks for the owner")).toEqual(["ps-4: which wording?"]);
