@@ -1,7 +1,7 @@
 {
   "name": "omnislash",
   "version": "1.0.0",
-  "description": "Personal task tracker CLI (ob) \u2014 unified, prioritized worklist across side projects, home, admin, and learning.",
+  "description": "Personal task tracker CLI (ob) — unified, prioritized worklist across side projects, home, admin, and learning.",
   "type": "module",
   "bin": {
     "ob": "src/index.ts"

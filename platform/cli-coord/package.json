@@ -7,5 +7,6 @@
     "@omnislash/state-machine": "workspace:*",
     "drizzle-orm": "^0.45.4"
   },
-  "devDependencies": {}
+  "devDependencies": {
+  }
 }
