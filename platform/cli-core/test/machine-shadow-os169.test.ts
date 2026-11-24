@@ -57,8 +57,17 @@ interface Case {
   name: string;
   /** The status the item starts in for an allowed move, and the call that moves it. */
   allowed: { at: string; run: (d: Database, id: string) => Promise<unknown>; to: string };
-  /** A move today refuses, with today's message. */
-  refused: { at: string; run: (d: Database, id: string) => Promise<unknown>; to: string; message: (id: string) => string };
+  /**
+   * A move today refuses, with today's message. `door` marks a refusal by the door's own precondition
+   * (reopen's "is not closed"), which is not an edge and is not shadowed.
+   */
+  refused: {
+    at: string;
+    run: (d: Database, id: string) => Promise<unknown>;
+    to: string;
+    message: (id: string) => string;
+    door?: boolean;
+  };
 }
 
 async function blockedItem(d: Database): Promise<string> {
@@ -81,7 +90,13 @@ const CASES: Case[] = [
   {
     name: "reopenItem",
     allowed: { at: "done", to: "open", run: (d, id) => reopenItem(d, id, { actor: "builder-1" }) },
-    refused: { at: "in_progress", to: "open", run: (d, id) => reopenItem(d, id), message: (id) => `item '${id}' is not closed` },
+    refused: {
+      at: "in_progress",
+      to: "open",
+      run: (d, id) => reopenItem(d, id),
+      message: (id) => `item '${id}' is not closed`,
+      door: true,
+    },
   },
   {
     name: "blockItem",
@@ -153,23 +168,25 @@ for (const c of CASES) {
       });
     });
 
-    test("a move today refuses still fails with today's message, and writes an event only where the real machine disagrees", async () => {
+    test("a move today refuses still fails with today's message, and the agreeing machine logs nothing", async () => {
       const d = db();
       const id = await seed(d, c.refused.at);
       await expect(c.refused.run(d, id)).rejects.toThrow(c.refused.message(id));
       expect((await getItem(d, id))?.status).toBe(c.refused.at);
-      // reopenItem's "not closed" is narrower than the table (in_progress → open is an edge), so the real machine disagrees.
-      const expected = c.name === "reopenItem" ? 1 : 0;
-      expect(await shadowEvents(d)).toHaveLength(expected);
+      expect(await shadowEvents(d)).toEqual([]);
     });
 
-    test("a move today refuses and the machine allows writes one event and still fails the same way", async () => {
+    test(`a move today refuses and the machine allows ${c.refused.door ? "writes no event (a door precondition is not an edge)" : "writes one event"} and still fails the same way`, async () => {
       const d = db();
       const id = await seed(d, c.refused.at);
       machineSays("allow");
       await expect(c.refused.run(d, id)).rejects.toThrow(c.refused.message(id));
       expect((await getItem(d, id))?.status).toBe(c.refused.at);
       const events = await shadowEvents(d);
+      if (c.refused.door) {
+        expect(events).toEqual([]);
+        return;
+      }
       expect(events).toHaveLength(1);
       expect(events[0]!.payload).toMatchObject({
         machine: "task",
@@ -219,6 +236,14 @@ describe("OS-169 shadow check: what is not checked", () => {
     const id = await itemAt(d, "done");
     machineSays("refuse");
     await transitionTo(d, id, "done");
+    expect(await shadowEvents(d)).toEqual([]);
+  });
+
+  test("a door precondition is not an edge and is not checked", async () => {
+    const d = db();
+    const id = await itemAt(d, "in_progress");
+    machineSays("allow");
+    await expect(unblockItem(d, id, {}, { to: "done" })).rejects.toThrow(`item '${id}' is not blocked`);
     expect(await shadowEvents(d)).toEqual([]);
   });
 

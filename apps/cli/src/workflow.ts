@@ -35,28 +35,23 @@ function refuseReference(it: { id: string; type: string }): void {
 }
 
 /**
- * OS-169: run today's check, then the machine's shadow check on the same move (after the check, before
- * the write). `check` returns the target it allowed, which is shadowed as `allowed`. A refusal (an AppError)
- * is shadowed as `refused` against `refusedTo`, when the move had a target, and rethrown unchanged.
+ * OS-169: today's edge check (`assertTransition`), then the machine's shadow check on the same move (after
+ * the check, before the write). A refusal is shadowed as `refused` and rethrown unchanged. A door's own
+ * precondition ("is not closed", "is not blocked") is thrown before this, so only the edge is compared.
  */
-async function checkWithShadow(
+async function assertTransitionShadowed(
   db: Database | Store,
   it: { id: string; type: string; status: string; project_kind: string | null },
-  refusedTo: string | undefined,
+  to: string,
   decision: DecisionOpts,
-  check: () => Promise<string>,
-): Promise<string> {
-  let to: string;
+): Promise<void> {
   try {
-    to = await check();
+    await assertTransition(db, it.id, to);
   } catch (e) {
-    if (e instanceof AppError && refusedTo !== undefined) {
-      await shadowItemMove(db, it, refusedTo, "refused", { todayMessage: e.message, actor: decision.actor });
-    }
+    if (e instanceof AppError) await shadowItemMove(db, it, to, "refused", { todayMessage: e.message, actor: decision.actor });
     throw e;
   }
   await shadowItemMove(db, it, to, "allowed", { actor: decision.actor });
-  return to;
 }
 
 /**
@@ -80,10 +75,7 @@ export async function assertTransition(db: Database | Store, id: string, to: str
 export async function transitionTo(db: Database | Store, id: string, to: string, decision: DecisionOpts = {}): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
-  await checkWithShadow(db, it, to, decision, async () => {
-    await assertTransition(db, id, to);
-    return to;
-  });
+  await assertTransitionShadowed(db, it, to, decision);
   const from = it.status;
   await setStatus(db, id, to);
   // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
@@ -121,10 +113,10 @@ export async function assertReopen(db: Database | Store, id: string): Promise<vo
 export async function reopenItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
-  await checkWithShadow(db, it, "open", decision, async () => {
-    await assertReopen(db, id);
-    return "open";
-  });
+  // The same checks as `assertReopen`, with only the edge shadowed.
+  refuseReference(it);
+  if (it.status !== "done") throw new AppError(`item '${id}' is not closed`);
+  await assertTransitionShadowed(db, it, "open", decision);
   await setStatus(db, id, "open");
   await recordDecision(db, id, "done", "open", decision);
 }
@@ -143,11 +135,8 @@ export async function blockItem(
 ): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
-  await checkWithShadow(db, it, "blocked", decision, async () => {
-    if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
-    await assertTransition(db, id, "blocked");
-    return "blocked";
-  });
+  if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
+  await assertTransitionShadowed(db, it, "blocked", decision);
   await setBlocked(db, id, reason, owner);
   // OS-26: the owner rides on the transition, so who a block waited on survives the block being cleared.
   const extra = owner ? { ...decision.extra, block_owner: owner } : decision.extra;
@@ -198,20 +187,16 @@ export async function unblockItem(
 ): Promise<void> {
   const it = await requireItem(db, id);
   id = it.id;
+  if (it.status !== "blocked") throw new AppError(`item '${id}' is not blocked`);
   const kind = it.project_kind as Kind | null;
-  // OS-169: a not-blocked item asked for no target has no move to shadow.
-  const target = await checkWithShadow(db, it, opts.to, decision, async () => {
-    if (it.status !== "blocked") throw new AppError(`item '${id}' is not blocked`);
-    const prior = opts.to === undefined ? await statusBeforeBlock(db, id) : null;
-    const to =
-      opts.to ??
-      (prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
-        ? prior
-        : "open");
-    // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
-    await assertTransition(db, id, to);
-    return to;
-  });
+  const prior = opts.to === undefined ? await statusBeforeBlock(db, id) : null;
+  const target =
+    opts.to ??
+    (prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
+      ? prior
+      : "open");
+  // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
+  await assertTransitionShadowed(db, it, target, decision);
   await clearBlock(db, id, target);
   if (target === "done") await clearTriage(db, id);
   await recordDecision(db, id, "blocked", target, decision);
