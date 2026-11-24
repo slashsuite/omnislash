@@ -9,6 +9,7 @@ import { setConfig } from "../../../apps/cli/src/config.ts";
 import { addTags, createItem, itemsStamp } from "../../../apps/cli/src/items.ts";
 import { registerProject } from "../../../apps/cli/src/project.ts";
 import { setTodayRank } from "../../../apps/cli/src/workflow.ts";
+import { decisionsForItem } from "../../../apps/cli/src/decisions.ts";
 import { nextWorklist } from "../../../apps/cli/src/worklist.ts";
 import { queueView } from "../src/server/queue.ts";
 import { setPriority, setQueueOrder } from "../src/server/writes.ts";
@@ -76,6 +77,16 @@ describe("the queue writes", () => {
     const d = await setPriority(ctx, { id: a, priority: 6 });
     expect(d.priority).toBe("critical");
     expect(titles(await queueView(store)).critical).toEqual(["a"]);
+  });
+
+  test("OS-26: setPriority and a band-crossing order each leave one trail event as dashboard; a no-op none", async () => {
+    const { store, mk, ctx } = await world();
+    const a = await mk("a", 3);
+    await setPriority(ctx, { id: a, priority: 3 });
+    await setPriority(ctx, { id: a, priority: 1 });
+    await setQueueOrder(ctx, { id: a, move: { top: true, priority: 4 } });
+    const trail = (await decisionsForItem(store, a)).map((d) => `${d.kind} ${d.who} ${d.from}→${d.to}`);
+    expect(trail).toEqual(["priority dashboard urgent→low", "priority dashboard medium→urgent"]);
   });
 });
 

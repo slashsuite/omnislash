@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { eventsForItemFor, nowIso, parsePayload, recordEventFor } from "./events.ts";
 import type { Store } from "./db/store.ts";
 import type { Ctx } from "./ctx.ts";
+import { priorityName } from "./priority.ts";
 
 // The decision trail (ob 1515): every status change can carry a note saying WHY, and every status change
 // leaves a record whether or not it did. A record is one `event` row (source "ob", type "transition")
@@ -11,6 +12,11 @@ import type { Ctx } from "./ctx.ts";
 
 export const DECISION_SOURCE = "ob";
 export const DECISION_TYPE = "transition";
+/**
+ * OS-26: a change to an item's stored priority, on the same trail. Its own type, so every reader that filters
+ * on `transition` (lastBlockedFrom, the spinoff-check scans) never sees one; `decisionsForItem` reads both.
+ */
+export const PRIORITY_CHANGE_TYPE = "priority_change";
 
 /** What a caller passes to a transition to say who moved it and why. Every field is optional. */
 export interface DecisionOpts {
@@ -25,6 +31,8 @@ export interface DecisionOpts {
 }
 
 export interface Decision {
+  /** `transition` (a status move) or `priority` (OS-26: from and to are priority names). */
+  kind: "transition" | "priority";
   ts: string;
   who: string;
   from: string;
@@ -63,12 +71,40 @@ export async function recordDecision(
   });
 }
 
-/** An item's decisions, newest first. Filtered in the store, so a busy item's noise cannot hide one. */
+/**
+ * OS-26: record a change of an item's stored priority, `from` -> `to` as priority names (`none` for unset).
+ * The caller only calls it when the value differs. Takes the caller's transaction handle, so the event and the
+ * update commit together.
+ */
+export async function recordPriorityChange(
+  db: Database | Store,
+  itemId: string,
+  from: number | null,
+  to: number | null,
+  opts: DecisionOpts = {},
+): Promise<void> {
+  const note = cleanNote(opts.note);
+  // Unset and `none` (0) both print as `none`; between the two, unset is named `unset` so the line is not `none → none`.
+  const name = (p: number | null, other: number | null) => (p === null && other === 0 ? "unset" : priorityName(p));
+  const payload: Record<string, unknown> = { ...opts.extra, from: name(from, to), to: name(to, from) };
+  if (note) payload.note = note;
+  await recordEventFor(db, {
+    ts: nowIso(),
+    source: DECISION_SOURCE,
+    type: PRIORITY_CHANGE_TYPE,
+    itemId,
+    actor: cleanNote(opts.actor) ?? HUMAN_ACTOR,
+    payload,
+  });
+}
+
+/** An item's decisions (status moves and priority changes), newest first. Filtered in the store, so a busy item's noise cannot hide one. */
 export async function decisionsForItem(db: Database | Store, id: string, limit = 50): Promise<Decision[]> {
-  const rows = await eventsForItemFor(db, id, limit, { source: DECISION_SOURCE, type: DECISION_TYPE });
+  const rows = await eventsForItemFor(db, id, limit, { source: DECISION_SOURCE, types: [DECISION_TYPE, PRIORITY_CHANGE_TYPE] });
   return rows.map((r) => {
     const p = parsePayload<{ from?: string; to?: string; note?: string; spinoff_row?: number }>(r);
     return {
+      kind: r.type === PRIORITY_CHANGE_TYPE ? ("priority" as const) : ("transition" as const),
       ts: r.ts,
       who: r.actor ?? HUMAN_ACTOR,
       from: p.from ?? "?",
@@ -82,7 +118,8 @@ export async function decisionsForItem(db: Database | Store, id: string, limit =
 /** One line per decision: `when · who · from → to · note` (the row id rides along when there is one). */
 export function renderDecision(d: Decision): string {
   const row = d.spinoff_row != null ? ` (row ${d.spinoff_row})` : "";
-  return `${d.ts} · ${d.who} · ${d.from} → ${d.to}${row}${d.note ? ` · ${d.note}` : ""}`;
+  const what = d.kind === "priority" ? `priority ${d.from} → ${d.to}` : `${d.from} → ${d.to}`;
+  return `${d.ts} · ${d.who} · ${what}${row}${d.note ? ` · ${d.note}` : ""}`;
 }
 
 /** The note and actor a command was given: `--note`/`-m`, and `--holder` (else a human at the keyboard). */

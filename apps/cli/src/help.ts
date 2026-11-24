@@ -159,7 +159,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   edit: {
     section: "Tasks",
     summary: "Update an item's title, body, priority, or project",
-    usage: ["edit <id> [--title <t>] [--body <text>|--body-file <file>] [--priority <p>] [--project <p>]"],
+    usage: [
+      "edit <id> [--title <t>] [--body <text>|--body-file <file>] [--priority <p>] [--project <p>]",
+      "edit <id> --priority <p> [--note <why>] [--holder <id>]",
+    ],
     flags: [
       { flag: "--title <text>", description: "Replace the item title" },
       { flag: "--body <text>", description: "Replace the item body" },
@@ -167,6 +170,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--priority <p>", description: "Set priority (critical, urgent, flake, high, medium, low, none)" },
       { flag: "--project <slug>", description: "Move item to another project (issues a new ref, keeps old alias)" },
       { flag: "--repo <slug>", description: "Alias for --project" },
+      { flag: "-m, --note <why>", description: "Why the priority changed, on the Decisions trail" },
+      { flag: "--holder <id>", description: "Who changed it (default: human)" },
     ],
     examples: [
       "edit APP-12 --priority high",
@@ -463,9 +468,14 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--priority <p>", description: "Target priority band when using --top" },
       { flag: "--before <ref>", description: "Place immediately before another open item in the project" },
       { flag: "--after <ref>", description: "Place immediately after another open item in the project" },
+      { flag: "-m, --note <why>", description: "Why, when the move changes the priority (Decisions trail)" },
+      { flag: "--holder <id>", description: "Who moved it (default: human)" },
     ],
     examples: ["order APP-12 --top", "order APP-14 --before APP-12"],
-    notes: ["Using --before/--after next to an item in another band moves it into that band."],
+    notes: [
+      "Using --before/--after next to an item in another band moves it into that band.",
+      "A move that changes the stored priority records it on the Decisions trail.",
+    ],
   },
 
   focus: {

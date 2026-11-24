@@ -35,6 +35,9 @@ import { saveReviewersValue, type SaveResult } from "./reviewers.ts";
 import { assertSameOrigin } from "./same-origin.ts";
 import type { ItemDetail } from "../lib/types.ts";
 
+/** OS-26: who a dashboard priority change is recorded as on the Decisions trail. */
+const DASHBOARD_ACTOR = "dashboard";
+
 /** What every write needs: the incoming request (for the guard) and a way to open the store. */
 export interface WriteContext {
   request: Request;
@@ -102,13 +105,13 @@ export async function setTodayRank(ctx: WriteContext, data: { id: string; rank?:
 /** OS-25: place an item in its project's queue (`ob order`): top (optionally into a band), or before / after
  *  another open item, whose band it takes. */
 export async function setQueueOrder(ctx: WriteContext, data: { id: string; move: QueueMove }): Promise<QueueOrderResult> {
-  return await setQueueOrderCore(await open(ctx), data.id, data.move);
+  return await setQueueOrderCore(await open(ctx), data.id, data.move, { actor: DASHBOARD_ACTOR });
 }
 
 /** OS-25: set an item's priority (`ob edit --priority`). Its queue rank is left as it is. Returns the fresh detail. */
 export async function setPriority(ctx: WriteContext, data: { id: string; priority: number }): Promise<ItemDetail> {
   const s = await open(ctx);
-  await editItem(s, data.id, { priority: data.priority });
+  await editItem(s, data.id, { priority: data.priority }, { actor: DASHBOARD_ACTOR });
   return await itemDetail(s, data.id);
 }
 

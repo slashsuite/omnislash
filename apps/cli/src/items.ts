@@ -29,6 +29,7 @@ import { defaultStatus, NON_QUEUE_TYPES } from "./status.ts";
 import { eventsForItemFor, parsePayload, recordEventFor } from "./events.ts";
 import { asStore, readNumber, type Store } from "./db/store.ts";
 import { assignRef, keyForProject, rerefAfterMove, resolveItemId } from "./refs.ts";
+import { recordPriorityChange, type DecisionOpts } from "./decisions.ts";
 import {
   decisionDetail,
   item,
@@ -336,7 +337,16 @@ export interface EditFields {
   projectId?: string | null;
 }
 
-export async function editItem(db: Database | Store, id: string, fields: EditFields): Promise<void> {
+/**
+ * OS-26: a priority that actually changes the stored value leaves one `priority_change` event on the Decisions
+ * trail, written in the same transaction as the update. `decision` says who (`--holder`, `dashboard`) and why.
+ */
+export async function editItem(
+  db: Database | Store,
+  id: string,
+  fields: EditFields,
+  decision: DecisionOpts = {},
+): Promise<void> {
   const s = asStore(db);
   const set: Partial<typeof item.$inferInsert> = {};
   if (fields.title !== undefined) set.title = fields.title;
@@ -350,10 +360,25 @@ export async function editItem(db: Database | Store, id: string, fields: EditFie
   if (Object.keys(set).length > 0) {
     set.updated_at = nowIso();
     await s.txn("edit the item", async (tx) => {
+      let priorityFrom: number | null | undefined;
+      if (fields.priority !== undefined) {
+        const cur = (await tx.q
+          .select({ priority: tx.t.item.priority })
+          .from(tx.t.item)
+          .where(eq(tx.t.item.id, id))
+          .limit(1)) as Array<{ priority: number | null }>;
+        if (cur.length > 0) priorityFrom = cur[0]!.priority;
+      }
       await keepReferenceVersion(tx, id, set.title, set.body ?? undefined);
       await tx.q.update(tx.t.item).set(set).where(eq(tx.t.item.id, id));
       // 1949: a move to a project with another key takes a new ref; the old one stays as an alias.
       if (fields.projectId !== undefined) await rerefAfterMove(tx, id, fields.projectId);
+      // The stored value, compared as stored: unset (null) and `none` (0) differ, since an unset item in the
+      // focus project reads as high.
+      const to = fields.priority ?? null;
+      if (priorityFrom !== undefined && priorityFrom !== to) {
+        await recordPriorityChange(tx, id, priorityFrom, to, decision);
+      }
     });
   }
   const row = await getItem(s, id);

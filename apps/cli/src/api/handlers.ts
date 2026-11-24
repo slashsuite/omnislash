@@ -536,7 +536,7 @@ export async function edit(
       fields.projectId = p ? p.id : req.project;
     }
   }
-  await editItem(store, id, fields);
+  await editItem(store, id, fields, { note: req.note, actor: req.actor });
   return { id, ref: await refOf(store, id) };
 }
 
@@ -1114,7 +1114,7 @@ export async function order(store: Store, id: string, req: OrderRequest): Promis
   } else {
     move = { after: (await requireItem(store, req.after!)).id };
   }
-  const res = await setQueueOrder(store, subject.id, move);
+  const res = await setQueueOrder(store, subject.id, move, { note: req.note, actor: req.actor });
   const row = await requireItem(store, res.id, { trusted: true });
   return {
     item: await itemDetail(store, row.id),

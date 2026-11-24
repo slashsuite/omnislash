@@ -559,6 +559,9 @@ export interface EditItemRequest {
   body?: string;
   priority?: string | null;
   project?: string | null;
+  /** OS-26: why, and who, for the priority change this edit may record on the trail. */
+  note?: string;
+  actor?: string;
 }
 
 export interface EditItemResponse {
@@ -849,6 +852,9 @@ export interface OrderRequest {
   /** Place it right before / after this item (same project, open). A different band's priority is adopted. */
   before?: string;
   after?: string;
+  /** OS-26: why, and who, for the priority change a move across bands records on the trail. */
+  note?: string;
+  actor?: string;
 }
 
 /** The answer to an order: the fresh detail, plus what the move did. */

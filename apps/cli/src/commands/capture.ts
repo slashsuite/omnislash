@@ -21,6 +21,7 @@ import {
   removeTags,
 } from "../items.ts";
 import { emitId, print } from "../output.ts";
+import { decisionOptsOf } from "../decisions.ts";
 import { bodyFromFlags } from "./doc.ts";
 import { remoteCommand } from "../remote.ts";
 import { refsFor } from "../refs.ts";
@@ -68,7 +69,7 @@ export function addReads(flags: Flags, type: string, path: "store" | "api"): str
  * with --project or --repo); the API client never carries it.
  */
 export function editReads(flags: Flags, path: "store" | "api"): string[] {
-  const reads = ["title", "body", "body-file", "priority", "project", "repo"];
+  const reads = ["title", "body", "body-file", "priority", "project", "repo", "note", "holder"];
   if (path === "store" && (flags.project !== undefined || flags.repo !== undefined)) reads.push("kind");
   return reads;
 }
@@ -310,7 +311,8 @@ export async function cmdEdit(ctx: Ctx): Promise<void> {
     const project = await resolveProject(ctx);
     fields.projectId = project ? project.id : null;
   }
-  await editItem(ctx.store ?? ctx.db, id, fields);
+  // OS-26: a priority change is recorded on the trail with `--note` and `--holder`.
+  await editItem(ctx.store ?? ctx.db, id, fields, decisionOptsOf(ctx));
   await emitItem(ctx, id);
 }
 
