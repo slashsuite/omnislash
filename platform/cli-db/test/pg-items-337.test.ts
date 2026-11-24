@@ -104,7 +104,7 @@ async function exercise(store: Store): Promise<Record<string, unknown>> {
   out.afterClose = closed?.status;
   out.closedAtSet = closed?.closed_at !== null;
   // done -> done must not move closed_at (the COALESCE in setStatus).
-  await setStatus(store, first, "done");
+  await setStatus(store, first, "done", "done");
   out.closedAtStable = (await getItem(store, first))?.closed_at === closed?.closed_at;
   out.openAfterClose = (await queryItems(store, { open: true })).map((i) => i.id);
 

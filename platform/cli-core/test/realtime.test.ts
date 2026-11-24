@@ -35,7 +35,7 @@ describe("realtime snapshot (083)", () => {
 
     // A blocked, no-movement high-pri item raises one alert.
     const blocked = await createItem(db, { type: "task", title: "stuck", priority: 2 });
-    await setBlocked(db, blocked, "waiting", null);
+    await setBlocked(db, blocked, "open", "waiting", null);
     db.query("UPDATE item SET updated_at = ? WHERE id = ?").run(daysAgo(10), blocked);
     expect((await snapshotFrom(sqliteStoreFor(db), noFrontier)).alertCount).toBe(1);
   });

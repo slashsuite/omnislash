@@ -25,6 +25,7 @@
 import type { Database } from "bun:sqlite";
 import { and, asc, desc, eq, gte, inArray, ne, not, or, sql } from "drizzle-orm";
 import { nowIso } from "./db.ts";
+import { StatusRaced } from "./errors.ts";
 import { defaultStatus, NON_QUEUE_TYPES } from "./status.ts";
 import { eventsForItemFor, parsePayload, recordEventFor } from "./events.ts";
 import { asStore, readNumber, type Store } from "./db/store.ts";
@@ -287,47 +288,64 @@ async function touch(s: Store, id: string): Promise<void> {
   await s.q.update(s.t.item).set({ updated_at: nowIso() }).where(eq(s.t.item.id, id));
 }
 
-export async function setStatus(db: Database | Store, id: string, status: string): Promise<void> {
-  const s = asStore(db);
-  const now = nowIso();
-  const current = (await s.q
-    .select({ type: s.t.item.type })
-    .from(s.t.item)
-    .where(eq(s.t.item.id, id))
-    .limit(1)) as Array<{ type: string }>;
-  if (status === "done") {
-    // COALESCE, not an overwrite: `canTransition` allows done -> done, so re-closing an already-closed item
-    // used to reset `closed_at` to today. The `issue-open-but-landed` drift row (77) is precisely the
-    // already-done case and its printed remedy is `ob close <id>`, so following the tool's own advice
-    // silently moved the completion date that reports and the journal read back. A reopen clears the column,
-    // so a genuine reopen -> close still stamps a fresh date.
-    await s.q
-      .update(s.t.item)
-      .set({ status, closed_at: sql`COALESCE(${s.t.item.closed_at}, ${now})`, updated_at: now })
-      .where(eq(s.t.item.id, id));
-  } else {
-    await s.q.update(s.t.item).set({ status, closed_at: null, updated_at: now }).where(eq(s.t.item.id, id));
-  }
+/**
+ * `closed_at` for a write to `status`. COALESCE on `done`, not an overwrite: `canTransition` allows done -> done,
+ * so re-closing an already-closed item used to reset `closed_at` to today. The `issue-open-but-landed` drift row
+ * (77) is precisely the already-done case and its printed remedy is `ob close <id>`, so following the tool's own
+ * advice silently moved the completion date that reports and the journal read back. A reopen clears the column,
+ * so a genuine reopen -> close still stamps a fresh date.
+ */
+function closedAtFor(s: Store, status: string, now: string) {
+  return status === "done" ? sql`COALESCE(${s.t.item.closed_at}, ${now})` : null;
 }
 
+/**
+ * OS-171: the one guarded status write. `UPDATE item SET ... WHERE id = ? AND status = <from>`: when another
+ * writer moved the item after the door read `from`, no row comes back and the move is refused with
+ * `StatusRaced`, never written over theirs. Run inside the caller's transaction, a refusal rolls it back.
+ */
+async function writeStatus(s: Store, id: string, from: string, to: string, set: Record<string, unknown>): Promise<void> {
+  const rows = (await s.q
+    .update(s.t.item)
+    .set(set)
+    .where(and(eq(s.t.item.id, id), eq(s.t.item.status, from)))
+    .returning({ id: s.t.item.id })) as Array<{ id: string }>;
+  if (rows.length === 0) throw new StatusRaced(id, from, to);
+}
+
+/** Move `id` from `from` (the status the caller read) to `status`. Refused with `StatusRaced` when it is no longer `from`. */
+export async function setStatus(db: Database | Store, id: string, from: string, status: string): Promise<void> {
+  const s = asStore(db);
+  const now = nowIso();
+  await writeStatus(s, id, from, status, { status, closed_at: closedAtFor(s, status, now), updated_at: now });
+}
+
+/** Block `id` from `from`. Refused with `StatusRaced` when it is no longer `from`. */
 export async function setBlocked(
   db: Database | Store,
   id: string,
+  from: string,
   reason: string | null,
   owner: string | null,
 ): Promise<void> {
   const s = asStore(db);
-  await s.q
-    .update(s.t.item)
-    .set({ status: "blocked", block_reason: reason, block_owner: owner, updated_at: nowIso() })
-    .where(eq(s.t.item.id, id));
+  await writeStatus(s, id, from, "blocked", { status: "blocked", block_reason: reason, block_owner: owner, updated_at: nowIso() });
 }
 
-/** Leave `blocked` for `status`: the status goes through `setStatus` (so closed_at follows it), then the block fields clear. */
-export async function clearBlock(db: Database | Store, id: string, status: string): Promise<void> {
+/**
+ * Leave `blocked` (`from`) for `status` in one write: the status, `closed_at` in step with it, and the block
+ * fields cleared. Refused with `StatusRaced` when the item is no longer `from`.
+ */
+export async function clearBlock(db: Database | Store, id: string, from: string, status: string): Promise<void> {
   const s = asStore(db);
-  await setStatus(s, id, status);
-  await s.q.update(s.t.item).set({ block_reason: null, block_owner: null }).where(eq(s.t.item.id, id));
+  const now = nowIso();
+  await writeStatus(s, id, from, status, {
+    status,
+    closed_at: closedAtFor(s, status, now),
+    block_reason: null,
+    block_owner: null,
+    updated_at: now,
+  });
 }
 
 export interface EditFields {

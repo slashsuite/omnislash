@@ -28,3 +28,26 @@ export class TransitionRefused extends AppError {
     this.why = fields.why;
   }
 }
+
+/**
+ * OS-171 (spike OS-167 step 4): an item status write found the row no longer in the status the door read.
+ * Another writer moved it between the read and the guarded `UPDATE ... WHERE status = <from>`, so this move
+ * is refused rather than written over theirs. A `TransitionRefused` (why `race`), so every handler that maps
+ * `AppError` to a 409 maps it too.
+ */
+export class StatusRaced extends TransitionRefused {
+  readonly to: string;
+
+  constructor(id: string, from: string, to: string) {
+    super(`item '${id}' moved while '${from}' -> '${to}' was being written: it is no longer '${from}', so nothing was changed. Read it again`, {
+      machine: "item",
+      id,
+      from,
+      // `moveEvent(to)`, spelled here so this module does not load xstate.
+      event: `to:${to}`,
+      why: "race",
+    });
+    this.name = "StatusRaced";
+    this.to = to;
+  }
+}
