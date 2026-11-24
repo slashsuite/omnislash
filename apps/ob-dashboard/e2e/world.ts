@@ -54,6 +54,30 @@ export const QUEUE_SEED = [
   { title: "Empty band copy", priority: 3, tags: [] },
 ] as const;
 
+/**
+ * OS-27: the Timeline page's world, in its own project so the Queue page never sees it, over one fixed week
+ * (the spec opens the page with this from and to, so the world never drifts out of the range).
+ * - CLOSED_FROM_BLOCKED opens on the 9th, is blocked on the 10th and goes from blocked to done on the 12th: one
+ *   Closed line "done after 3.0 d · after 2.0 d blocked", and no Unblocked line.
+ * - BUILT has two spinoff rows: row 9001 lands at 12:00 on the 11th with a PR ("built, row 9001, 4 h" and
+ *   "merged, PR #42"); row 9002 is still building ("row 9002, building").
+ * - DECISION is a decision accepted an hour after it opened: it counts in Closed but not in the task-only median,
+ *   which is 3.0 d (with it, the median would be 1.5 d).
+ * - BUSY takes BUSY_MOVES status moves early on the 9th, so the feed passes one 200 line page.
+ * Opened 4, Closed 2, Net +2.
+ */
+export const TIMELINE_PROJECT = "timeline-lab";
+export const TIMELINE_FROM = "2026-11-09";
+export const TIMELINE_TO = "2026-11-15";
+export const TIMELINE_TITLES = {
+  closedFromBlocked: "Timeline: closed from blocked",
+  built: "Timeline: built in two rows",
+  decision: "Timeline: a decision",
+  busy: "Timeline: a busy ticket",
+} as const;
+export const TIMELINE_PR = "https://github.com/example/omnislash/pull/42";
+export const BUSY_MOVES = 200;
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }

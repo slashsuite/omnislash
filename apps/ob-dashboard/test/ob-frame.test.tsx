@@ -1,4 +1,4 @@
-// OS-24: the OB header nav lists the pages that exist (Home, Queue, Alerts, Tokens, Models), in that order, and marks
+// OS-24: the OB header nav lists the pages that exist (Home, Queue, Alerts, Tokens, Models, Timeline), in that order, and marks
 // the current one with aria-current. The e2e (e2e/home.spec.ts) checks the same at desktop and phone width.
 import { describe, expect, mock, test } from "bun:test";
 import { renderToString } from "react-dom/server";
@@ -30,7 +30,7 @@ function navLinks(html: string): { href: string; label: string; current: boolean
 }
 
 describe("ObFrame nav (OS-24)", () => {
-  for (const page of ["/", "/queue", "/alerts", "/tokens", "/models"]) {
+  for (const page of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline"]) {
     test(`on ${page} the nav marks ${page} as the current page`, async () => {
       const links = navLinks(await header(page));
       expect(links.map((l) => [l.href, l.label])).toEqual([
@@ -39,6 +39,7 @@ describe("ObFrame nav (OS-24)", () => {
         ["/alerts", "Alerts"],
         ["/tokens", "Tokens"],
         ["/models", "Models"],
+        ["/timeline", "Timeline"],
       ]);
       expect(links.filter((l) => l.current).map((l) => l.href)).toEqual([page]);
     });

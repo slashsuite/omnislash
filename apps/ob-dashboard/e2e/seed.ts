@@ -9,12 +9,27 @@ import { setConfig } from "../../cli/src/config.ts";
 import { recordCredentialCheck } from "../../cli/src/credentials.ts";
 import { clearCredentialCheck } from "../../cli/src/secrets.ts";
 import { MODEL_ROUTES_KEY } from "../../cli/src/model-routes.ts";
-import { eq } from "../../cli/src/db/orm.ts";
+import { eq, inArray } from "../../cli/src/db/orm.ts";
+import { DECISION_SOURCE, DECISION_TYPE } from "../../cli/src/decisions.ts";
 import { addTags, createItem } from "../../cli/src/items.ts";
 import { registerProject } from "../../cli/src/project.ts";
 import { assignRef } from "../../cli/src/refs.ts";
 import { registerAgent } from "../../../platform/cli-coord/src/agent.ts";
-import { DB_PATH, FOCUS_TITLES, QUEUE_PROJECT, QUEUE_SEED, REVIEW_NOTE, REVIEW_REF, REVIEW_TITLE, SEED_CREDIT_AT, SEED_ROUTES } from "./world.ts";
+import {
+  BUSY_MOVES,
+  DB_PATH,
+  FOCUS_TITLES,
+  QUEUE_PROJECT,
+  QUEUE_SEED,
+  REVIEW_NOTE,
+  REVIEW_REF,
+  REVIEW_TITLE,
+  SEED_CREDIT_AT,
+  SEED_ROUTES,
+  TIMELINE_PR,
+  TIMELINE_PROJECT,
+  TIMELINE_TITLES,
+} from "./world.ts";
 
 export type CreditSeed = "ok" | "failed" | "none";
 
@@ -82,11 +97,79 @@ export async function seedQueue(store: Store): Promise<void> {
   }
 }
 
+/** The first transition of a spinoff row has no state to come from (U+2014, as `ob spinoff` writes it). */
+const NO_STATE = String.fromCharCode(0x2014);
+
+/**
+ * OS-27: TIMELINE_PROJECT's items and trail back to the world world.ts describes. The items keep their ids across
+ * reseeds; their dates and status are set again, and their trail is deleted and written again at fixed times.
+ */
+export async function seedTimeline(store: Store): Promise<void> {
+  await registerProject(store, { name: TIMELINE_PROJECT, kind: "side" });
+  const t = store.t;
+  const ids: Record<keyof typeof TIMELINE_TITLES, string> = { closedFromBlocked: "", built: "", decision: "", busy: "" };
+  for (const [key, title] of Object.entries(TIMELINE_TITLES) as [keyof typeof TIMELINE_TITLES, string][]) {
+    const [row] = (await store.q.select({ id: t.item.id }).from(t.item).where(eq(t.item.title, title)).limit(1)) as { id: string }[];
+    const type = key === "decision" ? "decision" : "task";
+    ids[key] = row?.id ?? (await createItem(store, { type, title, projectId: TIMELINE_PROJECT, priority: 2 }));
+  }
+  const items: [string, { status: string; created_at: string; closed_at: string | null }][] = [
+    [ids.closedFromBlocked, { status: "done", created_at: "2026-11-09T09:00:00.000Z", closed_at: "2026-11-12T09:00:00.000Z" }],
+    [ids.built, { status: "open", created_at: "2026-11-09T10:00:00.000Z", closed_at: null }],
+    [ids.decision, { status: "accepted", created_at: "2026-11-10T00:00:00.000Z", closed_at: "2026-11-10T01:00:00.000Z" }],
+    [ids.busy, { status: "open", created_at: "2026-11-09T00:00:00.000Z", closed_at: null }],
+  ];
+  for (const [id, set] of items) {
+    await store.q
+      .update(t.item)
+      .set({ ...set, block_reason: null, block_owner: null, today_rank: null, updated_at: set.closed_at ?? set.created_at })
+      .where(eq(t.item.id, id));
+  }
+
+  await store.q.delete(t.event).where(inArray(t.event.item_id, Object.values(ids)));
+  const move = (item_id: string, ts: string, payload: Record<string, unknown>) => ({
+    ts,
+    source: DECISION_SOURCE,
+    type: DECISION_TYPE,
+    item_id,
+    actor: "human",
+    payload: JSON.stringify(payload),
+  });
+  const row = (n: number, steps: [string, string, string][], extra: Record<string, unknown> = {}) =>
+    steps.map(([ts, from, to]) => move(ids.built, ts, { from, to, spinoff_row: n, ...(to === "landed" ? extra : {}) }));
+  const busy = Array.from({ length: BUSY_MOVES }, (_, i) => {
+    const ts = new Date(Date.parse("2026-11-09T00:01:00.000Z") + i * 60_000).toISOString();
+    return move(ids.busy, ts, i % 2 === 0 ? { from: "open", to: "in_progress" } : { from: "in_progress", to: "open" });
+  });
+  await store.q.insert(t.event).values([
+    ...busy,
+    move(ids.closedFromBlocked, "2026-11-10T09:00:00.000Z", { from: "open", to: "blocked", note: "waits on review" }),
+    move(ids.closedFromBlocked, "2026-11-12T09:00:00.000Z", { from: "blocked", to: "done" }),
+    move(ids.decision, "2026-11-10T01:00:00.000Z", { from: "proposed", to: "accepted" }),
+    ...row(
+      9001,
+      [
+        ["2026-11-11T08:00:00.000Z", NO_STATE, "queued"],
+        ["2026-11-11T08:30:00.000Z", "queued", "building"],
+        ["2026-11-11T11:00:00.000Z", "building", "handed-off"],
+        ["2026-11-11T12:00:00.000Z", "handed-off", "landed"],
+      ],
+      // Written by hand: `ob spinoff land` does not record a pr_url yet, so live merge lines wait on that.
+      { pr_url: TIMELINE_PR },
+    ),
+    ...row(9002, [
+      ["2026-11-13T08:00:00.000Z", NO_STATE, "queued"],
+      ["2026-11-13T09:00:00.000Z", "queued", "building"],
+    ]),
+  ]);
+}
+
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
   await seedCredit(store, "ok");
   await seedHome(store, "full");
   await seedQueue(store);
+  await seedTimeline(store);
 }
 
 if (import.meta.main) {
