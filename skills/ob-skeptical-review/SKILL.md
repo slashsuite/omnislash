@@ -283,10 +283,10 @@ means nothing for a claims review; ignore it. Skipped and failed legs are report
 **Rounds.** Fix or strike each finding, then run the next round with the rebuttal pass above, at most 3
 rounds as for a build. A claim in the report is fixed by editing the report. A claim in a note is fixed by
 a new `ob note <parent>` that corrects or withdraws it (a note cannot be edited), and the next round's brief
-carries it. The spike hands off with `claims-review: <N> cut, 0 open (<leg>: <a>, <leg>: <b>)` in `--note`, naming every leg
-(`claims-review: 3 cut, 0 open (opus: 2, neon: 1)`). When the note or report quotes several rounds, the
-handoff reads the last line.
-(`ob-spinoff`, the spike paragraph); the handoff refuses a spike without that line or with open findings.
+carries it. The spike hands off with `claims-review: <N> cut, 0 open (<leg>: <a>, <leg>: <b>)` in `--note`,
+naming every leg, for example `claims-review: 3 cut, 0 open (opus: 2, neon: 1)` (`ob-spinoff`, the spike
+paragraph). The handoff refuses a spike without that line or with open findings. It reads the last such line in
+the note and `--report` together, report last, so a report that records earlier rounds ends on the final one.
 
 ## Before the readers run (rounds, step a)
 
