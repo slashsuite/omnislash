@@ -1,5 +1,5 @@
-// OB-2255: a handoff goes to the ticket's team's sentinel when one is bound, else to its architect; a project in
-// no team sends no note and prints one line. `ob close` withdraws a held note from the same thread, and
+// OB-2255, OS-181: a handoff goes to the ticket's team's sentinel, started when the team has none, and never to its
+// architect; a start that fails holds the note. A project in no team sends no note and prints one line. `ob close` withdraws a held note from the same thread, and
 // `spinoff list|gateable --team` keep only the team's rows.
 //
 // The same fakes the readying-note tests use (1133, 1205): a fake T3 seam that records every send and holds a
@@ -8,6 +8,8 @@ import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { worktreeRepoOf } from "../../../apps/cli/src/t3/dispatch.ts";
 import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
+import { markRoleRun } from "../../../apps/cli/src/role-run.ts";
+import { t3BaseUrl } from "../../../apps/cli/src/t3/client.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -124,10 +126,28 @@ async function seed(project: string | null, opts: { sentinel?: boolean; architec
   return { dbPath, ref, db };
 }
 
+/** A second launched t3 row in the same store, for a ticket in `project`; returns its ref. */
+async function addRow(db: ReturnType<typeof openDb>, project: string): Promise<string> {
+  const itemId = await createItem(db, { type: "task", title: "another team ticket", projectId: project });
+  const ref = (await getItem(db, itemId))!.ref ?? itemId;
+  const wt = mkdtempSync(join(tmpdir(), "ob-wt-2255-"));
+  restores.push(() => rmSync(wt, { recursive: true, force: true }));
+  const { row } = await enqueueSpinoff(db, input({ ticketRef: ref, worktree: wt, branch: "b2" }));
+  db.query("UPDATE spinoff SET status = 'launched', agent_id = ?, worktree = ?, launcher = 't3', t3_thread_id = ?, base_sha = ? WHERE id = ?").run(
+    ref,
+    wt,
+    "builder-thread-2",
+    "base123",
+    row.id,
+  );
+  await registerAgent(db, { id: ref, ticket: ref, branch: "b2", worktree: wt, status: "readying", note: "gate green", ttlS: 900 });
+  return ref;
+}
+
 /** OS-56: the checkout a started role run opens in, as `ob role start` resolves it. */
 const CWD_REPO = worktreeRepoOf(checkoutOf(process.cwd())) ?? checkoutOf(process.cwd());
 
-describe("a handoff goes to the team's sentinel, else its architect (OB-2255 Done when 5)", () => {
+describe("a handoff goes to the team's sentinel, never its architect (OB-2255 Done when 5, OS-181)", () => {
   test("a pixelslash row with the slash sentinel bound sends to the sentinel thread", async () => {
     fakeGit();
     const { dbPath, ref } = await seed("pixelslash", { sentinel: true });
@@ -138,19 +158,61 @@ describe("a handoff goes to the team's sentinel, else its architect (OB-2255 Don
     expect(fake.sends.map((s) => s.threadId)).toEqual(["sentinel-thread"]);
   });
 
-  test("a team with no sentinel sends to its architect", async () => {
+  test("a team with no sentinel gets one started with the note in its brief; a second handoff reuses that run", async () => {
     fakeGit();
-    const { dbPath, ref } = await seed("pixelslash");
-    const fake = fakeSeam();
-    restores.push(__setT3Seam(fake.seam));
+    const { dbPath, ref, db } = await seed("pixelslash");
+    const t3 = installFakeT3([CWD_REPO]);
+    restores.push(t3.restore);
     const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
     expect(res.code).toBe(0);
-    expect(fake.sends.map((s) => s.threadId)).toEqual(["slash-architect-thread"]);
-    const omni = await seed("omnislash", { sentinel: true });
-    const fake2 = fakeSeam();
-    restores.push(__setT3Seam(fake2.seam));
-    expect((await runCli(omni.dbPath, ["spinoff", "handoff", omni.ref, "--ci-unchecked", "test"])).code).toBe(0);
-    expect(fake2.sends.map((s) => s.threadId)).toEqual(["omnislash-architect-thread"]);
+    expect(t3.launches.map((l) => l.message!.split("\n")[0])).toEqual(["/ob-sentinel"]);
+    expect(t3.launches[0]!.message).toContain(ref);
+    expect(res.out).toContain("slash sentinel: run 3 opened, thread t3-1, with 1 message in its start brief");
+    // The architect's seat thread (open run 1) gets nothing.
+    expect(t3.sends.map((s) => s.threadId)).not.toContain("slash-architect-thread");
+
+    const second = await addRow(db, "pixelslash");
+    const res2 = await runCli(dbPath, ["spinoff", "handoff", second, "--ci-unchecked", "test"]);
+    expect(res2.code).toBe(0);
+    expect(t3.launches).toHaveLength(1);
+    expect(t3.sends.map((s) => s.threadId)).toEqual(["t3-1"]);
+    expect(t3.sends[0]!.message).toContain(second);
+    expect(res2.out).toContain("queued into run 3, thread t3-1");
+  });
+
+  test("a team whose sentinel cannot start holds the note; the architect gets nothing", async () => {
+    fakeGit();
+    const { dbPath, ref } = await seed("pixelslash");
+    // No T3 project for the checkout: the sentinel's start refuses.
+    const t3 = installFakeT3([]);
+    restores.push(t3.restore);
+    const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
+    const all = res.out + res.err;
+    expect(all).toContain("the readying note did not reach the sentinel and is held (never sent to the architect)");
+    expect(all).toContain("slash sentinel could not start or take the note");
+    expect(all).toContain("no T3 project is registered");
+    expect(t3.launches).toEqual([]);
+    expect(t3.sends).toEqual([]);
+    const inbox = await runCli(dbPath, ["inbox", "slash", "sentinel", "--json"]);
+    expect(inbox.code).toBe(0);
+    expect((JSON.parse(inbox.out) as Array<{ ref: string | null }>).map((m) => m.ref)).toEqual([ref]);
+    expect(JSON.parse((await runCli(dbPath, ["inbox", "slash", "architect", "--json"])).out)).toEqual([]);
+  });
+
+  test("a start that finds another start still launching the sentinel holds the note", async () => {
+    fakeGit();
+    const { dbPath, ref, db } = await seed("pixelslash");
+    // A parallel start has marked the run and not yet recorded its thread.
+    await markRoleRun(db, { team: "slash", role: "sentinel", t3Host: t3BaseUrl() });
+    const t3 = installFakeT3([CWD_REPO]);
+    restores.push(t3.restore);
+    const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
+    const all = res.out + res.err;
+    expect(all).toContain("did not reach the sentinel and is held");
+    expect(all).toContain("another start is launching it");
+    expect(t3.launches).toEqual([]);
+    expect(t3.sends).toEqual([]);
+    expect((JSON.parse((await runCli(dbPath, ["inbox", "slash", "sentinel", "--json"])).out) as unknown[]).length).toBe(1);
   });
 
   test("a project in no team sends no note and prints the one line", async () => {
@@ -165,16 +227,16 @@ describe("a handoff goes to the team's sentinel, else its architect (OB-2255 Don
     expect(all.split("loose is in no team: ob t3 team join <team> loose, or ob t3 architect in its checkout").length - 1).toBe(1);
   });
 
-  test("a team with no architect thread starts the architect's run with the handoff in its brief (OS-56)", async () => {
+  test("a team with neither thread bound starts the sentinel's run, not the architect's (OS-56, OS-181)", async () => {
     fakeGit();
     const { dbPath, ref } = await seed("pixelslash", { architect: false });
     const t3 = installFakeT3([CWD_REPO]);
     restores.push(t3.restore);
     const res = await runCli(dbPath, ["spinoff", "handoff", ref, "--ci-unchecked", "test"]);
     expect(res.code).toBe(0);
-    expect(t3.launches.map((l) => l.message!.split("\n")[0])).toEqual(["/ob-architect"]);
+    expect(t3.launches.map((l) => l.message!.split("\n")[0])).toEqual(["/ob-sentinel"]);
     expect(t3.sends).toEqual([]);
-    expect(res.out).toContain("slash architect: run 1 opened, thread t3-1, with 1 message in its start brief");
+    expect(res.out).toContain("slash sentinel: run 1 opened, thread t3-1, with 1 message in its start brief");
   });
 });
 
@@ -208,14 +270,15 @@ describe("ob close withdraws a held note from the same thread (OB-2255 Done when
     expect(fake.held["sentinel-thread"]!.map((m) => m.queuedRunId)).toEqual(["run:other"]);
   });
 
-  test("with no sentinel the note is withdrawn from the architect thread", async () => {
+  test("with no sentinel thread nothing is withdrawn, and the architect queue is not touched (OS-181)", async () => {
     fakeGit();
     const { dbPath, ref } = await seed("pixelslash");
     const fake = fakeSeam({ "slash-architect-thread": [heldNote(ref, "run:held")] });
     restores.push(__setT3Seam(fake.seam));
     const res = await runCli(dbPath, ["close", ref]);
     expect(res.code).toBe(0);
-    expect(fake.cancelled).toEqual([{ threadId: "slash-architect-thread", queuedRunId: "run:held" }]);
+    expect(fake.cancelled).toEqual([]);
+    expect(fake.held["slash-architect-thread"]!.map((m) => m.queuedRunId)).toEqual(["run:held"]);
   });
 
   test("a project in no team: the close reads no queue and says nothing", async () => {

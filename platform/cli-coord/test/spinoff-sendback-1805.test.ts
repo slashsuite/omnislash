@@ -19,7 +19,7 @@ afterEach(() => {
   while (restores.length > 0) restores.pop()!();
 });
 
-const ARCHITECT_THREAD = "architect-thread-1";
+const SENTINEL_THREAD = "sentinel-thread-1";
 const BUILDER_THREAD = "builder-thread-1";
 const SHA_A = "a".repeat(40);
 const SHA_B = "b".repeat(40);
@@ -95,7 +95,7 @@ async function seed(db: ReturnType<typeof openDb>, status = "launched"): Promise
   await registerAgent(db, { id: "1805", ticket: "1805", branch: "1805", worktree: wt, status: "readying", note: "gate green; skeptical-review: 0 cut, 0 open", ttlS: 900 });
   omnislashTeamFor(db, "1805");
   db.query("UPDATE spinoff SET item_id = '1805' WHERE id = ?").run(row.id);
-  await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+  await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
   await openRunsOnSeats(db);
   return row.id;
 }
@@ -135,7 +135,7 @@ describe("handoff output does not claim 'told' (OB-1805)", () => {
     await seed(db);
     restores.push(__setT3Seam(fakeSeam().seam));
     const res = await runCli(dbPath, ["spinoff", "handoff", "1805"]);
-    expect(res.out).toContain(`note:      omnislash architect: 1 message queued into run 1, thread ${ARCHITECT_THREAD}`);
+    expect(res.out).toContain(`note:      omnislash sentinel: 1 message queued into run 1, thread ${SENTINEL_THREAD}`);
     expect(res.out).not.toContain("told");
   });
 
@@ -192,10 +192,10 @@ describe("ob spinoff sendback (OB-1805)", () => {
     expect(back.code).toBe(0);
     expect(statusOf(db)).toBe("ready-for-gate");
     expect((await runCli(dbPath, ["spinoff", "gateable", "-q"])).out).toContain("1805");
-    // the re-handoff note went out under the NEW commit's id (architect thread), the send-back under the builder's
-    const toArchitect = fake.sends.filter((s) => s.threadId === ARCHITECT_THREAD);
-    expect(toArchitect).toHaveLength(1);
-    expect(toArchitect[0]!.clientRequestId).toBe("ob-role-msg-1");
+    // the re-handoff note went out under the NEW commit's id (sentinel thread), the send-back under the builder's
+    const toSentinel = fake.sends.filter((s) => s.threadId === SENTINEL_THREAD);
+    expect(toSentinel).toHaveLength(1);
+    expect(toSentinel[0]!.clientRequestId).toBe("ob-role-msg-1");
     expect((db.query("SELECT client_key FROM role_message").get() as { client_key: string }).client_key).toContain(SHA_B);
   });
 

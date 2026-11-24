@@ -56,7 +56,7 @@ afterEach(() => {
 interface FakeArchitect {
   seam: T3Seam;
   sends: T3SendInput[];
-  /** The architect thread's HELD messages, by thread id: what the queue serves and a cancel removes. */
+  /** The sentinel thread's HELD messages, by thread id: what the queue serves and a cancel removes. */
   held: Record<string, T3QueuedMessage[]>;
   cancelled: Array<{ threadId: string; queuedRunId: string }>;
   queueReads: string[];
@@ -242,12 +242,12 @@ function heldNote(ticket: string, runId: string): T3QueuedMessage {
 }
 
 const REPO = "/r/omnislash";
-/** OB-2255: the note went to the ticket's team's architect, so that is where a close withdraws it. */
-const ARCHITECT = { kind: "team" as const, target: { agentId: "architect-omnislash", label: "omnislash architect", team: "omnislash" } };
-const ARCHITECT_THREAD = "architect-thread-1";
-const architectRow = { "architect-omnislash": { session_id: ARCHITECT_THREAD, launcher: "t3", status: "idle" } };
+/** OS-181: the note went to the ticket's team's sentinel, so that is where a close withdraws it. */
+const SENTINEL = { kind: "team" as const, target: { agentId: "sentinel-omnislash", label: "omnislash sentinel", team: "omnislash" } };
+const SENTINEL_THREAD = "sentinel-thread-1";
+const sentinelRow = { "sentinel-omnislash": { session_id: SENTINEL_THREAD, launcher: "t3", status: "idle" } };
 
-/** OB-2255: omnislash is a project in team omnislash, so a ticket of it routes to `architect-omnislash`. */
+/** OB-2255: omnislash is a project in team omnislash, so a ticket of it routes to `sentinel-omnislash`. */
 function omnislashTeam(db: ReturnType<typeof openDb>): void {
   db.query("INSERT INTO project_group (name, created_at) VALUES ('omnislash', '2026-11-17T00:00:00Z') ON CONFLICT DO NOTHING").run();
   db.query("INSERT INTO project (id, name, kind, created_at, group_name) VALUES ('omnislash', 'omnislash', 'side', '2026-11-17T00:00:00Z', 'omnislash') ON CONFLICT DO NOTHING").run();
@@ -287,28 +287,28 @@ describe("noNoteOutcome (1205)", () => {
 
 describe("dropQueuedReadyNotes (1205)", () => {
   test("withdraws the landed ticket's held note and leaves another ticket's alone", async () => {
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1205", "run:1205"), heldNote("1210", "run:1210")] });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1205", "run:1205"), heldNote("1210", "run:1210")] });
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: `/home/owner/dev/omnislash.1205`, repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out).toHaveLength(1);
     expect(out[0]!.outcome).toBe("cancelled");
     expect(out[0]!.cancelled).toBe(1);
-    expect(fake.cancelled).toEqual([{ threadId: ARCHITECT_THREAD, queuedRunId: "run:1205" }]);
+    expect(fake.cancelled).toEqual([{ threadId: SENTINEL_THREAD, queuedRunId: "run:1205" }]);
     // The other ticket's note is a LIVE declaration: it is not this land's to withdraw.
-    expect(fake.held[ARCHITECT_THREAD]!.map((m) => m.queuedRunId)).toEqual(["run:1210"]);
+    expect(fake.held[SENTINEL_THREAD]!.map((m) => m.queuedRunId)).toEqual(["run:1210"]);
   });
 
   test("a queue holding several notes for the ticket withdraws them all", async () => {
     // Live shape: the pinned architect's queue carried a readying note for 1189 AND one for 1190.
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1205", "run:a"), heldNote("1205", "run:b"), heldNote("1210", "run:c")] });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1205", "run:a"), heldNote("1205", "run:b"), heldNote("1210", "run:c")] });
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("cancelled");
@@ -321,8 +321,8 @@ describe("dropQueuedReadyNotes (1205)", () => {
     const fake = fakeSeam({});
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("none");
@@ -331,27 +331,27 @@ describe("dropQueuedReadyNotes (1205)", () => {
     expect(renderStaleNoteOutcome(out[0]!)).toBeNull();
   });
 
-  test("an architect row with no thread is a named skip, and T3 is never asked", async () => {
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1205", "run:1205")] });
+  test("a sentinel row with no thread is a named skip, and T3 is never asked", async () => {
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1205", "run:1205")] });
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith({ "architect-omnislash": { session_id: null, launcher: "t3", status: "idle" } }),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith({ "sentinel-omnislash": { session_id: null, launcher: "t3", status: "idle" } }),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("skipped");
-    expect(out[0]!.reason).toContain("ob t3 architect omnislash");
+    expect(out[0]!.reason).toContain("no omnislash sentinel thread");
     expect(fake.queueReads).toHaveLength(0);
     expect(renderStaleNoteOutcome(out[0]!)).toBeNull();
   });
 
   test("a refused queue read is a named warning, never a throw — and never silence", async () => {
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1205", "run:1205")] });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1205", "run:1205")] });
     fake.failQueue = true;
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("failed");
@@ -372,7 +372,7 @@ describe("dropQueuedReadyNotes (1205)", () => {
         register: async () => {},
         setRun: async () => true,
       },
-      targetFor: async () => ARCHITECT,
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("failed");
@@ -399,12 +399,12 @@ describe("dropQueuedReadyNotes (1205)", () => {
   test("a read that ran out of pages is `partial` and WARNS — never `none`, which would read as proof", async () => {
     // A bounded scan is not evidence of absence: with a cursor still remaining, "no note in what I read"
     // must not become "nothing is held". The caller says the queue could not be enumerated.
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1210", "run:other")] });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1210", "run:other")] });
     fake.queueBounded = true;
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("partial");
@@ -416,12 +416,12 @@ describe("dropQueuedReadyNotes (1205)", () => {
   test("what it DID see is still withdrawn, and a bounded read still WARNS", async () => {
     // A cancellation from the pages that were read does not make the scan complete: the unseen pages may
     // hold another note, so the warning stands beside the withdrawal.
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1205", "run:mine")] });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1205", "run:mine")] });
     fake.queueBounded = true;
     const out = await dropQueuedReadyNotes({
       rows: [{ ticket_ref: "1205", worktree: "/wt/1205", repo: REPO, launcher: "t3" }],
-      registry: registryWith(architectRow),
-      targetFor: async () => ARCHITECT,
+      registry: registryWith(sentinelRow),
+      targetFor: async () => SENTINEL,
       seam: fake.seam,
     });
     expect(out[0]!.outcome).toBe("partial");
@@ -513,7 +513,7 @@ describe("ob spinoff ready --no-note (1205)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
@@ -531,7 +531,7 @@ describe("ob spinoff ready --no-note (1205)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
@@ -548,14 +548,14 @@ describe("ob spinoff ready --no-note (1205)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
     await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1205"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain(`note:      omnislash architect: 1 message queued into run 1, thread ${ARCHITECT_THREAD}`);
+    expect(res.out).toContain(`note:      omnislash sentinel: 1 message queued into run 1, thread ${SENTINEL_THREAD}`);
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.message).toContain(readyNoteOpening("1205"));
     // A repeat is STILL one note (OS-56: it stores no new handoff, so nothing new is delivered): the flag changes nothing about that.
@@ -589,15 +589,15 @@ describe("ob close withdraws a readying note queued before the land (1205)", () 
     const db = openDb(dbPath, { create: true });
     fakeGit();
     const itemId = await seedLanded(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("OB-1", "run:stale")] });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("OB-1", "run:stale")] });
     restores.push(__setT3Seam(fake.seam));
 
     const res = await runCli(dbPath, ["close", itemId]);
     expect(res.code).toBe(0);
     expect(res.out).toContain(`withdrew a queued readying note for OB-1`);
-    expect(fake.cancelled).toEqual([{ threadId: ARCHITECT_THREAD, queuedRunId: "run:stale" }]);
-    expect(fake.held[ARCHITECT_THREAD]).toEqual([]);
+    expect(fake.cancelled).toEqual([{ threadId: SENTINEL_THREAD, queuedRunId: "run:stale" }]);
+    expect(fake.held[SENTINEL_THREAD]).toEqual([]);
     // THE WIRE SHAPE, at the close (1264): the first `t3_queue` page carries NO `cursor` KEY at all.
     // T3's schema is `cursor?: number`, so `cursor: null` is an invalid argument and the read is refused
     // before a page is read — which left the held note in the queue and the withdrawal a warning.
@@ -616,14 +616,14 @@ describe("ob close withdraws a readying note queued before the land (1205)", () 
     const db = openDb(dbPath, { create: true });
     fakeGit();
     const itemId = await seedLanded(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("OB-1", "run:mine"), heldNote("1210", "run:theirs")] });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("OB-1", "run:mine"), heldNote("1210", "run:theirs")] });
     restores.push(__setT3Seam(fake.seam));
 
     const res = await runCli(dbPath, ["close", itemId]);
     expect(res.code).toBe(0);
     expect(fake.cancelled.map((c) => c.queuedRunId)).toEqual(["run:mine"]);
-    expect(fake.held[ARCHITECT_THREAD]!.map((m) => m.queuedRunId)).toEqual(["run:theirs"]);
+    expect(fake.held[SENTINEL_THREAD]!.map((m) => m.queuedRunId)).toEqual(["run:theirs"]);
   });
 
   test("a refused withdrawal is a warning on stderr, and the close still stands", async () => {
@@ -631,8 +631,8 @@ describe("ob close withdraws a readying note queued before the land (1205)", () 
     const db = openDb(dbPath, { create: true });
     fakeGit();
     const itemId = await seedLanded(db);
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("OB-1", "run:stale")] });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("OB-1", "run:stale")] });
     fake.failQueue = true;
     restores.push(__setT3Seam(fake.seam));
 
@@ -674,8 +674,8 @@ describe("the local close joins rows by IDENTITY, so the sweep sees every row th
       "base123",
       row.id,
     );
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
-    const fake = fakeSeam({ [ARCHITECT_THREAD]: [heldNote("1124", "run:hand")] });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
+    const fake = fakeSeam({ [SENTINEL_THREAD]: [heldNote("1124", "run:hand")] });
     restores.push(__setT3Seam(fake.seam));
     // The sha is looked up for the row's DISPATCH ref: the squash subject names 1124, never the mirror's
     // item id. This fake git answers only that ref, so a lookup with the item id reads as unreported.
@@ -692,7 +692,7 @@ describe("the local close joins rows by IDENTITY, so the sweep sees every row th
 
     const res = await runCli(dbPath, ["close", itemId]);
     expect(res.code).toBe(0);
-    expect(fake.cancelled).toEqual([{ threadId: ARCHITECT_THREAD, queuedRunId: "run:hand" }]);
+    expect(fake.cancelled).toEqual([{ threadId: SENTINEL_THREAD, queuedRunId: "run:hand" }]);
     expect(res.out).toContain(`withdrew a queued readying note for 1124`);
     // The land reply reads the same set, which is 1163's intent: the mismatched number is told it landed.
     expect(fake.sends.map((s) => s.threadId)).toEqual(["builder-thread-1"]);
@@ -705,11 +705,11 @@ describe("the local close joins rows by IDENTITY, so the sweep sees every row th
 // The registry seam the close path uses on this machine
 // ---------------------------------------------------------------------------
 describe("the store-backed registry (1205)", () => {
-  test("reads the architect row's thread id out of the real store", async () => {
+  test("reads the sentinel row's thread id out of the real store", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
-    await registerAgent(db, { id: "architect-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: ARCHITECT_THREAD, ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: REPO, status: "planning", launcher: "t3", sessionId: SENTINEL_THREAD, ttlS: 900 });
     const registry = storeAgentRegistry(db);
-    expect(await registry.read("architect-omnislash")).toMatchObject({ session_id: ARCHITECT_THREAD, launcher: "t3" });
+    expect(await registry.read("sentinel-omnislash")).toMatchObject({ session_id: SENTINEL_THREAD, launcher: "t3" });
   });
 });

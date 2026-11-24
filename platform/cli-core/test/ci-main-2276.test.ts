@@ -1,4 +1,4 @@
-// OB-2276: GitHub webhooks into ob, and a red run on `main` tells the team's sentinel, else its architect.
+// OB-2276: GitHub webhooks into ob, and a red run on `main` tells the team's sentinel.
 // The receiver is driven through `createObApi` with real signed Requests on a throwaway SQLite store, the
 // catch-up and the hooks plan through `runCli` with a fake GitHub REST reader and a fake T3 seam, and the claim
 // (insert, conflict does nothing, returning) once more on a real Postgres store. Repos and threads are invented.
@@ -39,8 +39,8 @@ const AT = "2026-11-17T00:00:00Z";
 
 // --- fixtures ---------------------------------------------------------------------------------------------
 
-/** acme/app is in team `acme` (architect thread thr-a, sentinel optional); lone/site is in no team. */
-function seed(db: ReturnType<typeof openDb>, opts: { sentinel?: boolean } = {}): void {
+/** acme/app is in team `acme` (sentinel thread thr-s, architect thread thr-a, never told); lone/site is in no team. */
+function seed(db: ReturnType<typeof openDb>): void {
   db.query("INSERT INTO project_group (name, created_at) VALUES ('acme', ?)").run(AT);
   db.query("INSERT INTO project (id, name, kind, git_remote, created_at, group_name) VALUES ('app', 'app', 'side', 'git@github.com:acme/app.git', ?, 'acme')").run(AT);
   db.query("INSERT INTO project (id, name, kind, git_remote, created_at) VALUES ('site', 'site', 'side', 'https://github.com/lone/site.git', ?)").run(AT);
@@ -49,7 +49,7 @@ function seed(db: ReturnType<typeof openDb>, opts: { sentinel?: boolean } = {}):
     "INSERT INTO agent (id, worktree, started_at, heartbeat_at, ttl_s, launcher, session_id) VALUES (?, '/x', ?, ?, 86400, 't3', ?)",
   );
   agent.run("architect-acme", AT, AT, "thr-a");
-  if (opts.sentinel) agent.run("sentinel-acme", AT, AT, "thr-s");
+  agent.run("sentinel-acme", AT, AT, "thr-s");
 }
 
 interface Sent {
@@ -124,10 +124,10 @@ afterEach(() => {
   restores = [];
 });
 
-async function rig(opts: { sentinel?: boolean; secret?: boolean } = {}): Promise<Rig> {
+async function rig(opts: { secret?: boolean } = {}): Promise<Rig> {
   const dbPath = migratedDbPath();
   const db = openDb(dbPath);
-  seed(db, opts);
+  seed(db);
   const store = asStore(db);
   if (opts.secret !== false) await setSecret(store, WEBHOOK_SECRET_NAME, SECRET, KEY);
   await setConfig(db, "github_webhook_url", HOOK_URL);
@@ -232,13 +232,13 @@ describe("the receiver (Done when 1)", () => {
 // --- 2, 3. telling ---------------------------------------------------------------------------------------------
 
 describe("a red run on main (Done when 2)", () => {
-  test("told once to the architect, with repo, workflow, SHA, subject, failing jobs and URL", async () => {
+  test("told once to the sentinel, with repo, workflow, SHA, subject, failing jobs and URL", async () => {
     const r = await rig();
     await r.post("workflow_run", "d-1", runEvent());
     await r.settle();
     expect(r.sent).toHaveLength(1);
     const note = r.sent[0]!;
-    expect(note.threadId).toBe("thr-a");
+    expect(note.threadId).toBe("thr-s");
     expect(note.clientRequestId).toBe("ob-ci-red-100");
     for (const want of ["acme/app", "CI", "abcdef1", "feat(AC-1): add the thing", "gate, e2e", "https://github.com/acme/app/actions/runs/100", "failure"]) {
       expect(note.message).toContain(want);
@@ -250,11 +250,45 @@ describe("a red run on main (Done when 2)", () => {
     expect(r.sent).toHaveLength(1);
   });
 
-  test("the sentinel is told when one is bound", async () => {
-    const r = await rig({ sentinel: true });
+  test("with no sentinel thread the architect is never told, though its thread is bound (OS-181)", async () => {
+    const r = await rig();
+    r.db.query("DELETE FROM agent WHERE id = 'sentinel-acme'").run();
     await r.post("workflow_run", "d-1", runEvent({ conclusion: "timed_out" }));
     await r.settle();
+    expect(r.sent).toHaveLength(0);
+    expect(count(r.db, "ci_main_notice")).toBe(0);
+  });
+
+  test("a green whose sentinel has ended recovers the red, tells nobody and starts nothing (OS-181)", async () => {
+    const r = await rig();
+    await r.post("workflow_run", "d-1", runEvent());
+    await r.settle();
+    r.db.query("DELETE FROM agent WHERE id = 'sentinel-acme'").run();
+    await r.post("workflow_run", "d-2", runEvent({ id: 101, conclusion: "success" }));
+    await r.settle();
     expect(r.sent.map((s) => s.threadId)).toEqual(["thr-s"]);
+    expect((await computeAlerts(r.store, { focusProject: null })).filter((a) => a.rule === 12)).toHaveLength(0);
+  });
+
+  test("the catch-up's start seam: no sentinel thread starts one and tells it; a failed start tells nobody (OS-181)", async () => {
+    const r = await rig();
+    r.db.query("DELETE FROM agent WHERE id = 'sentinel-acme'").run();
+    const run: CiRun = { runId: "100", repo: "acme/app", workflowId: "7", workflow: "CI", branch: "main", event: "push", conclusion: "failure", sha: "abc", subject: "s", url: "u" };
+    const base = { rest: fakeRest({ writes: [] }), registry: storeAgentRegistry(r.store), seam: fakeSeam(r.t3), sleep: async () => {} };
+    const refused = await handleRun(r.store, run, { ...base, start: async () => { throw new Error("T3 down"); } });
+    expect(refused.action).toBe("failed");
+    expect(refused.reason).toContain("the acme sentinel could not start (T3 down)");
+    expect(refused.reason).toContain("ob role start acme sentinel");
+    expect(r.sent).toHaveLength(0);
+    expect(count(r.db, "ci_main_notice")).toBe(0);
+    const started: string[] = [];
+    const told = await handleRun(r.store, run, { ...base, start: async (team) => { started.push(team); return "thr-new"; } });
+    expect(told).toMatchObject({ action: "told", target: "sentinel-acme" });
+    expect(started).toEqual(["acme"]);
+    expect(r.sent.map((s) => s.threadId)).toEqual(["thr-new"]);
+    // The hourly catch-up re-reads a red run already told: that starts nothing, even with the sentinel ended again.
+    expect((await handleRun(r.store, run, { ...base, start: async (team) => { started.push(team); return "thr-2"; } })).action).toBe("already");
+    expect(started).toEqual(["acme"]);
   });
 
   test("startup_failure is red; cancelled, another branch and a PR run tell nobody", async () => {
@@ -297,14 +331,14 @@ describe("recovery (Done when 3)", () => {
 
   test("a team with no thread yet is a failed route: no row, and the catch-up tells it once the thread is up", async () => {
     const r = await rig();
-    r.db.query("UPDATE agent SET session_id = NULL WHERE id = 'architect-acme'").run();
+    r.db.query("UPDATE agent SET session_id = NULL WHERE id = 'sentinel-acme'").run();
     await r.post("workflow_run", "d-1", runEvent());
     await r.settle();
     expect(count(r.db, "ci_main_notice")).toBe(0);
-    r.db.query("UPDATE agent SET session_id = 'thr-a' WHERE id = 'architect-acme'").run();
+    r.db.query("UPDATE agent SET session_id = 'thr-s' WHERE id = 'sentinel-acme'").run();
     r.rest.runs["acme/app"] = [rawRun()];
     expect((await runCli(r.dbPath, ["ci", "main", "--notify"])).code).toBe(0);
-    expect(r.sent.map((s) => s.threadId)).toEqual(["thr-a"]);
+    expect(r.sent.map((s) => s.threadId)).toEqual(["thr-s"]);
   });
 
   test("an oversized webhook body is refused unread past the cap, with or without a content-length", async () => {
@@ -346,7 +380,7 @@ describe("a failed send and the catch-up (Done when 4)", () => {
     r.rest.runs["acme/app"] = [rawRun(), rawRun({ id: 98, conclusion: "success" }), rawRun({ id: 97, workflow_id: 8, name: "Docs", conclusion: "success" })];
     const first = await runCli(r.dbPath, ["ci", "main", "--notify"], {});
     expect(first.code).toBe(0);
-    expect(first.out).toContain("notify: told acme/app · CI run 100 -> architect-acme");
+    expect(first.out).toContain("notify: told acme/app · CI run 100 -> sentinel-acme");
     expect(r.sent).toHaveLength(1);
     const second = await runCli(r.dbPath, ["ci", "main", "--notify"], {});
     expect(second.code).toBe(0);
@@ -423,7 +457,7 @@ describe("a project in no team (Done when 5)", () => {
     await r.post("workflow_run", "d-1", runEvent());
     await r.settle();
     const alerts = (await computeAlerts(r.store, { focusProject: null })).filter((a) => a.rule === 12);
-    expect(alerts.map((a) => a.message)).toEqual([expect.stringContaining("told architect-acme")]);
+    expect(alerts.map((a) => a.message)).toEqual([expect.stringContaining("told sentinel-acme")]);
   });
 });
 
@@ -488,7 +522,7 @@ describe("on Postgres", () => {
     const seam = fakeSeam(t3);
     await store.q.insert(store.t.team).values({ name: "acme", created_at: AT });
     await store.q.insert(store.t.project).values({ id: "app", name: "app", kind: "side", git_remote: "git@github.com:acme/app.git", created_at: AT, team_name: "acme" });
-    await store.q.insert(store.t.agent).values({ id: "architect-acme", worktree: "/x", started_at: AT, heartbeat_at: AT, ttl_s: 86400, launcher: "t3", session_id: "thr-a" } as never);
+    await store.q.insert(store.t.agent).values({ id: "sentinel-acme", worktree: "/x", started_at: AT, heartbeat_at: AT, ttl_s: 86400, launcher: "t3", session_id: "thr-s" } as never);
     const deps = { rest: fakeRest({ writes: [] }), registry: storeAgentRegistry(store), seam, sleep: async () => {} };
     const run: CiRun = { runId: "100", repo: "acme/app", workflowId: "7", workflow: "CI", branch: "main", event: "push", conclusion: "failure", sha: "abc", subject: "s", url: "u" };
     expect((await handleRun(store, run, deps)).action).toBe("failed");

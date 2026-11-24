@@ -22,7 +22,7 @@ import {
 } from "../ci-main.ts";
 import { readGithubToken } from "../net.ts";
 import { defaultMasterKey } from "../secrets.ts";
-import { storeAgentRegistry } from "../t3/dispatch.ts";
+import { storeAgentRegistry, t3Seam } from "../t3/dispatch.ts";
 import type { Store } from "../db/store.ts";
 import { refuseUnreadFlags } from "./capture.ts";
 
@@ -76,9 +76,28 @@ export function storeCiBackend(store: Store): CiBackend {
   const rest = (): Promise<GithubRest> => githubRestFor(async () => httpGithubRest(await readGithubToken(store)));
   return {
     list: async (project) => ciMainList(store, await rest(), project ? { project } : {}),
-    notify: async (project) => ciMainNotify(store, { rest: await rest(), registry: storeAgentRegistry(store) }, project ? { project } : {}),
+    notify: async (project) =>
+      ciMainNotify(store, { rest: await rest(), registry: storeAgentRegistry(store), start: startSentinelIn(store) }, project ? { project } : {}),
     hooks: async (apply) =>
       apply ? hooksApply(store, await rest(), await requireWebhookSecret(store, defaultMasterKey())) : hooksPlan(store, await rest()),
+  };
+}
+
+/**
+ * OS-181: the catch-up starts a team's sentinel (`ob role start <team> sentinel`) on this machine's T3 when it has no
+ * thread, so a red `main` is never told to the architect. The run opens in the team's checkout, as `ob role tick`'s
+ * does, not the job's cwd (a timer runs from $HOME). Imported here: role.ts reaches back into dispatch.
+ */
+function startSentinelIn(store: Store): (team: string) => Promise<string> {
+  return async (team) => {
+    const { startRoleRun, storeTickBackend } = await import("./role.ts");
+    const { teamCheckout } = await import("./role-tick.ts");
+    const tick = storeTickBackend(store);
+    const view = (await tick.teams()).find((v) => v.name === team);
+    const checkout = view ? teamCheckout(view, await tick.checkouts()) : null;
+    if (!checkout) throw new Error(`no checkout of team ${team} on this machine`);
+    const role = { ...tick.role, team: { ...tick.role.team, cwdRepo: async () => checkout } };
+    return (await startRoleRun(role, team, "sentinel", await t3Seam())).thread_id;
   };
 }
 

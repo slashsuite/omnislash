@@ -253,7 +253,7 @@ git fetch origin
 git log --oneline -1 origin/main   # must name the ticket you are landing
 ```
 
-**Then deploy that SHA. Deploy is the last step of a land, not a timer.** The thread that gated and merged the PR runs it (the team's sentinel, else its architect), along with any repo-specific deploy its `repos/<project>/AGENTS.md` names:
+**Then deploy that SHA. Deploy is the last step of a land, not a timer.** The thread that gated and merged the PR runs it (the team's sentinel), along with any repo-specific deploy its `repos/<project>/AGENTS.md` names:
 
 ```
 ob deploy run --sha <the squash SHA>

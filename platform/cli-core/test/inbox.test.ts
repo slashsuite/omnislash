@@ -101,7 +101,7 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
     },
   ],
   [
-    "send to a role that is not bound (and is not the architect) is refused by name and stores nothing",
+    "send to a muse that is not bound is refused by name and stores nothing; the architect and the sentinel always receive",
     async (h) => {
       const res = await h.run(["send", "--no-deliver", "t", "muse", "x"]);
       expect(res.code).not.toBe(0);
@@ -110,6 +110,8 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       // The architect always receives, bound or not.
       expect((await h.run(["send", "--no-deliver", "t", "architect", "hello", "--from", "sentinel-t"])).code).toBe(0);
       expect((await rows(h.store)).map((m) => [m.role, m.from_actor])).toEqual([["architect", "sentinel-t"]]);
+      // OS-181: so does the sentinel, bound or not: delivery starts one when the team has none.
+      expect((await h.run(["send", "--no-deliver", "t", "sentinel", "hi"])).code).toBe(0);
     },
   ],
   [

@@ -282,15 +282,15 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
     },
   ],
   [
-    "after start, a handoff for the team resolves to the run's thread",
+    "after start, a handoff for the team resolves to the sentinel run's thread",
     async (h) => {
       t3();
-      expect((await h.run(["role", "start", "t", "architect"])).code).toBe(0);
+      expect((await h.run(["role", "start", "t", "sentinel"])).code).toBe(0);
       const registry = storeAgentRegistry(h.store);
-      const route = await teamHandoffTarget({ ticket: "X-1", projectOf: async () => "p", teamOf: async () => "t", registry });
+      const route = await teamHandoffTarget({ ticket: "X-1", projectOf: async () => "p", teamOf: async () => "t" });
       expect(route.kind).toBe("team");
       if (route.kind !== "team") return;
-      expect(route.target.agentId).toBe("architect-t");
+      expect(route.target.agentId).toBe("sentinel-t");
       expect((await registry.read(route.target.agentId))?.session_id).toBe("t3-1");
     },
   ],
@@ -385,17 +385,17 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
     },
   ],
   [
-    "end drops the seat that points at the run's thread, so handoffs fall back to the architect",
+    "end drops the seat that points at the run's thread, and handoffs still name the sentinel (OS-181)",
     async (h) => {
       t3();
       expect((await h.run(["role", "start", "t", "architect"])).code).toBe(0);
       expect((await h.run(["role", "start", "t", "sentinel"])).code).toBe(0);
       const registry = storeAgentRegistry(h.store);
-      const route = () => teamHandoffTarget({ ticket: "X-1", projectOf: async () => "p", teamOf: async () => "t", registry });
+      const route = () => teamHandoffTarget({ ticket: "X-1", projectOf: async () => "p", teamOf: async () => "t" });
       expect(await route()).toMatchObject({ kind: "team", target: { agentId: "sentinel-t" } });
       expect((await h.run(["role", "end", "t", "sentinel"])).code).toBe(0);
       expect(await registry.read("sentinel-t")).toBeNull();
-      expect(await route()).toMatchObject({ kind: "team", target: { agentId: "architect-t" } });
+      expect(await route()).toMatchObject({ kind: "team", target: { agentId: "sentinel-t" } });
     },
   ],
   [

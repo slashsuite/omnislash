@@ -245,7 +245,7 @@ describe("readCommitState + formatReadyReport (391)", () => {
     expect(text).toContain("worktree:  /Users/j/dev/omnislash.391");
     expect(text).toContain("State: ready — gated");
     expect(text).toContain("landable: yes");
-    expect(text).toContain("next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)");
+    expect(text).toContain("next:      the sentinel gates and merges the PR (the handoff is the human yes)");
     expect(text).not.toContain("agent done");
   });
 });
@@ -270,7 +270,7 @@ describe("ob spinoff ready CLI (391)", () => {
       expect(r.out).toContain(`worktree:  ${wt}`);
       expect(r.out).toContain("State: ready — gated");
       expect(r.out).toContain("landable: yes");
-      expect(r.out).toContain("next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)");
+      expect(r.out).toContain("next:      the sentinel gates and merges the PR (the handoff is the human yes)");
       const json = await runCli(dbPath, ["spinoff", "ready", "391", "--json"]);
       const body = JSON.parse(json.out);
       expect(body.already).toBe(true);

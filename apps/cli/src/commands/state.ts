@@ -181,7 +181,7 @@ async function withdrawHeldReadyNotes(
   if (rows.length === 0) return;
   try {
     const store = ctx.store ?? ctx.db;
-    // OB-2255: the note went to the ticket's team's sentinel, else its architect, so it is withdrawn there.
+    // OB-2255, OS-181: the note went to the ticket's team's sentinel, so it is withdrawn there.
     // The route is the ticket's, not the repo's, so it is read once.
     let route: Promise<HandoffRoute> | null = null;
     const outcomes = await dropQueuedReadyNotes({
@@ -192,7 +192,6 @@ async function withdrawHeldReadyNotes(
           ticket: ticketRef,
           projectOf: () => rowProjectOf(store, { ticket_ref: ticketRef, item_id: null }),
           teamOf: storeTeamOf(store),
-          registry: storeAgentRegistry(store),
         })),
     });
     for (const o of outcomes) {

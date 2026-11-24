@@ -113,11 +113,11 @@ async function seed(dbPath: string, worktree: string, status: "merged" | "launch
   await registerAgent(db, { id: "1188", ticket: "1188", branch: "1188", worktree, status: "readying", ttlS: 900 });
   omnislashTeamFor(db, "1188");
   await registerAgent(db, {
-    id: "architect-omnislash",
+    id: "sentinel-omnislash",
     worktree: "/r/omnislash",
     status: "planning",
     launcher: "t3",
-    sessionId: "architect-thread-1",
+    sessionId: "sentinel-thread-1",
     ttlS: 900,
   });
   await openRunsOnSeats(db);
@@ -226,7 +226,7 @@ describe("ob spinoff ready refuses a row whose worktree is gone (1188)", () => {
     // and the refusal is retried once with the same request id (OB-2172).
     expect(fake.sends).toHaveLength(2);
     expect(fake.sends[1]!.clientRequestId).toBe(fake.sends[0]!.clientRequestId);
-    expect(fake.sends[0]!.threadId).toBe("architect-thread-1");
+    expect(fake.sends[0]!.threadId).toBe("sentinel-thread-1");
   });
 
   // THE HALF THE GUARD MUST NOT BREAK (found by review, 2026-10-18): a REPEAT of `ready` exists for its 426

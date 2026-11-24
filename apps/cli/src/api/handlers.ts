@@ -1666,7 +1666,7 @@ export async function spinoffReady(store: Store, req: ReadySpinoffRequest): Prom
     // one shared function. A worktree this host does not have is not a refusal: the client checked it.
     assertHandoffWorktree(found, isSpikeTagged(await spinoffTicketTagsFor(store, found.ticket_ref, found.item_id)));
     // 1133: read the builder's own readying note BEFORE the stamp, which rewrites that row's note to
-    // "handed-off: the sentinel, else the architect, gates it". Done HERE rather than on the client so the read and
+    // "handed-off: the sentinel gates it". Done HERE rather than on the client so the read and
     // the overwrite cannot drift apart across two processes — the readying note is composed from this.
     const builderNote = (await getAgent(store, builderIdOf(found)))?.note ?? null;
     const result = await markSpinoffReady(store, found, { note: req.note ?? null }, tierFit);

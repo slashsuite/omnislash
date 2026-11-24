@@ -183,7 +183,7 @@ async function seedSpikeRow(s: Seeded, repo = "/r/omnislash"): Promise<{ wt: str
   ).run(s.spike, wt, "builder-thread-1", s.spike, row.id);
   await registerAgent(db, { id: s.spike, ticket: s.spike, branch: "spike-branch", worktree: wt, status: "working", ttlS: 900 });
   omnislashTeamFor(db, s.spike);
-  await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+  await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
   await openRunsOnSeats(db);
   db.close();
   return { wt, rowId: row.id };
@@ -269,7 +269,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
 
     // The architect is told, in words that fit a spike: the note says there is nothing to gate.
     expect(fake.sends).toHaveLength(1);
-    expect(fake.sends[0]!.threadId).toBe("architect-thread-1");
+    expect(fake.sends[0]!.threadId).toBe("sentinel-thread-1");
     expect(fake.sends[0]!.message).toContain("spike answered");
     expect(fake.sends[0]!.message).not.toContain("gate and merge");
   });

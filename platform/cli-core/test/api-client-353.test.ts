@@ -622,7 +622,7 @@ describe("the working loop over HTTP (353)", () => {
 		}
 	});
 
-	test("a serving row with NO builder thread id still gets its held architect note withdrawn (1205)", async () => {
+	test("a serving row with NO builder thread id still gets its held sentinel note withdrawn (1205)", async () => {
 		// The withdrawal needs the ARCHITECT's thread, not a builder's, so it must not sit behind the
 		// no-thread-id return that skips the settle and the land reply (the 1142 field-drop case) — that
 		// return would otherwise leave exactly the stale note this guard exists to withdraw.
@@ -639,12 +639,12 @@ describe("the working loop over HTTP (353)", () => {
 				// OB-2255: the held note's thread is the ticket's team's (project acme, team acme, no sentinel)
 				"GET /items/1134": { item: { id: "1134", project: "acme", tags: [] } },
 				"GET /projects": { projects: [{ id: "acme", name: "acme", kind: "side", git_remote: null, created_at: "x", key: "OB", icon: null, display_name: null, stage: null, team_name: "acme" }] },
-				"GET /agents": { agents: [{ id: "architect-acme", session_id: "architect-thread-1", launcher: "t3", status: "idle" }] },
+				"GET /agents": { agents: [{ id: "sentinel-acme", session_id: "sentinel-thread-1", launcher: "t3", status: "idle" }] },
 			});
 			const r = await runCli(freshDbPath(), ["close", "1134"], api(s));
 			expect(r.code).toBe(0);
 			expect(settled).toEqual([]); // nothing to settle: that row recorded no builder thread
-			expect(cancelled).toEqual([{ threadId: "architect-thread-1", queuedRunId: "run:stale" }]);
+			expect(cancelled).toEqual([{ threadId: "sentinel-thread-1", queuedRunId: "run:stale" }]);
 			expect(r.out).toContain("withdrew a queued readying note for 1134");
 		} finally {
 			restore();
@@ -675,11 +675,11 @@ describe("the working loop over HTTP (353)", () => {
 				// OB-2255: the held note's thread is the ticket's team's (project acme, team acme, no sentinel)
 				"GET /items/1134": { item: { id: "1134", project: "acme", tags: [] } },
 				"GET /projects": { projects: [{ id: "acme", name: "acme", kind: "side", git_remote: null, created_at: "x", key: "OB", icon: null, display_name: null, stage: null, team_name: "acme" }] },
-				"GET /agents": { agents: [{ id: "architect-acme", session_id: "architect-thread-1", launcher: "t3", status: "idle" }] },
+				"GET /agents": { agents: [{ id: "sentinel-acme", session_id: "sentinel-thread-1", launcher: "t3", status: "idle" }] },
 			});
 			const r = await runCli(freshDbPath(), ["close", "1134"], api(s));
 			expect(r.code).toBe(0);
-			expect(cancelled).toEqual([{ threadId: "architect-thread-1", queuedRunId: "run:legacy" }]);
+			expect(cancelled).toEqual([{ threadId: "sentinel-thread-1", queuedRunId: "run:legacy" }]);
 			expect(settled).toEqual(["mcp:builder"]);
 			// the client acts on the serving answer as given: it never re-resolves the legacy row's ref (the one item
 			// read is the ticket's project, for the team thread, OB-2255)
@@ -721,12 +721,12 @@ describe("the working loop over HTTP (353)", () => {
 				// OB-2255: the held note's thread is the ticket's team's (project acme, team acme, no sentinel)
 				"GET /items/1134": { item: { id: "1134", project: "acme", tags: [] } },
 				"GET /projects": { projects: [{ id: "acme", name: "acme", kind: "side", git_remote: null, created_at: "x", key: "OB", icon: null, display_name: null, stage: null, team_name: "acme" }] },
-				"GET /agents": { agents: [{ id: "architect-acme", session_id: "architect-thread-1", launcher: "t3", status: "idle" }] },
+				"GET /agents": { agents: [{ id: "sentinel-acme", session_id: "sentinel-thread-1", launcher: "t3", status: "idle" }] },
 			});
 			const r = await runCli(freshDbPath(), ["close", "1134"], api(s));
 			expect(r.code).toBe(0);
 			expect(settled).toEqual(["mcp:builder"]);
-			expect(cancelled).toEqual([{ threadId: "architect-thread-1", queuedRunId: "run:x" }]);
+			expect(cancelled).toEqual([{ threadId: "sentinel-thread-1", queuedRunId: "run:x" }]);
 			expect(r.err).toContain("could not be confirmed");
 			expect(r.err).toContain("1 recording no item, 1 whose ref is also its own id");
 		} finally {

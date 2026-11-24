@@ -43,11 +43,14 @@ export interface RoleMessageInput {
   clientKey?: string | null;
 }
 
-/** A role that may receive: the architect, or a role with a thread bound on the team. Refused by name otherwise. */
+/**
+ * A role that may receive: the architect, the sentinel (OS-181: every team has one, started on delivery when it has
+ * no thread), or a role with a thread bound on the team. Refused by name otherwise.
+ */
 async function requireRecipient(s: Store, team: string, role: TeamRole): Promise<void> {
   const t = await getTeam(s, team);
   if (!t) throw new UnknownTeamError(team);
-  if (role === "architect") return;
+  if (role === "architect" || role === "sentinel") return;
   const view = await teamView(s, t);
   if (!view.threads.some((th) => th.role === role)) {
     throw new AppError(`team '${team}' has no ${role} bound, so nothing was stored (bind one with \`ob t3 ${role} ${team}\`, see \`ob t3 team show ${team}\`)`);

@@ -361,17 +361,15 @@ describe("team helpers (OB-2255)", () => {
   });
 
   test("teamHandoffTarget: a read that FAILS is a failed route, never taken for no team", async () => {
-    const registry = { read: async () => null };
     const failed = await teamHandoffTarget({
       ticket: "PS-1",
       projectOf: async () => {
         throw new Error("store locked");
       },
       teamOf: async () => "slash",
-      registry,
     });
     expect(failed).toEqual({ kind: "failed", reason: "could not read PS-1's project: store locked" });
-    const noProject = await teamHandoffTarget({ ticket: "PS-1", projectOf: async () => null, teamOf: async () => "slash", registry });
+    const noProject = await teamHandoffTarget({ ticket: "PS-1", projectOf: async () => null, teamOf: async () => "slash" });
     expect(noProject.kind).toBe("skip");
   });
 });

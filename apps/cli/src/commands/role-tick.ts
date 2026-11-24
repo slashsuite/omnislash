@@ -53,7 +53,7 @@ interface TickTeamResult {
  * A team's checkout on this machine: the first member project that resolves (an existing path, its `repo_checkouts`
  * entry, else `~/dev/<id>`), a worktree read as its repo. Null when none does. Pure aside from the directory tests.
  */
-function teamCheckout(team: Pick<TeamView, "members">, checkouts: Record<string, string>, home: string = homedir()): string | null {
+export function teamCheckout(team: Pick<TeamView, "members">, checkouts: Record<string, string>, home: string = homedir()): string | null {
   for (const id of team.members) {
     try {
       const resolved = resolveRepoWith(checkouts, id, home);
