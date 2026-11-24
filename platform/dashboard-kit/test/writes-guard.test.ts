@@ -34,9 +34,11 @@ const WRAPPERS: Record<string, (c: writes.WriteContext) => Promise<unknown>> = {
   transitionItem: (c) => writes.transitionItem(c, { id: "1", action: "close" }),
   setTodayRank: (c) => writes.setTodayRank(c, { id: "1", rank: 1 }),
   saveReviewers: (c) => writes.saveReviewers(c, { medium: ["opus"] }),
+  setQueueOrder: (c) => writes.setQueueOrder(c, { id: "1", move: { top: true } }),
+  setPriority: (c) => writes.setPriority(c, { id: "1", priority: 2 }),
 };
 
-test("the eight ob writes are all here, and nothing else is exported as a write", () => {
+test("the ten ob writes are all here, and nothing else is exported as a write", () => {
   const exported = Object.keys(writes).sort();
   expect(exported).toEqual(Object.keys(WRAPPERS).sort());
 });

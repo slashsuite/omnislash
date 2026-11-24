@@ -30,7 +30,7 @@ const ssr = (await import(fileURLToPath(new URL("../dist/server/server.js", impo
 const handler = createObHandler({
   clientDir: fileURLToPath(new URL("../dist/client", import.meta.url)),
   ssr,
-  sidecar: createSidecar({ store: async () => store, pollMs: 60_000, upgradeOnRoot: false }),
+  sidecar: createSidecar({ store: async () => store, pollMs: 500, upgradeOnRoot: false }),
   swSource: null,
 });
 

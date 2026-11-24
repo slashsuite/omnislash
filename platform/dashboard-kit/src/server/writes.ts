@@ -21,7 +21,13 @@ import {
   type CredentialStatus,
 } from "../../../../apps/cli/src/credentials.ts";
 import { itemDetail } from "../../../../apps/cli/src/detail.ts";
-import { setTodayRank as setTodayRankCore } from "../../../../apps/cli/src/workflow.ts";
+import { editItem } from "../../../../apps/cli/src/items.ts";
+import {
+  setQueueOrder as setQueueOrderCore,
+  setTodayRank as setTodayRankCore,
+  type QueueMove,
+  type QueueOrderResult,
+} from "../../../../apps/cli/src/workflow.ts";
 import { beginPairing } from "../../../cli-whatsapp/src/whatsapp/qr.ts";
 import { applyItemTransition, type ItemTransition } from "./item-transition.ts";
 import { configIo } from "./config-io.ts";
@@ -90,6 +96,19 @@ export async function transitionItem(ctx: WriteContext, data: ItemTransition): P
 export async function setTodayRank(ctx: WriteContext, data: { id: string; rank?: number }): Promise<ItemDetail> {
   const s = await open(ctx);
   await setTodayRankCore(s, data.id, data.rank);
+  return await itemDetail(s, data.id);
+}
+
+/** OS-25: place an item in its project's queue (`ob order`): top (optionally into a band), or before / after
+ *  another open item, whose band it takes. */
+export async function setQueueOrder(ctx: WriteContext, data: { id: string; move: QueueMove }): Promise<QueueOrderResult> {
+  return await setQueueOrderCore(await open(ctx), data.id, data.move);
+}
+
+/** OS-25: set an item's priority (`ob edit --priority`). Its queue rank is left as it is. Returns the fresh detail. */
+export async function setPriority(ctx: WriteContext, data: { id: string; priority: number }): Promise<ItemDetail> {
+  const s = await open(ctx);
+  await editItem(s, data.id, { priority: data.priority });
   return await itemDetail(s, data.id);
 }
 

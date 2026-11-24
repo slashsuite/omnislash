@@ -222,4 +222,7 @@ export interface Snapshot {
   whatsappStatus: WhatsappStatusPerson[]; // current Status tray (629) — live; history is on-demand
   alertCount: number; // (#45) live count of un-acked alerts — drives the header bell
   branchAgeMax: number; // (QW6) stale-branch threshold in days (alert rule 3) — drives the PR "stale" chip
+  /** OS-25: the item count and latest updated_at. Any item write moves it (an `ob order` stamps the moved item), so the
+   *  Queue page re-reads its list when it changes. Optional: an API host older than OS-25 sends none. */
+  itemsStamp?: string;
 }
