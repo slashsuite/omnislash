@@ -21,8 +21,8 @@ export interface ConflictSide {
 }
 
 /**
- * Two running branches that do not merge. `a` is the lower row id. `files` never holds a lockfile, and is empty when
- * git reports a conflict that names no file (a directory rename, say).
+ * Two running branches that do not merge. `a` is the lower row id. `files` never holds a resolved-at-land file (a
+ * lockfile or the root FACTS.md), and is empty when git reports a conflict that names no file (a directory rename, say).
  */
 export interface BranchConflict {
   repo: string;
@@ -52,6 +52,15 @@ export interface ConflictSource extends ConflictDeps {
   /** Append `text` as a note on one side's ticket. */
   note(side: ConflictSide, text: string): Promise<void>;
 }
+
+/**
+ * Files two running branches may both touch without it being a conflict to report. Lockfiles reinstall. The root
+ * FACTS.md is the one shared line every PR bumps (AGENTS.md: "Checked against"), so two running PRs always collide
+ * there; the trade-off is that a real clash in another FACTS.md line is not reported here either. A pair whose
+ * conflicted files are all in this list is clean; any other file still reports.
+ */
+const RESOLVED_AT_LAND_PATHS = new Set(["FACTS.md"]);
+export const isResolvedAtLand = (path: string): boolean => isLockfile(path) || RESOLVED_AT_LAND_PATHS.has(path);
 
 const short = (sha: string): string => sha.slice(0, 7);
 const fileList = (c: BranchConflict): string => (c.files.length ? c.files.join(", ") : "no file named by git");
@@ -103,8 +112,9 @@ function fetchBranches(sh: Sh, repo: string, branches: string[], warnings: strin
  * Test-merge every pair of running rows (pending, launching, launched, ready-for-gate, with a branch) in each repo
  * that has two or more. Per repo: one fetch of their branches, then `git merge-tree --write-tree --name-only` on each
  * pair's fetched heads. Exit 0 is clean, 1 a conflict, anything else a warning that skips the pair. A pair whose
- * only conflicted files are lockfiles is clean. A repo with no checkout on this machine is skipped. `onlyRepo` (a
- * checkout path) limits the check to that repo.
+ * only conflicted files are resolved at land (lockfiles, FACTS.md) is clean; one with a real file too reports only
+ * the real files. A repo with no checkout on this machine is skipped. `onlyRepo` (a checkout path) limits the check to
+ * that repo.
  */
 export async function findBranchConflicts(rows: OverlapRow[], deps: ConflictDeps, onlyRepo?: string): Promise<ConflictCheck> {
   const out: ConflictCheck = { conflicts: [], warnings: [], unpushed: [] };
@@ -140,7 +150,7 @@ export async function findBranchConflicts(rows: OverlapRow[], deps: ConflictDeps
           continue;
         }
         const paths = conflictedPaths(r.out ?? "");
-        const files = paths.filter((p) => !isLockfile(p));
+        const files = paths.filter((p) => !isResolvedAtLand(p));
         if (paths.length > 0 && files.length === 0) continue;
         const side = (s: { row: OverlapRow; head: string }): ConflictSide => ({ row: s.row.id, ref: s.row.ticket_ref, item_id: s.row.item_id ?? null, branch: s.row.branch, head: s.head });
         out.conflicts.push({ repo, a: side(x), b: side(y), files });

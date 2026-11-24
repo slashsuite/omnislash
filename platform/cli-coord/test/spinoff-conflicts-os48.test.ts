@@ -18,7 +18,7 @@ import type { RoleMessage } from "../../../apps/cli/src/inbox.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { overlapSh } from "../src/commands/spinoff.ts";
-import { conflictedPaths, conflictKey, findBranchConflicts } from "../src/spinoff-conflicts.ts";
+import { conflictedPaths, conflictKey, findBranchConflicts, isResolvedAtLand } from "../src/spinoff-conflicts.ts";
 import type { OverlapRow } from "../src/spinoff-overlap.ts";
 
 const scratch = (): string => process.env.TMPDIR || tmpdir();
@@ -136,6 +136,40 @@ describe("findBranchConflicts on a fixture repo (OS-48)", () => {
     const check = await findBranchConflicts([row(1, "OS-1", "a", "elsewhere"), row(2, "OS-2", "b", "elsewhere")], deps);
     expect(check).toEqual({ conflicts: [], warnings: [], unpushed: [] });
   });
+
+  // OS-188: FACTS.md's "Checked against" line is bumped by every PR and resolved at land, so it is not a conflict.
+  test("a conflict only in FACTS.md is clean; FACTS.md plus a real file reports just the real file", async () => {
+    const { clone } = fixture();
+    writeFileSync(join(clone, "FACTS.md"), "# Facts\n\nChecked against: aaaaaaa\n");
+    git(clone, "add", "-A");
+    git(clone, "commit", "-q", "-m", "facts");
+    git(clone, "push", "-q", "origin", "main");
+
+    push(clone, "a", { "FACTS.md": "# Facts\n\nChecked against: 1111111\n" });
+    push(clone, "b", { "FACTS.md": "# Facts\n\nChecked against: 2222222\n" });
+    const clean = await findBranchConflicts([row(1, "OS-1", "a", clone), row(2, "OS-2", "b", clone)], deps);
+    expect(clean).toEqual({ conflicts: [], warnings: [], unpushed: [] });
+
+    push(clone, "c", { "FACTS.md": "# Facts\n\nChecked against: 3333333\n", "f.txt": fWith(1, "c") });
+    push(clone, "d", { "FACTS.md": "# Facts\n\nChecked against: 4444444\n", "f.txt": fWith(1, "d") });
+    const headC = git(clone, "rev-parse", "origin/c");
+    const headD = git(clone, "rev-parse", "origin/d");
+    const hit = await findBranchConflicts([row(3, "OS-3", "c", clone), row(4, "OS-4", "d", clone)], deps);
+    expect(hit.warnings).toEqual([]);
+    expect(hit.conflicts).toHaveLength(1);
+    expect(hit.conflicts[0]!.files).toEqual(["f.txt"]);
+    expect(hit.conflicts[0]!.a.head).toBe(headC);
+    expect(hit.conflicts[0]!.b.head).toBe(headD);
+  }, spawnBudget(16));
+});
+
+test("resolvedAtLand: lockfiles and FACTS.md are; other files are not (OS-188), pure", () => {
+  expect(isResolvedAtLand("bun.lock")).toBe(true);
+  expect(isResolvedAtLand("apps/cli/package-lock.json")).toBe(true);
+  expect(isResolvedAtLand("FACTS.md")).toBe(true);
+  expect(isResolvedAtLand("docs/FACTS.md")).toBe(false);
+  expect(isResolvedAtLand("FACTS.mdx")).toBe(false);
+  expect(isResolvedAtLand("apps/cli/src/cli.ts")).toBe(false);
 });
 
 // --- the command and the tick against a store ---------------------------------------------------------------------
