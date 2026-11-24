@@ -90,13 +90,15 @@ export const setTodayRank = createServerFn({ method: "POST" })
 
 const isPriority = (p: unknown): p is number => typeof p === "number" && Number.isInteger(p) && p >= 0 && p <= 6;
 
-/** One project's queue, banded by priority (`?project=`; absent, the default project). Read-only. */
+/** A group's queue, banded by priority (`?team=`, OS-185), or one project's in it (`?project=`). Read-only. */
 export const getQueue = createServerFn({ method: "GET" })
-  .validator((d: { project?: string } | undefined) => {
-    if (d?.project !== undefined && typeof d.project !== "string") throw new Error("project must be a string");
-    return { project: d?.project || undefined };
+  .validator((d: { team?: string; project?: string } | undefined) => {
+    for (const k of ["team", "project"] as const) {
+      if (d?.[k] !== undefined && typeof d[k] !== "string") throw new Error(`${k} must be a string`);
+    }
+    return { team: d?.team || undefined, project: d?.project || undefined };
   })
-  .handler(async ({ data }): Promise<QueueView> => await queueView(await providedStore(), data.project));
+  .handler(async ({ data }): Promise<QueueView> => await queueView(await providedStore(), data));
 
 /** Place an item in its project's queue (`ob order`): `top` (with an optional band), `before` or `after` an item. */
 export const setQueueOrder = createServerFn({ method: "POST" })

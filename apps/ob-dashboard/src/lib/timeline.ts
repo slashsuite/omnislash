@@ -1,4 +1,5 @@
 import { isClosedStatus } from "../../../cli/src/status.ts";
+import type { GroupProject, ProjectGroup } from "../../../../platform/dashboard-kit/src/server/groups.ts";
 
 // OS-27: the Timeline page's pure part, shared by the page and its server read (server/timeline.ts). It imports
 // nothing that touches the store, so the page's client bundle stays free of it. buildTimeline turns a project's
@@ -36,6 +37,8 @@ export interface FeedEntry {
   who: string | null;
   /** A merge line's pull request. */
   href?: string;
+  /** OS-185: the item's project, named on the line when the page shows a whole group. */
+  project?: string | null;
 }
 
 export interface WeekRow {
@@ -64,8 +67,10 @@ export interface Cursor {
 }
 
 export interface TimelineView {
-  project: { id: string; label: string };
-  projects: { id: string; label: string }[];
+  /** OS-185: the group shown, every group to pick from, and the project drilled into (null: the whole group). */
+  group: ProjectGroup;
+  groups: ProjectGroup[];
+  project: GroupProject | null;
   from: string;
   to: string;
   builds: boolean;
@@ -86,6 +91,8 @@ export interface TimelineItem {
   created_at: string;
   closed_at: string | null;
   block_reason: string | null;
+  /** OS-185: carried onto the item's feed lines. */
+  project_id?: string | null;
 }
 
 export interface TimelineEvent {
@@ -173,7 +180,7 @@ export function buildTimeline(
     const pl = parse(e);
     const move = `${pl.from ?? "?"} → ${pl.to ?? "?"}`;
     const note = pl.note ? ` · ${pl.note}` : "";
-    const base = { at: e.ts, key: `e:${e.id}`, ref: item.ref, title: item.title, who: e.actor };
+    const base = { at: e.ts, key: `e:${e.id}`, ref: item.ref, title: item.title, who: e.actor, project: item.project_id ?? null };
     if (e.type === PRIORITY_CHANGE_TYPE) {
       feed.push({ ...base, kind: "priority", detail: `priority ${move}${note}` });
     } else if (typeof pl.spinoff_row === "number") {
@@ -216,11 +223,11 @@ export function buildTimeline(
   }
 
   for (const i of items) {
-    if (inRange(i.created_at)) feed.push({ at: i.created_at, key: `o:${i.id}`, kind: "opened", ref: i.ref, title: i.title, detail: null, who: null });
+    if (inRange(i.created_at)) feed.push({ at: i.created_at, key: `o:${i.id}`, kind: "opened", ref: i.ref, title: i.title, project: i.project_id ?? null, detail: null, who: null });
     if (inRange(i.closed_at)) {
       const spell = closedFromBlocked.get(i.id);
       const detail = `${i.status} after ${fmtSpan(daysBetween(i.created_at, i.closed_at))}${spell ? ` · ${spell}` : ""}`;
-      feed.push({ at: i.closed_at, key: `c:${i.id}`, kind: "closed", ref: i.ref, title: i.title, detail, who: null });
+      feed.push({ at: i.closed_at, key: `c:${i.id}`, kind: "closed", ref: i.ref, title: i.title, project: i.project_id ?? null, detail, who: null });
     }
   }
 
@@ -228,12 +235,12 @@ export function buildTimeline(
     const item = r.item;
     if (opts.builds) {
       const detail = r.landed ? `built, row ${n}, ${fmtSpan(daysBetween(r.first, r.landed.ts))}` : `row ${n}, ${r.lastTo}`;
-      feed.push({ at: r.landed?.ts ?? r.last, key: `r:${n}`, kind: "build", ref: item.ref, title: item.title, detail, who: null });
+      feed.push({ at: r.landed?.ts ?? r.last, key: `r:${n}`, kind: "build", ref: item.ref, title: item.title, project: item.project_id ?? null, detail, who: null });
     }
     const pr = r.pr;
     const num = pr ? prNumber(pr) : null;
     if (r.landed && pr && num) {
-      feed.push({ at: r.landed.ts, key: `m:${n}`, kind: "merge", ref: item.ref, title: item.title, detail: `merged, PR #${num}`, who: null, href: pr });
+      feed.push({ at: r.landed.ts, key: `m:${n}`, kind: "merge", ref: item.ref, title: item.title, project: item.project_id ?? null, detail: `merged, PR #${num}`, who: null, href: pr });
     }
   }
 

@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openPage } from "./nav.ts";
-import { BUSY_MOVES, cliEnv, TIMELINE_FROM, TIMELINE_PR, TIMELINE_PROJECT, TIMELINE_TITLES, TIMELINE_TO } from "./world.ts";
+import { BUSY_MOVES, cliEnv, GROUP_TEAM, SIBLING_PROJECT, SIBLING_TITLE, TIMELINE_FROM, TIMELINE_PR, TIMELINE_PROJECT, TIMELINE_TITLES, TIMELINE_TO } from "./world.ts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
 const PATH = `/timeline?project=${TIMELINE_PROJECT}&from=${TIMELINE_FROM}&to=${TIMELINE_TO}`;
@@ -67,4 +67,24 @@ test("Load older pages the feed by 200 and the pages join up", async ({ page }) 
   await expect(busyLines(page)).toHaveCount(BUSY_MOVES + 1);
   await expect(busyLines(page).last()).toContainText("Opened");
   await expect(page.getByRole("button", { name: "Load older" })).toHaveCount(0);
+});
+
+// OS-185: the group's projects together, each line naming its project; the Project select narrows to one.
+test("the group view counts every project in the group and names each line's project; a project narrows it", async ({ page }) => {
+  await openPage(page, `/timeline?team=${GROUP_TEAM.name}&from=${TIMELINE_FROM}&to=${TIMELINE_TO}`);
+  await expect(page.getByRole("combobox", { name: "Group" })).toHaveValue(GROUP_TEAM.name);
+  // TIMELINE_PROJECT's four, plus the sibling project's item opened on the 14th.
+  await expect(tile(page, "Opened")).toContainText("5");
+  await expect(tile(page, "Net")).toContainText("+3");
+  await expect(line(page, SIBLING_TITLE).getByText(SIBLING_PROJECT, { exact: true })).toBeVisible();
+  await expect(line(page, TIMELINE_TITLES.decision).first().getByText(TIMELINE_PROJECT, { exact: true })).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Project" }).selectOption(TIMELINE_PROJECT);
+  await expect(page).toHaveURL(new RegExp(`project=${TIMELINE_PROJECT}`));
+  await expect(page).toHaveURL(new RegExp(`from=${TIMELINE_FROM}`));
+  await expect(tile(page, "Opened")).toContainText("4");
+  await expect(line(page, SIBLING_TITLE)).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Project" })).toHaveValue(TIMELINE_PROJECT);
+  await expect(tile(page, "Opened")).toContainText("4");
 });

@@ -1,24 +1,24 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { GroupPicker, groupSearch, type GroupSearch } from "../components/GroupPicker.tsx";
 import { Callout, Caption, Cluster, PageHeader, Pill, Select, SortableItem, SortableList, SortableSection, Stack, type SortableMove } from "@hackcove/ui-react";
 import { ItemDrawer } from "../../../../platform/dashboard-kit/src/components/ItemDrawer.tsx";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
 import type { QueueBand, QueueRow } from "../../../../platform/dashboard-kit/src/server/queue.ts";
 import { getItem, getQueue, setPriority, setQueueOrder, setTodayRank, transitionItem } from "../server/items.ts";
 
-// OS-25: one project's execution queue, next task on top: its open items in `ob next --project` order, under one
+// OS-25: the execution queue, next task on top. OS-185: it opens on a group (a team, `?team=`) with the group's
+// projects merged and each row naming its project, and narrows to one project with `?project=`: its open items in `ob next --project` order, under one
 // heading per priority band (each with its count, an empty one shown as a drop row). A drag inside a band changes
 // the order only; a drag into another band takes that band's priority and places the item there (setQueueOrder,
 // the core `ob order` runs), and a drop on an empty band puts it first with that priority. The row's priority
 // Select sets the priority alone. The ref opens the item in the shared drawer. An `ob order` or `ob edit` from the
 // CLI moves the live snapshot's itemsStamp, and the page re-reads.
 
-type QueueSearch = { project?: string };
-
 export const Route = createFileRoute("/queue")({
-  validateSearch: (s: Record<string, unknown>): QueueSearch => (typeof s.project === "string" && s.project ? { project: s.project } : {}),
-  loaderDeps: ({ search }) => ({ project: search.project }),
-  loader: async ({ deps }) => await getQueue({ data: { project: deps.project } }),
+  validateSearch: (s: Record<string, unknown>): GroupSearch => groupSearch(s),
+  loaderDeps: ({ search }) => ({ team: search.team, project: search.project }),
+  loader: async ({ deps }) => await getQueue({ data: deps }),
   component: Queue,
 });
 
@@ -40,6 +40,7 @@ function row(
   bands: QueueBand[],
   onOpen: (id: string) => void,
   onPriority: (id: string, priority: number) => void,
+  showProject: boolean,
 ) {
   const ref = row.ref ?? row.id;
   return (
@@ -47,6 +48,11 @@ function row(
       <Pill size="sm" tone="accent" onClick={() => onOpen(row.id)}>
         {ref}
       </Pill>
+      {showProject && (
+        <Pill size="sm">
+          {row.project.label}
+        </Pill>
+      )}
       <Select
         aria-label={`Priority of ${ref}`}
         size="sm"
@@ -113,20 +119,19 @@ function Queue() {
   const onPriority = (id: string, priority: number) => void write(() => setPriority({ data: { id, priority } }));
 
   const count = view.bands.reduce((n, b) => n + b.items.length, 0);
+  const whole = view.project === null;
+  const scope = view.project?.label ?? view.group.label;
   return (
     <>
-      <PageHeader title="Queue" description="One project's open items in the order they will be worked, next on top, grouped by priority." />
+      <PageHeader
+        title="Queue"
+        description="A group's open items in the order they will be worked, next on top, grouped by priority. Pick a project to see only its queue."
+      />
       <Stack>
         <Cluster gap="sm">
-          <Select
-            aria-label="Project"
-            size="sm"
-            value={view.project.id}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => navigate({ search: { project: e.target.value } })}
-            items={view.projects.map((p) => ({ value: p.id, label: p.label }))}
-          />
+          <GroupPicker group={view.group} groups={view.groups} project={view.project} onChange={(search) => navigate({ search })} />
           <Caption as="span" tone="muted">
-            {count} open
+            {count} open{whole && view.group.projects.length > 1 ? ` across ${view.group.projects.length} projects` : ""}
           </Caption>
         </Cluster>
         {error && (
@@ -134,10 +139,10 @@ function Queue() {
             Not saved: {error}
           </Callout>
         )}
-        <SortableList label={`${view.project.label} queue`} onReorder={onReorder}>
+        <SortableList label={`${scope} queue`} onReorder={onReorder}>
           {view.bands.map((b) => (
             <SortableSection key={b.name} id={b.name} title={b.name}>
-              {b.items.map((r) => row(r, view.bands, setOpenId, onPriority))}
+              {b.items.map((r) => row(r, view.bands, setOpenId, onPriority, whole))}
             </SortableSection>
           ))}
         </SortableList>

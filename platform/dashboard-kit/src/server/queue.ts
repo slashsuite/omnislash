@@ -1,4 +1,4 @@
-// OS-25: one project's execution queue as the Queue page shows it: its open items in `ob next` order, under one
+// OS-25: the execution queue as the Queue page shows it (OS-185: a group's projects merged, or one project's): its open items in `ob next` order, under one
 // band per priority. Read-only.
 //
 // The order is `ob next --project <slug>`'s with Today set aside (the architect's call 1, 2026-11-24): `ob next`
@@ -8,14 +8,10 @@
 // priority (no priority in the focus project counts as high) are ob next's own.
 
 import type { Store } from "../../../../apps/cli/src/db/store.ts";
-import { AppError } from "../../../../apps/cli/src/errors.ts";
 import { itemsStamp, tagsForItems } from "../../../../apps/cli/src/items.ts";
 import { effectivePriority, priorityName, RANK_ORDER } from "../../../../apps/cli/src/priority.ts";
-import { getProject, listProjects } from "../../../../apps/cli/src/project.ts";
 import { compareWithinBand, nextWorklist } from "../../../../apps/cli/src/worklist.ts";
-
-/** The project the page opens on when the URL names none (call 4). */
-export const DEFAULT_QUEUE_PROJECT = "omnislash";
+import { resolveScope, type GroupProject, type ProjectGroup } from "./groups.ts";
 
 export interface QueueRow {
   id: string;
@@ -27,6 +23,8 @@ export interface QueueRow {
   tags: string[];
   /** Ranked into Today (`ob today`): `ob next` lists it first, the page marks it in its band. */
   today: boolean;
+  /** OS-185: the project it is in, named on the row when the page shows a whole group. */
+  project: GroupProject;
 }
 
 export interface QueueBand {
@@ -37,30 +35,26 @@ export interface QueueBand {
   items: QueueRow[];
 }
 
-export interface QueueProject {
-  id: string;
-  label: string;
-}
-
 export interface QueueView {
-  project: QueueProject;
-  projects: QueueProject[];
+  /** OS-185: the group shown, every group to pick from, and the project drilled into (null: the whole group). */
+  group: ProjectGroup;
+  groups: ProjectGroup[];
+  project: GroupProject | null;
   /** Every band, best first, an empty one included (it takes a drop). */
   bands: QueueBand[];
   /** The store's itemsStamp at this read, the baseline the page compares the live snapshot's against. */
   itemsStamp: string;
 }
 
-/** One project's queue. `project` is an id or a name; absent, the default project, else the first one. */
-export async function queueView(store: Store, project?: string): Promise<QueueView> {
-  const all = await listProjects(store);
-  const projects = all.map((p) => ({ id: p.id, label: p.display_name ?? p.name }));
-  const wanted = project ?? (all.some((p) => p.id === DEFAULT_QUEUE_PROJECT) ? DEFAULT_QUEUE_PROJECT : all[0]?.id);
-  if (wanted === undefined) throw new AppError("no projects yet (ob project add)");
-  const p = await getProject(store, wanted);
-  if (!p) throw new AppError(`no project '${wanted}'`);
-
-  const { items, focusProject } = await nextWorklist(store, { project: p.id });
+/**
+ * A group's queue (OS-185), its projects' open items merged band by band, or one project's when `project` names
+ * one. `groups.ts` resolveScope picks the group: the named team, else the focus project's, else Slash. A band's
+ * order across projects is ob next's own (kind, then each project's queue rank, then recency).
+ */
+export async function queueView(store: Store, ask: { team?: string; project?: string } = {}): Promise<QueueView> {
+  const scope = await resolveScope(store, ask);
+  const projectOf = new Map(scope.group.projects.map((p) => [p.id, p]));
+  const { items, focusProject } = await nextWorklist(store, { allowedProjects: new Set(scope.projectIds) });
   const stamp = await itemsStamp(store);
   const tags = await tagsForItems(store, items.map((i) => i.id));
   const bands: QueueBand[] = RANK_ORDER.map((priority) => ({ priority, name: priorityName(priority), items: [] }));
@@ -75,7 +69,8 @@ export async function queueView(store: Store, project?: string): Promise<QueueVi
       priority,
       tags: tags.get(item.id) ?? [],
       today: item.today_rank !== null,
+      project: projectOf.get(item.project_id!)!,
     });
   }
-  return { project: { id: p.id, label: p.display_name ?? p.name }, projects, bands, itemsStamp: stamp };
+  return { group: scope.group, groups: scope.groups, project: scope.project, bands, itemsStamp: stamp };
 }

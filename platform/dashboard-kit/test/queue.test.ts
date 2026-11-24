@@ -11,6 +11,8 @@ import { registerProject } from "../../../apps/cli/src/project.ts";
 import { setTodayRank } from "../../../apps/cli/src/workflow.ts";
 import { decisionsForItem } from "../../../apps/cli/src/decisions.ts";
 import { nextWorklist } from "../../../apps/cli/src/worklist.ts";
+import { addTeam } from "../../../apps/cli/src/team.ts";
+import { DEFAULT_GROUP, OTHER_GROUP, projectGroups } from "../src/server/groups.ts";
 import { queueView } from "../src/server/queue.ts";
 import { setPriority, setQueueOrder } from "../src/server/writes.ts";
 
@@ -44,8 +46,8 @@ describe("queueView", () => {
     await setConfig(store, "focus_project", "omnislash");
     await setTodayRank(store, today, 1);
 
-    const v = await queueView(store);
-    expect(v.project.id).toBe("omnislash");
+    const v = await queueView(store, { project: "omnislash" });
+    expect(v.project!.id).toBe("omnislash");
     expect(v.itemsStamp).toBe(await itemsStamp(store));
     expect(v.bands.map((b) => b.name)).toEqual(["critical", "urgent", "flake", "high", "medium", "low", "none"]);
     // No priority in the focus project counts as high, as in ob next.
@@ -61,10 +63,10 @@ describe("queueView", () => {
     const { store, mk } = await world();
     const id = await mk("elsewhere", 4, "other");
     await addTags(store, id, ["ui", "dashboard"]);
-    const v = await queueView(store, "other");
-    expect(v.projects.map((p) => p.id).sort()).toEqual(["omnislash", "other"]);
+    const v = await queueView(store, { project: "other" });
+    expect(v.group.projects.map((p) => p.id).sort()).toEqual(["omnislash", "other"]);
     expect(v.bands.find((b) => b.name === "low")!.items[0]!.tags).toEqual(["dashboard", "ui"]);
-    await expect(queueView(store, "nope")).rejects.toThrow("no project 'nope'");
+    await expect(queueView(store, { project: "nope" })).rejects.toThrow("no project 'nope'");
   });
 });
 
@@ -102,5 +104,60 @@ describe("itemsStamp", () => {
     expect(moved).not.toBe(before);
     await mk("c", 3);
     expect(await itemsStamp(store)).not.toBe(moved);
+  });
+});
+
+// OS-185: the page opens on a group (a team), its projects merged, and drills into one project on request.
+describe("queue by group", () => {
+  async function teams() {
+    const w = await world();
+    await registerProject(w.store, { name: "taskslash", kind: "side" });
+    await registerProject(w.store, { name: "budget", kind: "side" });
+    await addTeam(w.store, { name: "slash", icon: "⚔️", display_name: "Slash", projects: ["omnislash", "taskslash"] });
+    await addTeam(w.store, { name: "personal", icon: "🏠", display_name: "Personal", projects: ["budget"] });
+    await addTeam(w.store, { name: "empty" });
+    return w;
+  }
+
+  test("the groups are the teams with projects, by name, then Other for the projects in no team", async () => {
+    const { store } = await teams();
+    const groups = await projectGroups(store);
+    expect(groups.map((g) => [g.id, g.label, g.projects.map((p) => p.id)])).toEqual([
+      ["personal", "🏠 Personal", ["budget"]],
+      ["slash", "⚔️ Slash", ["omnislash", "taskslash"]],
+      [OTHER_GROUP, "Other", ["other"]],
+    ]);
+  });
+
+  test("a group's queue merges its projects band by band, each row naming its project; others stay out", async () => {
+    const { store, mk } = await teams();
+    await mk("os-high", 2);
+    await mk("ts-high", 2, "taskslash");
+    await mk("ts-urgent", 1, "taskslash");
+    await mk("budget-high", 2, "budget");
+    await mk("other-high", 2, "other");
+    const v = await queueView(store, { team: "slash" });
+    expect(v.group.id).toBe("slash");
+    expect(v.project).toBeNull();
+    expect(titles(v)).toMatchObject({ urgent: ["ts-urgent"], high: ["ts-high", "os-high"] });
+    expect(v.bands.flatMap((b) => b.items.map((i) => `${i.title}@${i.project.id}`)).sort()).toEqual(["os-high@omnislash", "ts-high@taskslash", "ts-urgent@taskslash"]);
+
+    // The drill down: one project of the group, and an old `?project=` link alone finds its group.
+    const one = await queueView(store, { team: "slash", project: "taskslash" });
+    expect(one.project!.id).toBe("taskslash");
+    expect(titles(one)).toMatchObject({ urgent: ["ts-urgent"], high: ["ts-high"] });
+    expect((await queueView(store, { project: "budget" })).group.id).toBe("personal");
+    // The projects in no team are their own group.
+    expect(titles(await queueView(store, { team: OTHER_GROUP })).high).toEqual(["other-high"]);
+  });
+
+  test("no team asked: the focus project's group, else Slash; an unknown team falls back the same way", async () => {
+    const { store } = await teams();
+    expect((await queueView(store)).group.id).toBe(DEFAULT_GROUP);
+    expect((await queueView(store, { team: "nope" })).group.id).toBe(DEFAULT_GROUP);
+    await setConfig(store, "focus_project", "budget");
+    expect((await queueView(store)).group.id).toBe("personal");
+    // A team with no projects is not a group, so asking for it falls back too.
+    expect((await queueView(store, { team: "empty" })).group.id).toBe("personal");
   });
 });

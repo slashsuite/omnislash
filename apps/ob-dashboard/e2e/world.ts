@@ -55,6 +55,16 @@ export const QUEUE_SEED = [
 ] as const;
 
 /**
+ * OS-185: the group both pages open on. GROUP_TEAM holds QUEUE_PROJECT, TIMELINE_PROJECT and SIBLING_PROJECT, whose
+ * one open item (high, opened inside the timeline's week) shows in the group's queue and timeline beside theirs.
+ */
+export const GROUP_TEAM = { name: "slash", icon: "⚔️", display_name: "Slash" } as const;
+export const GROUP_LABEL = "⚔️ Slash";
+export const SIBLING_PROJECT = "taskslash";
+export const SIBLING_TITLE = "Sibling project task";
+export const SIBLING_OPENED = "2026-11-14T10:00:00.000Z";
+
+/**
  * OS-27: the Timeline page's world, in its own project so the Queue page never sees it, over one fixed week
  * (the spec opens the page with this from and to, so the world never drifts out of the range).
  * - CLOSED_FROM_BLOCKED opens on the 9th, is blocked on the 10th and goes from blocked to done on the 12th: one
