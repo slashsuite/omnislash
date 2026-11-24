@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ApiClient, ApiError, ROLE_ROUTE } from "../src/api/client.ts";
+import { ApiClient, ApiError, PROJECT_STATUS_ROUTE, ROLE_ROUTE } from "../src/api/client.ts";
 import {
   ACCESS_CLIENT_ID_ENV,
   ACCESS_CLIENT_SECRET_ENV,
@@ -311,5 +311,56 @@ describe("the bearer token and the Access headers reach the role server (OS-76)"
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).message).toContain(main.url);
     expect((err as ApiError).message).not.toContain(role.url);
+  });
+});
+
+// OS-189: the routes that read or enforce a project's status go where the role routes go, because the omnibus
+// server on CT 130 refuses `--status` and leaves it off its rows. Everything else about spinoffs stays put.
+const STATUS_CALLS: Array<{ method: string; path: string; call: Call }> = [
+  { method: "GET", path: "/api/ob/projects", call: (c) => c.projects() },
+  { method: "POST", path: "/api/ob/projects/advisor-quotes/edit", call: (c) => c.projectEdit("advisor-quotes", { status: "paused" }) },
+  { method: "POST", path: "/api/ob/projects/old/rename", call: (c) => c.projectRename("old", { name: "new" }) },
+  { method: "DELETE", path: "/api/ob/projects/gone", call: (c) => c.projectRemove("gone", false) },
+  { method: "GET", path: "/api/ob/next", call: (c) => c.next() },
+  { method: "POST", path: "/api/ob/spinoffs", call: (c) => c.enqueueSpinoff({ ticket_ref: "AQ-1", repo: "r", branch: "b", mode: "t3" } as never) },
+  { method: "POST", path: "/api/ob/spinoffs/launchable", call: (c) => c.spinoffLaunchable({}) },
+];
+
+describe("project status routes go to the role server (OS-189)", () => {
+  test("the matcher takes a status route with a query, and nothing near one", () => {
+    for (const route of ["/next?project=aq", "/spinoffs?status=building", "/projects/aq/edit"]) {
+      expect(PROJECT_STATUS_ROUTE.test(route), route).toBe(true);
+    }
+    for (const route of ["/projectsx", "/nextx", "/spinoffs/claim", "/spinoffs/phase", "/spinoffs/launchablex", "/items"]) {
+      expect(PROJECT_STATUS_ROUTE.test(route), route).toBe(false);
+    }
+  });
+
+  test("with a role base set, each status route reaches the role server and nothing reaches the main one", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    for (const { method, path, call } of STATUS_CALLS) {
+      await call(client).catch(() => undefined);
+      const last = role.seen.at(-1);
+      expect(last?.method, path).toBe(method);
+      expect(last?.path, path).toBe(path);
+    }
+    expect(role.seen).toHaveLength(STATUS_CALLS.length);
+    expect(main.seen, "no status route may reach the main server").toEqual([]);
+  });
+
+  test("the other spinoff routes stay on the main server", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    await client.setSpinoffPhase({ id: 1, phase: "gating" }).catch(() => undefined);
+    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/spinoffs/phase"]);
+    expect(role.seen).toEqual([]);
+  });
+
+  test("with no role base, the status routes stay on the main server", async () => {
+    const client = new ApiClient({ base: main.url, token: TOKEN, roleBase: null });
+    for (const { call } of STATUS_CALLS) await call(client).catch(() => undefined);
+    expect(main.seen).toHaveLength(STATUS_CALLS.length);
+    expect(role.seen).toEqual([]);
   });
 });

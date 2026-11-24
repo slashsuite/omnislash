@@ -70,7 +70,7 @@ export const ENV_VARS: readonly EnvVarHelp[] = [
   { name: "OMNISLASH_API_DEPLOY_ENABLED", description: "Set to 1 on the API host to allow API-triggered deploys" },
   { name: "OMNISLASH_DEPLOY_REQUEST_FILE", description: "Trigger file path watched by the live deploy helper" },
   { name: "OMNISLASH_DEPLOY_SHA", description: "Target commit SHA passed to live deploy scripts" },
-  { name: "OMNISLASH_ROLE_API", description: "Separate API base URL for team role and inbox routes" },
+  { name: "OMNISLASH_ROLE_API", description: "Second API base URL: team role, inbox and project status routes" },
   { name: "OMNISLASH_ROLE_API_URL_FILE", description: "File holding role API URL (~/.omnislash_role_api_url)" },
   { name: "OB_API_TOKEN_FILE", description: "Bearer token file, mode 0600 (default ~/.ob_api_token)" },
   { name: "OB_API_TOKENS_FILE", description: "Scoped API tokens file, mode 0600 (default ~/.ob_api_tokens.json)" },

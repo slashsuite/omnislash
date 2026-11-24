@@ -1,6 +1,6 @@
 # OmniSlash facts
 
-Checked against main at 7289eaa on 2026-11-24.
+Checked against main at bba1fa8 on 2026-11-24.
 
 ## What it is
 OmniSlash is a command-line tool for keeping track of tickets, projects and the agents that work on them.
@@ -50,4 +50,4 @@ It is in alpha, so anything may change or break.
 ## Where it runs
 - `ob-dashboard-ct143`: the OB dashboard (`apps/ob-dashboard`) is served on the LAN at `https://omnislash.madangryscientist.com:5070` from CT 143 (192.168.0.43), unit `omnislash-ob-web.service` running `bun apps/ob-dashboard/serve.ts` on the Postgres store, beside the API on `:5050`; its home page names the deployed commit in `<meta name="build-commit">` (`curl -s https://omnislash.madangryscientist.com:5070/ | rg build-commit`).
 - `checkout-linux`: a fresh clone with Bun 1.4.2 runs `bun install`, then `bun apps/cli/src/index.ts --help` (checked on Linux).
-- `role-api-base`: when `OMNISLASH_ROLE_API` or the first line of `~/.omnislash_role_api_url` names a base url (`OMNISLASH_ROLE_API_URL_FILE` moves the file), the team role routes (`/teams/:name/runs`, `brief`, `notes`, `tick`, `inbox` and their sub-paths) go to that server and every other route stays on `OMNISLASH_API`; unset, every route goes to `OMNISLASH_API` as before (apps/cli/src/api/client.ts `ROLE_ROUTE`, apps/cli/src/api/config.ts; `bun test test/api-role-base.test.ts` in apps/cli passes).
+- `role-api-base`: when `OMNISLASH_ROLE_API` or the first line of `~/.omnislash_role_api_url` names a base url (`OMNISLASH_ROLE_API_URL_FILE` moves the file), the team role routes (`/teams/:name/runs`, `brief`, `notes`, `tick`, `inbox` and their sub-paths) go to that server and so do the project status routes (every `/projects` route, `/next`, `/spinoffs` and `/spinoffs/launchable`, OS-189, `PROJECT_STATUS_ROUTE`), and every other route stays on `OMNISLASH_API`; unset, every route goes to `OMNISLASH_API` as before (apps/cli/src/api/client.ts `ROLE_ROUTE`, apps/cli/src/api/config.ts; `bun test test/api-role-base.test.ts` in apps/cli passes).
