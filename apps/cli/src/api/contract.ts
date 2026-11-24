@@ -473,6 +473,7 @@ export const OB_API_LOCAL_ONLY: Readonly<Record<string, string>> = {
   // same reason `spinoff` is not: the classification is per-half, and the handler owns both.
   models: "the models file is local to the machine that launches (~/.config/ob/models.jsonc, OB-1969); nothing reads it over the API",
   "api-token": "writes the scoped API tokens file on THIS machine (~/.ob_api_tokens.json, OS-178); a token is never sent over HTTP",
+  skills: "reads and repoints the skill links in ~/.claude/skills on THIS machine (OS-182)",
   usage: "reads the Claude transcripts on THIS machine (~/.claude/projects, OB-2278); the thread names alone come over the API",
 };
 

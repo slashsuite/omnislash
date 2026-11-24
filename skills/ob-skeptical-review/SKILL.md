@@ -81,7 +81,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   that leg as failed.
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
   `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the Opus stand-in rule below applies).
-- **Failure.** A failed call reports `+ <leg>: failed` (`+ neon: failed`). It is never retried around and
+- **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ neon: failed (exit 1: model gemini-4-neon unavailable)`), never a bare `failed`. It is never retried around and
   never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the stand-in
   rule below.
 - **Profiles first.** `review-leg.ts` already reruns a leg that ends on a credit or quota error on the
@@ -131,7 +131,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 
   Report Neon and Opus (plus any extra or configured leg), naming the model that
   actually ran: `skeptical-review: N cut, 0 open (neon: a + opus: b)`. A failed leg reads
-  `+ neon: failed`, a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ luna: skipped (no credits)`,
+  `+ neon: failed (exit 1: <reason>)`, copied from its `review-leg: neon failed: ...` line (Failure, above), a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ luna: skipped (no credits)`,
   and an Opus stand-in `(neon(for opus): a)`.
   A model that keeps returning `ok` should be visible, not averaged away.
 - **Never `opencode-go/gemini-4-argon-contributor` and never `opencode-go/grok-4.7`** (too expensive). Do not reach for them to make a review "stronger", and do not re-propose them.
@@ -188,7 +188,8 @@ Each leg ends on its own, so the loop needs no timeout of its own: an attempt th
 `review-leg: <leg> timed out after <n>s; partial output above` (for an `agy` leg, `no partial output`, since agy prints only when it finishes) and exits 124 (report it as `failed (timeout)`;
 rerunning it is your call), and a reader has 40 turns (`steps: 40` in `ob-reviewer.md`, `--max-turns 40` on the
 claude leg). At the cap an OpenCode reader gives its final answer with tools off; the claude leg exits 1 with
-`Error: Reached max turns (40)` and no findings, which is `failed (max turns)`.
+`Error: Reached max turns (40)` and no findings, which is `failed (max turns)`. Either way the leg's last stderr line is
+`review-leg: <leg> failed: exit <n>: ...`; these two named reasons replace the copied one.
 
 An optional leg is its full id too: `bun "$R/review-leg.ts" opencode-go/qwen3.8-flash#high`. A leg that exits
 non-zero is `failed`, or, for a required `opencode-go` reader out of credits, `skipped (no credits), owed <ref>`. Drop a skipped

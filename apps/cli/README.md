@@ -531,6 +531,7 @@ the endpoint does not exist yet, so the flag or ref is refused rather than silen
 | `ob models` | split | the local override file is this machine's (`~/.config/ob/models.jsonc`); `model_routes` (show, get, set, unset, use, reader) is read and written over the API (OS-145) |
 | `ob api-token` | runs here | it writes the scoped API tokens file on this machine (`~/.ob_api_tokens.json`), which the API host reads per request; a token never crosses HTTP (OS-178) |
 | `ob usage` | runs here | reads the Claude transcripts on this machine (`~/.claude/projects`); only the thread names and `ob project list` come over the API, and a failed read prints slugs (OB-2278) |
+| `ob skills` | runs here | reads and repoints the skill links in `~/.claude/skills` on this machine; only the `repo_checkouts` setting comes over the API, and without it the checkouts are `~/dev/omnibus` and `~/dev/omnislash` (OS-182) |
 | `ob web` | refused — API host | it starts the dashboard, and the dashboard reads the store the API host holds |
 
 *Refused inside a SPLIT handler (the served half goes over the API; this half is local):*
@@ -2336,6 +2337,32 @@ ob db fetch omnislash-snap-20261105-100000.dump --out ~/restore   # written 0600
   leaves the host. If the store cannot be read, the output is withheld rather than sent half scrubbed. A snapshot holds stored secrets only as ciphertext.
 - **Guards are the host's.** `ob backup` still refuses a public repo in the child. `ob db snapshot --dir`, `--keep-hourly`,
   `--keep-daily` and `--max-bytes` are refused from a client, because each changes what rotation deletes on the host.
+
+### Skill links: `ob skills doctor` (OS-182)
+
+The skills an agent loads are symlinks in `~/.claude/skills`, and they drift. Every `ob-*` link pointed at the
+omnibus checkout after the skills moved on in omnislash, so the skeptical review ran omnibus's old
+`review-leg.ts`, which has no Antigravity runner, and the `neon` leg failed on every run (OS-182).
+
+`ob skills doctor` lists each link into an omnibus or omnislash checkout, one line each:
+
+```
+<name> <link target> same|differs|omnibus-only
+```
+
+- `same`: the link points into omnislash, or the omnibus copy is byte for byte the omnislash one.
+- `differs`: the copies differ. The line ends with which side's last git commit on that skill directory is newer:
+  `(omnislash newer)`, `(omnibus newer)` or `(newer side unknown)`.
+- `omnibus-only`: omnislash has no copy at that path.
+- A dangling link into omnibus (the skill left omnibus) whose omnislash copy exists reads `differs (omnislash newer)`, since
+  omnibus has no copy to be newer.
+
+Links that point anywhere else, and plain directories, are not listed. `--fix` repoints a `differs` link at the
+omnislash copy only when omnislash is newer, and says `repointed to <path>`; a link omnibus is newer on says
+`left as is`, and an `omnibus-only` link is left alone. Nothing else is deleted or written. `--json` prints the rows.
+
+The checkouts come from the `repo_checkouts` setting (what `ob spinoff` resolves a repo with), else `$HOME/dev/omnibus`
+and `$HOME/dev/omnislash`. `HOME` is honoured, so a test runs it against a temp home.
 
 ### Launch the dashboard
 

@@ -78,6 +78,7 @@ import { cmdWhatsapp } from "../../../platform/cli-whatsapp/src/commands/whatsap
 import { cmdGoogle, type GoogleAuthDeps } from "../../../platform/cli-sources/src/commands/google.ts";
 import { cmdSecret } from "./commands/secret.ts";
 import { cmdCreds } from "./commands/creds.ts";
+import { cmdSkills, expandSkillsFixFlag } from "./commands/skills.ts";
 import { cmdVision, expandVisionPairFlags } from "./commands/vision.ts";
 import { cmdT3 } from "./commands/t3.ts";
 import { cmdRole } from "./commands/role.ts";
@@ -516,6 +517,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   google: cmdGoogle,
   secret: cmdSecret,
   creds: cmdCreds,
+  skills: cmdSkills,
   vision: cmdVision,
   t3: cmdT3,
   role: cmdRole,
@@ -569,7 +571,7 @@ function openForPathResolution(dbPath: string): Database {
 export async function run(argv: string[], deps: RunDeps = {}): Promise<number> {
   let parsed;
   try {
-    parsed = parseArgs({ args: expandVisionPairFlags(argv), options: FLAGS, allowPositionals: true, strict: true });
+    parsed = parseArgs({ args: expandSkillsFixFlag(expandVisionPairFlags(argv), FLAGS), options: FLAGS, allowPositionals: true, strict: true });
   } catch (err) {
     process.stderr.write(`error: ${(err as Error).message}\n`);
     return 2;

@@ -2434,6 +2434,26 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ["creds", "creds check --all"],
   },
 
+  skills: {
+    section: "System",
+    summary: "Check the skill links in ~/.claude/skills against the omnislash copies",
+    usage: ["skills doctor [--fix] [--json]"],
+    subcommands: {
+      doctor: {
+        summary: "One line per link into omnibus or omnislash: <name> <target> same|differs|omnibus-only",
+        usage: ["skills doctor", "skills doctor --fix"],
+        flags: [{ flag: "--fix", description: "Repoint a differing link at omnislash, only when omnislash's last commit is newer" }],
+        examples: ["skills doctor", "skills doctor --fix"],
+      },
+    },
+    notes: [
+      "Checkouts: the repo_checkouts setting, else ~/dev/omnibus and ~/dev/omnislash. Honours HOME.",
+      "A link omnibus is newer on is listed, not changed; omnibus-only links are left alone.",
+      "Nothing else is written.",
+    ],
+    examples: ["skills doctor"],
+  },
+
   "test-user": {
     section: "System",
     summary: "Manage test-account registry entries and encrypted credentials",

@@ -659,7 +659,7 @@ export function finishAntigravityRun(
   if (!parsed) {
     if (run.code === 0) {
       log("review-leg: agy exited 0 without JSON output");
-      return { ...run, code: 1, rawOut: run.out, tokens: null };
+      return { ...run, code: 1, err: run.err.trim() ? run.err : "agy exited 0 without JSON output", rawOut: run.out, tokens: null };
     }
     return { ...run, rawOut: run.out, tokens: null };
   }
@@ -667,9 +667,11 @@ export function finishAntigravityRun(
   if (status !== "SUCCESS") {
     const code = run.code === 0 ? 1 : run.code;
     const detail = [parsed.error, parsed.message, parsed.response].find((v): v is string => typeof v === "string" && v.trim().length > 0);
-    if (detail) log(`review-leg: agy status ${status ?? "missing"}: ${detail.trim()}`);
-    else if (run.code === 0) log(`review-leg: agy exited 0 with status ${status ?? "missing"}`);
-    return { ...run, code, out: "", rawOut: run.out, tokens };
+    const reason = detail ? `agy status ${status ?? "missing"}: ${detail.trim()}` : `agy exited ${run.code} with status ${status ?? "missing"}`;
+    if (detail) log(`review-leg: ${reason}`);
+    else if (run.code === 0) log(`review-leg: ${reason}`);
+    // The failed line copies the child's stderr; an agy that put its reason in the JSON gets it there (OS-182).
+    return { ...run, code, err: run.err.trim() ? run.err : reason, out: "", rawOut: run.out, tokens };
   }
   const response = typeof parsed.response === "string" ? parsed.response : "";
   const text = response.length > 0 && !response.endsWith("\n") ? `${response}\n` : response;
@@ -679,6 +681,17 @@ export function finishAntigravityRun(
   }
   // Only a leg that exited 0 prints its text, so only then does `out` carry it (out_bytes matches what was printed).
   return { ...run, out: run.code === 0 ? text : "", rawOut: run.out, tokens };
+}
+
+/**
+ * The one stderr line a failed leg ends on (OS-182), for the review line to copy:
+ * `review-leg: <leg> failed: exit <n>: <first line of the child stderr>`. A child that printed nothing on
+ * stderr gets `no stderr`, and a child killed for time says `timed out` whatever it printed before.
+ */
+export function failedLegLine(leg: string, code: number, childErr: string, timedOut = false): string {
+  if (timedOut) return `review-leg: ${leg} failed: exit ${code}: timed out`;
+  const first = childErr.split("\n").map((l) => l.trim()).find((l) => l.length > 0);
+  return `review-leg: ${leg} failed: exit ${code}: ${first ?? "no stderr"}`;
 }
 
 /** A throwaway OpenCode config dir holding only the reviewer agent. */
@@ -723,42 +736,52 @@ if (import.meta.main) {
       process.exit(code);
     });
   }
+  // The last attempt's run, so a failed leg can name its child's first stderr line.
+  let last: LegRun | null = null;
   // A leg that fails on a credit or quota error retries on the next profile's model for that leg.
   // Output streams through as it comes (or `response` is printed from `agy` JSON) and a copy is kept so the error can be read.
-  const result = await runAcrossProfiles(
-    leg,
-    legProfiles(leg, process.env, readers),
-    async (profile) => {
-      const { argv, env } = legCommand(leg, configDir, process.env, profile, readers);
-      const isAgy = argv[0] === "agy";
-      // A fixed session id lets the Claude leg's token use be read from its transcript afterwards,
-      // without changing what it prints. Antigravity returns usage in its JSON payload; standalone
-      // OpenCode leaves no usage on disk, so its tokens stay null.
-      const sessionId = argv[0] === "claude" ? crypto.randomUUID() : null;
-      const spawn = legSpawn(sessionId ? [...argv, "--session-id", sessionId] : argv, brief, process.env);
-      briefDir = spawn.briefDir ?? null;
-      try {
-        // Each attempt has a wall-clock limit, so a wandering leg ends instead of running until killed.
-        const run = await spawnLeg(spawn.cmd, spawn.stdin, {
-          env: { ...process.env, ...env },
-          timeoutS: legTimeoutS(),
-          onChild: (c) => (child = c),
-          passThroughStdout: !isAgy,
-        });
-        if (isAgy) return finishAntigravityRun(run);
-        return { ...run, tokens: sessionId ? claudeSessionTokens(sessionId) : null };
-      } finally {
-        if (spawn.briefDir) {
-          rmSync(spawn.briefDir, { recursive: true, force: true });
-          if (briefDir === spawn.briefDir) briefDir = null;
+  let result: { code: number };
+  try {
+    result = await runAcrossProfiles(
+      leg,
+      legProfiles(leg, process.env, readers),
+      async (profile) => {
+        const { argv, env } = legCommand(leg, configDir, process.env, profile, readers);
+        const isAgy = argv[0] === "agy";
+        // A fixed session id lets the Claude leg's token use be read from its transcript afterwards,
+        // without changing what it prints. Antigravity returns usage in its JSON payload; standalone
+        // OpenCode leaves no usage on disk, so its tokens stay null.
+        const sessionId = argv[0] === "claude" ? crypto.randomUUID() : null;
+        const spawn = legSpawn(sessionId ? [...argv, "--session-id", sessionId] : argv, brief, process.env);
+        briefDir = spawn.briefDir ?? null;
+        try {
+          // Each attempt has a wall-clock limit, so a wandering leg ends instead of running until killed.
+          const run = await spawnLeg(spawn.cmd, spawn.stdin, {
+            env: { ...process.env, ...env },
+            timeoutS: legTimeoutS(),
+            onChild: (c) => (child = c),
+            passThroughStdout: !isAgy,
+          });
+          last = isAgy ? finishAntigravityRun(run) : { ...run, tokens: sessionId ? claudeSessionTokens(sessionId) : null };
+          return last;
+        } finally {
+          if (spawn.briefDir) {
+            rmSync(spawn.briefDir, { recursive: true, force: true });
+            if (briefDir === spawn.briefDir) briefDir = null;
+          }
         }
-      }
-    },
-    undefined,
-    process.env,
-    { briefBytes: Buffer.byteLength(brief), readers },
-  );
+      },
+      undefined,
+      process.env,
+      { briefBytes: Buffer.byteLength(brief), readers },
+    );
+  } catch (e) {
+    // A spawn that threw (the tool is not installed) is a failed leg too, and says why.
+    result = { code: 1 };
+    last = { code: 1, out: "", err: e instanceof Error ? e.message : String(e) };
+  }
   const code = result.code;
+  if (code !== 0) console.error(failedLegLine(leg, code, last?.err ?? "", last?.timedOut ?? false));
   cleanup();
   process.exit(code);
 }
