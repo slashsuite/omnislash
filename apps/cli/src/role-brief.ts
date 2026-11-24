@@ -17,6 +17,7 @@ import { listProjects, UnknownTeamError } from "./project.ts";
 import { pendingRoleNote, type RoleNote } from "./role-run.ts";
 import { settingFor } from "./settings.ts";
 import { DEFAULT_STAGE } from "./stage.ts";
+import { isProjectHeld, projectStatusOf } from "./project-status.ts";
 import { getTeam, listTeams, teamMembersIn, teamRoleAgentId, teamView, TEAM_ROLES, type TeamRole, type TeamThread } from "./team.ts";
 import { sortWorklist } from "./worklist.ts";
 import { cacheCheckedAt, pacingSource, readWeeklyFromDoc, type PacingSource } from "./commands/usage.ts";
@@ -62,7 +63,8 @@ export interface BriefRow {
 export interface RoleBriefStoreFacts {
   team: { name: string; display_name: string | null; icon: string | null };
   role: TeamRole;
-  projects: Array<{ id: string; name: string; stage: string }>;
+  /** The team's projects, archived ones left out (OS-134); `status` is `active` or `paused`. */
+  projects: Array<{ id: string; name: string; stage: string; status?: string }>;
   threads: TeamThread[];
   /** The team's rows whose status is not landed or failed, newest first. */
   rows: BriefRow[];
@@ -117,9 +119,9 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
   const members = teamMembersIn(team.name, (await listTeams(s)).map((t) => t.name), allProjects);
   const memberIds = new Set(members.map((m) => m.id));
   const projects = allProjects
-    .filter((p) => memberIds.has(p.id))
+    .filter((p) => memberIds.has(p.id) && projectStatusOf(p) !== "archived")
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((p) => ({ id: p.id, name: p.name, stage: p.stage ?? `${DEFAULT_STAGE} (not set)` }));
+    .map((p) => ({ id: p.id, name: p.name, stage: p.stage ?? `${DEFAULT_STAGE} (not set)`, status: projectStatusOf(p) }));
 
   const teamRows = rowsInTeam(await listSpinoffs(s), members, parseJsonMap(await settingFor(s, "repo_checkouts")));
   const active = teamRows.filter((r) => !DONE_STATUSES.has(r.status));
@@ -150,7 +152,9 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
   }
   const focus = await getFocusProject(s);
   const items: ItemRow[] = [];
-  for (const p of members) items.push(...(await queryItems(s, { open: true, projectId: p.id })));
+  // OS-134: a paused or archived project offers no next items.
+  const heldIds = new Set(allProjects.filter(isProjectHeld).map((p) => p.id));
+  for (const p of members) if (!heldIds.has(p.id)) items.push(...(await queryItems(s, { open: true, projectId: p.id })));
   const buildable = sortWorklist(items, focus).filter((i) => isBuildable(i, inFlight));
   const next = buildable.slice(0, BRIEF_NEXT_COUNT).map((i) => ({
     ref: i.ref ?? i.id,
@@ -243,7 +247,7 @@ export function renderRoleBrief(f: RoleBriefFacts): string {
   section("Team", [
     `${f.team.name}${display}; you are the ${f.role}`,
     `Threads: ${threads}`,
-    ...capped(f.projects, (p) => `Project ${p.name}: ${p.stage}`),
+    ...capped(f.projects, (p) => `Project ${p.name}: ${p.stage}${p.status && p.status !== "active" ? `, ${p.status}` : ""}`),
   ]);
   section("Pacing", [pacingLine(f.pacing)]);
   section(

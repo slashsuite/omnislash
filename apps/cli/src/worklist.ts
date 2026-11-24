@@ -14,6 +14,7 @@ import { AppError } from "./errors.ts";
 import { getFocusProject } from "./config.ts";
 import { queryItems, triageCount, triageCountIn, type ItemRow } from "./items.ts";
 import { getProject, listProjects } from "./project.ts";
+import { isProjectHeld } from "./project-status.ts";
 import { teamMembersIn, listTeams } from "./team.ts";
 import { effectivePriority, kindRank, prioritySortRank } from "./priority.ts";
 
@@ -115,7 +116,8 @@ export function sortItems(items: ItemRow[], focusProject: string | null, by: Ite
 /**
  * The worklist: open items in `ob next` order, plus the triage-inbox count the banner reports. `project`
  * (a name or id, OB-2083) narrows it to one project's queue; an unknown one is an error, since an
- * empty queue for a typo would read as "nothing to do".
+ * empty queue for a typo would read as "nothing to do". With no `project`, a paused or archived project's
+ * items are left out (OS-134).
  */
 export async function nextWorklist(db: Database | Store, opts: { project?: string; allowedProjects?: ReadonlySet<string> } = {}): Promise<NextResult> {
   const focusProject = await getFocusProject(db);
@@ -127,6 +129,11 @@ export async function nextWorklist(db: Database | Store, opts: { project?: strin
     projectId = p.id;
   }
   let items = await queryItems(db, { open: true, projectId });
+  // OS-134: a paused or archived project's items are not offered; naming the project with --project still shows them.
+  if (projectId === undefined) {
+    const held = new Set((await listProjects(db)).filter(isProjectHeld).map((p) => p.id));
+    if (held.size > 0) items = items.filter((i) => i.project_id === null || !held.has(i.project_id));
+  }
   // OS-178: a scoped API token sees only its projects, its triage count included.
   const allowed = opts.allowedProjects;
   if (allowed) items = items.filter((i) => i.project_id !== null && allowed.has(i.project_id));

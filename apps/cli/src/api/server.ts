@@ -1355,6 +1355,7 @@ async function route(
           no_check: optString(body, "no_check") ?? null,
           no_flake_slot: optString(body, "no_flake_slot") ?? null,
           over_usage: optString(body, "over_usage") ?? null,
+          allow_paused: optString(body, "allow_paused") ?? null,
           flake_box: typeof body.flake_box === "boolean" ? body.flake_box : null,
           actor: optString(body, "actor") ?? null,
           trial_leg: trialLegOf(optString(body, "trial_leg")),
@@ -1535,7 +1536,7 @@ async function route(
   if (head === "projects" && second !== undefined) {
     if (segments.length === 3 && third === "edit" && method === "POST") {
       const body = await readJson(req);
-      return json(await h.projectEdit(store, second, { remote: optString(body, "remote"), kind: optString(body, "kind"), key: optString(body, "key"), icon: optString(body, "icon"), display_name: optString(body, "display_name"), stage: optString(body, "stage") }));
+      return json(await h.projectEdit(store, second, { remote: optString(body, "remote"), kind: optString(body, "kind"), key: optString(body, "key"), icon: optString(body, "icon"), display_name: optString(body, "display_name"), stage: optString(body, "stage"), status: optString(body, "status") }));
     }
     if (segments.length === 3 && third === "rename" && method === "POST") {
       const body = await readJson(req);

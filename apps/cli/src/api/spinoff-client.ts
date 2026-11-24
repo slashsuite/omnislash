@@ -750,6 +750,11 @@ async function drainOverApi(
       blocked.push({ ticket: pending.ticket_ref, resource: entry.hold.resource, holder: entry.hold.holder });
       continue;
     }
+    // OS-134: a paused or archived project's row stays pending, reported, unless --allow-paused released it.
+    if (entry.paused) {
+      notReady.push({ ticket: pending.ticket_ref, reason: entry.paused });
+      continue;
+    }
     // Launcher-not-ready (#118/#161) went with the interactive app (ob 1109): this is the seam's
     // always-null form, kept in case `t3` ever needs to defer a row.
     const reason = launchNotReadyIn(cfg, pending, entry.tags);
@@ -1003,6 +1008,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     no_check: flag(ctx, "no-check") ?? null,
     no_flake_slot: flag(ctx, "no-flake-slot") ?? null,
     over_usage: flag(ctx, "over-usage") ?? null,
+    allow_paused: flag(ctx, "allow-paused") ?? null, // OS-134
     // OB-2230: the box is on the machine that launches the builder, which is this one. The server reads the
     // priority, refuses a held flake:slot and adds the flake-box paragraph, saying so with `flake: true`.
     flake_box: flakeBoxPresent(),
@@ -1199,6 +1205,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
       }
       if (!entry) return notLaunched("the queued row is no longer launchable");
       if (entry.hold) return notLaunched(`${entry.hold.resource} held by ${entry.hold.holder}`);
+      if (entry.paused) return notLaunched(entry.paused); // OS-134
       const reason = launchNotReadyIn(cfg, queued, entry.tags);
       if (reason) return notLaunched(reason);
       const r = await launchEntryOverApi(ctx, cfg, entry, under, dbFailures);

@@ -1282,6 +1282,8 @@ export interface EnqueueSpinoffRequest {  ticket_ref: string;
   no_flake_slot?: string | null;
   /** OS-108: the `--over-usage` reason, checked on the client (the usage cache is there) and recorded on the trail here. */
   over_usage?: string | null;
+  /** OS-134: the `--allow-paused` reason: a paused or archived project's ticket is queued anyway. Blank is refused. */
+  allow_paused?: string | null;
   /** OB-2230: is `flake-box` on the client that will launch the builder? Absent reads as present. */
   flake_box?: boolean | null;
   /** OB-1825: `--holder`, who the trail names for the note and the override. Absent means the human. */
@@ -1380,6 +1382,8 @@ export interface LaunchableSpinoff {
   urgent?: boolean;
   /** OB-2075: the tier the host raised this row from, or null. The row's tier is recorded at the stamp, not here. */
   raised_from?: number | null;
+  /** OS-134: why the row's paused or archived project keeps it pending, or null. Non-null means it is not launched. */
+  paused?: string | null;
 }
 
 /**
@@ -1806,6 +1810,8 @@ export interface ProjectEditRequest {
   display_name?: string;
   /** OB-2103: the release stage, alpha|beta|rc|stable|legacy; 'none' clears it. */
   stage?: string;
+  /** OS-134: the lifecycle status, active|paused|archived. */
+  status?: string;
 }
 
 export interface ProjectEditResponse {

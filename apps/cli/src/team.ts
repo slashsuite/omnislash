@@ -340,11 +340,11 @@ export function teamOfIn(projects: Array<Pick<Project, "id" | "name"> & { team_n
  * known team names. One helper for `ob list --team`, `spinoff list --team` and `spinoff gateable --team`, local
  * and over the API. Pure.
  */
-export function teamMembersIn(
+export function teamMembersIn<P extends Pick<Project, "id" | "name"> & { team_name?: string | null }>(
   team: string,
   teams: readonly string[],
-  projects: Array<Pick<Project, "id" | "name"> & { team_name?: string | null }>,
-): Array<Pick<Project, "id" | "name">> {
+  projects: P[],
+): P[] {
   if (!teams.includes(team)) throw new UnknownTeamError(team);
   return projects.filter((p) => p.team_name === team);
 }

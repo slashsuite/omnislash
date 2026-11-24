@@ -89,6 +89,9 @@ export const project = sqliteTable("project", {
 	// appended by migration 0046 (OB-2245) as the project's group; since OB-2255 it is the project's TEAM
 	// (`project_group.name`, exported as `team`). NULL = in no team. A project is in at most one team.
 	team_name: text("group_name"),
+	// appended by migration 0005 (OS-134): the lifecycle status, active|paused|archived (see project-status.ts).
+	// NOT NULL DEFAULT 'active', so every row that existed before the migration reads active.
+	status: text().default("active").notNull(),
 },
 (table) => [
 	uniqueIndex("idx_project_key").on(table.key),

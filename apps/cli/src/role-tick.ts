@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import type { Store } from "./db/store.ts";
 import { asStore } from "./db/store.ts";
 import { listProjects } from "./project.ts";
+import { isProjectHeld } from "./project-status.ts";
 import { getTeam, teamMembersIn, listTeams } from "./team.ts";
 import { UnknownTeamError } from "./project.ts";
 import { nextWorklist } from "./worklist.ts";
@@ -51,7 +52,7 @@ function olderThan(iso: string | null | undefined, now: Date, ms: number): boole
 
 /**
  * What needs the team's architect, from the store only: builders gone quiet, flake tickets nobody is fixing, and
- * member projects with nothing in flight whose top item would dispatch today. An unknown team throws.
+ * member projects with nothing in flight whose top item would dispatch today. A paused or archived member is skipped (OS-134). An unknown team throws.
  */
 export async function tickFindings(db: Database | Store, team: string, now: Date = new Date()): Promise<TickFinding[]> {
   const s = asStore(db);
@@ -84,6 +85,8 @@ export async function tickFindings(db: Database | Store, team: string, now: Date
   }
 
   for (const project of members) {
+    // OS-134: a paused or archived project is not watched: no flake or idle-repo finding for it.
+    if (isProjectHeld(project)) continue;
     const items = (await nextWorklist(s, { project: project.id })).items;
     for (const item of items) {
       if (item.priority !== PRIORITY_FLAKE) continue;

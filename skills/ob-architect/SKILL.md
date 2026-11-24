@@ -254,11 +254,19 @@ Whenever a flaky test is found it becomes the highest priority in the project: i
 
 All Storybook and end-to-end runners require a lease: the CPU is overwhelmed otherwise, so one runs only when the other is done. Every local Storybook or Playwright command on this desktop, an architect's gate or visual check included, runs as `ob lease run cpu:browser -- <command>`, never bare. It waits for the one machine-wide slot (a line on stderr names the holder), runs the command, heartbeats, and always releases it. Wrap the whole command that starts the browsers; a moon gate with an e2e task is wrapped whole. Each `repos/<project>/AGENTS.md` lists that repo's commands, and `ob project rules` serves it into every builder's launch prompt. The public repos carry nothing of ob, so the rule is not in their `package.json`. CI is out of scope. **Marketing sites are exempt** (their tests are quick compared to monorepos with thousands of tests): marketing site projects run their Storybook and Playwright commands bare, with no lease. The Slash products, UISlash and your main repo keep the lease.
 
+## A paused or archived project gets no work
+
+A project the owner has put on hold carries the status in ob, not in prose: `ob project pause <project>` (or `archive`, for one that is done), and `ob project resume <project>` when they lift it. Only the owner pauses, archives or resumes a project.
+
+- `ob spinoff`, `ob spinoff queue` and `ob spinoff drain` refuse a held project's tickets and name the status. Dispatch one only on the owner's say, with `--allow-paused '<their reason>'`, which goes on the ticket's Decisions trail.
+- `ob next`, `ob role tick` and the team brief leave held projects out, so the watchdog and the team loops take nothing from them. `ob next --project <p>` still lists a held project's tickets.
+- `ob project list` shows the status as its last column and hides archived projects unless `--all`.
+
 ## Every project has a stage, and the stage sets the breaking-change rule
 
 Every project carries a stage: alpha, beta, release candidate or stable. Alpha allows any breaking change at any time, with no backwards compatibility owed. Beta allows breaking changes, flagged. A release candidate is strict: the impact of a break is understood first. Stable allows no breaking change until the next version of the product, unless explicitly allowed. The architect applies this while doing the tasks.
 
-**Apply it while planning, not at the merge.** Before you drill a ticket, look up its project's stage with `ob project list` (the last column) or `ob project rules <project>` (its first line). The stage decides what the drill owes: nothing extra in alpha, a "does this break anything" line in beta, an impact note and the owner's yes in rc, and in stable a stop. Say the stage and the verdict in `## Drilled`, and put the rule in the brief so the builder knows it too. A builder that finds its change breaks something it was not told about stops and reports it, in every stage but alpha.
+**Apply it while planning, not at the merge.** Before you drill a ticket, look up its project's stage with `ob project list` (the stage column, before the status) or `ob project rules <project>` (its first line). The stage decides what the drill owes: nothing extra in alpha, a "does this break anything" line in beta, an impact note and the owner's yes in rc, and in stable a stop. Say the stage and the verdict in `## Drilled`, and put the rule in the brief so the builder knows it too. A builder that finds its change breaks something it was not told about stops and reports it, in every stage but alpha.
 
 A **breaking change** is anything that makes an existing user, caller, config, stored file or data, or integration stop working or behave differently without them changing anything: a renamed or removed API, prop, export, CLI command or flag, a changed config or file format, a changed default.
 
@@ -270,7 +278,7 @@ A **breaking change** is anything that makes an existing user, caller, config, s
 | **stable** (was "release") | None on the current version. A breaking change waits for the next major version of the product: ticket it, tag it `next-major`, and do not dispatch it until the owner opens that version; its users are then told how to move. An architect that finds a ticket would break something splits the break out (or stops) and asks the owner before dispatch. |
 | **legacy** | Not maintained. Nothing is dispatched for it, its open tickets stay parked, and repo-wide moves (moon, a UISlash bump, the standard stack) skip it. Its architect takes nothing from the queue. Only the owner brings it back to another stage. |
 
-**Where each project stands: read it from ob.** `ob project list` shows each project's stage as its last column (`-` is unset), `ob project rules <project>` opens with a `Stage:` line, and every builder's launch prompt carries that line. **Unset means beta**: breaks allowed, flagged.
+**Where each project stands: read it from ob.** `ob project list` shows each project's stage in the column before the status (`-` is unset), `ob project rules <project>` opens with a `Stage:` line, and every builder's launch prompt carries that line. **Unset means beta**: breaks allowed, flagged.
 
 - Only the owner moves a project to another stage. When they do, run `ob project edit <project> --stage <s>` and update the project's `repos/<project>/AGENTS.md`, the same turn, then `ob wiki refresh <project>` and commit the facts change on a `chart/…` branch.
 - **The public label follows the stage.** Each product's docs and marketing site shows its stage as Alpha, Beta, Release candidate or Stable, with one sentence on what it means for a user; Planned is for a product with nothing built. A stage change updates that label too, through a ticket on the product's tracker.

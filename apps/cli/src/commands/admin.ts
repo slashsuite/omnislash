@@ -23,16 +23,25 @@ import { configuredRemoteHost } from "../remote.ts";
 import { installOpencodeWiring, readProjectRules } from "../repo-private.ts";
 import { keyProblem } from "../refs.ts";
 import { parseStage, StageError, stageLine } from "../stage.ts";
+import { parseProjectStatus, PROJECT_STATUS_ALIASES, projectStatusOf, ProjectStatusError } from "../project-status.ts";
 
 /**
  * One tab-separated line per project: id, kind, name, remote, then the ref key (1949), the architect title's
  * icon and display name (OB-2116) and the release stage (OB-2103), each APPENDED so earlier columns keep their
- * place. Every column is written on every row, so the stage is always the eighth; it is `-` when unset.
+ * place. Every column is written on every row, so the stage is always the eighth; it is `-` when unset. The ninth
+ * is the lifecycle status (OS-134), `active`, `paused` or `archived`.
  */
 export function renderProjectList(projects: Project[]): string {
   return projects
-    .map((p) => [p.id, p.kind, p.name, p.git_remote ?? "", p.key ?? "", p.icon ?? "", p.display_name ?? "", p.stage || "-"].join("\t"))
+    .map((p) =>
+      [p.id, p.kind, p.name, p.git_remote ?? "", p.key ?? "", p.icon ?? "", p.display_name ?? "", p.stage || "-", projectStatusOf(p)].join("\t"),
+    )
     .join("\n");
+}
+
+/** OS-134: `project list` leaves archived projects out unless `--all`. Pure. */
+export function visibleProjects<P extends { status?: string | null }>(projects: P[], all: boolean): P[] {
+  return all ? projects : projects.filter((p) => projectStatusOf(p) !== "archived");
 }
 import type { Kind } from "../status.ts";
 import { emitId, print } from "../output.ts";
@@ -66,12 +75,30 @@ export function parseProjectPatch(flags: {
   icon?: string;
   displayName?: string;
   stage?: string;
+  status?: string;
 }): ProjectPatch {
-  const { remote, kind, key, icon, displayName, stage } = flags;
-  if (remote === undefined && kind === undefined && key === undefined && icon === undefined && displayName === undefined && stage === undefined) {
+  const { remote, kind, key, icon, displayName, stage, status } = flags;
+  if (
+    remote === undefined &&
+    kind === undefined &&
+    key === undefined &&
+    icon === undefined &&
+    displayName === undefined &&
+    stage === undefined &&
+    status === undefined
+  ) {
     throw new UsageError(
-      "project edit needs at least one of --remote <url>, --kind <k>, --key <KEY>, --icon <emoji>, --display-name <text> or --stage <s>",
+      "project edit needs at least one of --remote <url>, --kind <k>, --key <KEY>, --icon <emoji>, --display-name <text>, --stage <s> or --status <s>",
     );
+  }
+  let parsedStatus: string | undefined;
+  if (status !== undefined) {
+    try {
+      parsedStatus = parseProjectStatus(status);
+    } catch (e) {
+      if (e instanceof ProjectStatusError) throw new UsageError(e.message);
+      throw e;
+    }
   }
   let parsedStage: string | undefined;
   if (stage !== undefined) {
@@ -97,6 +124,7 @@ export function parseProjectPatch(flags: {
     ...(icon !== undefined ? { icon: parseProjectLabel("icon", icon) } : {}),
     ...(displayName !== undefined ? { display_name: parseProjectLabel("display-name", displayName) } : {}),
     ...(parsedStage !== undefined ? { stage: parsedStage } : {}),
+    ...(parsedStatus !== undefined ? { status: parsedStatus } : {}),
   };
 }
 
@@ -210,8 +238,19 @@ export async function cmdProject(ctx: Ctx): Promise<void> {
       icon: ctx.flags.icon,
       displayName: ctx.flags["display-name"],
       stage: ctx.flags.stage,
+      status: ctx.flags.status,
     });
     const project = await updateProject(ctx.store ?? ctx.db, name, patch);
+    if (!project) throw new AppError(`no project '${name}'`);
+    emitId(ctx, project.id);
+    return;
+  }
+  // OS-134: `project pause|resume|archive <name>` are `project edit <name> --status paused|active|archived`.
+  const aliased = sub !== undefined ? PROJECT_STATUS_ALIASES[sub] : undefined;
+  if (aliased) {
+    const name = ctx.args[1];
+    if (!name) throw new UsageError(`project ${sub} requires a <name>`);
+    const project = await updateProject(ctx.store ?? ctx.db, name, { status: aliased });
     if (!project) throw new AppError(`no project '${name}'`);
     emitId(ctx, project.id);
     return;
@@ -240,7 +279,7 @@ export async function cmdProject(ctx: Ctx): Promise<void> {
     return;
   }
   if (sub === "list" || sub === undefined) {
-    const projects = await listProjects(ctx.store ?? ctx.db);
+    const projects = visibleProjects(await listProjects(ctx.store ?? ctx.db), ctx.flags.all === true);
     if (ctx.mode === "json") {
       print(JSON.stringify(projects, null, 2));
       return;
@@ -252,7 +291,7 @@ export async function cmdProject(ctx: Ctx): Promise<void> {
     print(renderProjectList(projects));
     return;
   }
-  throw new UsageError(`unknown project subcommand '${sub}' (add|edit|rename|rm|list|rules|wire)`);
+  throw new UsageError(`unknown project subcommand '${sub}' (add|edit|pause|resume|archive|rename|rm|list|rules|wire)`);
 }
 
 export async function getSkillCursorFor(
