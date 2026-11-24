@@ -166,7 +166,13 @@ export function deleteCmd(repo: string, tag: string): string[] {
 // makes point-in-time recovery possible between snapshots.
 // ---------------------------------------------------------------------------
 
-const SNAPSHOT_PREFIX = "omnislash-snap-";
+/** What `snapshotName` writes, and the only prefix rotation ever prunes or counts. */
+export const SNAPSHOT_PREFIX = "omnislash-snap-";
+/**
+ * What a host still running pre-rename code writes (OS-161). These are listed and fetchable but never
+ * rotated: a shim while such a host exists, so nothing here deletes the history it wrote.
+ */
+export const LEGACY_SNAPSHOT_PREFIX = "omnibus-snap-";
 const SNAPSHOT_SUFFIX = ARTIFACT_SUFFIX;
 /** The most recent N snapshots are kept whatever their age: the hourly window. */
 export const SNAPSHOT_KEEP_HOURLY = 24;
@@ -184,18 +190,34 @@ export function snapshotName(d: Date): string {
   return `${SNAPSHOT_PREFIX}${date}-${time}${SNAPSHOT_SUFFIX}`;
 }
 
+const SNAPSHOT_NAME_RE = new RegExp(
+  `^(${SNAPSHOT_PREFIX}|${LEGACY_SNAPSHOT_PREFIX})(\\d{4})(\\d{2})(\\d{2})-(\\d{2})(\\d{2})(\\d{2})\\${SNAPSHOT_SUFFIX}$`,
+);
+
 /**
- * When a snapshot filename says it was taken; null if the name is not one of ours. Rotation only ever
- * considers names this parses, so a file a human dropped in the directory is never deleted. Pure.
+ * When a snapshot filename says it was taken, and under which prefix; null if the name is not one of
+ * ours. Both `SNAPSHOT_PREFIX` and `LEGACY_SNAPSHOT_PREFIX` names parse, so a legacy snapshot can be
+ * listed and fetched; rotation then drops every `prefix` that is not `SNAPSHOT_PREFIX`. A file a human
+ * dropped in the directory parses as null and is never deleted. Pure.
  */
-export function parseSnapshotName(name: string): Date | null {
-  const m = /^omnislash-snap-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.dump$/.exec(name);
+export function parseSnapshot(name: string): { taken: Date; prefix: string } | null {
+  const m = SNAPSHOT_NAME_RE.exec(name);
   if (!m) return null;
-  const [y, mo, d, h, mi, s] = m.slice(1).map(Number) as [number, number, number, number, number, number];
+  const prefix = m[1]!;
+  const [y, mo, d, h, mi, s] = m.slice(2).map(Number) as [number, number, number, number, number, number];
   const taken = new Date(y, mo - 1, d, h, mi, s);
   if (taken.getFullYear() !== y || taken.getMonth() !== mo - 1 || taken.getDate() !== d) return null;
   if (taken.getHours() !== h || taken.getMinutes() !== mi || taken.getSeconds() !== s) return null;
-  return taken;
+  return { taken, prefix };
+}
+
+/**
+ * When a snapshot filename says it was taken; null if the name is not one of ours. Accepts both the
+ * current and the legacy (`omnibus-snap-`) prefix: this is the predicate for reading and fetching.
+ * Rotation does not use it alone, see `planSnapshotRotation`. Pure.
+ */
+export function parseSnapshotName(name: string): Date | null {
+  return parseSnapshot(name)?.taken ?? null;
 }
 
 export interface SnapshotEntry {
@@ -241,6 +263,9 @@ function totalBytes(entries: SnapshotEntry[]): number {
  *  3. FREE SPACE. If writing the pending snapshot would leave less than `reserveBytes` free, the
  *     oldest survivors are dropped until it would not.
  *
+ * Only `SNAPSHOT_PREFIX` names (and the pending entry) take part. A legacy `omnibus-snap-` entry is
+ * dropped before the first pass: it is never pruned, never kept, and never counted toward `maxBytes`.
+ *
  * The newest entry is never pruned by 2 or 3, so the plan always keeps at least one snapshot and never
  * prunes the one about to be written. `shortfallBytes` is what is still missing when even that is not
  * enough, which is the caller's cue to fail loudly rather than write into a full volume. Pure.
@@ -250,7 +275,7 @@ export function planSnapshotRotation(entries: SnapshotEntry[], policy: RotationP
   const keepDaily = Math.max(0, policy.keepDaily ?? SNAPSHOT_KEEP_DAILY);
   const maxBytes = policy.maxBytes ?? SNAPSHOT_MAX_BYTES;
 
-  const ordered = [...entries].sort(
+  const ordered = entries.filter((e) => e.pending || parseSnapshot(e.name)?.prefix === SNAPSHOT_PREFIX).sort(
     (a, b) => b.taken.getTime() - a.taken.getTime() || b.name.localeCompare(a.name),
   );
   const keep = ordered.slice(0, keepHourly);

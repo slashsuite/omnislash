@@ -17,6 +17,9 @@ import {
   assertNoKeyMaterialInBackup,
   snapshotName,
   parseSnapshotName,
+  parseSnapshot,
+  SNAPSHOT_PREFIX,
+  LEGACY_SNAPSHOT_PREFIX,
   planSnapshotRotation,
   fmtBytes,
   ensureGh,
@@ -204,6 +207,14 @@ describe("snapshot filenames", () => {
     expect(parseSnapshotName(snapshotName(d))?.getTime()).toBe(d.getTime());
   });
 
+  test("both the current and the legacy omnibus-snap prefix parse, to the same moment (OS-161)", () => {
+    const d = new Date(2026, 10, 24, 4, 30, 35);
+    expect(parseSnapshotName("omnislash-snap-20261124-043035.dump")?.getTime()).toBe(d.getTime());
+    expect(parseSnapshotName("omnibus-snap-20261124-043035.dump")?.getTime()).toBe(d.getTime());
+    expect(parseSnapshot("omnislash-snap-20261124-043035.dump")?.prefix).toBe(SNAPSHOT_PREFIX);
+    expect(parseSnapshot("omnibus-snap-20261124-043035.dump")?.prefix).toBe(LEGACY_SNAPSHOT_PREFIX);
+  });
+
   test("anything that is not ours parses as null, so rotation never deletes it", () => {
     // The monthly backup's own filename, a partial write, a hand-taken pre-migration copy, and the
     // database itself. Each of these sitting in the directory must be left exactly alone.
@@ -218,6 +229,10 @@ describe("snapshot filenames", () => {
       // the pre-cutover SQLite artifacts: rotation must leave every one of them alone (337)
       "omnislash-snap-20260815-213004.sqlite",
       "omnislash-2026-08-15.sqlite",
+      // other prefixes stay null; the legacy omnibus-snap one is ours since OS-161
+      "omni-snap-20260815-213004.dump",
+      "xomnislash-snap-20260815-213004.dump",
+      "omnibus-2026-08-15.dump",
     ]) {
       expect(parseSnapshotName(name), name).toBeNull();
     }

@@ -11,6 +11,12 @@
 // declares the format, the fact that a failed dump is loud rather than counted as a backup, and the fact
 // that a dump nobody can read is treated as a failure rather than as a copy.
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ApiCtx } from "../../../apps/cli/src/api/client-handlers.ts";
+import { apiDb } from "../../../apps/cli/src/api/host-job-client.ts";
+import { UsageError } from "../../../apps/cli/src/errors.ts";
 import {
   ARTIFACT_SUFFIX,
   capture,
@@ -21,7 +27,15 @@ import {
   restoreHint,
   type CaptureRun,
 } from "../../../apps/cli/src/db/capture.ts";
-import { parseSnapshotName, snapshotFileName, snapshotName, estimateNextSnapshotBytes } from "../../../apps/cli/src/commands/db.ts";
+import {
+  parseSnapshotName,
+  planSnapshotRotation,
+  snapshotFileName,
+  snapshotName,
+  estimateNextSnapshotBytes,
+  LEGACY_SNAPSHOT_PREFIX,
+  SNAPSHOT_PREFIX,
+} from "../../../apps/cli/src/commands/db.ts";
 import { AppError } from "../../../apps/cli/src/errors.ts";
 
 const URL_WITH_PASSWORD = "postgres://ob:sekrit@10.0.0.133:5432/omnislash";
@@ -172,6 +186,68 @@ describe("the artifacts declare their own format (337)", () => {
   test("the restore hint names pg_restore and the single-table form", () => {
     expect(restoreHint("omnislash-2026-08-18.dump")).toContain("pg_restore");
     expect(restoreHint("omnislash-2026-08-18.dump")).toContain("--table");
+  });
+});
+
+describe("legacy omnibus-snap snapshots are listed but never rotated (OS-161)", () => {
+  const MB = 1024 ** 2;
+  const at = (prefix: string, h: number, mb = 100) => {
+    const taken = new Date(2026, 10, 24, h, 0, 0);
+    return { name: snapshotName(taken).replace(SNAPSHOT_PREFIX, prefix), bytes: mb * MB, taken };
+  };
+
+  test("a mixed set, the same timestamp under both prefixes included, prunes and counts only omnislash-snap", () => {
+    const legacy = [at(LEGACY_SNAPSHOT_PREFIX, 1), at(LEGACY_SNAPSHOT_PREFIX, 2), at(LEGACY_SNAPSHOT_PREFIX, 3, 5000)];
+    const current = [at(SNAPSHOT_PREFIX, 2), at(SNAPSHOT_PREFIX, 3), at(SNAPSHOT_PREFIX, 4)];
+    expect(legacy.every((e) => parseSnapshotName(e.name) !== null)).toBe(true);
+    // hour 2 and hour 3 exist under both prefixes
+    expect(legacy[1]!.taken.getTime()).toBe(current[0]!.taken.getTime());
+
+    // Age: keep only the newest; the two older omnislash files go, no legacy one does.
+    const byAge = planSnapshotRotation([...legacy, ...current], { keepHourly: 1, keepDaily: 0 });
+    expect(byAge.keep.map((e) => e.name)).toEqual([current[2]!.name]);
+    expect(byAge.prune.map((e) => e.name)).toEqual([current[0]!.name, current[1]!.name]);
+
+    // Budget: 300 MB of omnislash fits under 350 MB, so the 5 GB of legacy files are not counted and
+    // nothing is pruned.
+    const byBudget = planSnapshotRotation([...legacy, ...current], { keepHourly: 24, keepDaily: 0, maxBytes: 350 * MB });
+    expect(byBudget.prune).toEqual([]);
+    expect(byBudget.keep.map((e) => e.name).sort()).toEqual(current.map((e) => e.name).sort());
+
+    // Free space: nothing to free but legacy files, so it falls short rather than delete one.
+    const byFree = planSnapshotRotation([...legacy, { ...at(SNAPSHOT_PREFIX, 5), pending: true }], {
+      freeBytes: 0,
+      reserveBytes: 50 * MB,
+    });
+    expect(byFree.prune).toEqual([]);
+    expect(byFree.shortfallBytes).toBeGreaterThan(0);
+  });
+});
+
+describe("ob db fetch takes a legacy omnibus-snap name to the API (OS-161)", () => {
+  async function fetchName(name: string): Promise<string[]> {
+    const fetched: string[] = [];
+    const out = mkdtempSync(join(tmpdir(), "os161-fetch-"));
+    const client = {
+      dbSnapshotFetch: async (n: string) => {
+        fetched.push(n);
+        return 0;
+      },
+    } as unknown as ApiCtx["client"];
+    try {
+      await apiDb({ client, mode: "quiet", flags: { out }, args: ["fetch", name], cwd: out, git: () => ({}) });
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+    return fetched;
+  }
+
+  test("an omnibus-snap name passes the client check and is requested", async () => {
+    expect(await fetchName("omnibus-snap-20261124-043035.dump")).toEqual(["omnibus-snap-20261124-043035.dump"]);
+  });
+
+  test("a name that is not a snapshot is still refused before any request", async () => {
+    await expect(fetchName("omnibus-2026-11-24.dump")).rejects.toBeInstanceOf(UsageError);
   });
 });
 
