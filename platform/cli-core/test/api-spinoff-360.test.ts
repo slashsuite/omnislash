@@ -305,6 +305,7 @@ describe("the classification, which was the bug (360)", () => {
       "POST /spinoffs/land",
       "POST /spinoffs/launchable",
       "POST /spinoffs/note-error",
+      "POST /spinoffs/overlap",
       "POST /spinoffs/planned-files",
       "POST /spinoffs/ready",
       "POST /spinoffs/reclaim",
@@ -689,7 +690,8 @@ describe("`ob spinoff <ref>` over the API launches in the same invocation (1589)
       expect(r.out).toContain("T3 thread t3-1");
       expect(h.t3.launches).toHaveLength(1);
       const order = h.s.calls.filter((c) => c.method === "POST").map((c) => c.url.slice((BASE + OB_API_PREFIX).length));
-      expect(order).toEqual(["/spinoffs/trial", "/spinoffs", "/spinoffs/launchable", "/spinoffs/claim", "/spinoffs/stamp"]);
+      // OS-47: the overlap read sits between the enqueue and the launch; it warns, never refuses.
+      expect(order).toEqual(["/spinoffs/trial", "/spinoffs", "/spinoffs/overlap", "/spinoffs/launchable", "/spinoffs/claim", "/spinoffs/stamp"]);
       const stampBody = h.s.bodies[h.s.calls.findIndex((c) => c.url.endsWith("/spinoffs/stamp"))]!;
       expect(stampBody.outcome).toBe("launched");
       expect(stampBody.launcher).toBe("t3");
