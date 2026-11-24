@@ -22,7 +22,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - run: bunx moon run --concurrency 3 :typecheck :test :lint
+      - run: bunx moon run --concurrency 3 :typecheck :test :lint ob-dashboard:build-storybook
         env:
           MOON_BASE: origin/main
       - run: bun scripts/check-workflows.ts .github/workflows/*.yml
