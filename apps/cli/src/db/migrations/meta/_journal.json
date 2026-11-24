@@ -43,6 +43,13 @@
       "when": 1795523714170,
       "tag": "0005_project_status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795525787867,
+      "tag": "0006_spinoff_phase",
+      "breakpoints": true
     }
   ]
 }

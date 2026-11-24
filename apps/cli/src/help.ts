@@ -941,6 +941,18 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         ],
         examples: ['spinoff state APP-12 landable --gate "moon gate green; skeptical-review: 0 open"'],
       },
+      phase: {
+        summary: "Set a spinoff row's role phase inside its status",
+        usage: ["spinoff phase <ticket|id> <reviewing|pr_ci|updating_pr|gating|owner_merge_call>"],
+        notes: [
+          "building holds reviewing, pr_ci and updating_pr; handed-off holds gating and owner_merge_call.",
+          "Any other status holds no phase.",
+          "A phase the status does not hold is refused (exit 1, 409) and logged for 'ob machine audit'.",
+          "handoff sets gating and sendback sets updating_pr; every other move clears it.",
+          "A needs-human verdict (before or after the handoff) sets owner_merge_call.",
+        ],
+        examples: ["spinoff phase APP-12 reviewing", "spinoff phase APP-12 pr_ci --json"],
+      },
       mix: {
         summary: "Report the dispatch mix by complexity band (1-3, 4-6, 7-10) against the 50/30/20 target",
         usage: ["spinoff mix [--since <date>]"],

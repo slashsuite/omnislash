@@ -47,8 +47,9 @@ Green checks are the floor, not the verdict. Before you merge, you can say yes t
 | Would you be comfortable explaining this merge to the owner tomorrow? | If not, say why on the ticket. |
 
 A no on any of them means you do not merge. Send it back with `ob spinoff sendback <ref> --note '<what to fix>'`,
-or, when the question is the owner's (a taste call, a waived check, a known flake), ask them with the question tool
-and wait. "Probably fine" is a no. A refusal costs one round trip; a bad merge costs a revert and a deploy.
+or, when the question is the owner's (a taste call, a waived check, a known flake), run
+`ob spinoff phase <ref> owner_merge_call` (OS-183: the dashboard then shows the row waiting on the owner), ask them
+with the question tool and wait. "Probably fine" is a no. A refusal costs one round trip; a bad merge costs a revert and a deploy.
 
 ## Verify, never trust
 

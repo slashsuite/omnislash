@@ -137,7 +137,9 @@ gh pr create --base main --head <branch> --title "<type>(<REF>-N): <title>" --bo
 The PR title is the squash subject, so it is a ticket-scoped Conventional Commit and keeps the builder's
 type (`feat` / `fix` / `chore` / …; the scope may be the per-project ref, `feat(<REF>-12)`). The body
 is the commit body: what changed and why, the `State:` and `Gate:` lines. **No AI attribution** in the
-title or the body. A builder on a T3 thread then registers the PR with `link_pull_request`.
+title or the body. A builder on a T3 thread then registers the PR with `link_pull_request`. Then mark the row
+as waiting on CI (OS-183), so the dashboard shows it: `ob spinoff phase <REF>-N pr_ci`. Run it again after every later push
+to the open PR (a review round, a sendback fix). A refusal is noted, not a stop.
 
 **Every repo except OmniSlash: nothing of ob in the PR.** The title is `<type>(<area>): <subject>` with no ticket ref.
 The body is the problem, the change and how it was tested, with no `State:`, `Gate:` or `Visual:` line, no architect, builder, spinoff, OmniSlash, `ob` or `AGENTS.md`.

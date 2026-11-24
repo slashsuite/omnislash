@@ -106,6 +106,8 @@ import {
   spinoffTicketTagsFor,
   stampSpinoff,
   recordSpinoffVerdict,
+  parseSpinoffPhase,
+  setSpinoffPhase,
   recordReadyNoteOutcome,
   trialStoreDeps,
   ticketTitleFor,
@@ -184,6 +186,8 @@ import type {
   ReopenSpinoffResponse,
   SpinoffVerdictRequest,
   SpinoffVerdictResponse,
+  SpinoffPhaseRequest,
+  SpinoffPhaseResponse,
   SpinoffNoteErrorRequest,
   SpinoffNoteErrorResponse,
   SpinoffTrialRequest,
@@ -1715,6 +1719,20 @@ export async function spinoffVerdict(store: Store, req: SpinoffVerdictRequest): 
   try {
     return { row: await recordSpinoffVerdict(store, row, { verdict: req.verdict, reason: req.reason, gate: req.gate }) };
   } catch (e) {
+    if (e instanceof UsageError) throw new ApiFault("invalid_request", 400, e.message);
+    throw new ApiFault("refused", 409, e instanceof AppError ? e.message : String(e));
+  }
+}
+
+/** OS-183: `ob spinoff phase` over the wire. A bad phase word is a 400; the machine's refusal is a 409. */
+export async function spinoffPhase(store: Store, req: SpinoffPhaseRequest): Promise<SpinoffPhaseResponse> {
+  try {
+    const phase = parseSpinoffPhase(req.phase);
+    const row = (await listSpinoffs(store)).find((r) => r.id === req.id);
+    if (!row) throw new ApiFault("not_found", 404, `no spinoff #${req.id}`);
+    return await setSpinoffPhase(store, row.id, phase, { actor: req.actor ?? null });
+  } catch (e) {
+    if (e instanceof ApiFault) throw e;
     if (e instanceof UsageError) throw new ApiFault("invalid_request", 400, e.message);
     throw new ApiFault("refused", 409, e instanceof AppError ? e.message : String(e));
   }

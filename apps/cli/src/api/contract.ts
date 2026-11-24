@@ -257,6 +257,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/spinoffs/reopen", family: "spinoffs", what: "move a landed row back to building (OB-2180: a wrong land; the client has already checked main for a landing commit)" },
   { method: "POST", path: "/spinoffs/note-error", family: "spinoffs", what: "record or clear why a row's readying note did not reach the architect (OB-2172)", scoped: "write" },
   { method: "POST", path: "/spinoffs/verdict", family: "spinoffs", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/phase", family: "spinoffs", what: "move a row's role phase inside its status through the phase machine (`ob spinoff phase`, OS-183)", scoped: "write" },
   { method: "POST", path: "/spinoffs/trial", family: "spinoffs", what: "one model-trial operation: start, status, stop, a pair's open/attach/void, record, report (OB-1991)" },
   { method: "POST", path: "/spinoffs/reclaim", family: "spinoffs", what: "take back rows claimed by a drain that never stamped them" },
   { method: "POST", path: "/spinoffs/cleanup-guard", family: "spinoffs", what: "the holds and agent row covering ONE worktree/branch a sweep wants to remove", scoped: "write" },
@@ -1540,6 +1541,21 @@ export interface SpinoffVerdictRequest {
 
 export interface SpinoffVerdictResponse {
   row: SpinoffRow;
+}
+
+/** OS-183: `ob spinoff phase`. A bad phase word is a 400; a phase the row's status does not hold is a 409. */
+export interface SpinoffPhaseRequest {
+  /** Spinoff row id. */
+  id: number;
+  /** reviewing | pr_ci | updating_pr | gating | owner_merge_call */
+  phase: string;
+  actor?: string | null;
+}
+
+export interface SpinoffPhaseResponse {
+  row: SpinoffRow;
+  /** The phase the row was in before; null when it had none. */
+  from: string | null;
 }
 
 /** OB-2172: the readying note's outcome, sent by a client after its handoff: `failed` records `note_error`, `sent` clears it. */

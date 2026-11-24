@@ -108,6 +108,9 @@ import {
   cleanRepoLeakRefusal,
   handoffNoteWithReport,
   SPINOFF_STATE_USAGE,
+  SPINOFF_PHASE_USAGE,
+  parseSpinoffPhase,
+  renderSpinoffPhase,
   renderRecordedVerdict,
   branchTakenIn,
   cleanBranchFor,
@@ -1518,6 +1521,18 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     return;
   }
 
+  if (sub === "phase") {
+    // OS-183: the role phase inside the row's status, moved on the host's row through the phase machine.
+    const ref = ctx.args[1];
+    const word = ctx.args[2];
+    if (!ref || !word) throw new UsageError(SPINOFF_PHASE_USAGE);
+    const phase = parseSpinoffPhase(word);
+    const row = pickSpinoffForState((await ctx.client.spinoffs({})).spinoffs, ref);
+    const { row: moved, from } = await usageOn400(ctx.client.setSpinoffPhase({ id: row.id, phase, actor: flag(ctx, "holder") ?? null }));
+    print(renderSpinoffPhase(moved, from, ctx.mode));
+    return;
+  }
+
   if (sub === "show") {
     const ref = ctx.args[1];
     if (!ref) throw new UsageError("spinoff show requires a <ticket|id>");
@@ -1620,7 +1635,7 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
 
   if (!sub) {
     throw new UsageError(
-      "spinoff requires a <ticket-ref> (or 'drain'/'list'/'show'/'mix'/'gateable'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
+      "spinoff requires a <ticket-ref> (or 'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
     );
   }
   if (sub === "queue") {

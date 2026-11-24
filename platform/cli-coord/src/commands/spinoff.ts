@@ -9,6 +9,9 @@ import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
 import { SPINOFF_TRANSITIONS, spinoffMachine, type SpinoffEvent } from "../../../state-machine/src/spinoff.ts";
 import { applyMove } from "../../../state-machine/src/apply.ts";
+import { PHASE_EVENT, PHASE_ON_MOVE, PHASES_BY_STATUS, SPINOFF_PHASES, isSpinoffPhase, phaseOfState, phaseStateOf, spinoffPhaseMachine, type SpinoffPhase } from "../../../state-machine/src/spinoff-phase.ts";
+import { recordEventFor } from "../../../../apps/cli/src/events.ts";
+import { MACHINE_SHADOW_SOURCE, MACHINE_WOULD_REFUSE } from "../../../../apps/cli/src/machine-shadow.ts";
 import type { RefusalWhy } from "../../../state-machine/src/decide.ts";
 import { sendRoleMessage } from "../../../../apps/cli/src/inbox.ts";
 import { print, warn } from "../../../../apps/cli/src/output.ts";
@@ -549,7 +552,14 @@ export async function moveSpinoff(
       const rows = (await s.q
         .update(s.t.spinoff)
         // A handoff and a merge are each reported once by the watch (OB-1924): re-arm reported_at on both.
-        .set({ ...set, status: to, ...(to === READY_FOR_GATE || to === "merged" ? { reported_at: null } : {}) })
+        // OS-183: every move but a stamp sets the phase it leaves the row in (a handoff starts gating, a
+        // sendback updating_pr, the rest clear it); a stamp keeps it.
+        .set({
+          ...set,
+          status: to,
+          ...(event === "stamp" ? {} : { phase: PHASE_ON_MOVE[event] }),
+          ...(to === READY_FOR_GATE || to === "merged" ? { reported_at: null } : {}),
+        })
         .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, stored), also))
         .returning()) as SpinoffRow[];
       return rows[0] ?? null;
@@ -557,6 +567,89 @@ export async function moveSpinoff(
   });
   if (moved.ok) return moved.row;
   throw new SpinoffTransitionRefused(id, moved.from, event, moved.why);
+}
+
+/** A phase move the phase machine refused (OS-183): the row's status does not hold that phase. 409 / exit 1. */
+export class SpinoffPhaseRefused extends TransitionRefused {
+  constructor(id: number, from: string | null, phase: SpinoffPhase, why: RefusalWhy) {
+    const status = from?.split("/")[0] ?? null;
+    const held = status ? (PHASES_BY_STATUS[status as SpinoffStatus] ?? []) : [];
+    super(
+      from === null
+        ? `no spinoff #${id}`
+        : why === "race"
+          ? `spinoff #${id} moved to ${spinoffStatusWord(status ?? "")} while phase '${phase}' was deciding; nothing changed, re-run`
+          : `spinoff #${id} is ${spinoffStatusWord(status ?? "")}: it cannot be in phase '${phase}' (${held.length ? `its phases are ${held.join(", ")}` : "that status holds no phase"})`,
+      { machine: spinoffPhaseMachine.id, id: String(id), from: from ?? "none", event: PHASE_EVENT[phase], why },
+    );
+    this.name = "SpinoffPhaseRefused";
+  }
+}
+
+/** The phase word, or a UsageError listing the five. */
+export function parseSpinoffPhase(word: string): SpinoffPhase {
+  const w = word.trim().toLowerCase().replace(/-/g, "_");
+  if (!isSpinoffPhase(w)) throw new UsageError(`unknown phase '${word}': one of ${SPINOFF_PHASES.join(", ")}`);
+  return w;
+}
+
+/**
+ * OS-183: move row `id` into `phase` through the phase machine (spinoff-phase.ts), with one guarded
+ * `UPDATE ... WHERE status = <read> AND phase = <read>`. The status never changes here. A refused move is
+ * logged as a `machine_would_refuse` event (the OS-169 shape, read by `ob machine audit`) and thrown as
+ * `SpinoffPhaseRefused`. Returns the row as written, and the phase it was in.
+ */
+export async function setSpinoffPhase(
+  db: Database | Store,
+  id: number,
+  phase: SpinoffPhase,
+  opts: { actor?: string | null } = {},
+): Promise<{ row: SpinoffRow; from: SpinoffPhase | null }> {
+  const s = asStore(db);
+  const event = PHASE_EVENT[phase];
+  // The phase as stored, for the write's guard. A phase the status does not hold (a row an older writer moved
+  // without clearing it) reads as the bare status, so the machine decides from the status and a set repairs it.
+  let stored: string | null = null;
+  const moved = await applyMove<SpinoffRow>(spinoffPhaseMachine, {
+    event,
+    read: async () => {
+      const r = await getSpinoffRow(s, id);
+      if (!r) return null;
+      stored = r.phase ?? null;
+      const held = (PHASES_BY_STATUS[r.status as SpinoffStatus] ?? []) as readonly string[];
+      return phaseStateOf(r.status, stored !== null && held.includes(stored) ? stored : null);
+    },
+    write: async (state, to) => {
+      const status = state.split("/")[0] ?? state;
+      const rows = (await s.q
+        .update(s.t.spinoff)
+        .set({ phase: phaseOfState(to) })
+        .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, status), stored === null ? isNull(s.t.spinoff.phase) : eq(s.t.spinoff.phase, stored)))
+        .returning()) as SpinoffRow[];
+      return rows[0] ?? null;
+    },
+  });
+  if (moved.ok) return { row: moved.row, from: phaseOfState(moved.from) };
+  const refused = new SpinoffPhaseRefused(id, moved.from, phase, moved.why);
+  if (moved.from !== null) await recordPhaseRefusal(s, id, moved.from, phase, moved.why, refused.message, opts.actor ?? null);
+  throw refused;
+}
+
+/** The OS-169 `machine_would_refuse` event for a refused phase move. Never throws: the refusal is the answer. */
+async function recordPhaseRefusal(s: Store, id: number, from: string, phase: SpinoffPhase, why: RefusalWhy, message: string, actor: string | null): Promise<void> {
+  try {
+    const row = await getSpinoffRow(s, id);
+    await recordEventFor(s, {
+      ts: nowIso(),
+      source: MACHINE_SHADOW_SOURCE,
+      type: MACHINE_WOULD_REFUSE,
+      itemId: row?.item_id ?? null,
+      actor,
+      payload: { machine: spinoffPhaseMachine.id, id: String(id), rowId: id, from, event: PHASE_EVENT[phase], to: `${from.split("/")[0]}/${phase}`, why, today: "refused", message },
+    });
+  } catch (e) {
+    process.stderr.write(`ob: spinoff phase: could not record ${MACHINE_WOULD_REFUSE}: ${(e as Error)?.message ?? e}\n`);
+  }
 }
 
 /** The stored row by id, or null. */
@@ -610,6 +703,9 @@ export interface SpinoffRow {
   note_error?: string | null;
   // OS-177 (0004): the architect's 1-10 score, the routing key; null = queued before OS-177 (reads as its tier's value)
   complexity?: number | null;
+  // OS-183 (0005): the role phase inside the status (reviewing | pr_ci | updating_pr while launched; gating |
+  // owner_merge_call while ready-for-gate); null outside those two, and on rows from before 0005
+  phase?: string | null;
 }
 export interface EnqueueInput {
   ticketRef: string;
@@ -3640,6 +3736,9 @@ export async function markSpinoffReady(
     }
   } else if (!already) {
     updated = await moveSpinoff(s, row.id, "handoff", {}, ["launched"]);
+    // OS-183: the handoff starts gating, unless the builder recorded needs-human first (`ob spinoff state`
+    // before the handoff, ob-spinoff's order): then the row waits on the owner's merge call.
+    if (updated.verdict === "needs-human") updated = (await setSpinoffPhase(s, row.id, "owner_merge_call")).row;
     await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord(READY_FOR_GATE), decision, "handoff");
     await noteLegHandoff(s, row); // OB-1991: a trial leg's wall time ends at its handoff
     const agentId = builderIdOf(row);
@@ -3860,6 +3959,13 @@ export async function recordSpinoffVerdict(
   const reason = input.reason?.replace(/\s+/g, " ").trim() || null;
   const gate = input.gate?.replace(/\s+/g, " ").trim() || null;
   await s.q.update(s.t.spinoff).set({ verdict, verdict_reason: reason, gate_line: gate }).where(eq(s.t.spinoff.id, row.id));
+  // OS-183: on a handed-off row, a needs-human verdict waits on the owner's merge call, and any other verdict
+  // recorded after one goes back to gating. A launched row is still building: its handoff reads the verdict.
+  if (row.status === READY_FOR_GATE) {
+    const current = (await getSpinoffRow(s, row.id))?.phase ?? null;
+    if (verdict === "needs-human") await setSpinoffPhase(s, row.id, "owner_merge_call");
+    else if (current === "owner_merge_call") await setSpinoffPhase(s, row.id, "gating");
+  }
   return (await getSpinoffRow(s, row.id)) ?? { ...row, verdict, verdict_reason: reason, gate_line: gate };
 }
 
@@ -5713,6 +5819,8 @@ export function renderSpinoffShow(row: SpinoffRow, json: boolean, state?: string
   if (json) return JSON.stringify(files ? { ...withStatusWord(row), files } : withStatusWord(row), null, 2);
   const lines = [
     `${row.id}  ${spinoffStatusWord(row.status)}  ${row.ticket_ref}`,
+    // OS-183: the role phase inside the status; `-` outside building and handed-off, and on a pre-0005 row.
+    `  phase:     ${row.phase ?? "-"}`,
     `  repo:      ${row.repo}`,
     `  branch:    ${row.branch}`,
     `  worktree:  ${row.worktree}`,
@@ -6002,6 +6110,15 @@ export function refuseSubcommandRef(ref: string): void {
 }
 
 export const SPINOFF_STATE_USAGE = "spinoff state requires <ticket|id> <landable|needs-human|blocked|partial> [--reason '<one line>'] [--gate '<gate line>']";
+
+export const SPINOFF_PHASE_USAGE = `spinoff phase requires <ticket|id> <${SPINOFF_PHASES.join("|")}>`;
+
+/** `ob spinoff phase`'s answer (OS-183): one line, the bare phase under -q, or the JSON object. Pure. */
+export function renderSpinoffPhase(row: SpinoffRow, from: string | null, mode: Ctx["mode"]): string {
+  if (mode === "json") return JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), phase: row.phase ?? null, from }, null, 2);
+  if (mode === "quiet") return row.phase ?? "";
+  return `${row.ticket_ref} (#${row.id}) ${spinoffStatusWord(row.status)}: phase ${from ?? "none"} → ${row.phase ?? "none"}`;
+}
 
 export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   rejectAgentFlag(ctx.flags.agent);
@@ -6345,6 +6462,18 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     return;
   }
 
+  if (sub === "phase") {
+    // OS-183: set the role phase inside the row's status by hand, through the phase machine.
+    const ref = ctx.args[1];
+    const word = ctx.args[2];
+    if (!ref || !word) throw new UsageError(SPINOFF_PHASE_USAGE);
+    const phase = parseSpinoffPhase(word);
+    const row = pickSpinoffForState(await listSpinoffs(store), ref, await ticketItemIdFor(store, ref));
+    const { row: moved, from } = await setSpinoffPhase(store, row.id, phase, { actor: flag(ctx, "holder") ?? null });
+    print(renderSpinoffPhase(moved, from, ctx.mode));
+    return;
+  }
+
   if (sub === "show") {
     const ref = ctx.args[1];
     if (!ref) throw new UsageError("spinoff show requires a <ticket|id>");
@@ -6436,7 +6565,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // the way to park a row for a later `spinoff drain`.
   if (!sub || (sub === "queue" && !ctx.args[1])) {
     throw new UsageError(
-      "spinoff requires a <ticket-ref> (or 'queue'/'drain'/'list'/'show'/'mix'/'gateable'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'check'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
+      "spinoff requires a <ticket-ref> (or 'queue'/'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'check'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
     );
   }
   const queueOnly = sub === "queue";

@@ -1479,6 +1479,10 @@ async function route(
         }),
       );
     }
+    if (second === "phase" && segments.length === 2 && method === "POST") {
+      const body = await readJson(req);
+      return json(await h.spinoffPhase(store, { id: reqPositiveInt(body, "id"), phase: optString(body, "phase") ?? "", actor: optString(body, "actor") ?? null }));
+    }
     if (second === "trial" && segments.length === 2 && method === "POST") {
       // OB-1991: the body IS the operation; runTrialOp validates each field and refuses a bad one by name.
       const body = await readJson(req);

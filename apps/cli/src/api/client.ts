@@ -91,6 +91,8 @@ import {
 	type ReopenSpinoffResponse,
 	type SpinoffVerdictRequest,
 	type SpinoffVerdictResponse,
+	type SpinoffPhaseRequest,
+	type SpinoffPhaseResponse,
 	type SpinoffNoteErrorRequest,
 	type SpinoffNoteErrorResponse,
 	type SpinoffTrialRequest,
@@ -552,6 +554,7 @@ const path = {
 	spinoffSendBack: "/spinoffs/sendback",
 	spinoffReopen: "/spinoffs/reopen",
 	spinoffVerdict: "/spinoffs/verdict",
+	spinoffPhase: "/spinoffs/phase",
 	spinoffNoteError: "/spinoffs/note-error",
 	spinoffTrial: "/spinoffs/trial",
 	spinoffReclaim: "/spinoffs/reclaim",
@@ -1148,6 +1151,11 @@ export class ApiClient {
 
 	recordSpinoffVerdict(body: SpinoffVerdictRequest): Promise<SpinoffVerdictResponse> {
 		return this.call("POST", path.spinoffVerdict, body);
+	}
+
+	/** OS-183: move a row's role phase. */
+	setSpinoffPhase(body: SpinoffPhaseRequest): Promise<SpinoffPhaseResponse> {
+		return this.call("POST", path.spinoffPhase, body);
 	}
 
 	/** OB-2172: record (failed) or clear (sent) a row's readying-note failure. */
