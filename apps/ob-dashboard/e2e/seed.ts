@@ -10,10 +10,11 @@ import { recordCredentialCheck } from "../../cli/src/credentials.ts";
 import { clearCredentialCheck } from "../../cli/src/secrets.ts";
 import { MODEL_ROUTES_KEY } from "../../cli/src/model-routes.ts";
 import { eq } from "../../cli/src/db/orm.ts";
-import { createItem } from "../../cli/src/items.ts";
+import { addTags, createItem } from "../../cli/src/items.ts";
+import { registerProject } from "../../cli/src/project.ts";
 import { assignRef } from "../../cli/src/refs.ts";
 import { registerAgent } from "../../../platform/cli-coord/src/agent.ts";
-import { DB_PATH, FOCUS_TITLES, REVIEW_NOTE, REVIEW_REF, REVIEW_TITLE, SEED_CREDIT_AT, SEED_ROUTES } from "./world.ts";
+import { DB_PATH, FOCUS_TITLES, QUEUE_PROJECT, QUEUE_SEED, REVIEW_NOTE, REVIEW_REF, REVIEW_TITLE, SEED_CREDIT_AT, SEED_ROUTES } from "./world.ts";
 
 export type CreditSeed = "ok" | "failed" | "none";
 
@@ -59,10 +60,33 @@ export async function seedHome(store: Store, state: HomeSeed): Promise<void> {
   });
 }
 
+/**
+ * OS-25: QUEUE_PROJECT's queue back to QUEUE_SEED: each item open, unranked for Today, at its seed priority and
+ * queue_rank, and touched at the same fixed time, so the order is the seed's whatever a test moved. Runs after
+ * seedHome, which must have the store's first OS ref.
+ */
+export async function seedQueue(store: Store): Promise<void> {
+  await registerProject(store, { name: QUEUE_PROJECT, kind: "side" });
+  const rank = new Map<number, number>();
+  for (const s of QUEUE_SEED) {
+    const [row] = (await store.q.select({ id: store.t.item.id }).from(store.t.item).where(eq(store.t.item.title, s.title)).limit(1)) as { id: string }[];
+    const id = row?.id ?? (await createItem(store, { type: "task", title: s.title, projectId: QUEUE_PROJECT, priority: s.priority }));
+    if (!row && s.tags.length > 0) await addTags(store, id, [...s.tags]);
+    const r = (rank.get(s.priority) ?? 0) + 1;
+    rank.set(s.priority, r);
+    await resetItem(store, id, null);
+    await store.q
+      .update(store.t.item)
+      .set({ priority: s.priority, queue_rank: r, updated_at: "2026-01-01T00:00:00.000Z" })
+      .where(eq(store.t.item.id, id));
+  }
+}
+
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
   await seedCredit(store, "ok");
   await seedHome(store, "full");
+  await seedQueue(store);
 }
 
 if (import.meta.main) {

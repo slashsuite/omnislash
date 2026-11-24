@@ -508,6 +508,32 @@ export async function removeTags(db: Database | Store, id: string, tags: string[
   await touch(s, id);
 }
 
+/** OS-25: the item count and the latest `updated_at`, as `<count>@<time>`. One aggregate read: the realtime
+ *  snapshot carries it so a page listing items learns that one changed (an `ob order` stamps the item it moved,
+ *  an add or rm moves the count). */
+export async function itemsStamp(db: Database | Store): Promise<string> {
+  const s = asStore(db);
+  const rows = (await s.q
+    .select({ n: sql<number | string>`count(*)`, at: sql<string | null>`max(${s.t.item.updated_at})` })
+    .from(s.t.item)) as Array<{ n: number | string; at: string | null }>;
+  return `${String(rows[0]?.n ?? 0)}@${rows[0]?.at ?? ""}`;
+}
+
+/** OS-25: the tags of many items in one read, each list sorted by name; an item with none is absent. */
+export async function tagsForItems(db: Database | Store, ids: readonly string[]): Promise<Map<string, string[]>> {
+  const s = asStore(db);
+  const out = new Map<string, string[]>();
+  if (ids.length === 0) return out;
+  const rows = (await s.q
+    .select({ id: s.t.itemTag.itemId, name: s.t.tag.name })
+    .from(s.t.itemTag)
+    .innerJoin(s.t.tag, eq(s.t.itemTag.tagId, s.t.tag.id))
+    .where(inArray(s.t.itemTag.itemId, [...ids]))
+    .orderBy(asc(s.t.tag.name))) as Array<{ id: string; name: string }>;
+  for (const r of rows) out.set(r.id, [...(out.get(r.id) ?? []), r.name]);
+  return out;
+}
+
 export async function getTags(db: Database | Store, id: string): Promise<string[]> {
   const s = asStore(db);
   const rows = (await s.q

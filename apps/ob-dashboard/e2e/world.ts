@@ -40,6 +40,20 @@ export const REVIEW_TITLE = "Wire the home page";
 export const REVIEW_NOTE = "is the empty-state wording right?";
 export const FOCUS_TITLES = ["Ship the header nav", "Fix the drawer save"] as const;
 
+/**
+ * OS-25: the Queue page's world. QUEUE_PROJECT's open items, band by band in the order the page and
+ * `ob next --project` list them (queue_rank 1, 2, ... inside each band). critical, flake, low and none are empty.
+ */
+export const QUEUE_PROJECT = "omnislash";
+export const QUEUE_SEED = [
+  { title: "Fix the login loop", priority: 1, tags: ["auth"] },
+  { title: "Wire the queue page", priority: 2, tags: ["ui"] },
+  { title: "Band headings", priority: 2, tags: [] },
+  { title: "Row priority select", priority: 2, tags: [] },
+  { title: "Phone drag check", priority: 3, tags: [] },
+  { title: "Empty band copy", priority: 3, tags: [] },
+] as const;
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }

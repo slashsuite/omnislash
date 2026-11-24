@@ -55,7 +55,7 @@ export function priorityName(value: number | null): string {
 }
 
 /** Best first. The store's integers put flake and critical last; the work order puts critical first (OS-108), flake third (OB-2060). */
-const RANK_ORDER = [
+export const RANK_ORDER: readonly number[] = [
   PRIORITY_CRITICAL,
   PRIORITY_URGENT,
   PRIORITY_FLAKE,
