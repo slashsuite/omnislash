@@ -125,20 +125,21 @@ export function builderTierOf(route: string): SpinoffTier | null {
 }
 
 /**
- * Do these ranges cover 1-10 exactly once? Null when they do, else the refusal naming the gap or the overlap. Pure.
+ * Do these ranges cover 1-10 exactly once? Null when they do, else the refusal naming the gap or the overlap, opening
+ * with `what` (the builder bands, or the review ranges of OS-175). Pure.
  */
-export function rangeCoverError(ranges: readonly ComplexityRange[]): string | null {
+export function rangeCoverError(ranges: readonly ComplexityRange[], what = "builder ranges"): string | null {
   const sorted = [...ranges].sort((a, b) => a.from - b.from || a.to - b.to);
   let next = COMPLEXITY_MIN;
   for (const r of sorted) {
-    if (r.from > next) return `builder ranges leave a gap at ${rangeText({ from: next, to: r.from - 1 })}: the ranges must cover 1-10 with no gap`;
+    if (r.from > next) return `${what} leave a gap at ${rangeText({ from: next, to: r.from - 1 })}: the ranges must cover 1-10 with no gap`;
     if (r.from < next) {
       const prev = sorted[sorted.indexOf(r) - 1]!;
-      return `builder ranges ${rangeText(prev)} and ${rangeText(r)} overlap at ${rangeText({ from: r.from, to: Math.min(prev.to, r.to) })}: each score belongs to one range`;
+      return `${what} ${rangeText(prev)} and ${rangeText(r)} overlap at ${rangeText({ from: r.from, to: Math.min(prev.to, r.to) })}: each score belongs to one range`;
     }
     next = r.to + 1;
   }
-  if (next <= COMPLEXITY_MAX) return `builder ranges leave a gap at ${rangeText({ from: next, to: COMPLEXITY_MAX })}: the ranges must cover 1-10 with no gap`;
+  if (next <= COMPLEXITY_MAX) return `${what} leave a gap at ${rangeText({ from: next, to: COMPLEXITY_MAX })}: the ranges must cover 1-10 with no gap`;
   return null;
 }
 

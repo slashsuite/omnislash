@@ -23,7 +23,7 @@ import {
   routeNames,
   saveModelRoutes,
   serverReview,
-  setReaderTier,
+  setReaderRange,
   sourceLabel,
   useProfile,
   withProfileReview,
@@ -34,7 +34,7 @@ import {
   type RouteInputs,
   type RouteSource,
 } from "../../../../apps/cli/src/model-routes.ts";
-import { REVIEW_TIERS, ReviewReadersError, type ConfigIO, type ReviewReaders } from "../../../../apps/cli/src/review-readers.ts";
+import { ReviewReadersError, type ConfigIO, type ReviewReaders } from "../../../../apps/cli/src/review-readers.ts";
 import { configIo } from "./config-io.ts";
 import { assertSameOrigin } from "./same-origin.ts";
 import type { WriteContext } from "./writes.ts";
@@ -63,7 +63,6 @@ export interface ModelsView {
   /** The readers this profile runs on the server (what the reader edits change), and the file's local legs. */
   review: { source: "server" | "legacy" | "default"; value: ReviewReaders; local: Record<string, string> };
   efforts: string[];
-  tiers: string[];
 }
 
 export type ModelsOp =
@@ -72,7 +71,7 @@ export type ModelsOp =
   | { op: "use"; profile: string }
   | { op: "readerAdd"; profile: string; leg: string; model: string }
   | { op: "readerRemove"; profile: string; leg: string }
-  | { op: "readerTier"; profile: string; tier: string; legs: string[] };
+  | { op: "readerRange"; profile: string; range: string; legs: string[] };
 
 export type ModelsEditResult = { ok: true; view: ModelsView } | { ok: false; error: string };
 
@@ -112,7 +111,6 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
     routes,
     review: { source: review.source, value: review.value, local: { ...inputs.file?.profiles[profile]?.review } },
     efforts: [...EFFORT_LEVELS],
-    tiers: [...REVIEW_TIERS],
   };
 }
 
@@ -143,8 +141,8 @@ function apply(inputs: RouteInputs, op: ModelsOp) {
       return review((v) => addReader(v, op.leg, op.model));
     case "readerRemove":
       return review((v) => removeReader(v, op.leg));
-    case "readerTier":
-      return review((v) => setReaderTier(v, op.tier, op.legs));
+    case "readerRange":
+      return review((v) => setReaderRange(v, op.range, op.legs));
   }
 }
 

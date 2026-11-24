@@ -217,6 +217,8 @@ export interface Flags {
   floor?: string;
   date?: string;
   tier?: string;
+  /** OS-177: `spinoff --complexity`; OS-175: `review readers --complexity`. */
+  complexity?: string;
   /** OB-2173: `review readers set <leg> --model <id>`. */
   model?: string;
   answers?: string;

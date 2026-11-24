@@ -112,15 +112,15 @@ test("a reader is added", async ({ page }) => {
   await expect(row(page, "kimi").getByRole("textbox", { name: "Model for reader kimi" })).toHaveValue("opencode-go/kimi");
 });
 
-test("a reader on a tier is refused removal until it is taken off its tiers", async ({ page }) => {
+test("a reader on a range is refused removal until it is taken off its ranges", async ({ page }) => {
   await open(page, "/models");
   const neon = row(page, "neon");
   await save(page, () => neon.getByRole("button", { name: "Remove reader neon" }).click());
-  await expect(neon.getByRole("alert")).toContainText("Not saved: reader 'neon' is still on tier medium, complex");
+  await expect(neon.getByRole("alert")).toContainText("Not saved: reader 'neon' is still on range 4-6, 7-10");
 
-  await test.step("take neon off medium and complex", async () => {
-    for (const tier of ["medium", "complex"]) {
-      const box = page.getByRole("checkbox", { name: `neon on ${tier}` });
+  await test.step("take neon off 4-6 and 7-10", async () => {
+    for (const range of ["4-6", "7-10"]) {
+      const box = page.getByRole("checkbox", { name: `neon on ${range}` });
       // A click, not uncheck(): the box is controlled, so it changes once the save answers, not on the click.
       await save(page, () => box.click());
       await expect(box).not.toBeChecked();
@@ -131,14 +131,14 @@ test("a reader on a tier is refused removal until it is taken off its tiers", as
   await expect(row(page, "neon")).toHaveCount(0);
 });
 
-test("a tier change is saved", async ({ page }) => {
+test("a range change is saved", async ({ page }) => {
   await open(page, "/models");
-  const box = page.getByRole("checkbox", { name: "neon on simple" });
+  const box = page.getByRole("checkbox", { name: "neon on 1-3" });
   await save(page, () => box.click()); // controlled: it changes when the save answers
   await expect(box).toBeChecked();
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
-  await expect(page.getByRole("checkbox", { name: "neon on simple" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "neon on 1-3" })).toBeChecked();
 });
 
 test("switching the active profile switches it for every machine", async ({ page }) => {

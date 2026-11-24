@@ -51,10 +51,11 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 
 ## Which models
 
-**The owner picks the readers, their models and how many run per ticket tier.** The owner sets them on the dashboard's **Reviewers** page (`/reviewers`) or with
-`ob review readers set|rm|tier`; both write the server's `review_readers` setting, so every machine reads the same
-set. `ob review readers --tier <tier> -q` prints the legs a tier runs, one per line, and How to run runs exactly
-those. A simple ticket may get one reader and a complex one two or more. Unset, every tier runs the two below. The free
+**The owner picks the readers, their models and how many run per complexity range.** The owner sets them on the dashboard's **Models** page (`/models`) or with
+`ob review readers set|rm|range`; both write the server's setting, so every machine reads the same
+set. The ranges cover complexity 1-10 (OS-175; the old simple, medium and complex tiers are 1-3, 4-6 and 7-10).
+`ob review readers --complexity <n> -q` prints the legs a row scored n runs, one per line, and How to run runs exactly
+those. A low score may get one reader and a high one two or more. Unset, every score runs the two below. The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
@@ -169,15 +170,15 @@ A reader that wanders burns its turns and time (one DeepSeek leg made 101 calls 
 Launch **one background leg per model**, each from its own brief file, none told what the others said. Run
 them from the worktree under review:
 
-Read the readers for the ticket's tier first (`ob spinoff show <ticket>` prints `tier:`; no tier on the row means
-medium), and run exactly those:
+Read the readers for the row's complexity first (`ob spinoff show <ticket>` prints `complexity N/10`; a row with no
+score reads as 5), and run exactly those:
 
 ```bash
 R=<skill dir>   # ~/.claude/skills/ob-skeptical-review
 D="${TMPDIR:-$HOME/.cache/tmp}"
-TIER=<the row's tier, else medium>
+C=<the row's complexity, else 5>
 # an older ob or the API down: fall back to the two defaults rather than run no reader
-legs=$(ob review readers --tier "$TIER" -q) && [ -n "$legs" ] || legs="neon opus"
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="neon opus"
 for leg in $legs; do
   bun "$R/review-leg.ts" "$leg" < "$D/review-<ticket>-$leg.brief.md" > "$D/review-<ticket>-$leg.txt" 2>&1 &
 done; wait
@@ -259,14 +260,14 @@ On a rebuttal brief (round 2 on) it first answers each prior finding, one line e
 `rejected: <the evidence the answer misses>`. Then `ok` (say how many claims were read) or the findings, at most
 ~8, `wrong` first, and `score: N/10`.
 
-**The brief recipe.** The same legs as a diff review, every one `ob review readers --tier <tier> -q` lists
+**The brief recipe.** The same legs as a diff review, every one `ob review readers --complexity <n> -q` lists
 (How to run), each through `review-leg.ts` with its own brief file; `review-leg.ts` and `ob-reviewer.md` do
 not change. Fetch first, because readers cannot:
 
 ```bash
 git fetch origin
 SHA=$(git rev-parse origin/main)
-legs=$(ob review readers --tier "$TIER" -q) && [ -n "$legs" ] || legs="neon opus"
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="neon opus"
 for leg in $legs; do
   { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/{/^## Before/d;p;}' "$R/SKILL.md"
     echo "Ref: check every claim against origin/main at $SHA (git show $SHA:<path>)."

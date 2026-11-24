@@ -4,44 +4,66 @@ import { editModelRoutes, loadRouteInputs, storeConfigIo } from "../model-routes
 import { ModelRoutesError, resolveReview, serverReview, withProfileReview, writeProfile } from "../model-routes.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, type Mode } from "../output.ts";
+import { TIER_BANDS, TIER_COMPLEXITY, isSpinoffTier, parseComplexity, rangeText, type SpinoffTier } from "../models-file.ts";
 import {
   REVIEW_TIERS,
   ReviewReadersError,
-  isReviewTier,
-  readersForTier,
+  parseReviewRange,
+  readersForComplexity,
+  reviewRangeAt,
+  withRange,
   withReader,
-  withTier,
   withoutReader,
   type ConfigIO,
   type ReviewReaders,
 } from "../review-readers.ts";
 
 // -----------------------------------------------------------------------------
-// `ob review readers` (OB-2173): which skeptical-review readers run, on which model, per task tier. Since
-// OS-145 the value is the active models profile's `review` in `model_routes` (the old `review_readers` setting is
-// read only as its default; `ob models reader` writes the same value). The same
+// `ob review readers` (OB-2173): which skeptical-review readers run, on which model, per complexity range (OS-175;
+// per tier before). Since OS-145 the value is the active models profile's `review` in `model_routes` (the old
+// `review_readers` setting is read only as its default; `ob models reader` writes the same value). The same
 // code runs locally (the store) and in API mode (the API client), through a ConfigIO.
+//
+// The run-time lookup (OS-175): a builder's skeptical review runs the legs `ob review readers --complexity <n> -q`
+// prints for its row's score (ob-spinoff, ob-skeptical-review); `--tier <t>` is the old spelling, read as the
+// tier's score (simple 2, medium 5, complex 8). Nothing else picks legs per row: review-leg.ts only takes each
+// leg's model from the same setting.
 // -----------------------------------------------------------------------------
 
 const USAGE =
-  "review readers [--tier simple|medium|complex] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers tier <tier> <leg>...";
+  "review readers [--complexity <1-10>] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers range <from-to> <leg>... (`--tier` and `tier <tier>` are the old spellings)";
 
 function table(v: ReviewReaders, stored: boolean): string {
   const legs = Object.keys(v.readers);
+  const ranges = v.tiers.map(rangeText);
   const w = Math.max(6, ...legs.map((l) => l.length));
   const mw = Math.max(5, ...legs.map((l) => v.readers[l]!.model.length));
-  const head = `${"reader".padEnd(w)}  ${"model".padEnd(mw)}  ${REVIEW_TIERS.join("  ")}`;
+  // A column is at least as wide as "on", so a one-score range ("4") keeps the columns after it in line.
+  const cw = ranges.map((r) => Math.max(2, r.length));
+  const head = `${"reader".padEnd(w)}  ${"model".padEnd(mw)}  ${ranges.map((r, i) => r.padEnd(cw[i]!)).join("  ")}`.trimEnd();
   const rows = legs.map(
     (l) =>
-      `${l.padEnd(w)}  ${v.readers[l]!.model.padEnd(mw)}  ${REVIEW_TIERS.map((t) => (v.tiers[t].includes(l) ? "on" : "-").padEnd(t.length)).join("  ")}`.trimEnd(),
+      `${l.padEnd(w)}  ${v.readers[l]!.model.padEnd(mw)}  ${v.tiers.map((r, i) => (r.legs.includes(l) ? "on" : "-").padEnd(cw[i]!)).join("  ")}`.trimEnd(),
   );
   const note = stored ? [] : ["(no profile sets review readers: these are the defaults)"];
   return [head, ...rows, ...note].join("\n");
 }
 
-function tierOf(raw: string | undefined, what: string): (typeof REVIEW_TIERS)[number] {
-  if (!raw || !isReviewTier(raw)) throw new UsageError(`${what} must be one of ${REVIEW_TIERS.join(", ")}${raw ? `, not '${raw}'` : ""}`);
+function tierOf(raw: string | undefined, what: string): SpinoffTier {
+  if (!raw || !isSpinoffTier(raw)) throw new UsageError(`${what} must be one of ${REVIEW_TIERS.join(", ")}${raw ? `, not '${raw}'` : ""}`);
   return raw;
+}
+
+/** The score a read asks for: `--complexity`, else the old `--tier`'s score, else null (the whole table). */
+function scoreOf(flags: Flags): number | null {
+  if (flags.complexity !== undefined && flags.tier !== undefined) throw new UsageError("give --complexity or --tier, not both (--tier is the old spelling of a score)");
+  if (flags.complexity !== undefined) {
+    const c = parseComplexity(String(flags.complexity));
+    if (c === null) throw new UsageError(`--complexity must be a whole number 1 to 10, not '${String(flags.complexity)}'`);
+    return c;
+  }
+  if (flags.tier !== undefined) return TIER_COMPLEXITY[tierOf(flags.tier, "--tier")];
+  return null;
 }
 
 /** The whole `ob review` command over any ConfigIO. Exported for the API-mode handler and tests. */
@@ -52,10 +74,11 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
     if (sub === undefined) {
       // OS-145: the active models profile's readers (`model_routes`), the local file's legs laid over them.
       const { stored, value } = resolveReview(await loadRouteInputs(io));
-      if (flags.tier !== undefined) {
-        const tier = tierOf(flags.tier, "--tier");
-        const list = readersForTier(value, tier);
-        if (mode === "json") print(JSON.stringify({ tier, stored, readers: list }, null, 2));
+      const c = scoreOf(flags);
+      if (c !== null) {
+        const range = rangeText(reviewRangeAt(value, c));
+        const list = readersForComplexity(value, c);
+        if (mode === "json") print(JSON.stringify({ complexity: c, range, stored, readers: list }, null, 2));
         else if (mode === "quiet") print(list.map((r) => r.leg).join("\n"));
         else print(list.map((r) => `${r.leg} ${r.model}`).join("\n"));
         return;
@@ -88,19 +111,22 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
       print(mode === "json" ? JSON.stringify(next, null, 2) : `removed ${leg}`);
       return;
     }
-    if (sub === "tier") {
-      const tier = tierOf(args[2], "review readers tier <tier>");
+    if (sub === "range" || sub === "tier") {
+      // `tier <tier>` is the old spelling of its band's range (simple 1-3, medium 4-6, complex 7-10), kept for one release.
+      const range = sub === "tier" ? TIER_BANDS[tierOf(args[2], "review readers tier <tier>")] : parseReviewRange(args[2] ?? "");
+      if (!range) throw new UsageError(`review readers range <from-to> must be a range inside 1-10 such as 4-6${args[2] ? `, not '${args[2]}'` : ""}`);
       const legs = args.slice(3);
-      if (legs.length === 0) throw new UsageError("review readers tier requires <tier> <leg>... (at least one reader)");
-      const next = await write((v) => withTier(v, tier, legs));
-      print(mode === "json" ? JSON.stringify(next, null, 2) : `${tier}: ${next.tiers[tier].join(" ")}`);
+      if (legs.length === 0) throw new UsageError(`review readers ${sub} requires <${sub === "tier" ? "tier" : "from-to"}> <leg>... (at least one reader)`);
+      const next = await write((v) => withRange(v, range, legs));
+      const now = next.tiers.find((r) => r.from === range.from && r.to === range.to)!;
+      print(mode === "json" ? JSON.stringify(next, null, 2) : `${rangeText(now)}: ${now.legs.join(" ")}`);
       return;
     }
   } catch (e) {
     if (e instanceof ReviewReadersError || e instanceof ModelRoutesError) throw new AppError(e.message);
     throw e;
   }
-  throw new UsageError(`unknown review readers subcommand '${sub}' (set|rm|tier)`);
+  throw new UsageError(`unknown review readers subcommand '${sub}' (set|rm|range)`);
 }
 
 export async function cmdReview(ctx: Ctx): Promise<void> {

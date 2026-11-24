@@ -77,9 +77,9 @@ function shapeOf(d: unknown): ModelsOp {
       return { op: "readerAdd", profile, leg: str(o.leg, "leg"), model: str(o.model, "model") };
     case "readerRemove":
       return { op: "readerRemove", profile, leg: str(o.leg, "leg") };
-    case "readerTier":
+    case "readerRange":
       if (!Array.isArray(o.legs)) throw new Error("legs must be a list");
-      return { op: "readerTier", profile, tier: str(o.tier, "tier"), legs: o.legs.map((l) => str(l, "leg")) };
+      return { op: "readerRange", profile, range: str(o.range, "range"), legs: o.legs.map((l) => str(l, "leg")) };
     default:
       throw new Error("unknown op");
   }

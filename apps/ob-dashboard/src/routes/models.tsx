@@ -166,22 +166,22 @@ function AddReader({ profile, send }: { profile: string; send: Send }) {
   );
 }
 
-function TierRow({ tier, view, send }: { tier: string; view: ModelsView; send: Send }) {
+/** One review range (OS-175) and a box per reader. Editing the ranges themselves (split, merge) is OS-176. */
+function RangeRow({ range, legs, view, send }: { range: string; legs: string[]; view: ModelsView; send: Send }) {
   const s = useSend(send);
-  const legs = view.review.value.tiers[tier as keyof ModelsView["review"]["value"]["tiers"]] ?? [];
   return (
     <Stack gap="xs">
       <Cluster gap="sm">
-        <Text as="span" strong>{tier}</Text>
+        <Text as="span" strong>{range}</Text>
         {Object.keys(view.review.value.readers).map((leg) => (
           <Checkbox
             key={leg}
             size="sm"
-            label={`${leg} on ${tier}`}
+            label={`${leg} on ${range}`}
             checked={legs.includes(leg)}
             disabled={s.busy}
             onChange={(checked) =>
-              s.run({ op: "readerTier", profile: view.profile, tier, legs: checked ? [...legs, leg] : legs.filter((l) => l !== leg) })
+              s.run({ op: "readerRange", profile: view.profile, range, legs: checked ? [...legs, leg] : legs.filter((l) => l !== leg) })
             }
           />
         ))}
@@ -322,9 +322,10 @@ function Models() {
               <ReaderRow key={`${view.profile}:${leg}`} leg={leg} model={r.model} profile={view.profile} send={send} />
             ))}
             <AddReader key={`${view.profile}:${Object.keys(review.value.readers).join(",")}`} profile={view.profile} send={send} />
-            {view.tiers.map((t) => (
-              <TierRow key={t} tier={t} view={view} send={send} />
-            ))}
+            {review.value.tiers.map((r) => {
+              const range = r.from === r.to ? `${r.from}` : `${r.from}-${r.to}`;
+              return <RangeRow key={`${view.profile}:${range}`} range={range} legs={r.legs} view={view} send={send} />;
+            })}
           </Stack>
         </Card>
       </Stack>

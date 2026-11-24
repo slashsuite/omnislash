@@ -58,12 +58,13 @@ import {
   ReviewReadersError,
   defaultReviewReaders,
   parseReviewReaders,
+  storedReviewReaders,
   validateReviewReaders,
   withReader,
-  withTier,
+  parseReviewRange,
+  withRange,
   type ConfigIO,
   type ReviewReaders,
-  type ReviewTier,
 } from "./review-readers.ts";
 
 export const MODEL_ROUTES_KEY = "model_routes";
@@ -611,26 +612,33 @@ export function addReader(current: ReviewReaders, leg: string, model: string): R
   }
 }
 
-/** Remove a reader; refused, naming each tier, while a tier still lists it (take it off the tier first). */
+/** Remove a reader; refused, naming each range, while a range still lists it (take it off the range first). */
 export function removeReader(current: ReviewReaders, leg: string): ReviewReaders {
   if (current.readers[leg] === undefined) throw new ModelRoutesError(`no reader named '${leg}'`);
-  const listed = REVIEW_TIERS.filter((t) => current.tiers[t].includes(leg));
+  const listed = current.tiers.filter((r) => r.legs.includes(leg)).map(rangeText);
   if (listed.length > 0) {
-    throw new ModelRoutesError(`reader '${leg}' is still on tier ${listed.join(", ")}: take it off first (\`ob models reader tier <tier> <legs...>\`)`);
+    throw new ModelRoutesError(`reader '${leg}' is still on range ${listed.join(", ")}: take it off first (\`ob models reader range <from-to> <legs...>\`)`);
   }
   const readers = Object.fromEntries(Object.entries(current.readers).filter(([l]) => l !== leg));
   return validateReviewReaders({ readers, tiers: current.tiers });
 }
 
-/** Replace one tier's reader list. Throws ModelRoutesError. */
-export function setReaderTier(current: ReviewReaders, tier: string, legs: string[]): ReviewReaders {
-  if (!(REVIEW_TIERS as readonly string[]).includes(tier)) throw new ModelRoutesError(`unknown tier '${tier}' (use ${REVIEW_TIERS.join(", ")})`);
+/** Replace one complexity range's reader list (`4-6`, or one score `5`), carving it out of the ranges it overlaps. Throws ModelRoutesError. */
+export function setReaderRange(current: ReviewReaders, range: string, legs: string[]): ReviewReaders {
+  const r = parseReviewRange(range);
+  if (!r) throw new ModelRoutesError(`'${range}' is not a complexity range (use <from>-<to> inside 1-10, such as 4-6)`);
   try {
-    return withTier(current, tier as ReviewTier, legs);
+    return withRange(current, r, legs);
   } catch (e) {
     if (e instanceof ReviewReadersError) throw new ModelRoutesError(e.message);
     throw e;
   }
+}
+
+/** The old verb: a tier name is its band (simple 1-3, medium 4-6, complex 7-10). Kept as an alias for one release (OS-175). */
+export function setReaderTier(current: ReviewReaders, tier: string, legs: string[]): ReviewReaders {
+  if (!(REVIEW_TIERS as readonly string[]).includes(tier)) throw new ModelRoutesError(`unknown tier '${tier}' (use ${REVIEW_TIERS.join(", ")}, or a range: \`reader range <from-to>\`)`);
+  return setReaderRange(current, rangeText(TIER_BANDS[tier as SpinoffTier]), legs);
 }
 
 // --- loading -------------------------------------------------------------------------------------------------
@@ -658,7 +666,11 @@ export async function loadServerRoutes(io: ConfigIO): Promise<ServerRoutes> {
 
 export async function saveModelRoutes(io: ConfigIO, v: ModelRoutes): Promise<ModelRoutes> {
   const clean = validateModelRoutes(v);
-  await io.set(MODEL_ROUTES_KEY, JSON.stringify(clean));
+  // A profile's review is written in the form older readers still parse where it can be (storedReviewReaders).
+  const profiles = Object.fromEntries(
+    Object.entries(clean.profiles).map(([name, p]) => [name, p.review ? { ...p, review: storedReviewReaders(p.review) } : p]),
+  );
+  await io.set(MODEL_ROUTES_KEY, JSON.stringify({ ...clean, profiles }));
   return clean;
 }
 
