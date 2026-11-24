@@ -120,6 +120,16 @@
         "vitest": "^5.1.0",
       },
     },
+    "platform/state-machine": {
+      "name": "@omnislash/state-machine",
+      "version": "0.0.0",
+      "dependencies": {
+        "xstate": "5.33.4",
+      },
+      "devDependencies": {
+        "vitest": "^5.1.0",
+      },
+    },
   },
   "trustedDependencies": [
     "bun-types",
@@ -283,6 +293,8 @@
     "@omnislash/cli-whatsapp": ["@omnislash/cli-whatsapp@workspace:platform/cli-whatsapp"],
 
     "@omnislash/dashboard-kit": ["@omnislash/dashboard-kit@workspace:platform/dashboard-kit"],
+
+    "@omnislash/state-machine": ["@omnislash/state-machine@workspace:platform/state-machine"],
 
     "@oozcitak/dom": ["@oozcitak/dom@2.0.2", "", { "dependencies": { "@oozcitak/infra": "^2.0.2", "@oozcitak/url": "^3.0.0", "@oozcitak/util": "^10.0.0" } }, "sha512-GjpKhkSYC3Mj4+lfwEyI1dqnsKTgwGy48ytZEhm4A/xnH/8z9M3ZVXKr/YGQi3uCLs1AEBS+x5T2JPiueEDW8w=="],
 
@@ -849,6 +861,8 @@
     "ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
 
     "xmlbuilder2": ["xmlbuilder2@4.0.3", "", { "dependencies": { "@oozcitak/dom": "^2.0.2", "@oozcitak/infra": "^2.0.2", "@oozcitak/util": "^10.0.0", "js-yaml": "^4.1.1" } }, "sha512-bx8Q1STctnNaaDymWnkfQLKofs0mGNN7rLLapJlGuV3VlvegD7Ls4ggMjE3aUSWItCCzU0PEv45lI87iSigiCA=="],
+
+    "xstate": ["xstate@5.33.4", "", {}, "sha512-eGNMu3BNqU0Z85P+ouYG5OCZqIABU+QsW6vUieFt9p9gOGs3C+BL10Exg7XdRPSXPQKlP6XoYpYf93r9VmW8mQ=="],
 
     "y18n": ["y18n@4.0.3", "", {}, "sha512-JKhqTOwSrqNA1NY5lSztJ1GrBiUodLMmIZuLiDaMRJ+itFd+ABVE8XBjOvIWL+rSqNDC74LCSFmlb/U4UZ4hJQ=="],
 
