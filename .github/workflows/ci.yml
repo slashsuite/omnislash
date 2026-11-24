@@ -25,5 +25,8 @@ jobs:
       - run: bunx moon run --concurrency 3 :typecheck :test :lint ob-dashboard:build-storybook
         env:
           MOON_BASE: origin/main
+      # OS-174: docs/role-state-machine.json and .mmd are generated from platform/state-machine/src/role.ts.
+      # A change to the machine without the regenerated files fails here.
+      - run: bunx moon run state-machine:export -- --check
       - run: bun scripts/check-workflows.ts .github/workflows/*.yml
       - run: bun test scripts

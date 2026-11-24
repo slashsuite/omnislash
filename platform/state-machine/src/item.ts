@@ -27,6 +27,9 @@ function tableMachine<S extends string>(id: string, initial: S, table: Table<S>)
   return setup({ types: { events: {} as { type: string } } }).createMachine({ id, initial, states });
 }
 
+/** A task's stored status (today's `BASIC_TRANSITIONS` vocabulary). */
+export type TaskStatus = keyof typeof BASIC;
+
 const BASIC = {
   open: ["in_progress", "ready", "blocked", "done"],
   in_progress: ["ready", "blocked", "done", "open"],

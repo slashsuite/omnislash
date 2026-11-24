@@ -12,3 +12,10 @@ tasks:
     script: 'bun --bun vitest run ${OB_TEST_REPORT_DIR:+--reporter=default --reporter=junit --outputFile.junit=$OB_TEST_REPORT_DIR/state-machine.xml}'
   typecheck:
     command: 'bunx tsc --noEmit'
+  # OS-174: writes docs/role-state-machine.json and .mmd from src/role.ts. `-- --check` writes nothing and
+  # fails when the committed copies drift (ci.yml runs it). Never cached: it reads and writes files outside
+  # its own hash, and a check must always run.
+  export:
+    command: 'bun src/export.ts'
+    options:
+      cache: false
