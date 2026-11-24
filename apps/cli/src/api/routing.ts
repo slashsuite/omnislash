@@ -122,6 +122,8 @@ export const API_ROUTED_COMMANDS: ReadonlySet<string> = new Set([
 	// OB-2097: the overnight decision log is data (decision items and run docs), served under /overnight/*.
 	"overnight",
 	"review-miss",
+	// OS-170: `machine audit` reads rows and events, served under /machine/audit (an admin family).
+	"machine",
 	// OB-2173: `review readers` is the review_readers row of the config table.
 	"review",
 	"cursor",

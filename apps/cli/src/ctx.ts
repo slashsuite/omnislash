@@ -46,6 +46,8 @@ export interface Flags {
   query?: string;
   max?: string;
   "updated-after"?: string;
+  /** OS-170: `ob machine audit`. */
+  "stale-days"?: string;
   by?: string;
   /** `ob inbox --read <id>`: the first message id to mark read. */
   read?: string;

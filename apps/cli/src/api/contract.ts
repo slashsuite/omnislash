@@ -66,6 +66,7 @@ import type { CiMainReport, CiOutcome, HookPlanRow } from "../ci-main.ts";
 import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatch, TournamentView } from "../tournament.ts";
 import type { OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
+import type { MachineAudit } from "../machine-audit.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
 
 export type {
@@ -389,6 +390,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/overnight/runs", family: "overnight", what: "one row per run with decision and Review these counts (?project=&since=; OB-2097)" },
   { method: "POST", path: "/review-misses", family: "review-misses", what: "record a review-miss class" },
   { method: "GET", path: "/review-misses/top", family: "review-misses", what: "ranked review-miss classes (?scope=&limit=)" },
+  { method: "GET", path: "/machine/audit", family: "machine", what: "rows the lifecycle machines cannot resolve, stale spinoff rows and would-refuse events (?since=&stale_days=; OS-170)" },
   { method: "GET", path: "/cursors", family: "cursors", what: "one skill_cursor value (?skill=&key=)" },
   { method: "POST", path: "/cursors", family: "cursors", what: "set a skill_cursor value" },
   { method: "GET", path: "/test-users", family: "test-users", what: "the test-user registry (?role=&env=)" },
@@ -410,7 +412,7 @@ export const OB_API_SCOPABLE_FAMILIES: readonly string[] = ["items", "next", "se
 /** OS-178: the families only the admin token reaches. Named, so a new family must be classified. */
 export const OB_API_ADMIN_FAMILIES: readonly string[] = [
   "agents", "alerts", "brief", "cal", "ci", "config", "creds", "cursors", "db", "decisions", "deploys", "docs",
-  "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "leases", "log",
+  "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "leases", "log", "machine",
   "overnight", "people", "review-misses", "roadmaps", "secrets", "slack", "snapshot", "spinoffs", "standup",
   "status", "sync", "teams", "test-users", "today", "tournaments", "triage", "whatsapp", "whois",
 ];
@@ -2257,6 +2259,9 @@ export interface ReviewMissAddResponse {
   scope: string;
   pr: string;
 }
+
+/** OS-170: `GET /machine/audit`, the same object `ob machine audit --json` prints. */
+export type MachineAuditResponse = MachineAudit;
 
 export interface ReviewMissTopResponse {
   ranked: RankedClass[];

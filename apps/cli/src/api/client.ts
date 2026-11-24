@@ -224,6 +224,7 @@ type SpinoffsQuery,
   type ReviewMissAddRequest,
   type ReviewMissAddResponse,
   type ReviewMissTopResponse,
+  type MachineAuditResponse,
   type CursorGetResponse,
   type CursorSetRequest,
   type CursorSetResponse,
@@ -528,6 +529,7 @@ const path = {
 	overnightRuns: "/overnight/runs",
 	reviewMisses: "/review-misses",
 	reviewMissesTop: "/review-misses/top",
+	machineAudit: "/machine/audit",
 	cursors: "/cursors",
 	testUsers: "/test-users",
 	testUsersShow: "/test-users/show",
@@ -1463,6 +1465,10 @@ export class ApiClient {
 	}
 	reviewMissAdd(body: ReviewMissAddRequest): Promise<ReviewMissAddResponse> {
 		return this.call("POST", path.reviewMisses, body);
+	}
+	/** OS-170: `ob machine audit`. */
+	machineAudit(query: { since?: string; stale_days?: number } = {}): Promise<MachineAuditResponse> {
+		return this.call("GET", `${path.machineAudit}${queryString(query)}`);
 	}
 	reviewMissTop(query: { scope?: string; limit?: number } = {}): Promise<ReviewMissTopResponse> {
 		return this.call("GET", `${path.reviewMissesTop}${queryString(query)}`);
