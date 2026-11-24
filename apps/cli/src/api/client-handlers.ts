@@ -358,6 +358,8 @@ async function apiEdit(ctx: ApiCtx): Promise<void> {
 		body: text,
 		priority: ctx.flags.priority,
 		project: ctx.flags.repo ?? ctx.flags.project,
+		note: ctx.flags.note,
+		actor: ctx.flags.holder,
 	});
 	emitId(ctx, res.id, res.ref);
 }
@@ -399,6 +401,8 @@ async function apiOrder(ctx: ApiCtx): Promise<void> {
 		priority: "top" in move && move.priority !== undefined ? priorityName(move.priority) : undefined,
 		before: "before" in move ? move.before : undefined,
 		after: "after" in move ? move.after : undefined,
+		note: ctx.flags.note,
+		actor: ctx.flags.holder,
 	});
 	const ref = res.item.ref ?? res.item.id;
 	if (ctx.mode === "json") {

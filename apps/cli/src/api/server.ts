@@ -774,6 +774,8 @@ async function route(
             before: optString(body, "before"),
             after: optString(body, "after"),
             priority: optString(body, "priority"),
+            note: optString(body, "note"),
+            actor: optString(body, "actor"),
           }),
         );
       }
@@ -810,6 +812,8 @@ async function route(
             body: optString(body, "body"),
             project: optString(body, "project") ?? undefined,
             priorityValue,
+            note: optString(body, "note"),
+            actor: optString(body, "actor"),
           }),
         );
       }

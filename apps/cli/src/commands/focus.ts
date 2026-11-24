@@ -5,6 +5,7 @@ import { getProject } from "../project.ts";
 import { emitId, print } from "../output.ts";
 import { parsePriority, priorityName, PRIORITY_OPTIONS } from "../priority.ts";
 import { requireItem } from "../ctx.ts";
+import { decisionOptsOf } from "../decisions.ts";
 import { clearTodayRank, setQueueOrder, setTodayRank, type QueueMove } from "../workflow.ts";
 
 export async function cmdToday(ctx: Ctx): Promise<void> {
@@ -85,7 +86,7 @@ export async function cmdOrder(ctx: Ctx): Promise<void> {
   let resolved = move;
   if ("before" in move) resolved = { before: (await requireItem(ctx, move.before)).id };
   else if ("after" in move) resolved = { after: (await requireItem(ctx, move.after)).id };
-  const res = await setQueueOrder(store, subject.id, resolved);
+  const res = await setQueueOrder(store, subject.id, resolved, decisionOptsOf(ctx));
   const row = await requireItem(ctx, res.id, { trusted: true });
   const name = priorityName(res.priority);
   if (ctx.mode === "json") {

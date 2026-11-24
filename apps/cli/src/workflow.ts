@@ -112,7 +112,9 @@ export async function blockItem(
   if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
   await assertTransition(db, id, "blocked");
   await setBlocked(db, id, reason, owner);
-  await recordDecision(db, id, it.status, "blocked", { ...decision, note: decision.note ?? reason });
+  // OS-26: the owner rides on the transition, so who a block waited on survives the block being cleared.
+  const extra = owner ? { ...decision.extra, block_owner: owner } : decision.extra;
+  await recordDecision(db, id, it.status, "blocked", { ...decision, extra, note: decision.note ?? reason });
 }
 
 /**
@@ -270,7 +272,12 @@ export interface QueueOrderResult {
  * renumbered 1..n in one transaction, dense and with no gap arithmetic; other bands are untouched. Today's
  * rank is not read and never written.
  */
-export async function setQueueOrder(db: Database | Store, id: string, move: QueueMove): Promise<QueueOrderResult> {
+export async function setQueueOrder(
+  db: Database | Store,
+  id: string,
+  move: QueueMove,
+  decision: DecisionOpts = {},
+): Promise<QueueOrderResult> {
   const s = asStore(db);
   const moved = await requireItem(s, id);
   id = moved.id;
@@ -321,7 +328,7 @@ export async function setQueueOrder(db: Database | Store, id: string, move: Queu
     // --top --priority names a priority the item does not store yet (an unset item in the focus project already
     // sits in the high band, but --priority high asks for it to be written). A plain same-band move writes nothing.
     const priorityChanged = band !== effOf(me) || (explicit && me.priority !== band);
-    if (priorityChanged) await editItem(tx, id, { priority: band });
+    if (priorityChanged) await editItem(tx, id, { priority: band }, decision);
 
     const rows = open.filter((r) => effOf(r) === band || r.id === id);
     rows.sort(compareWithinBand);
