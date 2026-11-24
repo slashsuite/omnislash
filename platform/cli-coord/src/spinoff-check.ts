@@ -420,23 +420,11 @@ type StoredCheckSheets = { planner?: RecordedSide; checker?: RecordedSide };
 
 /** The planned files of a recorded check: both sheets' `files`, normalised, directories and globs left out. Pure. */
 export function plannedFilesOf(check: StoredCheckSheets): string[] {
-  const out = new Set<string>();
-  for (const side of [check[STORED_ARCHITECT], check.checker]) {
-    const files = Array.isArray(side?.files) ? side.files : [];
-    for (const f of files) {
-      if (typeof f !== "string") continue;
-      const p = normalizePath(f);
-      if (isPlannedFile(p)) out.add(p);
-    }
-  }
-  return [...out].sort();
+  return declaredFilesOf(check).filter(isPlannedFile);
 }
 
-/**
- * OB-2131: the files the ticket's newest `go` check planned, on any body, for the `files:` line of `ob spinoff
- * gateable` and `show`. `null` when the ticket has no `go` check (or no item to hold one).
- */
-export async function plannedFilesFor(db: Database | Store, ref: string, itemId?: string | null): Promise<string[] | null> {
+/** The sheets of the ticket's newest `go` check, on any body; `null` when it has none (or no item to hold one). */
+async function newestGoCheck(db: Database | Store, ref: string, itemId?: string | null): Promise<StoredCheckSheets | null> {
   const store = asStore(db);
   const id = itemId ?? (await ticketItemIdFor(store, ref));
   if (!id) return null;
@@ -444,5 +432,38 @@ export async function plannedFilesFor(db: Database | Store, ref: string, itemId?
   const go = events
     .map((e) => parsePayload<{ from?: string; to?: string } & StoredCheckSheets>(e))
     .find((p) => p.from === CHECK_FROM && p.to === "go");
+  return go ?? null;
+}
+
+/**
+ * OB-2131: the files the ticket's newest `go` check planned, on any body, for the `files:` line of `ob spinoff
+ * gateable` and `show`. `null` when the ticket has no `go` check (or no item to hold one).
+ */
+export async function plannedFilesFor(db: Database | Store, ref: string, itemId?: string | null): Promise<string[] | null> {
+  const go = await newestGoCheck(db, ref, itemId);
   return go ? plannedFilesOf(go) : null;
+}
+
+/**
+ * OS-47: the declared files of a recorded check, for the overlap check before a parallel dispatch: both sheets'
+ * `files`, normalised, keeping the directory (`apps/`, `apps/**`) and glob (`*.ts`) entries {@link plannedFilesOf}
+ * leaves out, since a directory a builder declared is a claim on every file under it. Pure.
+ */
+export function declaredFilesOf(check: StoredCheckSheets): string[] {
+  const out = new Set<string>();
+  for (const side of [check[STORED_ARCHITECT], check.checker]) {
+    const files = Array.isArray(side?.files) ? side.files : [];
+    for (const f of files) {
+      if (typeof f !== "string") continue;
+      const p = normalizePath(f);
+      if (p !== "") out.add(p);
+    }
+  }
+  return [...out].sort();
+}
+
+/** OS-47: {@link plannedFilesFor}, keeping directory and glob entries. `null` when the ticket has no `go` check. */
+export async function declaredFilesFor(db: Database | Store, ref: string, itemId?: string | null): Promise<string[] | null> {
+  const go = await newestGoCheck(db, ref, itemId);
+  return go ? declaredFilesOf(go) : null;
 }

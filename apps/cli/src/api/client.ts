@@ -105,6 +105,8 @@ type SpinoffsQuery,
   type SpinoffServingRequest,
   type SpinoffPlannedFilesRequest,
   type SpinoffPlannedFilesResponse,
+  type SpinoffOverlapRequest,
+  type SpinoffOverlapResponse,
   type StampSpinoffRequest,
   type StampSpinoffResponse,
   type TriageActionResponse,
@@ -537,6 +539,7 @@ const path = {
 	spinoffServing: "/spinoffs/serving",
 	spinoffCheck: "/spinoffs/check",
 	spinoffPlannedFiles: "/spinoffs/planned-files",
+	spinoffOverlap: "/spinoffs/overlap",
 	spinoffConfig: "/spinoffs/config",
 	spinoffLaunchable: "/spinoffs/launchable",
 	spinoffClaim: "/spinoffs/claim",
@@ -1091,6 +1094,11 @@ export class ApiClient {
 	/** OB-2131: the planned files of each row's ticket's newest go check. */
 	spinoffPlannedFiles(body: SpinoffPlannedFilesRequest): Promise<SpinoffPlannedFilesResponse> {
 		return this.call("POST", path.spinoffPlannedFiles, body);
+	}
+
+	/** OS-47: a ticket's declared files, or one `overlap` decision recorded on its trail. */
+	spinoffOverlap(body: SpinoffOverlapRequest): Promise<SpinoffOverlapResponse> {
+		return this.call("POST", path.spinoffOverlap, body);
 	}
 
 	/** OB-1825: record a measure-twice verdict. The server computes it. */

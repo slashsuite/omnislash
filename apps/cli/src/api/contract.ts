@@ -229,6 +229,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/spinoffs", what: "the launch queue's rows (?status=)" },
   { method: "POST", path: "/spinoffs", what: "enqueue a launch" },
   { method: "POST", path: "/spinoffs/check", what: "record a measure-twice verdict: both score sheets in, the server computes and records it (OB-1825)" },
+  { method: "POST", path: "/spinoffs/overlap", what: "a ticket's declared files (op declared), or one overlap decision recorded on its trail (op record), for the dispatch overlap warning (OS-47)" },
   { method: "POST", path: "/spinoffs/planned-files", what: "each row's planned files from its ticket's newest go check, for the files: line of gateable and show (OB-2131)" },
   { method: "POST", path: "/spinoffs/serving", what: "the rows that SERVE one item — the join settle-on-close uses, resolved where the store is (1226)" },
   { method: "GET", path: "/spinoffs/config", what: "the launcher configuration the launching machine needs" },
@@ -1251,6 +1252,18 @@ export interface SpinoffPlannedFilesResponse {
   /** `files` null: that row's ticket has no go check. */
   planned: Array<{ id: number; files: string[] | null }>;
 }
+
+/**
+ * OS-47: the dispatch overlap warning's store half. `declared`: each ticket's declared files (its newest go
+ * check, directories and globs kept), null when it has none. `record`: one `overlap` decision on the ticket's trail.
+ */
+export type SpinoffOverlapRequest =
+  | { op: "declared"; refs: Array<{ ticket_ref: string; item_id: string | null }> }
+  | { op: "record"; ticket_ref: string; rows: Array<{ ref: string; row: number; paths: string[] }>; note: string | null; actor: string | null };
+
+export type SpinoffOverlapResponse =
+  | { op: "declared"; declared: Array<{ ticket_ref: string; files: string[] | null }> }
+  | { op: "record"; recorded: boolean };
 
 export type SpinoffCheckResponse = CheckResult;
 

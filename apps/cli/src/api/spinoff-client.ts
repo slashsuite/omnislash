@@ -37,6 +37,8 @@ import { gitLegDiff, liveFileIO, liveMeasureDeps, runTrialCli } from "../../../.
 import { AppError, UsageError } from "../errors.ts";
 import { existsSync } from "node:fs";
 import { print, warn } from "../output.ts";
+import { overlapFor, printOverlap, warnDispatchOverlap, type DispatchOverlapDeps } from "../../../../platform/cli-coord/src/spinoff-overlap.ts";
+import { IN_FLIGHT } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
 import { WORK_TAGS } from "../work-tags.ts";
 import { formatSpikeReport, isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
 import { parseSince, reportMix } from "../../../../platform/cli-coord/src/spinoff-mix.ts";
@@ -114,6 +116,7 @@ import {
   readyResultJson,
   commitsAheadFor,
   headShaFor,
+  overlapSh,
   rowsInTeam,
   gateableFactsFor,
   READY_FOR_GATE,
@@ -1023,6 +1026,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
           ctx.client.enqueueSpinoff({ ...body, branch: legBranchName, worktree: legWorktree, effort: spec.effort ?? null, trial_leg: leg, trial_model: spec.model }),
         );
         if (queued.warning && leg === "a") warn(`  ⚠ ${queued.warning}`); // OB-1825, said once
+        if (leg === "a") await apiDispatchOverlap(ctx, cfg, queued.row.ticket_ref, repo, queued.row.item_id ?? null); // OS-47
         if (queued.deduped) {
           // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
           // launching, building or handed-off one is left as it is (nothing new is launched).
@@ -1051,6 +1055,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   const urgentNote = urgent ? { from: (raised_from ?? null) as SpinoffTier | null } : null;
   if (warning) warn(`  ⚠ ${warning}`); // OB-1825
   if (flake && !queueOnly && !body.flake_box) warn(noFlakeBoxWarning(row.ticket_ref)); // OB-2230
+  if (!queueOnly) await apiDispatchOverlap(ctx, cfg, row.ticket_ref, repo, row.item_id ?? null); // OS-47: warns, never refuses
   // 1226: a ref two sequences both claim was bound to the PATH, and the enqueue — resolved where the store
   // is — already says which item its id also names, so this needs no read of its own.
   const collides = collidingRefWarning(row.ticket_ref, row.item_id, collision ?? null);
@@ -1063,6 +1068,37 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     return;
   }
   await launchOverApi(ctx, cfg, row, deduped, tier !== undefined, under, urgentNote);
+}
+
+/**
+ * OS-47: the overlap check on an API client. Rows and declared files come over the API, the branch diffs from
+ * this machine's checkouts, and the `overlap` decision goes back to the server's trail. An older server without
+ * the route reads as no declared list: `overlap: unknown`.
+ */
+function apiOverlapDeps(ctx: ApiCtx, cfg: SpinoffLaunchConfig): Omit<DispatchOverlapDeps, "record"> & { declared: NonNullable<DispatchOverlapDeps["declared"]> } {
+  return {
+    sh: overlapSh,
+    rows: async () => (await ctx.client.spinoffs({})).spinoffs,
+    repoPath: (repo) => rowRepoPathIn(cfg, repo),
+    declared: async (ref, itemId) => {
+      const res = await ctx.client.spinoffOverlap({ op: "declared", refs: [{ ticket_ref: ref, item_id: itemId }] }).catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      });
+      return res?.op === "declared" ? (res.declared[0]?.files ?? null) : null;
+    },
+  };
+}
+
+async function apiDispatchOverlap(ctx: ApiCtx, cfg: SpinoffLaunchConfig, ticketRef: string, repo: string, itemId: string | null): Promise<void> {
+  const deps = apiOverlapDeps(ctx, cfg);
+  await warnDispatchOverlap(null, { ref: ticketRef, repo, itemId }, {
+    ...deps,
+    noCheck: flag(ctx, "no-check") ?? null,
+    record: async (rows, note) => {
+      await ctx.client.spinoffOverlap({ op: "record", ticket_ref: ticketRef, rows, note, actor: flag(ctx, "holder") ?? null });
+    },
+  });
 }
 
 /**
@@ -1388,6 +1424,20 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     });
     if (ctx.mode === "json") print(JSON.stringify({ ticket: rawRef, branch, brief }, null, 2));
     else print(brief);
+    return;
+  }
+
+  if (sub === "overlap") {
+    // OS-47: the dispatch's overlap lines, without the launch. Rows and declared files over the API, diffs here.
+    const ref = ctx.args[1];
+    if (!ref) throw new UsageError("spinoff overlap requires a <ticket-ref>");
+    const cfg = await config(ctx);
+    const deps = apiOverlapDeps(ctx, cfg);
+    const rows = await deps.rows();
+    const own = rows.find((r) => r.ticket_ref === ref && IN_FLIGHT.has(r.status));
+    const repo = flag(ctx, "repo") !== undefined || !own ? (await repoSlug(ctx, cfg, "spinoff overlap", ref)).slug : own.repo;
+    const result = await overlapFor({ ref, repo, itemId: own?.item_id ?? null }, { ...deps, rows: async () => rows });
+    printOverlap({ ref, repo }, result, ctx.mode === "json");
     return;
   }
 

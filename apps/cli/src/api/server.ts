@@ -1213,6 +1213,22 @@ async function route(
         }),
       );
     }
+    // OS-47: the overlap warning's declared files and its decision, both on the trail.
+    if (second === "overlap" && segments.length === 2 && method === "POST") {
+      const body = await readJson(req);
+      const op = oneOf<"declared" | "record">(reqString(body, "op"), ["declared", "record"], "op");
+      if (op === "record") {
+        const rows = Array.isArray(body.rows) ? (body.rows as Array<{ ref: unknown; row: unknown; paths: unknown }>) : [];
+        const clean = rows
+          .filter((r) => typeof r?.ref === "string" && typeof r.row === "number" && Array.isArray(r.paths))
+          .map((r) => ({ ref: r.ref as string, row: r.row as number, paths: (r.paths as unknown[]).filter((p): p is string => typeof p === "string") }));
+        return json(await h.spinoffOverlap(store, { op, ticket_ref: reqString(body, "ticket_ref"), rows: clean, note: optString(body, "note") ?? null, actor: optString(body, "actor") ?? null }));
+      }
+      const refs = (Array.isArray(body.refs) ? (body.refs as Array<{ ticket_ref: unknown; item_id: unknown }>) : [])
+        .filter((r) => typeof r?.ticket_ref === "string")
+        .map((r) => ({ ticket_ref: r.ticket_ref as string, item_id: typeof r.item_id === "string" ? r.item_id : null }));
+      return json(await h.spinoffOverlap(store, { op, refs }));
+    }
     // OB-2131: the go check's planned files live on the trail, which `ob show --json` keeps from a client.
     if (second === "planned-files" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
