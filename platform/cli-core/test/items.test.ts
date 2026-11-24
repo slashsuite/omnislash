@@ -35,7 +35,7 @@ describe("queryItems filters", () => {
     await registerProject(db, { name: "foo", kind: "side" });
     const a = await createItem(db, { type: "task", title: "a", projectId: "foo" });
     await createItem(db, { type: "task", title: "b", projectId: "foo" });
-    await setBlocked(db, a, "waiting", "sam");
+    await setBlocked(db, a, "open", "waiting", "sam");
     const blocked = await queryItems(db, { status: "blocked" });
     expect(blocked.length).toBe(1);
     expect(blocked[0]!.block_reason).toBe("waiting");

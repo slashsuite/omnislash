@@ -28,7 +28,7 @@ describe("a pending row for finished work does not launch (OB-1695)", () => {
   test("a done ticket: not ready, row stays pending, nothing claimed", async () => {
     const db = freshDb();
     const id = await createItem(db, { type: "task", title: "t" });
-    await setStatus(db, id, "done");
+    await setStatus(db, id, "open", "done");
     const { row } = await enqueueSpinoff(db, input({ ticketRef: id, branch: "x" }));
     const r = await launchQueuedRow(db, row, "", localSpinoffSteps(db), () => []);
     expect(r.kind).toBe("not-ready");

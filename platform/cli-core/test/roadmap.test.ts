@@ -90,8 +90,8 @@ describe("roadmap members + progress (integration)", () => {
       await addLink(db, id, "roadmap_member", roadmapId);
     }
     // Close 2 of the 4.
-    await setStatus(db, memberIds[0]!, "done");
-    await setStatus(db, memberIds[1]!, "done");
+    await setStatus(db, memberIds[0]!, "open", "done");
+    await setStatus(db, memberIds[1]!, "open", "done");
 
     const members = await getRoadmapMembers(db, roadmapId);
     expect(members).toHaveLength(4);

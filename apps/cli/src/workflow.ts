@@ -12,6 +12,35 @@ import { asStore, readNumber, type Store } from "./db/store.ts";
 import { item } from "./db/schema.ts";
 import { canTransition, isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
 import { shadowItemMove } from "./machine-shadow.ts";
+import { defineSeam } from "./test-seams.ts";
+
+/**
+ * OS-171: fires inside each door's transaction, after the door read `from` and before the guarded write, so a
+ * test can move the item in between and watch the write be refused with `StatusRaced`. A no-op for real.
+ */
+export const statusRaceSeam = defineSeam<(tx: Store, id: string, from: string, to: string) => Promise<void>>(
+  "status-race",
+  async () => {},
+);
+
+/**
+ * OS-171: one status move as one transaction: the race seam, then `body`, which does the guarded write
+ * (`StatusRaced` when the item is no longer `from`) and the decision row through the same handle. A throw
+ * anywhere rolls back the write and the decision together. Nested in a caller's transaction it joins it
+ * (SQLite) or takes a savepoint (Postgres).
+ */
+function moveAtomically(
+  db: Database | Store,
+  id: string,
+  from: string,
+  to: string,
+  body: (tx: Store) => Promise<void>,
+): Promise<void> {
+  return asStore(db).txn(`move ${id} ${from} -> ${to}`, async (tx) => {
+    await statusRaceSeam.get()(tx, id, from, to);
+    await body(tx);
+  });
+}
 
 // The single validated-transition core. The CLI workflow commands (`ob start/ready/close/reopen/block/
 // today`) and the dashboard's transitionItem server fn BOTH go through here — no state logic is
@@ -77,13 +106,15 @@ export async function transitionTo(db: Database | Store, id: string, to: string,
   id = it.id;
   await assertTransitionShadowed(db, it, to, decision);
   const from = it.status;
-  await setStatus(db, id, to);
-  // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
-  // so a refused close leaves the flag set.
-  if (to === "done") await clearTriage(db, id);
-  // 1515: a move to the status it is already in (a retried `close`) is not a decision, and recording it
-  // would turn every idempotent re-run into a `done -> done` line on the trail.
-  if (from !== to) await recordDecision(db, id, from, to, decision);
+  await moveAtomically(db, id, from, to, async (tx) => {
+    await setStatus(tx, id, from, to);
+    // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
+    // so a refused close leaves the flag set.
+    if (to === "done") await clearTriage(tx, id);
+    // 1515: a move to the status it is already in (a retried `close`) is not a decision, and recording it
+    // would turn every idempotent re-run into a `done -> done` line on the trail.
+    if (from !== to) await recordDecision(tx, id, from, to, decision);
+  });
 }
 
 export async function startItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
@@ -119,8 +150,10 @@ export async function reopenItem(db: Database | Store, id: string, decision: Dec
   id = it.id;
   refuseUnlessReopenable(it);
   await assertTransitionShadowed(db, it, "open", decision);
-  await setStatus(db, id, "open");
-  await recordDecision(db, id, "done", "open", decision);
+  await moveAtomically(db, id, "done", "open", async (tx) => {
+    await setStatus(tx, id, "done", "open");
+    await recordDecision(tx, id, "done", "open", decision);
+  });
 }
 
 /**
@@ -139,10 +172,13 @@ export async function blockItem(
   id = it.id;
   if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
   await assertTransitionShadowed(db, it, "blocked", decision);
-  await setBlocked(db, id, reason, owner);
+  const from = it.status;
   // OS-26: the owner rides on the transition, so who a block waited on survives the block being cleared.
   const extra = owner ? { ...decision.extra, block_owner: owner } : decision.extra;
-  await recordDecision(db, id, it.status, "blocked", { ...decision, extra, note: decision.note ?? reason });
+  await moveAtomically(db, id, from, "blocked", async (tx) => {
+    await setBlocked(tx, id, from, reason, owner);
+    await recordDecision(tx, id, from, "blocked", { ...decision, extra, note: decision.note ?? reason });
+  });
 }
 
 /**
@@ -199,9 +235,11 @@ export async function unblockItem(
       : "open");
   // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
   await assertTransitionShadowed(db, it, target, decision);
-  await clearBlock(db, id, target);
-  if (target === "done") await clearTriage(db, id);
-  await recordDecision(db, id, "blocked", target, decision);
+  await moveAtomically(db, id, "blocked", target, async (tx) => {
+    await clearBlock(tx, id, "blocked", target);
+    if (target === "done") await clearTriage(tx, id);
+    await recordDecision(tx, id, "blocked", target, decision);
+  });
 }
 
 export type MoveResult = "blocked" | "unblocked" | "reopened" | "moved";

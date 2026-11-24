@@ -36,7 +36,7 @@ beforeAll(async () => {
   ackId = await createItem(db, { type: "task", title: "waiting on the ack", priority: 2 });
   snoozeId = await createItem(db, { type: "task", title: "waiting on the snooze", priority: 2 });
   for (const id of [ackId, snoozeId]) {
-    await setBlocked(db, id, "waiting on infra", "ops");
+    await setBlocked(db, id, "open", "waiting on infra", "ops");
     db.query("UPDATE item SET updated_at = ? WHERE id = ?").run(tenDaysAgo, id);
   }
   // The server functions in the built bundle read this, never the live store (serve.ts provides the real one).
