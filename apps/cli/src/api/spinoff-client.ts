@@ -1026,7 +1026,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
           ctx.client.enqueueSpinoff({ ...body, branch: legBranchName, worktree: legWorktree, effort: spec.effort ?? null, trial_leg: leg, trial_model: spec.model }),
         );
         if (queued.warning && leg === "a") warn(`  ⚠ ${queued.warning}`); // OB-1825, said once
-        if (leg === "a") await apiDispatchOverlap(ctx, cfg, ticketRef, repo, queued.row.item_id ?? null); // OS-47
+        if (leg === "a") await apiDispatchOverlap(ctx, cfg, queued.row.ticket_ref, repo, queued.row.item_id ?? null); // OS-47
         if (queued.deduped) {
           // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
           // launching, building or handed-off one is left as it is (nothing new is launched).
@@ -1055,7 +1055,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   const urgentNote = urgent ? { from: (raised_from ?? null) as SpinoffTier | null } : null;
   if (warning) warn(`  ⚠ ${warning}`); // OB-1825
   if (flake && !queueOnly && !body.flake_box) warn(noFlakeBoxWarning(row.ticket_ref)); // OB-2230
-  if (!queueOnly) await apiDispatchOverlap(ctx, cfg, ticketRef, repo, row.item_id ?? null); // OS-47: warns, never refuses
+  if (!queueOnly) await apiDispatchOverlap(ctx, cfg, row.ticket_ref, repo, row.item_id ?? null); // OS-47: warns, never refuses
   // 1226: a ref two sequences both claim was bound to the PATH, and the enqueue — resolved where the store
   // is — already says which item its id also names, so this needs no read of its own.
   const collides = collidingRefWarning(row.ticket_ref, row.item_id, collision ?? null);

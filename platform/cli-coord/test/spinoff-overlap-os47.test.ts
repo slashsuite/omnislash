@@ -218,6 +218,18 @@ describe("the dispatch overlap warning (OS-47)", () => {
     db.close();
   });
 
+  test("a row of the ticket's own item under another ref (a trial's leg b) is not an overlap with itself", async () => {
+    const w = await world();
+    await check(w.dbPath, w.ids.mine, ["apps/a.ts"]);
+    expect((await dispatch(w.dbPath, w.ids.mine, w.repo)).code).toBe(0);
+    const db = openDb(w.dbPath);
+    const own = (await listSpinoffs(db)).find((r) => r.item_id === w.ids.mine)!;
+    db.query("UPDATE spinoff SET ticket_ref = ? WHERE id = ?").run(`${own.ticket_ref}-b`, own.id);
+    db.close();
+    const r = await preview(w.dbPath, w.ids.mine, w.repo);
+    expect(r.out.trim().split("\n")).toEqual([`overlap: ${w.rowA.ticket_ref} (#${w.rowA.id}) apps/a.ts`]);
+  });
+
   test("no recorded check, or --no-check: overlap unknown, and the dispatch launches", async () => {
     const w = await world();
     const none = await preview(w.dbPath, w.ids.mine, w.repo);
@@ -246,8 +258,8 @@ describe("ob spinoff overlap on an API client (OS-47)", () => {
     const calls: string[] = [];
     const transport: ApiTransport = async (req: ApiRequest) => {
       const key = `${req.method} ${req.url.slice((BASE + OB_API_PREFIX).length).split("?")[0]!}`;
-      calls.push(key);
       const body = req.body ? JSON.parse(req.body) : {};
+      calls.push(body.op ? `${key} ${body.op}` : key);
       if (key === "GET /spinoffs/config") return { status: 200, body: JSON.stringify({ config: { repo_checkouts: { omnislash: repo }, launcher: "t3", launcher_by_repo: {}, engine: "claude" } }) };
       if (key === "GET /spinoffs") return { status: 200, body: JSON.stringify({ spinoffs: rows }) };
       if (key === "POST /spinoffs/overlap" && body.op === "declared") {
@@ -260,7 +272,7 @@ describe("ob spinoff overlap on an API client (OS-47)", () => {
       const r = await runCli(freshDbPath(), ["spinoff", "overlap", "OS-47", "--repo", "omnislash"], { api: { base: BASE, token: "t", transport } });
       expect(r.code).toBe(0);
       expect(r.out.trim()).toBe("overlap: OS-90 (#4) apps/cli/src/cli.ts");
-      expect(calls.filter((c) => c.startsWith("POST") && c !== "POST /spinoffs/overlap")).toEqual([]);
+      expect(calls.filter((c) => c.startsWith("POST") && c !== "POST /spinoffs/overlap declared")).toEqual([]);
     } finally {
       restoreSh();
     }

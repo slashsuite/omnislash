@@ -20,7 +20,7 @@ const MAIN = "origin/main";
 const FETCH_TIMEOUT_MS = 30_000;
 const GIT_TIMEOUT_MS = 15_000;
 
-export const OVERLAP_UNKNOWN_LINE = "overlap: unknown, no recorded check";
+const OVERLAP_UNKNOWN_LINE = "overlap: unknown, no recorded check";
 
 /** The fields of a spinoff row the check reads. */
 export interface OverlapRow {
@@ -130,12 +130,14 @@ export function touchedFiles(sh: Sh, repoPath: string, row: Pick<OverlapRow, "br
  * rows left out). The repo's checkout is fetched once first, so a pushed branch is read as it is on origin.
  */
 export async function overlapFor(ticket: { ref: string; itemId?: string | null; repo: string }, deps: OverlapDeps): Promise<OverlapResult> {
-  const mine = await deps.declared(ticket.ref, ticket.itemId ?? null);
+  const itemId = ticket.itemId ?? null;
+  const mine = await deps.declared(ticket.ref, itemId);
   if (mine === null) return { kind: "unknown" };
   const repoPath = await deps.repoPath(ticket.repo);
   const live: OverlapRow[] = [];
   for (const row of await deps.rows()) {
-    if (!IN_FLIGHT.has(row.status) || row.ticket_ref === ticket.ref) continue;
+    // The ticket's own rows, a trial's `<ref>-b` leg among them, are left out by ref and by item.
+    if (!IN_FLIGHT.has(row.status) || row.ticket_ref === ticket.ref || (itemId !== null && row.item_id === itemId)) continue;
     if ((await deps.repoPath(row.repo)) === repoPath) live.push(row);
   }
   if (live.length === 0 || mine.length === 0) return { kind: "checked", rows: [] };
@@ -157,14 +159,14 @@ export function renderOverlap(result: OverlapResult): string[] {
 }
 
 /** The `overlap` decision's payload, `{ rows: [{ ref, row, paths }] }`, or null when there is nothing to record. Pure. */
-export function overlapDecisionRows(result: OverlapResult): Array<{ ref: string; row: number; paths: string[] }> | null {
+function overlapDecisionRows(result: OverlapResult): Array<{ ref: string; row: number; paths: string[] }> | null {
   if (result.kind !== "checked" || result.rows.length === 0) return null;
   return result.rows.map(({ ref, row, paths }) => ({ ref, row, paths }));
 }
 
 /** The trail words of the `overlap` decision: `dispatch -> overlap`, payload `{ rows }`. */
-export const OVERLAP_FROM = "dispatch";
-export const OVERLAP_TO = "overlap";
+const OVERLAP_FROM = "dispatch";
+const OVERLAP_TO = "overlap";
 
 export type OverlapDecisionRow = { ref: string; row: number; paths: string[] };
 
