@@ -205,11 +205,14 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       const both = await h.runTwo(["role", "start", "t", "architect"], ["role", "start", "t", "architect"]);
       expect(f.launches).toHaveLength(1);
       expect(both.codes).toContain(0);
-      expect(both.out).toContain("run 1 opened, thread t3-1");
+      // One run is open. Its id is not always 1: the start that lost the insert race can use up an id first.
+      const open = await openRoleRuns(h.store, "t", "architect");
+      expect(open).toHaveLength(1);
+      const id = open[0]!.id;
+      expect(both.out).toContain(`run ${id} opened, thread t3-1`);
       // The other start either read the run after its thread was recorded (reused) or while it was launching (refused).
-      const reported = both.out.includes("run 1 is open, thread t3-1") || both.err.includes("run 1 for t architect has no thread yet");
+      const reported = both.out.includes(`run ${id} is open, thread t3-1`) || both.err.includes(`run ${id} for t architect has no thread yet`);
       expect(reported).toBe(true);
-      expect((await openRoleRuns(h.store, "t", "architect")).map((r) => r.id)).toEqual([1]);
     },
   ],
   [
