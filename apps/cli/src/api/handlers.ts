@@ -385,8 +385,14 @@ import { inScope, type ProjectScope } from "../project-scope.ts";
 async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: ProjectScope): Promise<void> {
   const collision = await bareNumberCollision(store, id);
   if (!collision) return;
-  // OS-178: the collision message names both items, so a scoped token gets one that names neither.
-  if (scope) throw new ApiFault("invalid_request", 400, `'${id}' is ambiguous; ask for the item by its ref`);
+  if (scope) {
+    // OS-178: a reading the token cannot see is no reading at all, so an out-of-scope OB-<n> never makes an
+    // in-scope bare id ambiguous (an item in a keyless project has no other handle). When both are visible
+    // the refusal names neither, since the full message carries ids and refs.
+    const keyItem = await getItem(store, collision.keyItem);
+    if (!keyItem || !inScope(scope, keyItem.project_id)) return;
+    throw new ApiFault("invalid_request", 400, `'${id}' is ambiguous; ask for the item by its ref`);
+  }
   throw new ApiFault("invalid_request", 400, bareNumberCollisionMessage(collision));
 }
 
