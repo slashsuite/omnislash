@@ -402,6 +402,8 @@ export const FLAGS = {
   "cache-creation-tokens": { type: "string" },
   "cache-read-tokens": { type: "string" },
   "total-tokens": { type: "string" },
+  // OS-163: `ob spinoff land --pr-url <url>`, the merged PR a reconcile on another machine read.
+  "pr-url": { type: "string" },
   // 323: `ob pg-export`. `--from` and `--to`/`--to-file` are required, never defaulted.
   "to-file": { type: "string" },
   truncate: { type: "boolean" },

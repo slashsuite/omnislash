@@ -83,6 +83,7 @@ import {
   tallyDrain,
   type DrainScope,
   rowRepoPathIn,
+  mergedPrUrlFor,
   stampArgv,
   TIER_FIT_HINT,
   CLAIM_TTL_S,
@@ -186,6 +187,12 @@ const ISSUE_REF_REFUSAL = [
 function flag(ctx: ApiCtx, key: string): string | undefined {
   const v = (ctx.flags as unknown as Record<string, unknown>)[key];
   return typeof v === "string" ? v : undefined;
+}
+
+/** OS-163: row `id`'s merged PR, read in this machine's checkout of its repo. */
+async function apiMergedPrUrl(ctx: ApiCtx, id: number): Promise<string | null> {
+  const row = (await ctx.client.spinoffs({})).spinoffs.find((r) => r.id === id);
+  return row ? mergedPrUrlFor(rowRepoPathIn(await config(ctx), row.repo), row.branch) : null;
 }
 
 function numberFlag(ctx: ApiCtx, key: string, fallback?: number): number {
@@ -399,7 +406,7 @@ export function apiSpinoffSteps(client: ApiClient): SpinoffSteps {
     },
     land: async (input) => {
       try {
-        const res = await client.landSpinoff({ id: input.id, tokens: input.tokens });
+        const res = await client.landSpinoff({ id: input.id, tokens: input.tokens, pr_url: input.pr_url ?? null });
         return res.landed ? null : `not landed: ${res.blocked?.resource ?? "unknown"} held by ${res.blocked?.holder ?? "unknown"}`;
       } catch (e) {
         return (e as Error).message;
@@ -537,11 +544,12 @@ async function apiReconcile(
     if (!branchDone && !signalled) continue;
     // This machine's transcript, and only this machine's; OB-1991: the reader the row's model names.
     const usage = readRowTokens(row);
+    const prUrl = mergedPrUrlFor(repo, row.branch); // OS-163: read HERE, where gh and the checkout are
     // The #97 guard is applied by the endpoint, which is where the leases are: a landing must not happen
     // under a THIRD party's hold, and `blocked` comes back rather than a failure, exactly as locally.
     let landed: { landed: boolean; blocked: { resource: string; holder: string } | null };
     try {
-      landed = await ctx.client.landSpinoff({ id: row.id, tokens: usage, holder, caller });
+      landed = await ctx.client.landSpinoff({ id: row.id, tokens: usage, pr_url: prUrl, holder, caller });
     } catch (e) {
       dbFailures.push({
         ticket: row.ticket_ref,
@@ -551,7 +559,7 @@ async function apiReconcile(
             : `${row.ticket_ref} has landed (ticket done, or a landing commit on origin/main)`,
           missing: "retiring the row",
           detail: (e as Error).message,
-          recover: `ob ${landArgv(row.id, usage).join(" ")}`,
+          recover: `ob ${shellWords(landArgv(row.id, usage, {}, prUrl))}`,
         }),
       });
       continue;
@@ -1388,7 +1396,11 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
       cacheReadTokens: numberFlag(ctx, "cache-read-tokens", 0),
       totalTokens: numberFlag(ctx, "total-tokens", 0),
     };
-    const res = await ctx.client.landSpinoff({ id, tokens, holder: flag(ctx, "holder") ?? null, caller: leaseHolderId() });
+    // OS-163: the merged PR is read HERE, where gh and the checkout are, unless the caller passed it (empty: none).
+    // Best effort: a read that fails lands the row without one.
+    const given = flag(ctx, "pr-url");
+    const prUrl = given !== undefined ? given || null : await apiMergedPrUrl(ctx, id).catch(() => null);
+    const res = await ctx.client.landSpinoff({ id, tokens, pr_url: prUrl, holder: flag(ctx, "holder") ?? null, caller: leaseHolderId() });
     if (ctx.mode === "json") print(JSON.stringify({ id, status: res.landed ? spinoffStatusWord("merged") : "unchanged", blocked: res.blocked }, null, 2));
     else if (res.landed) print(`landed #${id}`);
     else {

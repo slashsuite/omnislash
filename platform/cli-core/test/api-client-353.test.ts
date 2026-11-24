@@ -547,7 +547,8 @@ describe("the working loop over HTTP (353)", () => {
 			expect(settled).toEqual(["mcp:row591"]);
 			// Only serving reads (OB-1993 adds one before the close, for the tokens), and no item read: the unfiltered
 			// LIST is only asked for when there is nothing to settle and the close owes the human a sentence about why.
-			expect(s.calls.filter((c) => c.url.includes("/spinoffs")).map((c) => c.url.endsWith("/spinoffs/serving"))).toEqual([true, true]);
+			// OS-163 adds the config read that resolves each row's checkout for its merged PR.
+			expect(s.calls.filter((c) => c.url.includes("/spinoffs") && !c.url.endsWith("/spinoffs/config")).map((c) => c.url.endsWith("/spinoffs/serving"))).toEqual([true, true]);
 			expect(s.calls.some((c) => c.method === "GET" && c.url.includes("/items/1134"))).toBe(false);
 			expect(r.err).toBe("");
 		} finally {

@@ -154,7 +154,7 @@ export async function seedTimeline(store: Store): Promise<void> {
         ["2026-11-11T11:00:00.000Z", "building", "handed-off"],
         ["2026-11-11T12:00:00.000Z", "handed-off", "landed"],
       ],
-      // Written by hand: `ob spinoff land` does not record a pr_url yet, so live merge lines wait on that.
+      // Written by hand here; a real land records pr_url from the branch's merged PR (OS-163).
       { pr_url: TIMELINE_PR },
     ),
     ...row(9002, [

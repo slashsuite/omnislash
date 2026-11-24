@@ -23,7 +23,7 @@ import {
   unjoinedSettleWarning,
   worktreeRepoOf,
 } from "../t3/dispatch.ts";
-import { landCommitFor, rowProjectOf } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { landCommitFor, localMergedPrUrl, rowProjectOf } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { storeTeamOf, teamHandoffTarget, type HandoffRoute } from "../team.ts";
 import { unresolvedRefWarning } from "../../../../platform/cli-coord/src/spinoff-item.ts";
 import {
@@ -311,7 +311,8 @@ export async function cmdClose(ctx: Ctx): Promise<void> {
  * The validated close and the spinoff land (closeAndLand), then the GitHub mirror and the thread settle.
  */
 export async function closeLocally(ctx: Ctx, id: string): Promise<void> {
-  const r = await closeAndLand(ctx.store ?? ctx.db, id, decisionOptsOf(ctx));
+  const store = ctx.store ?? ctx.db;
+  const r = await closeAndLand(store, id, decisionOptsOf(ctx), {}, localMergedPrUrl(store));
   await emitWithIssue(ctx, id, "closed");
   reportSpinoffsLanded(ctx, id, r);
 }
