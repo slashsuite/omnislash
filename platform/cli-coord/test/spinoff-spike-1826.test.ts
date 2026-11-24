@@ -108,12 +108,35 @@ describe("the pure rules (OB-1826)", () => {
     expect(spikeCommitRefusal(row, null)).toContain("cannot tell");
   });
 
-  test("documentation is a .md file outside the code roots and skills/ (OB-2227)", () => {
-    expect(isSpikeDocPath("docs/research/x.md")).toBe(true);
-    expect(isSpikeDocPath("wiki/incidents/ops.md")).toBe(true);
-    expect(isSpikeDocPath("docs/x.ts")).toBe(false);
-    expect(isSpikeDocPath("docs/diagram.png")).toBe(false);
-    for (const p of ["apps/cli/README.md", "platform/cli-coord/x.md", "domains/health/x.md", "skills/ob-architect/SKILL.md", "ops/x.md"]) {
+  test("documentation is a .md file outside the code roots, or a .mmd/.json file under docs/ (OB-2227, OS-166)", () => {
+    for (const p of [
+      "docs/research/x.md",
+      "wiki/incidents/ops.md",
+      "notes/X.MD",
+      "docs/a.mmd",
+      "docs/a.json",
+      "docs/state/machines/item.mmd",
+      "docs/state/machines/item.json",
+      "./docs/a.json",
+    ]) {
+      expect(isSpikeDocPath(p)).toBe(true);
+    }
+    for (const p of [
+      "docs/x.ts",
+      "docs/diagram.png",
+      "Docs/a.mmd",
+      "docs/A.JSON",
+      "docs/a.MMD",
+      "package.json",
+      "notes/a.mmd",
+      "apps/docs/a.json",
+      "platform/docs/a.mmd",
+      "apps/cli/README.md",
+      "platform/cli-coord/x.md",
+      "domains/health/x.md",
+      "skills/ob-architect/SKILL.md",
+      "ops/x.md",
+    ]) {
       expect(isSpikeDocPath(p)).toBe(false);
     }
   });

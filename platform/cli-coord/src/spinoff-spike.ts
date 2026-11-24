@@ -67,13 +67,23 @@ export function isSpikeEnd(row: Pick<SpinoffRow, "status" | "error">): boolean {
 
 /**
  * The roots a spike may not touch, even with a `.md` file (OB-2227). Code lives under the first four, and
- * `skills/` is agent behaviour, which goes through the architect. Anything else ending in `.md` is documentation.
+ * `skills/` is agent behaviour, which goes through the architect. Anything else ending in `.md` is documentation,
+ * and so is a `.mmd` or `.json` file under the repo-root `docs/` (OS-166: the diagram and data a doc ships with).
  */
 export const SPIKE_CODE_ROOTS = ["apps/", "platform/", "domains/", "skills/", "ops/"] as const;
 
-/** Is this changed path documentation a spike may commit? A `.md` file outside the code roots, and nothing else. Pure. */
+/** The data files a spike may commit beside its doc, and only under the repo-root `docs/` (OS-166). Case-sensitive. */
+const SPIKE_DOC_DATA_ROOT = "docs/";
+const SPIKE_DOC_DATA_EXTENSIONS = [".mmd", ".json"] as const;
+
+/**
+ * Is this changed path documentation a spike may commit? A `.md` file outside the code roots (any case), or a
+ * `.mmd` or `.json` file under the repo-root `docs/` at any depth (exact case: `Docs/a.mmd` and `docs/A.JSON`
+ * are not). Nothing else. Pure.
+ */
 export function isSpikeDocPath(path: string): boolean {
   const p = path.trim().replace(/^\.\//, "");
+  if (p.startsWith(SPIKE_DOC_DATA_ROOT) && SPIKE_DOC_DATA_EXTENSIONS.some((ext) => p.endsWith(ext))) return true;
   if (!p.toLowerCase().endsWith(".md")) return false;
   return !SPIKE_CODE_ROOTS.some((root) => p.startsWith(root));
 }
@@ -93,7 +103,7 @@ export function spikeCommitRefusal(row: Pick<SpinoffRow, "ticket_ref" | "branch"
   if (code.length === 0) return null;
   return (
     `spike ${row.ticket_ref}: ${row.branch} changes ${code.length} path(s) that are not documentation, and a spike may commit ` +
-    `documentation only (a .md file outside ${SPIKE_CODE_ROOTS.join(", ")}): ${code.join(", ")}. ` +
+    `documentation only (a .md file outside ${SPIKE_CODE_ROOTS.join(", ")}, or a .mmd or .json file under ${SPIKE_DOC_DATA_ROOT}): ${code.join(", ")}. ` +
     `Drop those changes from the branch in ${row.worktree} (keep the answers on the parent with 'ob note <parent>'), ` +
     `and hand off again. Nothing was handed off`
   );
