@@ -1032,7 +1032,8 @@ export async function close(store: Store, id: string, req: TrackerMoveRequest): 
   // 1589: the close is the land, so the item's own building / handed-off rows read `landed` now. Best
   // effort: a failure is logged, never a 500 over a close that happened (OB-1928: closeAndLand).
   // OB-1993: the tokens are the client's reading (this host has no builder transcripts); a row it did not send reads here.
-  const marked = await closeAndLand(store, id, { note: req.note, actor: req.actor }, req.tokensById ?? {});
+  // OS-163: a row's merged PR comes from the client (it has gh and the checkout); the server never reads one
+  const marked = await closeAndLand(store, id, { note: req.note, actor: req.actor }, req.landById ?? {});
   if (marked.error) console.error(`spinoff: ${id} closed, but its spinoff rows were not marked landed: ${marked.error}`);
   return trackerMove(store, id, "closed", req);
 }
@@ -1634,7 +1635,7 @@ export async function spinoffLand(store: Store, req: LandSpinoffRequest): Promis
   const self = [req.caller ?? "", req.holder ?? "", builderIdOf(row)].filter((s) => s.length > 0);
   const hold = await foreignHold(store, spinoffLeaseKeys(row), self);
   if (hold) return { id: req.id, landed: false, blocked: { resource: hold.resource, holder: hold.holder } };
-  await landSpinoff(store, req.id, req.tokens);
+  await landSpinoff(store, req.id, req.tokens, {}, req.pr_url ?? null);
   return { id: req.id, landed: true, blocked: null };
 }
 

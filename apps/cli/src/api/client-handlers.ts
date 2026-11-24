@@ -139,7 +139,7 @@ import { WHATSAPP_PREF_ACTIONS, type AgentRequest, type CreateItemRequest, type 
 // 1120: `ob t3` is SPLIT. A team's thread is opened HERE (this machine runs T3) and its registry row (the
 // thread id that makes the command idempotent) goes over the API (OB-2255).
 import { checkoutRootOf, dropQueuedReadyNotes, ownCloseLine, retiredCloseLine, splitOwnRows, renderLandReplyOutcome, renderSettleOutcome, renderStaleNoteOutcome, replyLandedToBuilders, settleThreadWithRetry, t3Seam, unjoinedSettleLine, worktreeRepoOf, type T3Seam } from "../t3/dispatch.ts";
-import { isReadyableStatus, landCommitFor, parseJsonMap, resolveRepoIn, type SpinoffRow } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { isReadyableStatus, landCommitFor, mergedPrUrlFor, parseJsonMap, resolveRepoIn, rowRepoPathIn, type SpinoffRow } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { readRowTokens, type TokenUsage } from "../../../../platform/cli-coord/src/spinoff-tokens.ts";
 import { itemDispatchRefs, unresolvedRefWarning } from "../../../../platform/cli-coord/src/spinoff-item.ts";
 import { homedir } from "node:os";
@@ -475,11 +475,15 @@ function emitMove(ctx: ApiCtx, id: string, want: "closed" | "open", res: Paramet
  * one the close will land (building or handed-off) and sends the counts with the close. Best effort: a read
  * that fails sends nothing, and the server reads as it always did.
  */
-async function closeTokensById(ctx: ApiCtx, itemId: string): Promise<Record<number, TokenUsage>> {
-	const out: Record<number, TokenUsage> = {};
+async function closeLandById(ctx: ApiCtx, itemId: string): Promise<Record<number, { tokens: TokenUsage; pr_url: string | null }>> {
+	const out: Record<number, { tokens: TokenUsage; pr_url: string | null }> = {};
 	try {
 		const res = await ctx.client.spinoffServing({ item_id: itemId });
-		for (const row of res.spinoffs) if (isReadyableStatus(row.status)) out[row.id] = readRowTokens(row);
+		const rows = res.spinoffs.filter((row) => isReadyableStatus(row.status));
+		// OS-163: each row's merged PR is read here too, where gh and the checkout are; the server records it
+		// a config that cannot be read costs the PRs only, never the tokens
+		const cfg = rows.length > 0 ? await ctx.client.spinoffConfig().then((r) => launchConfig(r.config), () => null) : null;
+		for (const row of rows) out[row.id] = { tokens: readRowTokens(row), pr_url: cfg ? mergedPrUrlFor(rowRepoPathIn(cfg, row.repo), row.branch) : null };
 	} catch (e) {
 		// An older host (no serving route) is silent; anything else is named, since the land then reads on the server.
 		if (!(e instanceof ApiError && e.status === 404)) warn(`spinoff: ${itemId}: token counts not read here (${(e as Error).message}); the land records what the server reads`);
@@ -496,8 +500,8 @@ function refuseDryRun(ctx: ApiCtx, command: string): void {
 async function apiClose(ctx: ApiCtx): Promise<void> {
 	const id = requireId(ctx, "close");
 	refuseDryRun(ctx, "close");
-	const tokensById = await closeTokensById(ctx, id);
-	const res = await ctx.client.close(id, { github: ctx.flags["no-github"] ? false : undefined, note: ctx.flags.note, actor: ctx.flags.holder, tokensById });
+	const landById = await closeLandById(ctx, id);
+	const res = await ctx.client.close(id, { github: ctx.flags["no-github"] ? false : undefined, note: ctx.flags.note, actor: ctx.flags.holder, landById });
 	emitMove(ctx, id, "closed", res);
 	// 1120: landing also retires the ticket's T3 threads, and T3 is on THIS machine, so the settle runs
 	// here rather than on the host that performed the close. Best effort and loud: the close has already
@@ -846,8 +850,8 @@ async function apiState(ctx: ApiCtx): Promise<void> {
 	// whole job rather than letting the refusal reach a human who meant to land something.
 	if (to === "done") {
 		refuseDryRun(ctx, "state");
-		const tokensById = await closeTokensById(ctx, id);
-		const res = await ctx.client.close(id, { github: ctx.flags["no-github"] ? false : undefined, note: ctx.flags.note, actor: ctx.flags.holder, tokensById });
+		const landById = await closeLandById(ctx, id);
+		const res = await ctx.client.close(id, { github: ctx.flags["no-github"] ? false : undefined, note: ctx.flags.note, actor: ctx.flags.holder, landById });
 		emitMove(ctx, id, "closed", res);
 		return;
 	}

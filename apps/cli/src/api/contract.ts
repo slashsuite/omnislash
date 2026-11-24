@@ -774,11 +774,12 @@ export interface TrackerMoveRequest {
   /** Who moved it (`--holder`); a human at the keyboard when omitted. An older host ignores it. */
   actor?: string;
   /**
-   * OB-1993: the tokens of the item's landable spinoff rows, read on the CLIENT (the machine with the transcripts),
-   * keyed by row id. The close records these instead of reading on the server, which has none. A row absent here is
-   * read on the server as before; an older host ignores the field.
+   * OB-1993, OS-163: what the CLIENT (the machine with the transcripts, the checkout and `gh`) read for each of the
+   * item's landable spinoff rows, keyed by row id: its tokens, and its branch's merged PR URL when it found one. The
+   * close records these instead of reading on the server, which has none. A row absent here has its tokens read on
+   * the server and records no PR.
    */
-  tokensById?: Record<number, TokenUsage>;
+  landById?: Record<number, { tokens: TokenUsage; pr_url?: string | null }>;
 }
 
 export type CloseItemRequest = TrackerMoveRequest;
@@ -1445,6 +1446,8 @@ export interface StampSpinoffResponse {
 export interface LandSpinoffRequest {
   id: number;
   tokens: TokenUsage;
+  /** OS-163: the branch's merged PR, read on the client; recorded on the landed event for the timeline. */
+  pr_url?: string | null;
   holder?: string | null;
   caller?: string | null;
 }

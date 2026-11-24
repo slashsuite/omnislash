@@ -1075,7 +1075,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       },
       land: {
         summary: "Server-side write marking a building/handed-off row landed with tokens",
-        usage: ["spinoff land --id <n> [--total-tokens <n>] [--note <why>]"],
+        usage: ["spinoff land --id <n> [--total-tokens <n>] [--pr-url <url>] [--note <why>]"],
         flags: [
           { flag: "--id <n>", description: "Spinoff row id (required)" },
           { flag: "--input-tokens <n>", description: "Input token count" },
@@ -1083,6 +1083,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--cache-creation-tokens <n>", description: "Cache creation token count" },
           { flag: "--cache-read-tokens <n>", description: "Cache read token count" },
           { flag: "--total-tokens <n>", description: "Total token count" },
+          { flag: "--pr-url <url>", description: "Merged PR recorded on the landed event (else read with gh)" },
           { flag: "-m, --note <why>", description: "Note recorded on the ticket trail" },
         ],
         examples: ["spinoff land --id 42 --total-tokens 120000"],

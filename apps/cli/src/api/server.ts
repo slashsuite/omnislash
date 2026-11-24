@@ -324,16 +324,18 @@ function tokenUsageFrom(o: Record<string, unknown>, key: string): TokenUsage {
   };
 }
 
-/** OB-1993: `tokensById` on a close, `{ "<row id>": TokenUsage }`. Absent is an empty map (an older client). */
-function tokensByIdFrom(o: Record<string, unknown>, key: string): Record<number, TokenUsage> {
+/** OB-1993, OS-163: `landById` on a close, `{ "<row id>": { tokens, pr_url? } }`. Absent is an empty map. */
+function landByIdFrom(o: Record<string, unknown>, key: string): Record<number, { tokens: TokenUsage; pr_url: string | null }> {
   const raw = o[key];
   if (raw === undefined || raw === null) return {};
-  if (typeof raw !== "object" || Array.isArray(raw)) bad(`'${key}' must be an object of row id to token counts`);
-  const out: Record<number, TokenUsage> = {};
-  for (const [id, usage] of Object.entries(raw as Record<string, unknown>)) {
+  if (typeof raw !== "object" || Array.isArray(raw)) bad(`'${key}' must be an object of row id to { tokens, pr_url }`);
+  const out: Record<number, { tokens: TokenUsage; pr_url: string | null }> = {};
+  for (const [id, entry] of Object.entries(raw as Record<string, unknown>)) {
     const n = Number(id);
     if (!Number.isInteger(n) || n <= 0) bad(`'${key}' keys must be spinoff row ids`);
-    out[n] = tokenUsageFrom({ usage }, "usage");
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) bad(`'${key}.${id}' must be { tokens, pr_url }`);
+    const e = entry as Record<string, unknown>;
+    out[n] = { tokens: tokenUsageFrom(e, "tokens"), pr_url: optString(e, "pr_url") ?? null };
   }
   return out;
 }
@@ -754,7 +756,7 @@ async function route(
             github: optBool(body, "github"),
             note: optString(body, "note"),
             actor: optString(body, "actor"),
-            tokensById: tokensByIdFrom(body, "tokensById"),
+            landById: landByIdFrom(body, "landById"),
           }),
         );
       }
@@ -1358,6 +1360,7 @@ async function route(
         await h.spinoffLand(store, {
           id: reqPositiveInt(body, "id"),
           tokens: tokenUsageFrom(body, "tokens"),
+          pr_url: optString(body, "pr_url") ?? null,
           holder: optString(body, "holder") ?? null,
           caller: optString(body, "caller") ?? null,
         }),

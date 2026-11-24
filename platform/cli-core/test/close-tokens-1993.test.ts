@@ -109,7 +109,7 @@ describe("ob close over the API records the tokens the client read (OB-1993)", (
     const r = await runCli(freshDbPath(), ["close", id, "--no-github"], apiDeps(transport));
     expect(r.code).toBe(0);
     const close = bodies.find((b) => String(b.path).endsWith(`/items/${id}/close`))!;
-    expect((close.tokensById as Record<string, TokenUsage>)[String(rowId)]!.totalTokens).toBe(1123);
+    expect((close.landById as Record<string, { tokens: TokenUsage }>)[String(rowId)]!.tokens.totalTokens).toBe(1123);
     const row = (await getSpinoffRow(store, rowId))!;
     expect(row.status).toBe("merged");
     expect(row.total_tokens).toBe(1123);
@@ -143,7 +143,7 @@ describe("local close and the land (OB-1993)", () => {
   test("a zero read does not overwrite a row that already has tokens", async () => {
     const { db, store, id, rowId } = await seed("launched");
     orm(db).update(spinoff).set({ total_tokens: 4242, input_tokens: 4242 }).where(eq(spinoff.id, rowId)).run();
-    await closeAndLand(store, id, {}, { [rowId]: usage(0) });
+    await closeAndLand(store, id, {}, { [rowId]: { tokens: usage(0) } });
     const row = (await getSpinoffRow(store, rowId))!;
     expect(row.status).toBe("merged");
     expect(row.total_tokens).toBe(4242);

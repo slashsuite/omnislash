@@ -683,6 +683,13 @@ async function recordRowDecision(
   }
 }
 
+/** OS-163: the merged PR of row `id`'s branch, read in its repo checkout on this machine. Null for an unknown row. */
+async function rowMergedPrUrl(db: Database | Store, id: number): Promise<string | null> {
+  const s = asStore(db);
+  const row = ((await s.q.select().from(s.t.spinoff).where(eq(s.t.spinoff.id, id)).limit(1)) as SpinoffRow[])[0];
+  return row ? mergedPrUrlFor(await rowRepoPathFor(s, row.repo), row.branch) : null;
+}
+
 /** The worktree path for a branch, matching the `wt` convention `<repo>.<branch>`. Pure. */
 export function worktreePath(repo: string, branch: string): string {
   return `${repo}.${branch}`;
@@ -1979,7 +1986,8 @@ export interface SpinoffSteps {
   /** Returns null when applied, else the failure ready to print. */
   stamp(input: StampInput): Promise<string | null>;
   /** Retire a merged row (`reconcile`): status, token totals, agent deregistration. Null when applied. */
-  land(input: { id: number; tokens: TokenUsage }): Promise<string | null>;
+  /** OS-163: `pr_url` is the branch's merged PR, read where `gh` and the checkout are; recorded on the landed event. */
+  land(input: { id: number; tokens: TokenUsage; pr_url?: string | null }): Promise<string | null>;
   /** `cleanup`'s database half: the swept branch's agent row and its leases. */
   agentDone(id: string): Promise<{ done: boolean; error: string | null }>;
   /** OB-1921: refresh the row's claim lease while its launch runs, so a slow launch is not reclaimed. */
@@ -2216,8 +2224,18 @@ export async function reclaimSpinoffs(db: Database | Store): Promise<ReclaimEntr
   return entries;
 }
 
-/** Retire a merged row: its status, the token totals recovered from its transcript, and its agent (#55). */
-export async function landSpinoff(db: Database | Store, id: number, usage: TokenUsage, decision: DecisionOpts = {}): Promise<void> {
+/**
+ * Retire a merged row: its status, the token totals recovered from its transcript, and its agent (#55). OS-163:
+ * `prUrl`, the branch's merged PR when the caller found one, goes on the landed event's payload as `pr_url`, which
+ * is what the dashboard timeline draws its Merged line from. No PR lands the row all the same.
+ */
+export async function landSpinoff(
+  db: Database | Store,
+  id: number,
+  usage: TokenUsage,
+  decision: DecisionOpts = {},
+  prUrl: string | null = null,
+): Promise<void> {
   const s = asStore(db);
   const rows = (await s.q.select().from(s.t.spinoff).where(eq(s.t.spinoff.id, id)).limit(1)) as SpinoffRow[];
   const row = rows[0];
@@ -2226,9 +2244,16 @@ export async function landSpinoff(db: Database | Store, id: number, usage: Token
   // OB-1993: a zero read (a machine with no transcripts) never overwrites a count the row already has.
   const keep = usage.totalTokens === 0 && (row.total_tokens ?? 0) > 0;
   await moveSpinoff(s, row.id, "merged", keep ? {} : tokenColumns(usage));
-  await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord("merged"), decision);
+  const landDecision = prUrl ? { ...decision, extra: { ...decision.extra, pr_url: prUrl } } : decision;
+  await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord("merged"), landDecision);
   await finishAgent(s, builderIdOf(row)); // 341: does not drop an architect hold the builder inherited
   await noteTrialLanded(s, row.id); // OB-1991: a trial winner's launch to landed
+}
+
+/** OB-1993, OS-163: what a client read for one row it asks to land: the tokens, and the branch's merged PR if any. */
+export interface RowLand {
+  tokens: TokenUsage;
+  pr_url?: string | null;
 }
 
 /** The five token columns of a row, from a usage. Pure. */
@@ -2384,7 +2409,7 @@ export function localSpinoffSteps(db: Database | Store, under = "", decision: De
     land: async (input) => {
       // Reconcile retires a merged row on nobody's say-so, so its trail entry names the actor it ran under.
       try {
-        await landSpinoff(db, input.id, input.tokens, { ...decision, actor: decision.actor ?? (under || "reconcile") });
+        await landSpinoff(db, input.id, input.tokens, { ...decision, actor: decision.actor ?? (under || "reconcile") }, input.pr_url ?? null);
         return null;
       } catch (e) {
         if (e instanceof SpinoffTransitionRefused) return e.message;
@@ -2440,7 +2465,7 @@ export function remoteSpinoffSteps(remote: RemoteWriter, under = "", decision: D
     },
     land: async (input) => {
       // 1515: the note the sweep was given travels with its retire; the server records it on the item.
-      const outcome = remote.write(landArgv(input.id, input.tokens, decision));
+      const outcome = remote.write(landArgv(input.id, input.tokens, decision, input.pr_url ?? null));
       return outcome.ok ? null : outcome.message;
     },
     agentDone: async (id) => {
@@ -2481,7 +2506,9 @@ export function decisionArgs(decision: DecisionOpts = {}): string[] {
 }
 
 /** The land as an argv, for the same reason: a failed land must print the command that repeats it. */
-export function landArgv(id: number, usage: TokenUsage, decision: DecisionOpts = {}): string[] {
+export function landArgv(id: number, usage: TokenUsage, decision: DecisionOpts = {}, prUrl: string | null = null): string[] {
+  // OS-163: always sent, empty when the client found none, so the writer never reads gh on its own host
+  const pr = ["--pr-url", prUrl ?? ""];
   return [
     "spinoff",
     "land",
@@ -2497,6 +2524,7 @@ export function landArgv(id: number, usage: TokenUsage, decision: DecisionOpts =
     String(usage.cacheReadTokens),
     "--total-tokens",
     String(usage.totalTokens),
+    ...pr,
     ...decisionArgs(decision),
   ];
 }
@@ -3275,7 +3303,8 @@ export async function reconcileSpinoffs(
     // neither is readable by the other's reader. A NULL `engine` (a pre-0023 row) reads as claude, which
     // is truthful because nothing before this migration could have launched opencode.
     const usage = (readTokens ?? tokensForRow(row))(row.worktree); // recover this agent's totals from ITS transcript source
-    const landError = await steps.land({ id: row.id, tokens: usage });
+    const prUrl = mergedPrUrlFor(repo, row.branch); // OS-163: the merged PR, for the timeline's Merged line
+    const landError = await steps.land({ id: row.id, tokens: usage, pr_url: prUrl });
     if (landError) {
       dbFailures.push({
         ticket: row.ticket_ref,
@@ -3283,7 +3312,7 @@ export async function reconcileSpinoffs(
           didLocally: `${row.ticket_ref} has merged into main here`,
           missing: "retiring the row",
           detail: landError,
-          recover: `ob ${landArgv(row.id, usage).join(" ")}`,
+          recover: `ob ${shellWords(landArgv(row.id, usage, {}, prUrl))}`,
         }),
       });
       continue;
@@ -3304,8 +3333,16 @@ export async function landClosedItemSpinoffs(
   db: Database | Store,
   itemId: string,
   decision: DecisionOpts = {},
-  /** OB-1993: the tokens the CLIENT read, by row id. A row present here uses them; a row absent reads where this runs. */
-  tokensById: Record<number, TokenUsage> = {},
+  /**
+   * OB-1993, OS-163: what the CLIENT read for each row, by row id: its tokens and its merged PR. A row present here
+   * uses them; a row absent reads its tokens where this runs, and its PR through `prUrlHere`.
+   */
+  landById: Record<number, RowLand> = {},
+  /**
+   * OS-163: the merged PR of a row absent from `landById`. Reads nothing unless the caller asks: only the local
+   * `ob close` passes `localMergedPrUrl`, so the API server, triage reject and the dashboard never run `gh`.
+   */
+  prUrlHere: (row: SpinoffRow) => Promise<string | null> = async () => null,
 ): Promise<{ landed: string[]; ended: string[]; error: string | null }> {
   const landed: string[] = [];
   const ended: string[] = [];
@@ -3327,7 +3364,10 @@ export async function landClosedItemSpinoffs(
           ended.push(row.ticket_ref);
           continue;
         }
-        await landSpinoff(db, row.id, tokensById[row.id] ?? tokensForRow(row)(row.worktree), { ...decision, actor });
+        const sent = landById[row.id];
+        const tokens = sent?.tokens ?? tokensForRow(row)(row.worktree);
+        const prUrl = sent ? (sent.pr_url ?? null) : await prUrlHere(row);
+        await landSpinoff(db, row.id, tokens, { ...decision, actor }, prUrl);
         landed.push(row.ticket_ref);
       } catch (e) {
         if (!(e instanceof SpinoffTransitionRefused)) throw e;
@@ -3984,6 +4024,31 @@ export function openPrUrlFor(worktree: string, branch: string): string | null {
     const j = JSON.parse(r.out ?? "") as { url?: unknown; state?: unknown };
     const url = typeof j.url === "string" ? j.url.trim() : "";
     return url && String(j.state).toUpperCase() === "OPEN" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** OS-163: the `prUrlHere` the local `ob close` passes: each row's merged PR, read in this machine's checkout. */
+export function localMergedPrUrl(db: Database | Store): (row: SpinoffRow) => Promise<string | null> {
+  return async (row) => mergedPrUrlFor(await rowRepoPathFor(db, row.repo), row.branch);
+}
+
+/**
+ * OS-163: the URL of the branch's MERGED PR, read with `gh pr list --head <branch> --state merged` in the repo
+ * checkout (`repoPath`, resolved from the row's repo the way `rowRepoPathIn` does) behind the `sh` seam. Null when
+ * the checkout is not on this machine, when there is no merged PR, or when gh fails: the URL only feeds the
+ * dashboard's Merged line, so a land never fails over it.
+ */
+export function mergedPrUrlFor(repoPath: string, branch: string): string | null {
+  if (!isAbsolute(repoPath) || !existsSync(repoPath)) return null;
+  const r = sh(["gh", "pr", "list", "--head", branch, "--state", "merged", "--json", "url", "--limit", "1"], repoPath, 30_000);
+  if (!r.ok) return null;
+  try {
+    const j = JSON.parse(r.out ?? "") as unknown;
+    const first = Array.isArray(j) ? (j[0] as { url?: unknown } | undefined) : undefined;
+    const url = typeof first?.url === "string" ? first.url.trim() : "";
+    return url || null;
   } catch {
     return null;
   }
@@ -6038,6 +6103,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
 
   if (sub === "land") {
     const id = numberFlag(ctx, "id");
+    // OS-163: `--pr-url` when the caller read it (a reconcile on another machine); otherwise read here
+    const prUrl = flag(ctx, "pr-url") ?? (await rowMergedPrUrl(store, id));
     await landSpinoff(
       store,
       id,
@@ -6049,6 +6116,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
         totalTokens: numberFlag(ctx, "total-tokens", 0),
       },
       decisionOptsOf(ctx),
+      prUrl,
     );
     if (ctx.mode === "json") print(JSON.stringify({ id, status: spinoffStatusWord("merged") }, null, 2));
     else print(`landed #${id}`);
