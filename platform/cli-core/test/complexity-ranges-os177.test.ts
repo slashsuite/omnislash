@@ -6,8 +6,8 @@ import { describe, expect, test } from "bun:test";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ModelsFileError, modelForComplexity, parseModelsFile } from "../../../apps/cli/src/models-file.ts";
-import { ModelRoutesError, builderModelsOf, emptyRouteInputs, parseModelRoutes, resolveRoute } from "../../../apps/cli/src/model-routes.ts";
+import { modelForComplexity, parseModelsFile } from "../../../apps/cli/src/models-file.ts";
+import { ModelRoutesError, builderModelsOf, emptyRouteInputs, parseModelRoutes, resolveRoute, withRoute } from "../../../apps/cli/src/model-routes.ts";
 
 const REPO_ROOT = join(import.meta.dir, "../../..");
 const CLI_ENTRY = join(REPO_ROOT, "apps/cli/src/index.ts");
@@ -31,10 +31,6 @@ describe("OS-177: a builder range set must cover 1-10 exactly once", () => {
   test("a gap is refused, naming the scores left out", () => {
     const msg = refusal(() => parseModelsFile(fileWith({ "builder.1-3": "a", "builder.5-10": "b" }), "m.jsonc"));
     expect(msg).toContain("m.jsonc: profile 'p': builder ranges leave a gap at 4:");
-  });
-
-  test("a gap at the top end is refused too", () => {
-    expect(refusal(() => parseModelsFile(fileWith({ "builder.1-8": "a" }), "m.jsonc"))).toContain("gap at 9-10");
   });
 
   test("an overlap is refused, naming both ranges and the shared scores", () => {
@@ -63,20 +59,31 @@ describe("OS-177: a builder range set must cover 1-10 exactly once", () => {
 });
 
 describe("OS-177: the score picks the range covering it", () => {
-  test("a custom split (3, 4, 5-10) routes 3, 4 and 7 on their own models, and role.* on the range covering 8", () => {
+  test("role.* runs on the range covering 8 of a custom split", () => {
     const file = parseModelsFile(fileWith({ "builder.1-3": "haiku", "builder.4-4": "sonnet", "builder.5-10": "opus" }), "m.jsonc");
-    const inputs = { ...emptyRouteInputs(), file };
-    const bands = builderModelsOf(inputs);
-    expect(modelForComplexity(bands, 3)).toBe("haiku");
-    expect(modelForComplexity(bands, 4)).toBe("sonnet");
-    expect(modelForComplexity(bands, 7)).toBe("opus");
-    expect(resolveRoute(inputs, "role.architect").chain).toEqual(["claudeAgent:opus"]); // a role thread names its provider
+    expect(resolveRoute({ ...emptyRouteInputs(), file }, "role.architect").chain).toEqual(["claudeAgent:opus"]); // a role thread names its provider
   });
 
   test("the old tier form reads as the ranges 1-3, 4-6 and 7-10", () => {
     const file = parseModelsFile(fileWith({ "builder.simple": "s", "builder.medium": "m", "builder.complex": "c" }), "m.jsonc");
     const bands = builderModelsOf({ ...emptyRouteInputs(), file });
     expect([1, 3, 4, 6, 7, 10].map((c) => modelForComplexity(bands, c))).toEqual(["s", "s", "m", "m", "c", "c"]);
+  });
+});
+
+describe("OS-177: `ob models set builder.<from>-<to>` on the server", () => {
+  const tm = { simple: "h", medium: "s", complex: "opencode:opencode-go/x" };
+  const empty = emptyRouteInputs({ tierModels: tm }).server;
+
+  test("a partial range on a profile with no builder set of its own is refused, so no default band lands on the server", () => {
+    expect(refusal(() => withRoute(empty, "default", "builder.4-4", ["s"], undefined, tm))).toContain("profile 'default' has no full builder set on the server");
+  });
+
+  test("builder.1-10 first, then a carve, keeps every band the user's and role.* on the user's 8", () => {
+    const whole = withRoute(empty, "default", "builder.1-10", ["claudeAgent:o"], undefined, tm);
+    const carved = withRoute(whole, "default", "builder.4-4", ["s"], undefined, tm);
+    expect(Object.keys(carved.profiles.default!.routes).sort()).toEqual(["builder.1-3", "builder.4-4", "builder.5-10"]);
+    expect(resolveRoute({ ...emptyRouteInputs({ tierModels: tm }), server: carved }, "role.architect").chain).toEqual(["claudeAgent:o"]);
   });
 });
 

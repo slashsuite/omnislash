@@ -282,7 +282,7 @@ function applyLayer(bands: BuilderBand[], layer: BuilderLayer, source: RouteSour
 }
 
 /** The default layer's set: `spinoff_tier_models` over the built-in tiers, one band per tier. Pure. */
-export function defaultBuilderBands(tierModels: Readonly<Record<SpinoffTier, string>>): BuilderBand[] {
+function defaultBuilderBands(tierModels: Readonly<Record<SpinoffTier, string>>): BuilderBand[] {
   return (["simple", "medium", "complex"] as const).map((t) => band(TIER_BANDS[t], { chain: [tierModels[t]] }, "default"));
 }
 
@@ -311,7 +311,7 @@ export function builderModelsOf(inputs: RouteInputs, profile: string | null = ac
 }
 
 /** `1-3, 4-6, 7-10`: a set's ranges, for a refusal. Pure. */
-export function rangesText(bands: readonly ComplexityRange[]): string {
+function rangesText(bands: readonly ComplexityRange[]): string {
   return bands.map(rangeText).join(", ");
 }
 
@@ -410,24 +410,6 @@ export function resolveAllRoutes(inputs: RouteInputs): ResolvedRoute[] {
 export interface RouteAttempt {
   profile: string | null;
   model: string;
-}
-
-/**
- * The models a launch of `route` tries, in order (OS-145 design 4): the active profile's chain, then the same route
- * in each fallback profile. A model already listed is not tried twice. Pure.
- */
-export function routeAttempts(inputs: RouteInputs, route: string): RouteAttempt[] {
-  const order = profileOrderOf(inputs);
-  const out: RouteAttempt[] = [];
-  const seen = new Set<string>();
-  for (const profile of order.length > 0 ? order : [null]) {
-    for (const model of resolveRouteIn(inputs, route, profile).chain) {
-      if (seen.has(model)) continue;
-      seen.add(model);
-      out.push({ profile, model });
-    }
-  }
-  return out;
 }
 
 /** One attempt of a builder launch: the model, its profile, and that profile's band (its route name and effort). */
@@ -531,6 +513,11 @@ function hasRanges(routes: Record<string, RouteSpec>): boolean {
   return Object.keys(routes).some((r) => builderRangeOf(r) !== null);
 }
 
+/** Does this server set cover 1-10 by itself: a range set (validated complete), or all three old tier keys? */
+function ownsFullBuilderSet(routes: Record<string, RouteSpec>): boolean {
+  return hasRanges(routes) || SPINOFF_TIERS.every((t) => routes[`builder.${t}`] !== undefined);
+}
+
 /** `routes` without any builder route (either form). */
 function withoutBuilder(routes: Record<string, RouteSpec>): Record<string, RouteSpec> {
   return Object.fromEntries(Object.entries(routes).filter(([r]) => !r.startsWith("builder.")));
@@ -538,8 +525,9 @@ function withoutBuilder(routes: Record<string, RouteSpec>): Record<string, Route
 
 /**
  * Set `route` in `profile` on the server (OS-145, OS-177 for the builder ranges):
- * - `builder.<from>-<to>` carves the range into the profile's server builder set (the server's bands over the
- *   defaults, from `tierModels`), trimming what it overlaps, and stores the whole set in the range form.
+ * - `builder.<from>-<to>` carves the range into the profile's own server builder set, trimming what it overlaps,
+ *   and stores the whole set in the range form. A profile with no full set of its own takes only `builder.1-10`,
+ *   so the defaults are never copied onto the server (the range covering 8 would then feed role threads).
  * - `builder.simple|medium|complex` on a profile still in the old form (or with no builder routes) stores the
  *   old key, as before. On a profile in the range form it sets the tier's band when exactly that range exists,
  *   and is refused, naming the ranges, otherwise.
@@ -551,6 +539,9 @@ export function withRoute(v: ModelRoutes, profile: string, route: string, chain:
   const range = builderRangeOf(route);
   const tier = builderTierOf(route);
   if (range) {
+    if (!ownsFullBuilderSet(own) && !(range.from === 1 && range.to === 10)) {
+      throw new ModelRoutesError(`profile '${profile}' has no full builder set on the server, so ${route} would copy the defaults into it: set builder.1-10 <model> first (\`ob models set builder.1-10 <model>\`), then carve ${rangeText(range)} out of it`);
+    }
     const inputs = emptyRouteInputs({ server: v, tierModels });
     const bands = carve(builderBandsIn(inputs, profile, { local: false }), band(range, s, "server"));
     const ranges = Object.fromEntries(bands.map((b) => [b.route, { chain: b.chain, ...(b.effort ? { effort: b.effort } : {}) }]));

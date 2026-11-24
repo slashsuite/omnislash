@@ -91,10 +91,8 @@ import {
   refuseOpusHighTrial,
   refuseRaisedOpusHigh,
   announceReadyNote,
-  isSpinoffTier,
   tierFitLine,
   tierFitOf,
-  tierRejection,
   frontmatterField,
   launchT3Spinoff,
   reconcileT3Runs,
@@ -1400,17 +1398,6 @@ export async function t3LauncherFor(db: Database | Store, row: SpinoffRow): Prom
       : `  ↳ ${row.ticket_ref} T3 thread: ${outcome.threadId}`,
   );
   return { t3ThreadId: outcome.threadId, t3RunId: outcome.runId, model: outcome.model, effort: outcome.effort, adopted: outcome.adopted, raised: !!urgent && !outcome.adopted };
-}
-
-/**
- * `--tier <value>` (1480): undefined when absent, the tier when it is one, and a UsageError naming the
- * tiers otherwise — never a fallback, because a guessed tier is a guessed model. Pure.
- */
-export function tierFlag(raw: string | undefined): SpinoffTier | undefined {
-  if (raw === undefined) return undefined;
-  const v = raw.trim();
-  if (!isSpinoffTier(v)) throw new UsageError(tierRejection("spinoff --tier", raw));
-  return v;
 }
 
 /**

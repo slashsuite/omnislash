@@ -123,12 +123,12 @@ export function redispatchedHigher(rows: MixSource[]): Set<number> {
       // An unstamped tier cannot be compared with anything, so it is never claimed as an escalation
       // (and a later unstamped row proves no escalation of its own) — the same reason it is not
       // folded into `medium` in the tier share.
-      // OS-177: compared by score, so 4 re-dispatched at 6 is an escalation inside the medium band.
-      const c = scoreOf(row);
-      if (c === null) continue;
+      const tier = tierOf(row);
+      if (!tier) continue;
+      const rank = TIER_ORDER.indexOf(tier);
       const escalated = list.slice(i + 1).some((later) => {
-        const laterC = scoreOf(later);
-        return laterC !== null && laterC > c;
+        const laterTier = tierOf(later);
+        return laterTier !== null && TIER_ORDER.indexOf(laterTier) > rank;
       });
       if (escalated) out.add(row.id);
     }

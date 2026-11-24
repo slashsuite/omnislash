@@ -1181,7 +1181,7 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
   const { row, threadId, model, error } = outcome;
   const effort = outcome.effort ?? row.effort ?? null;
   if (ctx.mode === "json") {
-    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: outcome.status, deduped, launcher: row.launcher, tier: row.tier, effort, t3_thread_id: threadId, model, error }));
+    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: outcome.status, deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort, t3_thread_id: threadId, model, error }));
   } else if (ctx.mode === "quiet") {
     print(threadId ?? String(row.id));
   } else if (outcome.status === "launched") {

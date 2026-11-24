@@ -97,7 +97,7 @@ export function complexityLabel(c: number): string {
 }
 
 /** `builder.<from>-<to>`: a builder range route. */
-export const BUILDER_RANGE_ROUTE = /^builder\.(\d+)-(\d+)$/;
+const BUILDER_RANGE_ROUTE = /^builder\.(\d+)-(\d+)$/;
 
 /** The range a `builder.<from>-<to>` route names, or null for any other name (or a range outside 1-10). Pure. */
 export function builderRangeOf(route: string): ComplexityRange | null {
@@ -154,7 +154,7 @@ export interface RangeModel extends ComplexityRange {
 export type BuilderModels = Readonly<Record<SpinoffTier, string>> | readonly RangeModel[];
 
 /** The tier map as bands. Pure. */
-export function bandsOfTierModels(tierModels: Readonly<Record<SpinoffTier, string>>): RangeModel[] {
+function bandsOfTierModels(tierModels: Readonly<Record<SpinoffTier, string>>): RangeModel[] {
   return (["simple", "medium", "complex"] as const).map((t) => ({ ...TIER_BANDS[t], model: tierModels[t] }));
 }
 
