@@ -2286,8 +2286,8 @@ export interface ReadyNoteOutcome {
 export interface ReadyNoteInput {
   row: { id: number; ticket_ref: string; branch: string; worktree: string; status: string; repo?: string };
   /**
-   * Where the note goes (OB-2255): the ticket's team's sentinel when bound, else its architect, or the named
-   * reason there is none (`teamHandoffTarget`), resolved by the caller where the store or the API is.
+   * Where the note goes (OB-2255, OS-181): the ticket's team's sentinel, started on delivery if it has none, or the
+   * named reason there is none (`teamHandoffTarget`), resolved by the caller where the store or the API is.
    */
   route: HandoffRoute;
   /** The row's launcher: only a `t3` row has a thread to tell, and only it pays a credential read. */
@@ -2353,7 +2353,7 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
 
   // A headless row has no thread anywhere: nothing to send, and no credential read to find that out.
   if (input.launcher !== T3_LAUNCHER) {
-    return skipped(`${row.ticket_ref} ran under the ${input.launcher ?? "unknown"} launcher, so there is no architect thread to tell`);
+    return skipped(`${row.ticket_ref} ran under the ${input.launcher ?? "unknown"} launcher, so there is no sentinel thread to tell`);
   }
 
   const { route } = input;
@@ -2427,7 +2427,7 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
         via: `${label}: ${renderDelivery(d)}`,
       };
     } catch (err) {
-      return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: t3Reason(`the ${label} run was not reached (the handoff is stored, unread)`, err) };
+      return { ticket: row.ticket_ref, threadId: null, outcome: "failed", reason: t3Reason(`the ${label} could not start or take the note (the handoff is stored, unread)`, err) };
     }
   }
 
@@ -2439,7 +2439,7 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
   }
   const threadId = teamThreadIdOf(targetRow);
   if (!threadId) {
-    return skipped(`no ${target.label} thread: run \`ob t3 architect ${target.team}\``);
+    return skipped(`no ${target.label} thread: run \`ob role start ${target.team} sentinel\``);
   }
   // One try: the reason it failed, or null when T3 took the note.
   // `permanent` is a missing, expired or rejected credential: a retry 5 s later cannot fix it, so it is not tried.
@@ -2452,7 +2452,7 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
       seam = input.seam ?? (await t3Seam());
     } catch (err) {
       permanent = isPermanent(err);
-      return t3Reason("T3 is unreachable, so the sentinel, else the architect, was not told", err);
+      return t3Reason("T3 is unreachable, so the sentinel was not told", err);
     }
     try {
       // `queue`, never `steer`: an architect mid-turn finishes its turn before this lands, and the human act
@@ -2574,7 +2574,7 @@ export async function dropQueuedReadyNotes(input: StaleReadyNotesInput): Promise
       continue;
     }
     if (!threadId) {
-      out.push({ ...base, outcome: "skipped", reason: `no ${route.target.label} thread: run \`ob t3 architect ${route.target.team}\`` });
+      out.push({ ...base, outcome: "skipped", reason: `no ${route.target.label} thread, so no note is held there` });
       continue;
     }
     if (!seam) {
@@ -2625,7 +2625,7 @@ export async function dropQueuedReadyNotes(input: StaleReadyNotesInput): Promise
  * One line per withdrawal outcome, for the close's report — and NOTHING for `none` or `skipped` (1205).
  *
  * The ordinary land finds an empty architect queue, so a line for `none` would be noise on an output a human
- * reads; `skipped` names a repo with no architect thread, which is equally unremarkable at land time.
+ * reads; `skipped` names a repo with no sentinel thread, which is equally unremarkable at land time.
  * A withdrawal, a bounded read and a failure are the three facts worth saying. Null means "say nothing" —
  * the same shape `unjoinedSettleLine` uses. Pure.
  */
@@ -2683,7 +2683,7 @@ export const LAND_REPLY_WAIT_MS = 30_000;
  */
 export function spikeClosedNote(input: { ticket: string }): string {
   return [
-    `closed: ${input.ticket} was a spike, and the sentinel, else the architect, has closed it. Nothing was merged.`,
+    `closed: ${input.ticket} was a spike, and the sentinel has closed it. Nothing was merged.`,
     "  INFORMATIONAL — nothing further is needed from this thread.",
     "  Do not start or continue any work, do not reply, end your turn now.",
   ].join("\n");
@@ -2880,7 +2880,7 @@ function renderReadyNoteLine(outcome: ReadyNoteOutcome): { line: string; warning
   const recorded = outcome.recordedOn !== undefined
     ? `; recorded on row ${outcome.recordedOn}, so \`ob spinoff gateable\` and \`ob spinoff show\` show it`
     : "";
-  return { line: `warning: the readying note did not reach the sentinel, else the architect: ${outcome.reason}${recorded}`, warning: true };
+  return { line: `warning: the readying note did not reach the sentinel and is held (never sent to the architect): ${outcome.reason}${recorded}`, warning: true };
 }
 
 /**

@@ -641,7 +641,7 @@ async function settleClosedTicketThreads(ctx: ApiCtx, itemId: string): Promise<v
 async function withdrawHeldReadyNotes(ctx: ApiCtx, itemId: string, rows: SpinoffRow[]): Promise<void> {
 	if (rows.length === 0) return;
 	try {
-		// OB-2255: the note went to the ticket's team's sentinel, else its architect, so it is withdrawn there.
+		// OB-2255, OS-181: the note went to the ticket's team's sentinel, so it is withdrawn there.
 		// The route is the ticket's, not the repo's, so it is read once.
 		let route: ReturnType<typeof apiHandoffTarget> | null = null;
 		const outcomes = await dropQueuedReadyNotes({

@@ -1,4 +1,4 @@
-// OB-2276: GitHub webhooks into ob, and a red run on `main` tells the team's sentinel, else its architect.
+// OB-2276: GitHub webhooks into ob, and a red run on `main` tells the team's sentinel.
 //
 // GitHub pushes each event to `POST /api/ob/github/webhook` within seconds of it happening, so no agent has to
 // poll GitHub to learn that `main` went red. The receiver (api/server.ts) checks GitHub's HMAC signature, records
@@ -7,7 +7,9 @@
 //
 // The rules for a completed run of a workflow on `main`, started by a push:
 //   * failure, timed_out or startup_failure (never cancelled): told ONCE per run id to the project's team's
-//     sentinel, else its architect (`teamHandoffTarget`). A project in no team is told nobody, but its row is
+//     sentinel (`teamHandoffTarget`; OS-181: never the architect). With no sentinel thread, the catch-up starts one
+//     when it runs with T3 (`CiDeps.start`); the webhook has no T3 and leaves the run unclaimed for it. A project
+//     in no team is told nobody, but its row is
 //     still written, so `ob alerts` shows it until main is green again.
 //   * success: when that workflow has a told failure not yet recovered, one "green again" line, once.
 // A row in `ci_main_notice` is the record that a run was told. It is claimed BEFORE the send (insert, conflict
@@ -237,7 +239,7 @@ export interface CiOutcome {
   workflow: string;
   conclusion: string | null;
   action: "told" | "recorded" | "recovered" | "already" | "ignored" | "failed";
-  /** The agent row told (`sentinel-<team>` or `architect-<team>`), or null. */
+  /** The agent row told (`sentinel-<team>`), or null. */
   target: string | null;
   /** Why, for every action but `told` and `recovered`. */
   reason: string | null;
@@ -248,6 +250,12 @@ export interface CiDeps {
   registry: AgentRegistry;
   /** The T3 seam; left undefined in production, where `t3Seam()` connects. */
   seam?: T3Seam;
+  /**
+   * OS-181: start the team's sentinel (`ob role start <team> sentinel`) when it has no thread, answering the thread.
+   * Set only where T3 is (the `ob ci main --notify` catch-up); the webhook leaves it unset and a team with no
+   * sentinel thread is a failed route, left unclaimed for the catch-up.
+   */
+  start?: (team: string) => Promise<string>;
   /** The wait before the one retry of a failed send. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -261,11 +269,12 @@ export function __setCiRetryMs(ms: number): () => void {
 
 type Route = { kind: "thread"; agentId: string; threadId: string } | { kind: "nobody"; reason: string } | { kind: "failed"; reason: string };
 
-/** Where a repo's note goes: its project's team's sentinel, else its architect, or the named reason there is none. */
-async function routeFor(store: Store, registry: AgentRegistry, repo: string): Promise<Route> {
+/** Where a repo's note goes: its project's team's sentinel (started when `start` is given), or the named reason there is none. */
+async function routeFor(store: Store, deps: Pick<CiDeps, "registry" | "start">, repo: string): Promise<Route> {
+  const registry = deps.registry;
   const project = projectForRepo(await listProjects(store), repo);
   if (!project) return { kind: "nobody", reason: `${repo} is no ob project's git remote` };
-  const route = await teamHandoffTarget({ ticket: repo, projectOf: async () => project.id, teamOf: storeTeamOf(store), registry });
+  const route = await teamHandoffTarget({ ticket: repo, projectOf: async () => project.id, teamOf: storeTeamOf(store) });
   if (route.kind === "skip") return { kind: "nobody", reason: route.reason };
   if (route.kind === "failed") return { kind: "failed", reason: route.reason };
   let row: Awaited<ReturnType<AgentRegistry["read"]>>;
@@ -275,10 +284,17 @@ async function routeFor(store: Store, registry: AgentRegistry, repo: string): Pr
     return { kind: "failed", reason: `could not read ${route.target.agentId}: ${(err as Error).message}` };
   }
   const threadId = teamThreadIdOf(row);
-  // A team whose thread is not up yet is a failed route, never "nobody": the run is left unclaimed so the hourly
-  // catch-up tells the thread once it exists. Only a project in no team (or a repo that is no project) is nobody.
-  if (!threadId) return { kind: "failed", reason: `no ${route.target.label} thread: run \`ob t3 architect ${route.target.team}\`` };
-  return { kind: "thread", agentId: route.target.agentId, threadId };
+  if (threadId) return { kind: "thread", agentId: route.target.agentId, threadId };
+  // A team whose sentinel is not up is a failed route, never "nobody" and never the architect: the run is left
+  // unclaimed so the hourly catch-up, where T3 is, starts the sentinel and tells it. Only a project in no team (or a
+  // repo that is no project) is nobody.
+  const fix = `run \`ob role start ${route.target.team} sentinel\``;
+  if (!deps.start) return { kind: "failed", reason: `no ${route.target.label} thread: ${fix}` };
+  try {
+    return { kind: "thread", agentId: route.target.agentId, threadId: await deps.start(route.target.team) };
+  } catch (err) {
+    return { kind: "failed", reason: `the ${route.target.label} could not start (${(err as Error).message}); the run stays unclaimed, or ${fix}` };
+  }
 }
 
 /** Send one queued note, with one retry unless the credential itself is the problem. Null on success, else why. */
@@ -319,7 +335,10 @@ export async function handleRun(store: Store, run: CiRun, deps: CiDeps): Promise
 
 async function tellRed(store: Store, run: CiRun, deps: CiDeps): Promise<CiOutcome> {
   const t = store.t.ciMainNotice;
-  const route = await routeFor(store, deps.registry, run.repo);
+  // A run already told stops here, before routing can start a sentinel: the hourly catch-up re-reads every red run.
+  const told = (await store.q.select({ run_id: t.run_id }).from(t).where(eq(t.run_id, run.runId))) as Array<{ run_id: string }>;
+  if (told.length > 0) return { ...base(run), action: "already", target: null, reason: `run ${run.runId} was already told` };
+  const route = await routeFor(store, deps, run.repo);
   if (route.kind === "failed") return { ...base(run), action: "failed", target: null, reason: route.reason };
   // Claim the run first: a second delivery (or the catch-up running at the same moment) finds the row and stops.
   const claimed = (await store.q
@@ -368,15 +387,12 @@ async function recover(store: Store, run: CiRun, deps: CiDeps): Promise<CiOutcom
     .returning({ run_id: t.run_id, target: t.target })) as Array<{ run_id: string; target: string | null }>);
   if (mine.length === 0) return { ...base(run), action: "already", target: null, reason: "another delivery already recovered it" };
   if (!mine.some((r) => r.target !== null)) return { ...base(run), action: "recovered", target: null, reason: "nobody was told the red, so nobody is told the green" };
-  const route = await routeFor(store, deps.registry, run.repo);
+  // A green never starts a sentinel: with no thread to tell (the one told the red has ended), the red is still recovered.
+  const route = await routeFor(store, { registry: deps.registry }, run.repo);
+  if (route.kind !== "thread") return { ...base(run), action: "recovered", target: null, reason: route.reason };
   const undo = async () => {
     await store.q.update(t).set({ recovered_at: null }).where(inArray(t.run_id, mine.map((r) => r.run_id)));
   };
-  if (route.kind !== "thread") {
-    if (route.kind === "nobody") return { ...base(run), action: "recovered", target: null, reason: route.reason };
-    await undo();
-    return { ...base(run), action: "failed", target: null, reason: route.reason };
-  }
   const failed = await sendNote(deps, route.threadId, greenNote(run, mine.length), `ob-ci-green-${run.runId}`);
   if (failed !== null) {
     await undo();

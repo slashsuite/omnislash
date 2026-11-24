@@ -83,13 +83,13 @@ describe("formatReadyReport (471)", () => {
   test("needs-human says landable: yes and the architect land line", () => {
     const text = formatReadyReport(row, "State: needs-human — look", false);
     expect(text).toContain("landable: yes");
-    expect(text).toContain("next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)");
+    expect(text).toContain("next:      the sentinel gates and merges the PR (the handoff is the human yes)");
   });
 
   test("ready says the same wake lines", () => {
     const text = formatReadyReport(row, "State: ready — gated", false);
     expect(text).toContain("landable: yes");
-    expect(text).toContain("next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)");
+    expect(text).toContain("next:      the sentinel gates and merges the PR (the handoff is the human yes)");
   });
 
   test("blocked / missing State are not landable", () => {
@@ -142,7 +142,7 @@ describe("ob spinoff ready refuses a dirty worktree (471)", () => {
       expect(r.code).toBe(0);
       expect(r.out).toContain("471 handed off");
       expect(r.out).toContain("landable: yes");
-      expect(r.out).toContain("next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)");
+      expect(r.out).toContain("next:      the sentinel gates and merges the PR (the handoff is the human yes)");
       expect(r.out).toContain("State: needs-human");
     expect(r.out).toContain("🙋 needs you: look");
     } finally {

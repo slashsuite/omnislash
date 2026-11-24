@@ -36,9 +36,9 @@ describe("ob spinoff check --architect (OB-2256 Done when 3)", () => {
 });
 
 describe("handoff, gateable, show, sendback and spike text (OB-2256 Done when 4)", () => {
-  test("the handoff report names the sentinel, else the architect", () => {
+  test("the handoff report names the sentinel", () => {
     const text = formatReadyReport(row, "State: landable");
-    expect(text).toContain("the sentinel, else the architect, gates and merges the PR");
+    expect(text).toContain("the sentinel gates and merges the PR");
     expect(text).not.toMatch(PLANNER);
   });
 
@@ -52,20 +52,20 @@ describe("handoff, gateable, show, sendback and spike text (OB-2256 Done when 4)
       formatSpikeReport(row, { committed: true, prUrl: "https://example.test/pr/1" }),
     ];
     for (const n of notes) expect(n).not.toMatch(PLANNER);
-    expect(formatSpikeReport(row)).toContain("the sentinel, else the architect, reads the answers");
+    expect(formatSpikeReport(row)).toContain("the sentinel reads the answers");
   });
 
   test("the gateable and show note-error line, and the note outcomes, never say planner", () => {
     expect(noteErrorLine("2026-11-17T00:00:00Z T3 refused it")).toBe("  readying note: NOT delivered at 2026-11-17T00:00:00Z: T3 refused it");
     const failed = renderReadyNoteOutcome({ ticket: "OB-7", threadId: null, outcome: "failed", reason: "T3 down" });
-    expect(failed.line).toContain("the readying note did not reach the sentinel, else the architect");
+    expect(failed.line).toContain("the readying note did not reach the sentinel and is held");
     expect(failed.line).not.toMatch(PLANNER);
   });
 
-  test("the send-back message names the sentinel, else the architect", async () => {
+  test("the send-back message names the sentinel", async () => {
     const sent: string[] = [];
     await sendBackSpinoff(row, { flip: async () => {}, restore: async () => {}, send: async (_t, m) => void sent.push(m), headSha: () => "abc" }, "fix the test");
-    expect(sent[0]).toContain("The sentinel, else the architect, gated your PR");
+    expect(sent[0]).toContain("The sentinel gated your PR");
     expect(sent[0]).not.toMatch(PLANNER);
   });
 });

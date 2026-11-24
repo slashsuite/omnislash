@@ -224,7 +224,7 @@ A **team** is one or more projects with one **architect** thread, plus an option
 | **Sentinel** (`ob-sentinel`) | The skeptic: reluctant to merge anything that does not look right. | Gates, merges and deploys every PR of the team's repos, Dependabot's included. Handoffs go to it when it is bound. |
 | **Muse** (`ob-muse`) | The explorer: keen on exploring, discovering and coming up with ideas. | Takes the owner's rambling, explores it with them, and passes a design to the architect only once they confirm it is complete. |
 
-The sentinel and the muse are there to take load off the architect, which a single architect thread cannot carry while the owner discusses new projects and work is being landed. Handoffs go to the sentinel when one is bound, else the architect; a project in no team gets no note, and `ob` prints the `ob t3 team join` line for it.
+The sentinel and the muse are there to take load off the architect, which a single architect thread cannot carry while the owner discusses new projects and work is being landed. Handoffs go to the sentinel, which ob starts when the team has none (OS-181); a project in no team gets no note, and `ob` prints the `ob t3 team join` line for it.
 
 **A thought is not work until the owner says it is complete** (an architect must not go and implement things while the owner is still rambling or getting their thoughts together). Before a design reaches the architect as a plan, or is ticketed for building, the muse (or the architect, in a team with no muse) asks the owner with the question tool whether the thought is complete. Capturing a raw idea as a ticket stays fine; dispatching it does not.
 
@@ -232,7 +232,7 @@ The sentinel and the muse are there to take load off the architect, which a sing
 
 The gating thread is responsible for Dependabot merges in every repo of its team. It follows handoff routing, so it moves with teams.
 
-- **Who.** The thread a builder's handoff goes to also gates and merges the Dependabot PRs of every repo it covers: the team's sentinel (`sentinel-<team>`) when one is bound, else its architect. Nobody else merges them, and a thread that finds one outside its team's repos hands it to the team whose repo it is.
+- **Who.** The thread a builder's handoff goes to also gates and merges the Dependabot PRs of every repo it covers: the team's sentinel (`sentinel-<team>`), which ob starts when the team has none (OS-181). Nobody else merges them, and a thread that finds one outside its team's repos hands it to the team whose repo it is.
 - **Gate.** The repo's required check (its `main` branch protection, else the check its `AGENTS.md` names) is green on the PR head SHA. A run under an old job name does not count: `gh pr update-branch <n>` reruns CI on a branch that merges cleanly.
 - **Merge.** `gh pr merge <n> --squash --delete-branch --subject "build(deps): <what> (#<n>)"`, then the same thread runs the repo's post-merge deploy from its `repos/<project>/AGENTS.md`.
 - **Conflicts.** The gating thread resolves them itself, as for any PR it gates: rebase it or merge `origin/main` into it, resolve the conflicts (`ob-resolving-merge-conflicts`), push, and re-gate the new head; for a lockfile, regenerate it with the repo's install rather than hand-merging it. Dependabot stops rebasing a branch someone else pushed to, which does not matter since it merges next. No `@dependabot rebase` comment is needed.

@@ -3597,7 +3597,7 @@ export async function markSpinoffReady(
       await registerAgent(s, {
         id: existing.id,
         status: "readying",
-        note: "spike answered: the sentinel, else the architect, reads the notes on the parent, then closes the spike",
+        note: "spike answered: the sentinel reads the notes on the parent, then closes the spike",
         ttlS: existing.ttl_s,
       });
     }
@@ -3611,7 +3611,7 @@ export async function markSpinoffReady(
       await registerAgent(s, {
         id: existing.id,
         status: "readying",
-        note: "handed-off: the sentinel, else the architect, gates it",
+        note: "handed-off: the sentinel gates it",
         ttlS: existing.ttl_s,
       });
     }
@@ -3651,7 +3651,7 @@ export async function markSpinoffSentBack(db: Database | Store, row: SpinoffRow,
     await registerAgent(s, {
       id: existing.id,
       status: "working",
-      note: `sent back by the sentinel, else the architect: ${(decision.note ?? "see the thread").slice(0, 200)}`,
+      note: `sent back by the sentinel: ${(decision.note ?? "see the thread").slice(0, 200)}`,
       ttlS: existing.ttl_s,
     });
   }
@@ -4136,7 +4136,7 @@ export function formatReadyReport(row: SpinoffRow, state: string | null, already
     ...stateDisplayLines(state),
     `  landable: ${landable ? "yes" : "no"}`,
     landable
-      ? "  next:      the sentinel, else the architect, gates and merges the PR (the handoff is the human yes)"
+      ? "  next:      the sentinel gates and merges the PR (the handoff is the human yes)"
       : "  next:      do not merge: State is blocked, partial, or missing",
   ].join("\n");
 }
@@ -4166,7 +4166,7 @@ export function readyResultJson(
  *
  * Never throws and never gates: the caller prints the outcome, and a failure is a warning plus exit 1 —
  * the stamp and the lease release stand, because a notifier must not fail the thing it reports on. A row
- * that did not run under the t3 launcher, or a repo with no architect thread, is a NAMED SKIP and neither
+ * that did not run under the t3 launcher, or a repo with no sentinel thread, is a NAMED SKIP and neither
  * case reads a credential.
  */
 async function announceReadyForRow(
@@ -4179,9 +4179,9 @@ async function announceReadyForRow(
   spike = false,
   spikeDoc: { committed: boolean; prUrl: string | null } | null = null,
 ): Promise<ReadyNoteOutcome> {
-  // OB-2255: the note goes to the ticket's team's sentinel, else its architect; a project in no team gets none.
+  // OB-2255, OS-181: the note goes to the ticket's team's sentinel, started if it has none; a project in no team gets none.
   const registry = storeAgentRegistry(store);
-  const route = await teamHandoffTarget({ ticket: row.ticket_ref, projectOf: () => rowProjectOf(store, row), teamOf: storeTeamOf(store), registry });
+  const route = await teamHandoffTarget({ ticket: row.ticket_ref, projectOf: () => rowProjectOf(store, row), teamOf: storeTeamOf(store) });
   const outcome = await announceReadyNote(registry, {
     row,
     route,
@@ -6113,7 +6113,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
       }
     }
     // Read the builder's own readying note BEFORE the stamp: the stamp rewrites that row's note to
-    // "handed-off: the sentinel, else the architect, gates it", and the gate the builder reported would be lost.
+    // "handed-off: the sentinel gates it", and the gate the builder reported would be lost.
     const builderNote = gateNoteWithCi((await getAgent(store, builderIdOf(found)))?.note ?? null, ci);
     const result = await markSpinoffReady(store, found, { ...decisionOptsOf(ctx), note: report }, tierFit);
     // OB-2227: a spike may carry a documentation commit and its PR; the note and the report name the PR.

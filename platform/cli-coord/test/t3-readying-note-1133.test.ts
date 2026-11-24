@@ -238,7 +238,7 @@ describe("teamThreadIdOf (1133, OB-2255)", () => {
 const row = { id: 595, ticket_ref: "1133", branch: "1133", worktree: "/home/owner/dev/omnislash.1133", status: "ready-for-gate" };
 const baseInput = {
   row,
-  route: { kind: "team" as const, target: { agentId: "architect-omnislash", label: "omnislash architect", team: "omnislash" } },
+  route: { kind: "team" as const, target: { agentId: "sentinel-omnislash", label: "omnislash sentinel", team: "omnislash" } },
   launcher: "t3",
   state: "State: ready",
   builderNote: "nx typecheck clean; skeptical-review: 0 cut, 0 open",
@@ -246,14 +246,14 @@ const baseInput = {
 };
 
 describe("announceReadyNote (1133)", () => {
-  test("sends one queued message into the pinned architect thread, with a stable retry key", async () => {
+  test("sends one queued message into the pinned sentinel thread, with a stable retry key", async () => {
     const fake = fakeSeam();
-    const out = await announceReadyNote(registryWith({ "architect-omnislash": { session_id: "architect-thread-1", launcher: "t3", status: "idle" } }), {
+    const out = await announceReadyNote(registryWith({ "sentinel-omnislash": { session_id: "sentinel-thread-1", launcher: "t3", status: "idle" } }), {
       ...baseInput,
       seam: fake.seam,
     });
     expect(out.outcome).toBe("sent");
-    expect(out.threadId).toBe("architect-thread-1");
+    expect(out.threadId).toBe("sentinel-thread-1");
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.mode).toBe("queue");
     expect(fake.sends[0]!.clientRequestId).toBe(readyNoteRequestId(row.id, null, "State: ready"));
@@ -264,11 +264,11 @@ describe("announceReadyNote (1133)", () => {
     expect(fake.sends[0]!.message).toMatch(/composed:\s+\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   });
 
-  test("no architect thread is a named skip that names the remedy, and sends nothing", async () => {
+  test("no sentinel thread is a named skip that names the remedy, and sends nothing", async () => {
     const fake = fakeSeam();
     const out = await announceReadyNote(registryWith({}), { ...baseInput, seam: fake.seam });
     expect(out.outcome).toBe("skipped");
-    expect(out.reason).toBe("no omnislash architect thread: run `ob t3 architect omnislash`");
+    expect(out.reason).toBe("no omnislash sentinel thread: run `ob role start omnislash sentinel`");
     expect(fake.sends).toHaveLength(0);
   });
 
@@ -289,7 +289,7 @@ describe("announceReadyNote (1133)", () => {
   test("an architect row from the opencode era is not a thread id", async () => {
     const fake = fakeSeam();
     const out = await announceReadyNote(
-      registryWith({ "architect-omnislash": { session_id: "ses_abc", launcher: "opencode", status: "planning" } }),
+      registryWith({ "sentinel-omnislash": { session_id: "ses_abc", launcher: "opencode", status: "planning" } }),
       { ...baseInput, seam: fake.seam },
     );
     expect(out.outcome).toBe("skipped");
@@ -314,7 +314,7 @@ describe("announceReadyNote (1133)", () => {
   test("T3 refusing the note is a named failure carrying the remedy, never a throw", async () => {
     const fake = fakeSeam();
     fake.failSend = true;
-    const out = await announceReadyNote(registryWith({ "architect-omnislash": { session_id: "architect-thread-1", launcher: "t3", status: "idle" } }), {
+    const out = await announceReadyNote(registryWith({ "sentinel-omnislash": { session_id: "sentinel-thread-1", launcher: "t3", status: "idle" } }), {
       ...baseInput,
       seam: fake.seam,
     });
@@ -477,13 +477,13 @@ async function seedReadyable(db: ReturnType<typeof freshDb>, launcher: string, t
 /** OS-56: the checkout a started role run opens in, as `ob role start` resolves it. */
 const CWD_REPO = worktreeRepoOf(checkoutOf(process.cwd())) ?? checkoutOf(process.cwd());
 
-describe("ob spinoff ready tells the architect (1133)", () => {
-  test("the note goes to the pinned architect thread and the stamp is unchanged", async () => {
+describe("ob spinoff ready tells the sentinel (1133)", () => {
+  test("the note goes to the pinned sentinel thread and the stamp is unchanged", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
     await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
@@ -491,7 +491,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(0);
     expect(res.out).toContain("1133 handed off");
-    expect(res.out).toContain("note:      omnislash architect: 1 message queued into run 1, thread architect-thread-1");
+    expect(res.out).toContain("note:      omnislash sentinel: 1 message queued into run 1, thread sentinel-thread-1");
     expect(res.out).not.toContain("told");
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.message).toContain("gate:      nx typecheck clean; skeptical-review: 3 cut, 0 open");
@@ -506,7 +506,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
     await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
@@ -517,7 +517,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     expect(fake.sends[0]!.clientRequestId).toBe("ob-role-msg-1");
   });
 
-  test("no architect thread: the handoff starts the architect's run (OS-56), exit 0, and the stamp still applied", async () => {
+  test("no sentinel thread: the handoff starts the sentinel's run (OS-56), exit 0, and the stamp still applied", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
     fakeGit();
@@ -527,7 +527,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain("note:      omnislash architect: run 1 opened, thread t3-1, with 1 message in its start brief");
+    expect(res.out).toContain("note:      omnislash sentinel: run 1 opened, thread t3-1, with 1 message in its start brief");
     expect(t3.launches).toHaveLength(1);
     expect(t3.sends).toHaveLength(0);
     expect(db.query("SELECT status FROM spinoff WHERE ticket_ref = '1133'").get()).toMatchObject({ status: "ready-for-gate" });
@@ -538,7 +538,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
     await openRunsOnSeats(db);
     const fake = fakeSeam();
     fake.failSend = true;
@@ -546,7 +546,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(1);
-    expect(res.err).toContain("the readying note did not reach the sentinel, else the architect");
+    expect(res.err).toContain("the readying note did not reach the sentinel and is held");
     expect(res.err).toContain("ob t3 doctor");
     expect(db.query("SELECT status FROM spinoff WHERE ticket_ref = '1133'").get()).toMatchObject({ status: "ready-for-gate" });
   });
@@ -561,7 +561,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
 
     const res = await runCli(dbPath, ["spinoff", "ready", "1133"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain("headless launcher, so there is no architect thread to tell");
+    expect(res.out).toContain("headless launcher, so there is no sentinel thread to tell");
     expect(fake.sends).toHaveLength(0);
   });
 
@@ -570,7 +570,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     const db = openDb(dbPath, { create: true });
     fakeGit();
     await seedReadyable(db, "t3", "builder-thread-1");
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
     await openRunsOnSeats(db);
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
@@ -580,7 +580,7 @@ describe("ob spinoff ready tells the architect (1133)", () => {
     const body = JSON.parse(res.out) as { status: string; architect_note: { outcome: string; threadId: string } };
     expect(body.status).toBe("handed-off");
     expect(body.architect_note.outcome).toBe("sent");
-    expect(body.architect_note.threadId).toBe("architect-thread-1");
+    expect(body.architect_note.threadId).toBe("sentinel-thread-1");
   });
 });
 
@@ -641,8 +641,8 @@ describe("ob close tells the builder (1133)", () => {
 describe("storeAgentRegistry (1133)", () => {
   test("reads an architect row's thread id off the real registry", async () => {
     const db = freshDb();
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
-    const row = await storeAgentRegistry(db).read("architect-omnislash");
-    expect(teamThreadIdOf(row)).toBe("architect-thread-1");
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
+    const row = await storeAgentRegistry(db).read("sentinel-omnislash");
+    expect(teamThreadIdOf(row)).toBe("sentinel-thread-1");
   });
 });

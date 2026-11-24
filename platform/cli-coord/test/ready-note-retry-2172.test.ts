@@ -71,14 +71,14 @@ function flakySeam(failures: number, error: Error = new T3Error("unreachable", R
 }
 
 const registry: AgentRegistry = {
-  read: async () => ({ session_id: "architect-thread-1", launcher: "t3", status: "planning", run: null }),
+  read: async () => ({ session_id: "sentinel-thread-1", launcher: "t3", status: "planning", run: null }),
   register: async () => {},
   setRun: async () => true,
 };
 
 const baseInput = {
   row: { id: 7, ticket_ref: "OB-2172", branch: "ob-2172", worktree: "/w/ob-2172", status: "ready-for-gate" },
-  route: { kind: "team" as const, target: { agentId: "architect-omnislash", label: "omnislash architect", team: "omnislash" } },
+  route: { kind: "team" as const, target: { agentId: "sentinel-omnislash", label: "omnislash sentinel", team: "omnislash" } },
   launcher: "t3",
   state: "State: landable",
   builderNote: null,
@@ -176,7 +176,7 @@ async function seed(dbPath: string): Promise<ReturnType<typeof openDb>> {
   db.query("INSERT INTO project (id, name, kind, created_at, group_name) VALUES ('omnislash', 'omnislash', 'side', '2026-11-17T00:00:00Z', 'omnislash')").run();
   const itemId = await createItem(db, { type: "task", title: "retry the note", projectId: "omnislash" });
   db.query("UPDATE spinoff SET item_id = ? WHERE id = ?").run(itemId, row.id);
-  await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+  await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
   await openRunsOnSeats(db);
   return db;
 }
@@ -193,7 +193,7 @@ describe("ob spinoff handoff keeps a failed note on the row (OB-2172)", () => {
     restores.push(__setT3Seam(fake.seam));
     const res = await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"]);
     expect(res.code).toBe(0);
-    expect(res.out).toContain("note:      omnislash architect: 1 message queued into run 1, thread architect-thread-1");
+    expect(res.out).toContain("note:      omnislash sentinel: 1 message queued into run 1, thread sentinel-thread-1");
     expect(fake.attempts).toHaveLength(2);
     expect(noteErrorOf(db)).toBeNull();
   });
@@ -235,7 +235,7 @@ describe("ob spinoff handoff keeps a failed note on the row (OB-2172)", () => {
     expect((await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"])).code).toBe(1);
     expect(noteErrorOf(db)).not.toBeNull();
     // The send delivers the stored handoff too, so the repeat handoff finds nothing unread: that is a delivered note.
-    const sent = await runCli(dbPath, ["send", "omnislash", "architect", "x"]);
+    const sent = await runCli(dbPath, ["send", "omnislash", "sentinel", "x"]);
     expect(sent.code).toBe(0);
     expect(sent.out).toContain("2 messages queued into run 1");
     const again = await runCli(dbPath, ["spinoff", "handoff", "2172", "--ci-unchecked", "test"]);

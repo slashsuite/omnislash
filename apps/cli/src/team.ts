@@ -6,8 +6,9 @@
 // A team's threads are agent rows `<role>-<team>` (`architect-acme`, `sentinel-slash`), launcher `t3`, with
 // the thread id in `session_id`.
 //
-// Routing: a project's readying note goes to its team's sentinel when one is bound, else to its architect
-// (`teamHandoffTarget`). A project in no team gets no note.
+// Routing: a project's readying note goes to its team's sentinel, bound or not (`teamHandoffTarget`, OS-181); the
+// delivery starts a sentinel run when the team has none, and a start that fails holds the note. It never falls back to
+// the architect. A project in no team gets no note.
 import type { Database } from "bun:sqlite";
 import { asc, eq, inArray } from "drizzle-orm";
 import { nowIso } from "./db.ts";
@@ -15,7 +16,6 @@ import { asStore, type Store } from "./db/store.ts";
 import { AppError, UsageError } from "./errors.ts";
 import { getProject, UnknownTeamError, type Project } from "./project.ts";
 import { doneAgent, getAgent } from "../../../platform/cli-coord/src/agent.ts";
-import type { AgentRegistry } from "./t3/dispatch.ts";
 
 /** A row's T3 thread id: only a `t3` row's `session_id` is a thread. Pure. */
 export function teamThreadIdOf(row: { session_id: string | null; launcher: string | null } | null): string | null {
@@ -275,7 +275,7 @@ export function teamInUseRefusal(name: string, members: string[], threads: strin
 /** Where a handoff note goes: a team role's agent row, and the label its "no thread" skip says. */
 export interface HandoffTarget {
   agentId: string;
-  /** `<team> sentinel` or `<team> architect`. */
+  /** `<team> sentinel`. */
   label: string;
   /** The team, for the command a skip names. */
   team: string;
@@ -294,15 +294,16 @@ function noTeamLine(project: string): string {
 
 /**
  * Where a row's readying note goes (OB-2255), and where `ob close` looks for a held one: the ticket's project's
- * team's sentinel when one is bound, else its architect. A ticket with no project, or a project in no team, is a
- * named skip (no note). A read that FAILS is a failed route, so it is never mistaken for "no team".
+ * team's sentinel, always (OS-181). The route reads no liveness: the delivery (`deliverToRole` -> `startRoleRun`)
+ * reuses a live run or seat, replaces a dead one, or starts one, and a start that fails holds the note. A ticket with
+ * no project, or a project in no team, is a named skip (no note). A read that FAILS is a failed route, so it is never
+ * mistaken for "no team".
  */
 export async function teamHandoffTarget(input: {
   /** The ticket's project (id or name), null when the ticket names no item or the item has no project. */
   projectOf: () => Promise<string | null>;
   /** The project's team name, or null (also null for an unknown project). */
   teamOf: (project: string) => Promise<string | null>;
-  registry: Pick<AgentRegistry, "read">;
   ticket: string;
 }): Promise<HandoffRoute> {
   let project: string | null;
@@ -319,15 +320,7 @@ export async function teamHandoffTarget(input: {
     return { kind: "failed", reason: `could not read ${project}'s team: ${(err as Error).message}` };
   }
   if (!team) return { kind: "skip", reason: noTeamLine(project) };
-  const sentinelId = teamRoleAgentId(team, "sentinel");
-  let sentinelThread: string | null;
-  try {
-    sentinelThread = teamThreadIdOf(await input.registry.read(sentinelId));
-  } catch (err) {
-    return { kind: "failed", reason: `could not read ${sentinelId}: ${(err as Error).message}` };
-  }
-  if (sentinelThread) return { kind: "team", target: { agentId: sentinelId, label: `${team} sentinel`, team } };
-  return { kind: "team", target: { agentId: teamRoleAgentId(team, "architect"), label: `${team} architect`, team } };
+  return { kind: "team", target: { agentId: teamRoleAgentId(team, "sentinel"), label: `${team} sentinel`, team } };
 }
 
 /** The store-backed `teamOf`: the project's team, looked up by id or name. */

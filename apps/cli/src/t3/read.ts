@@ -370,7 +370,7 @@ export function joinThreadsToRows(threads: T3ThreadView[], index: Map<string, T3
 
 /**
  * The ob label a thread shows: the ITEM it serves (1163 — the row's recorded identity, falling back to the
- * ref it was dispatched with), else the architect's agent id, else none. Pure.
+ * ref it was dispatched with), or the architect's agent id, or none. Pure.
  */
 export function threadObLabel(thread: Pick<T3ThreadView, "ob">): string | null {
   const ob = thread.ob;

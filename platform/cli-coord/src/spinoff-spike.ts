@@ -116,8 +116,8 @@ export function formatSpikeReport(
       ? `${row.ticket_ref} spike answered (a documentation commit, PR ${doc.prUrl})`
       : `${row.ticket_ref} spike answered (a documentation commit, no open PR found)`;
   const architect = doc.committed
-    ? "  next:      the sentinel, else the architect, reads the answers on the parent ticket (ob show <parent>), merges the doc PR like a chart, then closes the spike with ob close"
-    : "  next:      the sentinel, else the architect, reads the answers on the parent ticket (ob show <parent>), then closes the spike with ob close";
+    ? "  next:      the sentinel reads the answers on the parent ticket (ob show <parent>), merges the doc PR like a chart, then closes the spike with ob close"
+    : "  next:      the sentinel reads the answers on the parent ticket (ob show <parent>), then closes the spike with ob close";
   return [
     head,
     `  ticket:    ${row.ticket_ref}`,

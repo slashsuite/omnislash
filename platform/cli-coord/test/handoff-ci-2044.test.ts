@@ -298,14 +298,14 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
     expect(t).toContain("ci: gate pass, ui-review pass on aaaaaaa");
   });
 
-  test("the readying note sent to the architect thread carries the ci line on its gate line (the real wiring)", async () => {
+  test("the readying note sent to the sentinel thread carries the ci line on its gate line (the real wiring)", async () => {
     const dbPath = freshDbPath();
     const { itemId, wt } = await seedHandoff(dbPath);
     const db = openDb(dbPath);
     db.query("UPDATE spinoff SET launcher = 't3', agent_id = 'ob-2044' WHERE item_id = ?").run(itemId);
     await registerAgent(db, { id: "ob-2044", ticket: itemId, branch: "ob-2044", worktree: wt, status: "readying", note: "moon clean; skeptical-review: 0 cut, 0 open", ttlS: 900 });
     omnislashTeamFor(db, itemId);
-    await registerAgent(db, { id: "architect-omnislash", worktree: "/r/omnislash", status: "planning", launcher: "t3", sessionId: "architect-thread-1", ttlS: 900 });
+    await registerAgent(db, { id: "sentinel-omnislash", worktree: "/r/omnislash", status: "working", launcher: "t3", sessionId: "sentinel-thread-1", ttlS: 900 });
     await openRunsOnSeats(db);
     db.close();
     const sends: T3SendInput[] = [];

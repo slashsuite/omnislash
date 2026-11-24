@@ -226,8 +226,8 @@ async function apiItemBriefSource(
 }
 
 /**
- * OB-2255: where a row's note goes over the API (`teamHandoffTarget`): the ticket's project's team's sentinel,
- * else its architect. A ticket naming no item (a 404) is no project, a named skip.
+ * OB-2255: where a row's note goes over the API (`teamHandoffTarget`): the ticket's project's team's sentinel
+ * (OS-181: always; the delivery starts one when the team has none). A ticket naming no item (a 404) is no project, a named skip.
  */
 export async function apiHandoffTarget(client: ApiClient, row: { ticket_ref: string; item_id?: string | null }): Promise<HandoffRoute> {
   return teamHandoffTarget({
@@ -241,7 +241,6 @@ export async function apiHandoffTarget(client: ApiClient, row: { ticket_ref: str
       }
     },
     teamOf: async (p) => teamOfIn((await client.projects()).projects)(p),
-    registry: apiAgentRegistry(client),
   });
 }
 
@@ -640,7 +639,7 @@ async function composeReadyOverApi(
   spike = false,
   spikeDoc: { committed: boolean; prUrl: string | null } | null = null,
 ): Promise<ReadyNoteOutcome> {
-  // OB-2255: the note goes to the ticket's team's sentinel, else its architect; a project in no team gets none.
+  // OB-2255, OS-181: the note goes to the ticket's team's sentinel, started if it has none; a project in no team gets none.
   return announceReadyNote(apiAgentRegistry(ctx.client), {
     row,
     route: await apiHandoffTarget(ctx.client, row),

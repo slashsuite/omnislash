@@ -1995,7 +1995,7 @@ describe("ob spinoff handoff reads the PR's CI over the API client (OB-2044)", (
 });
 
 describe("the API readying note carries the ci line (OB-2044)", () => {
-  test("the note sent to the architect thread has the ci line on its gate line", async () => {
+  test("the note sent to the sentinel thread has the ci line on its gate line", async () => {
     const HEAD = "a".repeat(40);
     const wt = mkdtempSync(join(tmpdir(), "ob-wt-2044-api-note-"));
     const launched = row({ status: "launched", ticket_ref: "2044", branch: "2044", worktree: wt, launcher: "t3", repo: "/tmp/fake/omnislash" });
@@ -2003,7 +2003,7 @@ describe("the API readying note carries the ci line (OB-2044)", () => {
       "GET /spinoffs": { spinoffs: [launched] },
       "POST /spinoffs/ready": { row: { ...launched, status: "ready-for-gate" }, already: false, leasesReleased: true, builder_note: "moon clean; skeptical-review: 0 cut, 0 open" },
       "GET /projects": { projects: [OMNISLASH_PROJECT] },
-      "GET /agents": { agents: [{ id: "architect-omnislash", session_id: "architect-thread-1", launcher: "t3", status: "planning", run: null }] },
+      "GET /agents": { agents: [{ id: "sentinel-omnislash", session_id: "sentinel-thread-1", launcher: "t3", status: "planning", run: null }] },
       "GET /items/2044": { item: { id: "2044", project: "omnislash", tags: [] } },
       "POST /spinoffs/note-error": { recorded: true },
     });

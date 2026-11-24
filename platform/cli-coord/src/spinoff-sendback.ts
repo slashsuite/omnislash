@@ -32,7 +32,7 @@ function sendBackMessage(row: Pick<SpinoffRow, "ticket_ref" | "branch">, note: s
   return [
     `sent back: ${row.ticket_ref} (${row.branch})`,
     "",
-    "The sentinel, else the architect, gated your PR and is sending it back. Fix this:",
+    "The sentinel gated your PR and is sending it back. Fix this:",
     note.trim(),
     "",
     "Your row is building again and is off the gateable list. When the fix is committed and pushed to the",
