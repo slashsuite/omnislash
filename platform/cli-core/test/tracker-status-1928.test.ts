@@ -145,7 +145,7 @@ describe("block and unblock (OB-1928)", () => {
     const db = openDb(scratch());
     const done = await createItem(db, { type: "task", title: "finished" });
     await closeItem(db, done);
-    await expect(blockItem(db, done, "why", null)).rejects.toThrow("cannot transition from 'done' to 'blocked'");
+    await expect(blockItem(db, done, "why", null)).rejects.toThrow("is done: 'to:blocked' is not a move from there");
     for (const type of ["roadmap", "decision"]) {
       const id = await createItem(db, { type, title: type });
       await expect(blockItem(db, id, "why", null)).rejects.toThrow("status 'blocked' is not valid");
@@ -361,7 +361,7 @@ describe("supersede is validated and on the trail (OB-1928)", () => {
     const b = await createItem(db, { type: "decision", title: "B" });
     const d = await createItem(db, { type: "decision", title: "D" });
     await supersede(db, b, a);
-    await expect(supersede(db, a, d)).rejects.toThrow("cannot transition from 'superseded' to 'accepted'");
+    await expect(supersede(db, a, d)).rejects.toThrow("is superseded: 'to:accepted' is not a move from there");
     expect((await getItem(db, a))!.status).toBe("superseded");
     expect((await getItem(db, d))!.status).toBe("draft");
     expect(await decisionsForItem(db, d)).toEqual([]);

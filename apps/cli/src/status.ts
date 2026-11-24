@@ -21,27 +21,9 @@ const BASIC_STATUSES = ["open", "in_progress", "ready", "merged", "blocked", "do
 const ROADMAP_STATUSES = ["active", "archived"];
 const DECISION_STATUSES = ["draft", "accepted", "superseded"];
 const LEARNING_STATUSES = ["todo", "in_progress", "done"];
-// OB-2004: a reference document is not work, so it has one status and no moves out of it.
+// OB-2004: a reference document is not work, so it has one status. The moves between statuses are the
+// lifecycle machines in platform/state-machine/src/item.ts (OS-172).
 const REFERENCE_STATUSES = ["active"];
-
-const ROADMAP_TRANSITIONS: Record<string, string[]> = {
-  active: ["archived"],
-  archived: ["active"],
-};
-
-const DECISION_TRANSITIONS: Record<string, string[]> = {
-  draft: ["accepted", "superseded"],
-  accepted: ["superseded"],
-  superseded: [],
-};
-
-const REFERENCE_TRANSITIONS: Record<string, string[]> = { active: [] };
-
-const LEARNING_TRANSITIONS: Record<string, string[]> = {
-  todo: ["in_progress", "done"],
-  in_progress: ["done", "todo"],
-  done: ["todo", "in_progress"],
-};
 
 /**
  * The item types anything may create. Here rather than in capture.ts (352) because the API's create
@@ -97,27 +79,6 @@ export function defaultStatus(type: string): string {
   }
 }
 
-const LINEAR_TRANSITIONS: Record<string, string[]> = {
-  open: ["in_progress", "ready", "blocked", "done"],
-  in_progress: ["ready", "blocked", "done", "open"],
-  ready: ["merged", "in_progress", "blocked", "qa_ready", "done"],
-  merged: ["qa_ready", "done", "blocked"],
-  qa_ready: ["qa", "blocked", "done"],
-  qa: ["qa_rework", "done", "blocked"],
-  qa_rework: ["in_progress", "ready", "qa", "blocked", "done"],
-  blocked: ["open", "in_progress", "ready", "done"],
-  done: ["open"],
-};
-
-const BASIC_TRANSITIONS: Record<string, string[]> = {
-  open: ["in_progress", "ready", "blocked", "done"],
-  in_progress: ["ready", "blocked", "done", "open"],
-  ready: ["merged", "in_progress", "blocked", "done"],
-  merged: ["done", "blocked", "open"],
-  blocked: ["open", "in_progress", "ready", "done"],
-  done: ["open"],
-};
-
 export function statusVocab(type: string, kind: Kind | null): string[] {
   if (type === "roadmap") return ROADMAP_STATUSES;
   if (type === "decision") return DECISION_STATUSES;
@@ -128,26 +89,4 @@ export function statusVocab(type: string, kind: Kind | null): string[] {
 
 export function isValidStatus(status: string, type: string, kind: Kind | null): boolean {
   return statusVocab(type, kind).includes(status);
-}
-
-export function canTransition(
-  from: string,
-  to: string,
-  type: string,
-  kind: Kind | null,
-): boolean {
-  if (from === to) return true;
-  const table =
-    type === "roadmap"
-      ? ROADMAP_TRANSITIONS
-      : type === "decision"
-        ? DECISION_TRANSITIONS
-        : type === "learning"
-          ? LEARNING_TRANSITIONS
-          : type === "reference"
-            ? REFERENCE_TRANSITIONS
-            : type === "linear_ref"
-              ? LINEAR_TRANSITIONS
-              : BASIC_TRANSITIONS;
-  return (table[from] ?? []).includes(to);
 }

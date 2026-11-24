@@ -1,6 +1,5 @@
 import type { Database } from "bun:sqlite";
 import { decide } from "../../../platform/state-machine/src/decide.ts";
-import { itemMachineFor, moveEvent } from "../../../platform/state-machine/src/item.ts";
 import { nowIso } from "./db.ts";
 import type { Store } from "./db/store.ts";
 import { recordEventFor } from "./events.ts";
@@ -10,11 +9,13 @@ import { defineSeam } from "./test-seams.ts";
 type AnyStateMachine = Parameters<typeof decide>[0];
 
 /**
- * The shadow check (OS-169, spike OS-167 section 5 step 2): every status move asks the lifecycle machine
- * what it would decide, beside today's check, and logs one `machine_would_refuse` event when the two
+ * The shadow check (OS-169, spike OS-167 section 5 step 2): a status move asks the lifecycle machine what it
+ * would decide, beside today's check, and logs one `machine_would_refuse` event when the two
  * disagree, in either direction. It never refuses and never changes the move: today's answer stands, and a
  * `decide` that throws or an event write that fails is dropped (the write failure to stderr only). It runs
- * after today's check and before the write, outside any transaction.
+ * after today's check and before the write, outside any transaction. Since OS-172 only spinoff rows are
+ * shadowed: the item machine IS the item check (workflow.ts `assertTransition`). Step 6 (OS-173) does the
+ * same for rows.
  */
 export const MACHINE_SHADOW_SOURCE = "state-machine";
 export const MACHINE_WOULD_REFUSE = "machine_would_refuse";
@@ -75,30 +76,4 @@ export async function shadowMove(db: Database | Store, m: ShadowMove): Promise<v
   } catch (e) {
     process.stderr.write(`ob: state-machine shadow: could not record ${MACHINE_WOULD_REFUSE}: ${(e as Error)?.message ?? e}\n`);
   }
-}
-
-/**
- * The item form: the item's machine (`itemMachineFor`) and `moveEvent(to)`. A self-move (from == to) is a
- * no-op today and is not checked.
- */
-export async function shadowItemMove(
-  db: Database | Store,
-  it: { id: string; type: string; status: string; project_kind: string | null },
-  to: string,
-  today: TodayAnswer,
-  opts: { todayMessage?: string | null; actor?: string | null } = {},
-): Promise<void> {
-  if (it.status === to) return;
-  const actor = typeof opts.actor === "string" && opts.actor.trim() !== "" ? opts.actor.trim() : null;
-  await shadowMove(db, {
-    machine: itemMachineFor(it.type, it.project_kind),
-    id: it.id,
-    from: it.status,
-    event: moveEvent(to),
-    to,
-    today,
-    todayMessage: opts.todayMessage ?? null,
-    itemId: it.id,
-    actor,
-  });
 }

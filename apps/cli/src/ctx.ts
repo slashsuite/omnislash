@@ -235,6 +235,8 @@ export interface Flags {
   /** ob 1683: `whatsapp send --file <path>` (repeatable). */
   file?: string[];
   "no-github"?: boolean;
+  /** OS-172: `ob state <id> <to> --repair <why>` moves past the machine for a stuck row. */
+  repair?: string;
   /** OS-56: `ob send` stores the message and delivers nothing. */
   "no-deliver"?: boolean;
   book?: string;

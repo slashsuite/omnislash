@@ -368,15 +368,23 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   state: {
     section: "Tasks",
     summary: "Transition an item to an explicit validated state",
-    usage: ["state <id> <state> [--note <why>] [--reason <r>] [--no-github] [--dry-run]"],
+    usage: [
+      "state <id> <state> [--note <why>] [--reason <r>] [--no-github] [--dry-run]",
+      "state <id> <state> --repair <why>",
+    ],
     flags: [
       { flag: "-m, --note <why>", description: "Record a note on the Decisions trail" },
       { flag: "--reason <text>", description: "Reason when moving to blocked" },
       { flag: "--no-github", description: "Skip GitHub issue mirroring when closing or reopening" },
       { flag: "--dry-run", description: "Preview transition without writing" },
+      { flag: "--repair <why>", description: "Skip the lifecycle's edge check (target must be in the vocab; not done or blocked); logged" },
     ],
-    examples: ["state APP-12 done", 'state APP-12 open --note "Re-queued"'],
-    notes: ["Moving to done mirrors close; moving off blocked clears the block."],
+    examples: ["state APP-12 done", 'state APP-12 open --note "Re-queued"', "state APP-12 open --repair 'legacy status qa'"],
+    notes: [
+      "Moving to done mirrors close; moving off blocked clears the block.",
+      "A move the item's lifecycle does not allow is refused (exit 1); blocked needs --reason.",
+      "--repair is local only (not over the API) and records 'repair: <why>' on the Decisions trail.",
+    ],
   },
 
   // --- Queue & Focus ---

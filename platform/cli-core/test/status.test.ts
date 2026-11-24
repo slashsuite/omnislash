@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { canTransition, isValidStatus, statusVocab } from "../../../apps/cli/src/status.ts";
+import { isValidStatus, statusVocab } from "../../../apps/cli/src/status.ts";
+import { validNextStatuses } from "../../../apps/cli/src/workflow.ts";
 
 describe("statusVocab", () => {
   test("linear_ref gets the full lifecycle", () => {
@@ -31,26 +32,23 @@ describe("isValidStatus", () => {
   });
 });
 
-describe("canTransition", () => {
-  test("valid linear_ref transitions", () => {
-    expect(canTransition("open", "in_progress", "linear_ref", null)).toBe(true);
-    expect(canTransition("ready", "merged", "linear_ref", null)).toBe(true);
-    expect(canTransition("qa", "qa_rework", "linear_ref", null)).toBe(true);
-  });
-  test("invalid linear_ref transitions", () => {
-    expect(canTransition("open", "qa", "linear_ref", null)).toBe(false);
-    expect(canTransition("open", "merged", "linear_ref", null)).toBe(false);
-  });
-  test("side task transitions", () => {
-    expect(canTransition("open", "in_progress", "task", "side")).toBe(true);
-    expect(canTransition("in_progress", "done", "task", "side")).toBe(true);
+// OS-172: the edges are the item machines (platform/state-machine), read here through validNextStatuses,
+// which feeds the item detail's `valid_next`. The full edge list is pinned in platform/state-machine's parity test.
+describe("validNextStatuses", () => {
+  test("linear_ref moves", () => {
+    expect(validNextStatuses("linear_ref", null, "open")).toEqual(["in_progress", "ready", "done", "blocked"]);
+    expect(validNextStatuses("linear_ref", null, "ready")).toContain("merged");
+    expect(validNextStatuses("linear_ref", null, "qa")).toContain("qa_rework");
   });
   test("side task review-gate loop: start→ready→merged→close works (154/G2)", () => {
-    expect(canTransition("open", "in_progress", "task", "side")).toBe(true);
-    expect(canTransition("in_progress", "ready", "task", "side")).toBe(true);
-    expect(canTransition("ready", "merged", "task", "side")).toBe(true);
-    expect(canTransition("merged", "done", "task", "side")).toBe(true);
+    expect(validNextStatuses("task", "side", "open")).toContain("in_progress");
+    expect(validNextStatuses("task", "side", "in_progress")).toContain("ready");
+    expect(validNextStatuses("task", "side", "ready")).toContain("merged");
+    expect(validNextStatuses("task", "side", "merged")).toContain("done");
     // qa states remain out of the basic vocab
-    expect(canTransition("ready", "qa_ready", "task", "side")).toBe(false);
+    expect(validNextStatuses("task", "side", "ready")).not.toContain("qa_ready");
+  });
+  test("a stored status the machine does not know has no moves, and does not throw", () => {
+    expect(validNextStatuses("task", null, "qa")).toEqual([]);
   });
 });

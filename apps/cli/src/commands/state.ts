@@ -33,6 +33,7 @@ import {
   moveItem,
   readyItem,
   reopenItem,
+  repairItem,
   startItem,
   unblockItem,
 } from "../workflow.ts";
@@ -361,6 +362,16 @@ export async function cmdState(ctx: Ctx): Promise<void> {
   const id = await itemArg(ctx, ctx.args[0]);
   const to = ctx.args[1];
   if (!id || !to) throw new UsageError("state requires <id> <state>");
+  // OS-172: the named, logged way out of a status the machine has no move from.
+  if (ctx.flags.repair !== undefined) {
+    const why = typeof ctx.flags.repair === "string" ? ctx.flags.repair.trim() : "";
+    if (!why) throw new UsageError("--repair requires a reason: --repair '<why>'");
+    if (to === "done" || to === "blocked") throw new UsageError("repair to open, then close or block");
+    if (ctx.flags["dry-run"]) throw new UsageError("--repair does not take --dry-run");
+    await repairItem(ctx.store ?? ctx.db, id, to, why, decisionOptsOf(ctx));
+    await emitItem(ctx, id);
+    return;
+  }
   // `state <id> done` is the SAME landing as `close <id>`, so it mirrors and lands the same way (77,
   // OB-1928). Leaving it unmirrored made it a second, undocumented door to the half-close.
   if (to === "done") {
