@@ -407,7 +407,7 @@ async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: Proje
  * `trusted`: `id` is an internal id this handler already resolved (an earlier `requireItem`, or a row it just created), not typed input.
  * `scope` (OS-178): a scoped token's projects. An item outside them is the same 404 as a missing one, so its existence does not leak.
  */
-async function requireItem(store: Store, id: string, opts: { trusted?: boolean; scope?: ProjectScope } = {}) {
+export async function requireItem(store: Store, id: string, opts: { trusted?: boolean; scope?: ProjectScope } = {}) {
   const lookup = opts.trusted ? id : await refuseAmbiguousBareNumber(store, id, opts.scope);
   const item = await getItem(store, lookup);
   if (!item || !inScope(opts.scope, item.project_id)) throw new ApiFault("not_found", 404, `no item '${id}'`);
@@ -420,7 +420,7 @@ function focusInScope(scope: ProjectScope | undefined, focus: string | null): st
 }
 
 /** OS-178: a `?project=` a scoped token names must be one of its projects; any other is the unknown-project 404. */
-async function requireScopedProject(store: Store, scope: ProjectScope | undefined, project: string | undefined): Promise<void> {
+export async function requireScopedProject(store: Store, scope: ProjectScope | undefined, project: string | undefined): Promise<void> {
   if (!scope || project === undefined) return;
   const p = await getProject(store, project);
   if (!p || !scope.ids.has(p.id)) throw new ApiFault("not_found", 404, `no project '${project}'`);
@@ -954,8 +954,8 @@ export async function next(store: Store, project?: string, scope?: ProjectScope)
 
 export async function items(store: Store, query: ItemQuery, scope?: ProjectScope): Promise<ItemsResponse> {
   await requireScopedProject(store, scope, query.project);
-  // OS-178: teams is an admin family, and an unknown team's 404 would tell a scoped token which names exist.
-  if (scope && query.team !== undefined) throw new ApiFault("forbidden", 403, "the team filter is not granted to a scoped token");
+  // OS-179: a team outside the scope reads exactly like an unknown one.
+  if (scope && query.team !== undefined && !(await teamInScope(store, scope, query.team))) throw new ApiFault("not_found", 404, new UnknownTeamError(query.team).message);
   const { items: rows, focusProject } = await listWorklist(store, query, { allowedProjects: scope?.ids }).catch((e) => {
     if (e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     throw e;
@@ -1599,8 +1599,8 @@ export async function spinoffLaunchable(store: Store, req: LaunchableRequest): P
 }
 
 /** The exclusion (308/191). One conditional update, on the authoritative database, exactly as before. */
-export async function spinoffClaim(store: Store, req: ClaimSpinoffRequest): Promise<ClaimSpinoffResponse> {
-  const outcome = await claimSpinoffRow(store, req.id, req.holder ?? "");
+export async function spinoffClaim(store: Store, req: ClaimSpinoffRequest, projectIds?: readonly string[]): Promise<ClaimSpinoffResponse> {
+  const outcome = await claimSpinoffRow(store, req.id, req.holder ?? "", projectIds ? { projectIds } : {});
   return { claimed: outcome.claimed, error: outcome.error };
 }
 
@@ -2703,6 +2703,7 @@ import {
   type GithubRest,
 } from "../ci-main.ts";
 import { readGithubToken } from "../net.ts";
+import { teamInScope } from "./scope-filter.ts";
 import { storeAgentRegistry } from "../t3/dispatch.ts";
 import type { CiMainNotifyResponse, CiMainResponse, GithubHooksResponse } from "./contract.ts";
 

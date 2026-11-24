@@ -188,6 +188,12 @@ export interface ObApiRoute {
   family: string;
   /** What it does, one line -- this is what an `unknown_endpoint` refusal lists. */
   what: string;
+  /**
+   * OS-179: what a scoped token may do on this route, granted per route rather than per family. Unmarked is
+   * admin only (403 to a scoped token); `read` admits a GET; `write` admits any method. Only a route in an
+   * OB_API_SCOPABLE_FAMILIES family may carry it, and every such route filters to the token's projects.
+   */
+  scoped?: "read" | "write";
 }
 
 /**
@@ -196,37 +202,37 @@ export interface ObApiRoute {
  */
 export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/health", family: "health", what: "liveness plus which store the server is on" },
-  { method: "GET", path: "/next", family: "next", what: "the worklist" },
-  { method: "GET", path: "/items", family: "items", what: "query items (state, project, type, tag, kind, priority, limit)" },
-  { method: "POST", path: "/items", family: "items", what: "create an item" },
-  { method: "GET", path: "/items/:id", family: "items", what: "one item with its detail" },
-  { method: "POST", path: "/items/:id/close", family: "items", what: "close it, mirroring onto its linked GitHub issue" },
-  { method: "POST", path: "/items/:id/reopen", family: "items", what: "reopen it, mirroring onto its linked GitHub issue" },
-  { method: "POST", path: "/items/:id/state", family: "items", what: "start / ready / block / unblock / set a state" },
+  { method: "GET", path: "/next", family: "next", what: "the worklist", scoped: "read" },
+  { method: "GET", path: "/items", family: "items", what: "query items (state, project, type, tag, kind, priority, limit)", scoped: "read" },
+  { method: "POST", path: "/items", family: "items", what: "create an item", scoped: "write" },
+  { method: "GET", path: "/items/:id", family: "items", what: "one item with its detail", scoped: "read" },
+  { method: "POST", path: "/items/:id/close", family: "items", what: "close it, mirroring onto its linked GitHub issue", scoped: "write" },
+  { method: "POST", path: "/items/:id/reopen", family: "items", what: "reopen it, mirroring onto its linked GitHub issue", scoped: "write" },
+  { method: "POST", path: "/items/:id/state", family: "items", what: "start / ready / block / unblock / set a state", scoped: "write" },
   // OB-1762: the native app's item sheet. One call, and the answer is the FRESH detail, so the sheet redraws
   // without a second round trip (the dashboard's transitionItem / setTodayRank, over HTTP).
-  { method: "POST", path: "/items/:id/transition", family: "items", what: "start / ready / block / unblock / close / reopen, answering the fresh item detail (OB-1762)" },
-  { method: "POST", path: "/items/:id/rank", family: "items", what: "rank into Today (or the next slot; clear: true removes it), answering the fresh item detail (OB-1762)" },
-  { method: "POST", path: "/items/:id/order", family: "items", what: "place it in its project's queue: top, before or after another item; a move across a priority band sets the priority, answering the fresh item detail (OB-2083)" },
+  { method: "POST", path: "/items/:id/transition", family: "items", what: "start / ready / block / unblock / close / reopen, answering the fresh item detail (OB-1762)", scoped: "write" },
+  { method: "POST", path: "/items/:id/rank", family: "items", what: "rank into Today (or the next slot; clear: true removes it), answering the fresh item detail (OB-1762)", scoped: "write" },
+  { method: "POST", path: "/items/:id/order", family: "items", what: "place it in its project's queue: top, before or after another item; a move across a priority band sets the priority, answering the fresh item detail (OB-2083)", scoped: "write" },
   { method: "GET", path: "/snapshot", family: "snapshot", what: "the dashboard's full snapshot (status rollup incl. the Today list, standup, spinoffs, agents, WhatsApp feed + Status tray, alert count; OB-1762)" },
-  { method: "POST", path: "/items/:id/notes", family: "items", what: "append a note to the body" },
-  { method: "POST", path: "/items/:id/tags", family: "items", what: "add and/or remove tags" },
-  { method: "POST", path: "/items/:id/links", family: "items", what: "add an item-to-item link (rel + other id)" },
-  { method: "POST", path: "/items/:id/edit", family: "items", what: "edit title, body, priority, project" },
+  { method: "POST", path: "/items/:id/notes", family: "items", what: "append a note to the body", scoped: "write" },
+  { method: "POST", path: "/items/:id/tags", family: "items", what: "add and/or remove tags", scoped: "write" },
+  { method: "POST", path: "/items/:id/links", family: "items", what: "add an item-to-item link (rel + other id)", scoped: "write" },
+  { method: "POST", path: "/items/:id/edit", family: "items", what: "edit title, body, priority, project", scoped: "write" },
   { method: "DELETE", path: "/items/:id", family: "items", what: "delete an item" },
   { method: "POST", path: "/today", family: "today", what: "set or clear today's rank" },
   { method: "GET", path: "/focus", family: "focus", what: "the current focus project" },
   { method: "POST", path: "/focus", family: "focus", what: "set or clear the focus project" },
-  { method: "GET", path: "/search", family: "search", what: "full-text search (?q=)" },
+  { method: "GET", path: "/search", family: "search", what: "full-text search (?q=)", scoped: "read" },
   { method: "GET", path: "/status", family: "status", what: "the status rollup" },
-  { method: "GET", path: "/agents", family: "agents", what: "the agent registry" },
-  { method: "POST", path: "/agents", family: "agents", what: "register / heartbeat / finish an agent, claiming its ticket lease" },
+  { method: "GET", path: "/agents", family: "agents", what: "the agent registry", scoped: "read" },
+  { method: "POST", path: "/agents", family: "agents", what: "register / heartbeat / finish an agent, claiming its ticket lease", scoped: "write" },
   { method: "POST", path: "/agents/reset", family: "agents", what: "wipe the agent registry and release every lease (437)" },
-  { method: "GET", path: "/agents/active", family: "agents", what: "is any agent alive in the last ?within_min minutes (StayAwake)" },
-  { method: "GET", path: "/leases", family: "leases", what: "every lease with its computed expiry" },
-  { method: "POST", path: "/leases", family: "leases", what: "acquire or heartbeat a lease" },
+  { method: "GET", path: "/agents/active", family: "agents", what: "is any agent alive in the last ?within_min minutes (StayAwake)", scoped: "read" },
+  { method: "GET", path: "/leases", family: "leases", what: "every lease with its computed expiry", scoped: "read" },
+  { method: "POST", path: "/leases", family: "leases", what: "acquire or heartbeat a lease", scoped: "write" },
   { method: "POST", path: "/leases/sweep", family: "leases", what: "delete leases expired for over a day (OB-1922)" },
-  { method: "DELETE", path: "/leases/:resource", family: "leases", what: "release a lease" },
+  { method: "DELETE", path: "/leases/:resource", family: "leases", what: "release a lease", scoped: "write" },
   { method: "GET", path: "/secrets", family: "secrets", what: "the stored secrets' NAMES and ages -- never a value" },
   { method: "POST", path: "/secrets/read", family: "secrets", what: "decrypt ONE secret and return its value" },
   { method: "POST", path: "/secrets", family: "secrets", what: "store one secret's value" },
@@ -234,26 +240,26 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/creds", family: "creds", what: "the credential inventory: presence, age, last verdict" },
   { method: "POST", path: "/creds/check", family: "creds", what: "run one credential's live check, or every checkable one" },
   // ob 360: the spinoff QUEUE. Every launch stays on the client; none of these opens a tab.
-  { method: "GET", path: "/spinoffs", family: "spinoffs", what: "the launch queue's rows (?status=)" },
-  { method: "POST", path: "/spinoffs", family: "spinoffs", what: "enqueue a launch" },
-  { method: "POST", path: "/spinoffs/check", family: "spinoffs", what: "record a measure-twice verdict: both score sheets in, the server computes and records it (OB-1825)" },
-  { method: "POST", path: "/spinoffs/overlap", family: "spinoffs", what: "a ticket's declared files (op declared), or one overlap decision recorded on its trail (op record), for the dispatch overlap warning (OS-47)" },
-  { method: "POST", path: "/spinoffs/planned-files", family: "spinoffs", what: "each row's planned files from its ticket's newest go check, for the files: line of gateable and show (OB-2131)" },
-  { method: "POST", path: "/spinoffs/serving", family: "spinoffs", what: "the rows that SERVE one item — the join settle-on-close uses, resolved where the store is (1226)" },
-  { method: "GET", path: "/spinoffs/config", family: "spinoffs", what: "the launcher configuration the launching machine needs" },
-  { method: "POST", path: "/spinoffs/launchable", family: "spinoffs", what: "what a drain could launch now: live counts, pending rows, holds" },
-  { method: "POST", path: "/spinoffs/claim", family: "spinoffs", what: "claim ONE pending row for the caller (the atomic exclusion)" },
-  { method: "POST", path: "/spinoffs/stamp", family: "spinoffs", what: "record the outcome of a launch the caller performed" },
-  { method: "POST", path: "/spinoffs/land", family: "spinoffs", what: "retire a merged row: status, tokens, its agent and leases" },
-  { method: "POST", path: "/spinoffs/tokens", family: "spinoffs", what: "record the token count a client read for a landed row that has none (OB-1993)" },
-  { method: "POST", path: "/spinoffs/ready", family: "spinoffs", what: "mark a launched row ready-for-gate, printed handed-off (human declared; no merge, no lease release)" },
-  { method: "POST", path: "/spinoffs/sendback", family: "spinoffs", what: "move a handed-off row back to building (architect send-back; the T3 note to the builder is sent by the client)" },
+  { method: "GET", path: "/spinoffs", family: "spinoffs", what: "the launch queue's rows (?status=)", scoped: "read" },
+  { method: "POST", path: "/spinoffs", family: "spinoffs", what: "enqueue a launch", scoped: "write" },
+  { method: "POST", path: "/spinoffs/check", family: "spinoffs", what: "record a measure-twice verdict: both score sheets in, the server computes and records it (OB-1825)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/overlap", family: "spinoffs", what: "a ticket's declared files (op declared), or one overlap decision recorded on its trail (op record), for the dispatch overlap warning (OS-47)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/planned-files", family: "spinoffs", what: "each row's planned files from its ticket's newest go check, for the files: line of gateable and show (OB-2131)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/serving", family: "spinoffs", what: "the rows that SERVE one item — the join settle-on-close uses, resolved where the store is (1226)", scoped: "write" },
+  { method: "GET", path: "/spinoffs/config", family: "spinoffs", what: "the launcher configuration the launching machine needs", scoped: "read" },
+  { method: "POST", path: "/spinoffs/launchable", family: "spinoffs", what: "what a drain could launch now: live counts, pending rows, holds", scoped: "write" },
+  { method: "POST", path: "/spinoffs/claim", family: "spinoffs", what: "claim ONE pending row for the caller (the atomic exclusion)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/stamp", family: "spinoffs", what: "record the outcome of a launch the caller performed", scoped: "write" },
+  { method: "POST", path: "/spinoffs/land", family: "spinoffs", what: "retire a merged row: status, tokens, its agent and leases", scoped: "write" },
+  { method: "POST", path: "/spinoffs/tokens", family: "spinoffs", what: "record the token count a client read for a landed row that has none (OB-1993)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/ready", family: "spinoffs", what: "mark a launched row ready-for-gate, printed handed-off (human declared; no merge, no lease release)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/sendback", family: "spinoffs", what: "move a handed-off row back to building (architect send-back; the T3 note to the builder is sent by the client)", scoped: "write" },
   { method: "POST", path: "/spinoffs/reopen", family: "spinoffs", what: "move a landed row back to building (OB-2180: a wrong land; the client has already checked main for a landing commit)" },
-  { method: "POST", path: "/spinoffs/note-error", family: "spinoffs", what: "record or clear why a row's readying note did not reach the architect (OB-2172)" },
-  { method: "POST", path: "/spinoffs/verdict", family: "spinoffs", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)" },
+  { method: "POST", path: "/spinoffs/note-error", family: "spinoffs", what: "record or clear why a row's readying note did not reach the architect (OB-2172)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/verdict", family: "spinoffs", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)", scoped: "write" },
   { method: "POST", path: "/spinoffs/trial", family: "spinoffs", what: "one model-trial operation: start, status, stop, a pair's open/attach/void, record, report (OB-1991)" },
   { method: "POST", path: "/spinoffs/reclaim", family: "spinoffs", what: "take back rows claimed by a drain that never stamped them" },
-  { method: "POST", path: "/spinoffs/cleanup-guard", family: "spinoffs", what: "the holds and agent row covering ONE worktree/branch a sweep wants to remove" },
+  { method: "POST", path: "/spinoffs/cleanup-guard", family: "spinoffs", what: "the holds and agent row covering ONE worktree/branch a sweep wants to remove", scoped: "write" },
   // `ob config` over the API: the config table the SERVER keeps, so a client flips a setting like
   // `spinoff_engine` without a database path. The client's OWN pointer is not a config key (see the
   // client handler's `remote_host` refusal).
@@ -305,30 +311,30 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/google/callback", family: "google", what: "verify+burn state, exchange the code, store secret google (browser)" },
   { method: "POST", path: "/google/auth-url", family: "google", what: "mint a state and return the authorize URL (`ob google auth-url`)" },
   // 416: already Postgres-servable. Purpose-built endpoints, not POST /rpc.
-  { method: "GET", path: "/projects", family: "projects", what: "the project table" },
+  { method: "GET", path: "/projects", family: "projects", what: "the project table", scoped: "read" },
   { method: "POST", path: "/projects", family: "projects", what: "register a project (refuses a name that exists with a different kind/remote)" },
   { method: "POST", path: "/projects/:name/edit", family: "projects", what: "change a project's remote and/or kind" },
   { method: "DELETE", path: "/projects/:name", family: "projects", what: "remove a project row (?force=true past open items)" },
-  { method: "GET", path: "/teams", family: "teams", what: "teams with their members and role threads (OB-2255)" },
+  { method: "GET", path: "/teams", family: "teams", what: "teams with their members and role threads (OB-2255)", scoped: "read" },
   { method: "POST", path: "/teams", family: "teams", what: "add a team (optionally with its first projects)" },
   { method: "POST", path: "/teams/leave", family: "teams", what: "take projects out of whatever team they are in" },
-  { method: "GET", path: "/teams/:name", family: "teams", what: "one team with its members and role threads" },
+  { method: "GET", path: "/teams/:name", family: "teams", what: "one team with its members and role threads", scoped: "read" },
   { method: "POST", path: "/teams/:name/edit", family: "teams", what: "change a team's icon and/or display name" },
   { method: "POST", path: "/teams/:name/join", family: "teams", what: "put projects into a team (refused for a project in another team)" },
   { method: "DELETE", path: "/teams/:name", family: "teams", what: "remove a team (?force=true clears its members and role rows)" },
-  { method: "POST", path: "/teams/:name/handoffs", family: "teams", what: "record a role thread's handoff for `ob t3 team restart` (OB-2257); from_thread_id names the writer (OB-2275)" },
-  { method: "GET", path: "/teams/:name/handoffs/latest", family: "teams", what: "a role's newest handoff (?role=; ?from=<thread> keeps that thread's, ?created_before=<iso> those recorded by then, OB-2275), or null" },
-  { method: "POST", path: "/teams/:name/handoffs/:id/consume", family: "teams", what: "mark a handoff seeded into its replacement thread" },
-  { method: "GET", path: "/teams/:name/runs", family: "teams", what: "the team's open role runs (?role= keeps one role's)" },
-  { method: "POST", path: "/teams/:name/runs", family: "teams", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
-  { method: "POST", path: "/teams/:name/runs/:id", family: "teams", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
-  { method: "GET", path: "/teams/:name/tick", family: "teams", what: "what needs the team's architect, from the store (`ob role tick`, OS-67): stale builders, unfixed flakes, idle projects; each with its stamp" },
-  { method: "GET", path: "/teams/:name/brief", family: "teams", what: "the store facts of a role's start brief (?role=); a read, so the waiting note stays until note-shown" },
-  { method: "POST", path: "/teams/:name/notes", family: "teams", what: "store a role's successor note on its open run, else its last ended one ({role, body}; 40 lines, 4000 characters)" },
-  { method: "POST", path: "/teams/:name/runs/:id/note-shown", family: "teams", what: "mark a run's successor note shown (after `ob role brief` printed it or `ob role start` delivered it)" },
-  { method: "POST", path: "/teams/:name/inbox", family: "teams", what: "store a message for a team role (`ob send`); a handoff's client_key stores it once" },
-  { method: "GET", path: "/teams/:name/inbox", family: "teams", what: "a team role's messages, oldest first (?role=; unread and not withdrawn unless ?unread=false)" },
-  { method: "POST", path: "/teams/:name/inbox/read", family: "teams", what: "mark a role's messages read by a run or agent ({role, ids, by})" },
+  { method: "POST", path: "/teams/:name/handoffs", family: "teams", what: "record a role thread's handoff for `ob t3 team restart` (OB-2257); from_thread_id names the writer (OB-2275)", scoped: "write" },
+  { method: "GET", path: "/teams/:name/handoffs/latest", family: "teams", what: "a role's newest handoff (?role=; ?from=<thread> keeps that thread's, ?created_before=<iso> those recorded by then, OB-2275), or null", scoped: "read" },
+  { method: "POST", path: "/teams/:name/handoffs/:id/consume", family: "teams", what: "mark a handoff seeded into its replacement thread", scoped: "write" },
+  { method: "GET", path: "/teams/:name/runs", family: "teams", what: "the team's open role runs (?role= keeps one role's)", scoped: "read" },
+  { method: "POST", path: "/teams/:name/runs", family: "teams", what: "open a role run's marker and take its lease, or answer the open run (created false)", scoped: "write" },
+  { method: "POST", path: "/teams/:name/runs/:id", family: "teams", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)", scoped: "write" },
+  { method: "GET", path: "/teams/:name/tick", family: "teams", what: "what needs the team's architect, from the store (`ob role tick`, OS-67): stale builders, unfixed flakes, idle projects; each with its stamp", scoped: "read" },
+  { method: "GET", path: "/teams/:name/brief", family: "teams", what: "the store facts of a role's start brief (?role=); a read, so the waiting note stays until note-shown", scoped: "read" },
+  { method: "POST", path: "/teams/:name/notes", family: "teams", what: "store a role's successor note on its open run, else its last ended one ({role, body}; 40 lines, 4000 characters)", scoped: "write" },
+  { method: "POST", path: "/teams/:name/runs/:id/note-shown", family: "teams", what: "mark a run's successor note shown (after `ob role brief` printed it or `ob role start` delivered it)", scoped: "write" },
+  { method: "POST", path: "/teams/:name/inbox", family: "teams", what: "store a message for a team role (`ob send`); a handoff's client_key stores it once", scoped: "write" },
+  { method: "GET", path: "/teams/:name/inbox", family: "teams", what: "a team role's messages, oldest first (?role=; unread and not withdrawn unless ?unread=false)", scoped: "read" },
+  { method: "POST", path: "/teams/:name/inbox/read", family: "teams", what: "mark a role's messages read by a run or agent ({role, ids, by})", scoped: "write" },
   { method: "GET", path: "/brief", family: "brief", what: "work-state brief (?q= id, or ?in_flight=true)" },
   { method: "GET", path: "/log", family: "log", what: "standup journal entries (?type=&since=)" },
   { method: "POST", path: "/log", family: "log", what: "capture a journal entry (kudos|suggestion|comment)" },
@@ -337,8 +343,8 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/alerts", family: "alerts", what: "active unsnoozed alerts" },
   { method: "POST", path: "/alerts/snooze", family: "alerts", what: "snooze one alert by key, answering the fresh alert list" },
   { method: "POST", path: "/alerts/ack", family: "alerts", what: "ack (dismiss) one alert by key, answering the fresh alert list (OB-1762)" },
-  { method: "GET", path: "/decisions", family: "decisions", what: "decision items (?status=)" },
-  { method: "GET", path: "/decisions/:id", family: "decisions", what: "one decision with its chain" },
+  { method: "GET", path: "/decisions", family: "decisions", what: "decision items (?status=)", scoped: "read" },
+  { method: "GET", path: "/decisions/:id", family: "decisions", what: "one decision with its chain", scoped: "read" },
   { method: "POST", path: "/decisions/supersede", family: "decisions", what: "new decision supersedes old (one txn)" },
   { method: "GET", path: "/docs", family: "docs", what: "reference documents, newest updated first (?project=) (OB-2004)" },
   { method: "POST", path: "/docs", family: "docs", what: "create a reference document ({title, project, body})" },
@@ -407,14 +413,14 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
  * OS-178: the families a scoped token may be granted, read only (GET). Everything else, and every write
  * method, is 403 to a scoped token. Writes and spinoffs come in OS-179.
  */
-export const OB_API_SCOPABLE_FAMILIES: readonly string[] = ["items", "next", "search", "projects"];
+export const OB_API_SCOPABLE_FAMILIES: readonly string[] = ["items", "next", "search", "projects", "spinoffs", "agents", "leases", "teams", "decisions"];
 
 /** OS-178: the families only the admin token reaches. Named, so a new family must be classified. */
 export const OB_API_ADMIN_FAMILIES: readonly string[] = [
-  "agents", "alerts", "brief", "cal", "ci", "config", "creds", "cursors", "db", "decisions", "deploys", "docs",
-  "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "leases", "log", "machine",
-  "overnight", "people", "review-misses", "roadmaps", "secrets", "slack", "snapshot", "spinoffs", "standup",
-  "status", "sync", "teams", "test-users", "today", "tournaments", "triage", "whatsapp", "whois",
+  "alerts", "brief", "cal", "ci", "config", "creds", "cursors", "db", "deploys", "docs",
+  "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "log", "machine",
+  "overnight", "people", "review-misses", "roadmaps", "secrets", "slack", "snapshot", "standup",
+  "status", "sync", "test-users", "today", "tournaments", "triage", "whatsapp", "whois",
 ];
 
 /**

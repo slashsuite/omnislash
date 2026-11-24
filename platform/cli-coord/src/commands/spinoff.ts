@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, writeSync, closeSync, statSync, realpathSync, watch, type FSWatcher } from "node:fs";
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
 import { shadowMove } from "../../../../apps/cli/src/machine-shadow.ts";
@@ -577,6 +577,8 @@ export async function moveSpinoff(
   to: SpinoffStatus,
   set: Partial<SpinoffRow> = {},
   from: readonly SpinoffStatus[] = spinoffFromStates(to),
+  /** OS-179: one more condition on the same conditional UPDATE (a scoped claim's project filter). */
+  also?: SQL,
 ): Promise<SpinoffRow> {
   const s = asStore(db);
   const allowed = from.filter((f) => SPINOFF_TRANSITIONS[f].includes(to));
@@ -586,7 +588,7 @@ export async function moveSpinoff(
       .update(s.t.spinoff)
       // A handoff and a merge are each reported once by the watch (OB-1924): re-arm reported_at on both.
       .set({ ...set, status: to, ...(to === READY_FOR_GATE || to === "merged" ? { reported_at: null } : {}) })
-      .where(and(eq(s.t.spinoff.id, id), inArray(s.t.spinoff.status, allowed)))
+      .where(and(eq(s.t.spinoff.id, id), inArray(s.t.spinoff.status, allowed), also))
       .returning()) as SpinoffRow[];
     if (rows[0]) return rows[0];
   }
@@ -2033,12 +2035,24 @@ function leaseUnavailableMessage(hold: LeaseHold): string {
  * is keyed by row id and held under the branch, so a drain that then LOSES the conditional update has
  * merely refreshed a lease under the same holder the winner uses.
  */
-export async function claimSpinoffRow(db: Database | Store, id: number, under = ""): Promise<ClaimOutcome> {
+export async function claimSpinoffRow(
+  db: Database | Store,
+  id: number,
+  under = "",
+  /** OS-179: a scoped token claims only a row whose recorded item is in one of these projects. */
+  opts: { projectIds?: readonly string[] } = {},
+): Promise<ClaimOutcome> {
   const s = asStore(db);
+  if (opts.projectIds && opts.projectIds.length === 0) return { claimed: null, error: null, remoteError: null };
+  // The scope is a condition of the claim itself, on the select and again inside the one conditional UPDATE,
+  // so no read-then-write gap can hand a scoped drain a row outside its projects.
+  const inScope = opts.projectIds
+    ? inArray(s.t.spinoff.item_id, s.q.select({ id: s.t.item.id }).from(s.t.item).where(inArray(s.t.item.project_id, [...opts.projectIds])))
+    : undefined;
   const pendings = (await s.q
     .select()
     .from(s.t.spinoff)
-    .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, "pending")))
+    .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, "pending"), inScope))
     .limit(1)) as SpinoffRow[];
   const pending = pendings[0];
   if (!pending) return { claimed: null, error: null, remoteError: null };
@@ -2060,6 +2074,7 @@ export async function claimSpinoffRow(db: Database | Store, id: number, under = 
       "launching",
       { launch_attempts: (pending.launch_attempts ?? 0) + 1, launched_at: nowIso() },
       ["pending"],
+      inScope,
     );
   } catch (e) {
     if (e instanceof SpinoffTransitionRefused) return { claimed: null, error: null, remoteError: null };

@@ -50,6 +50,8 @@ import { ApiFault } from "./fault.ts";
 import { bearerFrom, loadApiToken, type TokenLoad } from "./token.ts";
 import { ADMIN_PRINCIPAL, authenticate, loadScopedTokens, type Principal, type TokensLoad } from "./scoped-tokens.ts";
 import { projectScopeFor, type ProjectScope } from "../project-scope.ts";
+import { guardScopedRequest } from "./scope-guard.ts";
+import { agentInScope, filterAsync, itemIdInScope, leaseInScope, reposInScope, spinoffRowInScope, teamInScope } from "./scope-filter.ts";
 import type { RoleMessageRequest } from "./contract.ts";
 import type { ItemQuery, ItemSort } from "../worklist.ts";
 import type { GmailDraftAttachmentInput } from "../../../../platform/cli-sources/src/gmail-draft.ts";
@@ -354,7 +356,27 @@ function oneOf<T extends string>(value: string, allowed: readonly T[], key: stri
   return value as T;
 }
 
+/**
+ * OS-179: the user a scoped request writes as. Every body field that names who is acting is overwritten with
+ * it, so a scoped token cannot write as someone else: `actor` always, and `holder`, `caller`, `by` and `from`
+ * wherever the body carries one. The admin token's bodies are read as sent.
+ */
+const actingAs = new WeakMap<Request, string>();
+const ACTING_FIELDS = ["holder", "caller", "by", "from"] as const;
+
+function stampActor(body: Record<string, unknown>, user: string): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body, actor: user };
+  for (const k of ACTING_FIELDS) if (k in out) out[k] = user;
+  return out;
+}
+
 async function readJson(req: Request, maxBytes = MAX_BODY_BYTES): Promise<Record<string, unknown>> {
+  const user = actingAs.get(req);
+  const body = await readJsonAsSent(req, maxBytes);
+  return user === undefined ? body : stampActor(body, user);
+}
+
+async function readJsonAsSent(req: Request, maxBytes: number): Promise<Record<string, unknown>> {
   const declared = req.headers.get("content-length");
   if (declared && Number(declared) > maxBytes) {
     throw new ApiFault("invalid_request", 413, `request body exceeds ${maxBytes} bytes`);
@@ -559,14 +581,25 @@ export function createObApi(deps: ObApiDeps): (req: Request) => Promise<Response
       } catch {
         throw new ApiFault("invalid_request", 400, `the path ${url.pathname} is not valid percent-encoding`);
       }
-      // OS-178: a scoped principal reaches only a GET on a route in one of its granted families. Deny by
-      // default: a path with no OB_API_ROUTES entry is 403 too, so a route() branch someone forgot to list
-      // fails safe.
+      // OS-178/OS-179: a scoped principal reaches a route only when its OB_API_ROUTES entry is marked
+      // `scoped`, its family is one the token was granted, and a non-GET is marked `write`. Deny by default:
+      // a path with no entry is 403 too, so a route() branch someone forgot to list fails safe.
       const scopedProjects = principal.all ? null : principal.projects;
       if (!principal.all) {
         const entry = matchApiRoute(method, segments);
-        if (!entry || method !== "GET" || !OB_API_SCOPABLE_FAMILIES.includes(entry.family) || !principal.families.includes(entry.family)) {
+        const granted =
+          entry?.scoped !== undefined &&
+          OB_API_SCOPABLE_FAMILIES.includes(entry.family) &&
+          principal.families.includes(entry.family) &&
+          (method === "GET" || entry.scoped === "write");
+        if (!granted) {
           return fail("forbidden", 403, `${method} ${url.pathname} is not granted to the token of '${principal.user}'`);
+        }
+        // OS-179: a scoped write is made as the token's user, whatever the request says.
+        actingAs.set(req, principal.user);
+        if (method === "DELETE" && segments[0] === "leases") {
+          url.searchParams.set("holder", principal.user);
+          url.searchParams.delete("force");
         }
       }
       // 1616: the store call has no timeout of its own (a leaked pool slot waits forever), so the request
@@ -629,6 +662,10 @@ async function route(
   scope?: ProjectScope,
 ): Promise<Response | null> {
   const [head, second, third] = segments;
+
+  // OS-179: a scoped request that names an item, row, ticket, agent, lease or team outside its projects is
+  // the 404 a missing one would be. The lists it may read are filtered below, route by route.
+  if (scope) await guardScopedRequest(store, scope, method, segments, () => readJsonAsSent(req.clone() as Request, MAX_BODY_BYTES));
 
   if (head === "health" && segments.length === 1 && method === "GET") {
     return json(await h.health(store));
@@ -1096,7 +1133,9 @@ async function route(
 
   if (head === "agents") {
     if (segments.length === 1 && method === "GET") {
-      return json(await h.agents(store, queryBool(url.searchParams, "all") === true));
+      const res = await h.agents(store, queryBool(url.searchParams, "all") === true);
+      if (scope) res.agents = await filterAsync(res.agents, (a) => agentInScope(store, scope, a));
+      return json(res);
     }
     if (second === "reset" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
@@ -1109,6 +1148,12 @@ async function route(
         const n = Number(raw);
         if (!Number.isFinite(n) || n <= 0) bad("'within_min' must be a positive number of minutes");
         withinMin = n;
+      }
+      if (scope) {
+        const cutoff = new Date(Date.now() - withinMin * 60 * 1000).toISOString();
+        const { agents } = await h.agents(store, true);
+        const live = await filterAsync(agents, async (a) => a.heartbeat_at >= cutoff && (await agentInScope(store, scope, a)));
+        return json({ active: live.length > 0, count: live.length, within_min: withinMin });
       }
       return json(await h.agentActive(store, withinMin));
     }
@@ -1146,7 +1191,9 @@ async function route(
 
   if (head === "leases") {
     if (segments.length === 1 && method === "GET") {
-      return json(await h.leases(store));
+      const res = await h.leases(store);
+      if (scope) res.leases = await filterAsync(res.leases, (l) => leaseInScope(store, scope, l.resource));
+      return json(res);
     }
     if (second === "sweep" && segments.length === 2 && method === "POST") {
       return json(await h.sweepLeases(store));
@@ -1222,14 +1269,21 @@ async function route(
       if (status && !(SPINOFF_STATUSES as readonly string[]).includes(status)) {
         bad(`'status' must be one of ${SPINOFF_STATUSES.join("|")}`);
       }
-      return json(await h.spinoffs(store, { status: status || undefined }));
+      const res = await h.spinoffs(store, { status: status || undefined });
+      if (scope) res.spinoffs = await filterAsync(res.spinoffs, (r) => spinoffRowInScope(store, scope, r));
+      return json(res);
     }
     // 1226: the rows that SERVE one item, resolved on this host because it holds the store. A POST body,
     // like every other id on this route: a url is logged in Cloudflare's own request logging, in any proxy
     // in front and in whatever the host keeps.
     if (second === "serving" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
-      return json(await h.spinoffServing(store, { item_id: reqString(body, "item_id") }));
+      const res = await h.spinoffServing(store, { item_id: reqString(body, "item_id") });
+      if (scope) {
+        res.spinoffs = await filterAsync(res.spinoffs, (r) => spinoffRowInScope(store, scope, r));
+        if (res.unresolved) res.unresolved = await filterAsync(res.unresolved, (r) => spinoffRowInScope(store, scope, r));
+      }
+      return json(res);
     }
     // OB-1825: the measure-twice verdict is computed and recorded here; the client only read the inputs.
     if (second === "check" && segments.length === 2 && method === "POST") {
@@ -1310,24 +1364,34 @@ async function route(
       );
     }
     if (second === "config" && segments.length === 2 && method === "GET") {
-      return json(await h.spinoffConfig(store));
+      const res = await h.spinoffConfig(store);
+      if (scope) {
+        res.config.repo_checkouts = await reposInScope(store, scope, res.config.repo_checkouts);
+        res.config.launcher_by_repo = await reposInScope(store, scope, res.config.launcher_by_repo);
+      }
+      return json(res);
     }
     if (second === "launchable" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
-      return json(
-        await h.spinoffLaunchable(store, {
-          holder: optString(body, "holder") ?? null,
-          caller: optString(body, "caller") ?? null,
-        }),
-      );
+      const res = await h.spinoffLaunchable(store, {
+        holder: optString(body, "holder") ?? null,
+        caller: optString(body, "caller") ?? null,
+      });
+      if (scope) {
+        res.rows = await filterAsync(res.rows, (r) => spinoffRowInScope(store, scope, r.row));
+        res.remaining_pending = res.rows.length;
+      }
+      return json(res);
     }
     if (second === "claim" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
       return json(
-        await h.spinoffClaim(store, {
-          id: reqPositiveInt(body, "id"),
-          holder: optString(body, "holder") ?? null,
-        }),
+        await h.spinoffClaim(
+          store,
+          { id: reqPositiveInt(body, "id"), holder: optString(body, "holder") ?? null },
+          // OS-179: the scope is checked inside the claim's one conditional UPDATE, not before it.
+          scope ? [...scope.ids] : undefined,
+        ),
       );
     }
     if (second === "stamp" && segments.length === 2 && method === "POST") {
@@ -1428,13 +1492,16 @@ async function route(
     }
     if (second === "cleanup-guard" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
-      return json(
-        await h.spinoffCleanupGuard(store, {
-          branch: optString(body, "branch") ?? null,
-          path: optString(body, "path") ?? null,
-          caller: optString(body, "caller") ?? null,
-        }),
-      );
+      const res = await h.spinoffCleanupGuard(store, {
+        branch: optString(body, "branch") ?? null,
+        path: optString(body, "path") ?? null,
+        caller: optString(body, "caller") ?? null,
+      });
+      // OS-179: a hold outside the scope would name another project's holder; it reads as nothing to clean.
+      if (scope && res.hold && !(await leaseInScope(store, scope, res.hold.resource))) {
+        throw new ApiFault("not_found", 404, `no worktree '${optString(body, "branch") ?? optString(body, "path") ?? ""}'`);
+      }
+      return json(res);
     }
     return null;
   }
@@ -1482,7 +1549,11 @@ async function route(
 
   // OB-2255: teams.
   if (head === "teams" && segments.length === 1) {
-    if (method === "GET") return json(await h.teams(store));
+    if (method === "GET") {
+      const res = await h.teams(store);
+      if (scope) res.teams = await filterAsync(res.teams, (t) => teamInScope(store, scope, t.name));
+      return json(res);
+    }
     if (method === "POST") {
       const body = await readJson(req);
       const projects = optStringArray(body, "projects");
@@ -1752,7 +1823,9 @@ async function route(
 
   if (head === "decisions") {
     if (segments.length === 1 && method === "GET") {
-      return json(await h.decisionsList(store, url.searchParams.get("status")?.trim() || undefined));
+      const res = await h.decisionsList(store, url.searchParams.get("status")?.trim() || undefined);
+      if (scope) res.decisions = await filterAsync(res.decisions, (d) => itemIdInScope(store, scope, d.id));
+      return json(res);
     }
     if (second === "supersede" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
