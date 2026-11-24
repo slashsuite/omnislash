@@ -17,8 +17,8 @@ import { IN_FLIGHT } from "./spinoff-vocab.ts";
 /** Lockfiles rebase cleanly with a reinstall, so a shared one is no conflict. Matched by file name, at any depth. */
 const LOCKFILES = new Set(["bun.lock", "package-lock.json", "pnpm-lock.yaml"]);
 const MAIN = "origin/main";
-const FETCH_TIMEOUT_MS = 30_000;
-const GIT_TIMEOUT_MS = 15_000;
+export const FETCH_TIMEOUT_MS = 30_000;
+export const GIT_TIMEOUT_MS = 15_000;
 
 const OVERLAP_UNKNOWN_LINE = "overlap: unknown, no recorded check";
 
@@ -54,7 +54,7 @@ export interface OverlapDeps {
   sh: Sh;
 }
 
-const isLockfile = (path: string): boolean => LOCKFILES.has(basename(path));
+export const isLockfile = (path: string): boolean => LOCKFILES.has(basename(path));
 const isPattern = (entry: string): boolean => entry.endsWith("/") || /[*?[{]/.test(entry);
 
 /** The prefix a directory entry covers (`dir/` and `dir/**` both cover `dir/`), or null. Pure. */

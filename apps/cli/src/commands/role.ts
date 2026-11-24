@@ -55,7 +55,7 @@ import { storeTeamBackend } from "./t3.ts";
 import { runRoleTick, type TickBackend } from "./role-tick.ts";
 import { storeInboxBackend } from "./inbox.ts";
 import { tickFindings } from "../role-tick.ts";
-import { parseJsonMap } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { parseJsonMap, storeConflictSource } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { settingFor } from "../settings.ts";
 
 /** Where the runs live: the store on this machine, or the API. The T3 half is the caller's. */
@@ -539,6 +539,7 @@ export function storeTickBackend(store: Database | Store): TickBackend {
     teams: () => team.list(),
     checkouts: async () => parseJsonMap(await settingFor(store, "repo_checkouts")),
     findings: (name) => tickFindings(store, name),
+    conflicts: async () => storeConflictSource(store),
   };
 }
 

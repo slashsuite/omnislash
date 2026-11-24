@@ -1031,6 +1031,20 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           "Dispatch prints the same lines, records one overlap decision and launches anyway. Always exits 0.",
         ],
       },
+      conflicts: {
+        summary: "Test-merge the running builders' pushed branches and list the pairs that do not merge",
+        usage: ["spinoff conflicts [--repo <p|slug>] [--json]"],
+        flags: [
+          { flag: "--repo <p>", description: "Check one repo only (default: every repo with two or more running rows)" },
+          { flag: "--json", description: "Script output: conflicts (with key and line), unpushed and warnings" },
+        ],
+        examples: ["spinoff conflicts", "spinoff conflicts --repo omnislash --json"],
+        notes: [
+          "Runs git merge-tree on each pair of fetched origin/<branch> heads in this machine's checkout.",
+          "Lockfile-only conflicts and unpushed branches are skipped; a git failure warns.",
+          "Records nothing and exits 0; role tick posts each pair to the team's sentinel.",
+        ],
+      },
       brief: {
         summary: "Print the launch brief that spinoff would send without launching",
         usage: ["spinoff brief <ticket> [--repo <p>] [--branch <b>] [--brief <path>]"],
@@ -1441,7 +1455,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["role note core architect --body-file note.md"],
       },
       tick: {
-        summary: "Run one pass checking stale builders/flakes/idle repos and ending quiet runs",
+        summary: "Run one pass checking stale builders/flakes/idle repos/branch conflicts and ending quiet runs",
         usage: ["role tick [--team <t>[,<t>...]]"],
         flags: [{ flag: "--team <csv>", description: "Limit tick pass to named team(s)" }],
         examples: ["role tick", "role tick --team core"],

@@ -99,7 +99,7 @@ export const READ_COMMANDS: Record<string, ReadRule> = {
   machine: { subs: ["audit"] }, // OS-170: a read over item, spinoff and event rows; writes nothing
   log: { subs: ["list"] },
   issue: { bare: true, subs: ["list", "landed", "reconcile", "drift"] },
-  spinoff: { subs: ["list", "brief", "show", "overlap"] },
+  spinoff: { subs: ["list", "brief", "show", "overlap", "conflicts"] },
   // ingested sources: the search/listing halves (`* sync` writes)
   gmail: { subs: ["search", "list"] },
   cal: { subs: ["agenda"] },
@@ -143,6 +143,7 @@ export const SPINOFF_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "brief",
   "check",
   "overlap",
+  "conflicts",
   "list",
   "show",
   "mix",

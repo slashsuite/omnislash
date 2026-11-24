@@ -25,6 +25,7 @@ import { finishAgent } from "../agent-register.ts";
 import { declaredFilesFor, plannedFilesFor, readCheckInput, recordSpinoffCheck, type CheckResult, refuseUncheckedDispatch, renderCheckResult } from "../spinoff-check.ts";
 import { compareFiles, filesLine, type FilesComparison } from "../spinoff-files.ts";
 import { overlapFor, printOverlap, warnDispatchOverlap } from "../spinoff-overlap.ts";
+import { findBranchConflicts, renderConflictCheck, type ConflictSource } from "../spinoff-conflicts.ts";
 import { stateDisplayLines } from "../spinoff-state-reason.ts";
 import { BRANCH_SLUG_MAX, branchSlug, builderIdOf, cleanRepoLaunchLine, isObRepo, legRef, obLeaks, parseRecordableVerdict, refKey, renderLeaks, rowStateText, uniqueBranch, verdictStateFor, type Leak, type RowVerdict } from "../clean-repo.ts";
 import { IN_FLIGHT, STATE_VERDICT_TOKENS, spinoffStatusWord, toStoredSpinoffStatus, withStatusWord } from "../spinoff-vocab.ts";
@@ -50,7 +51,7 @@ import { expandHome } from "../../../../apps/cli/src/net.ts";
 import { installOpencodeWiring, rulesBlock } from "../../../../apps/cli/src/repo-private.ts";
 import { asStore, SQLITE_ESCAPE_HATCH, STORE_ENV, type Store } from "../../../../apps/cli/src/db/store.ts";
 import { deriveBranch, fetchIssue, parseIssueRef, type FetchedIssue } from "../../../../apps/cli/src/github-issues.ts";
-import { getItem, getTags, getTagsSync } from "../../../../apps/cli/src/items.ts";
+import { appendNote, getItem, getTags, getTagsSync } from "../../../../apps/cli/src/items.ts";
 import { isTeamRoleAgent, listTeams, storeTeamOf, teamHandoffTarget, teamMembersIn } from "../../../../apps/cli/src/team.ts";
 import { PRIORITY_CRITICAL, PRIORITY_URGENT } from "../../../../apps/cli/src/priority.ts";
 import { OVER_USAGE_FROM, OVER_USAGE_TO, refuseOverUsage } from "../../../../apps/cli/src/usage-gate.ts";
@@ -1173,6 +1174,17 @@ const sh: Sh = (cmd, cwd, timeoutMs) => shSeam.get()(cmd, cwd, timeoutMs);
 /** OS-47: what the overlap check reads on this machine: the rows, their checkouts and git (`sh`, which the API client shares). */
 export function overlapSeams(db: Database | Store) {
   return { sh, rows: () => listSpinoffs(db), repoPath: (repo: string) => rowRepoPathFor(db, repo) };
+}
+/** OS-48: what `role tick` reads the conflict check from on this machine: the team's rows, its checkouts, and notes to the store. */
+export function storeConflictSource(db: Database | Store): ConflictSource {
+  return {
+    ...overlapSeams(db),
+    rows: async (team) => localTeamRows(db, team, await listSpinoffs(db)),
+    note: async (side, text) => {
+      const id = side.item_id ?? (await ticketItemIdFor(db, side.ref));
+      if (id) await appendNote(db, id, text);
+    },
+  };
 }
 export const overlapSh: Sh = (cmd, cwd, timeoutMs) => sh(cmd, cwd, timeoutMs);
 /** Test seam: swap the shell runner; returns a restore fn. */
@@ -6328,6 +6340,17 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     const repo = repoFlag ? await repoForRow(store, repoFlag) : (own?.repo ?? (await ticketProjectRepoFor(store, ref))?.repo ?? process.cwd());
     const result = await overlapFor({ ref, repo, itemId: await ticketItemIdFor(store, ref) }, { ...overlapSeams(store), declared: (r, id) => declaredFilesFor(store, r, id) });
     printOverlap({ ref, repo }, result, ctx.mode === "json");
+    return;
+  }
+
+  if (sub === "conflicts") {
+    // OS-48: test-merge the running rows' pushed branches in this machine's checkouts. Records nothing; always exits 0.
+    const repoFlag = flag(ctx, "repo");
+    const seams = overlapSeams(store);
+    const only = repoFlag ? await rowRepoPathFor(store, await repoForRow(store, repoFlag)) : undefined;
+    const check = await findBranchConflicts(await seams.rows(), seams, only);
+    for (const w of check.warnings) warn(w);
+    print(renderConflictCheck(check, ctx.mode === "json"));
     return;
   }
 
