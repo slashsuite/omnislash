@@ -1,12 +1,13 @@
 import { setup } from "xstate";
 
 /**
- * The spinoff row machine (OS-168), matching `SPINOFF_TRANSITIONS` in platform/cli-coord/src/commands/spinoff.ts.
- * Its events name the move, so a trail can record the event rather than a bare target. Each edge of the
- * table has exactly one event; test/parity.test.ts checks every pair against the table both ways.
+ * The spinoff row machine (OS-168), the one definition of a spinoff row's moves: since OS-173 `moveSpinoff`
+ * (platform/cli-coord/src/commands/spinoff.ts) moves a row only by one of these events, through `applyMove`.
+ * Its events name the move, so the row's trail records the event rather than a bare target. Each edge has
+ * exactly one event, and each event exactly one target; test/parity.test.ts pins every pair.
  *
  * No self-move rule here: `launched → launched` is a real edge (`stamp`, the 384 session-id re-stamp), and
- * every other self-move is refused, as `moveSpinoff` refuses it.
+ * every other self-move is refused.
  */
 export type SpinoffState = "pending" | "launching" | "launched" | "ready-for-gate" | "merged" | "failed";
 export type SpinoffEvent = "claim" | "stamp" | "retry" | "fail" | "handoff" | "sendback" | "land" | "reopen";
@@ -33,12 +34,9 @@ export const spinoffMachine = setup({ types: { events: {} as { type: SpinoffEven
 });
 
 /**
- * The event of the edge `from → to`, or null when the table has none (OS-169: the reverse lookup the shadow
- * check and `SpinoffTransitionRefused` use). `from` is the stored status, free text, or null for a missing row.
+ * OS-173: the target-only view of `SPINOFF_EDGES` (from → the states its events lead to), generated, never kept
+ * by hand. Readers that only ask "can a row in X reach Y" (tests, docs) use it; writers move by event.
  */
-export function spinoffEventFor(from: string | null, to: string): SpinoffEvent | null {
-  if (from === null || !Object.hasOwn(SPINOFF_EDGES, from)) return null;
-  const edges = SPINOFF_EDGES[from as SpinoffState];
-  for (const [event, target] of Object.entries(edges)) if (target === to) return event as SpinoffEvent;
-  return null;
-}
+export const SPINOFF_TRANSITIONS = Object.fromEntries(
+  Object.entries(SPINOFF_EDGES).map(([from, edges]) => [from, [...new Set(Object.values(edges))]]),
+) as unknown as Readonly<Record<SpinoffState, readonly SpinoffState[]>>;

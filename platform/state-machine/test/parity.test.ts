@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { type Kind, statusVocab, VALID_TYPES } from "../../../apps/cli/src/status.ts";
-import { SPINOFF_STATUSES, SPINOFF_TRANSITIONS } from "../../cli-coord/src/commands/spinoff.ts";
+import { SPINOFF_STATUSES, SPINOFF_TRANSITIONS as CLI_COORD_TRANSITIONS } from "../../cli-coord/src/commands/spinoff.ts";
 import { decide } from "../src/decide.ts";
 import { itemMachineFor, moveEvent } from "../src/item.ts";
-import { SPINOFF_EDGES, spinoffMachine } from "../src/spinoff.ts";
+import { SPINOFF_EDGES, SPINOFF_TRANSITIONS, spinoffMachine } from "../src/spinoff.ts";
 
 // OS-172: the item machines are the one definition of the item lifecycle, so this pins each one's from-to
 // pairs, written out once here (the tables apps/cli/src/status.ts held before OS-172). Adding or removing an edge or a
@@ -74,37 +74,43 @@ describe("item machines have exactly the pinned edges", () => {
   });
 });
 
-describe("spinoff machine matches SPINOFF_TRANSITIONS", () => {
-  // Read off the definition, not kept by hand, so an edge under a new event name is still checked.
-  const EVENTS = [...new Set(Object.values(SPINOFF_EDGES).flatMap((edges) => Object.keys(edges)))];
+// OS-173: the machine is the spinoff lifecycle's one definition, and SPINOFF_TRANSITIONS is generated from it.
+// So the edges are pinned here, written out, as the ticket and the spike name them: adding, removing or
+// renaming an edge fails here, and the generated table must say the same thing.
+const PINNED_SPINOFF_EDGES: Record<string, Record<string, string>> = {
+  pending: { claim: "launching", fail: "failed" },
+  launching: { stamp: "launched", retry: "pending", fail: "failed" },
+  launched: { stamp: "launched", handoff: "ready-for-gate", land: "merged", retry: "pending", fail: "failed" },
+  "ready-for-gate": { sendback: "launched", land: "merged", fail: "failed" },
+  merged: { reopen: "launched" },
+  failed: {},
+};
 
-  test("the same states, and the eight named events", () => {
-    expect(EVENTS.toSorted()).toEqual(
-      ["claim", "stamp", "retry", "fail", "handoff", "sendback", "land", "reopen"].toSorted(),
-    );
+describe("spinoff machine is the one definition (OS-173)", () => {
+  const EVENTS = [...new Set(Object.values(PINNED_SPINOFF_EDGES).flatMap((edges) => Object.keys(edges)))];
+
+  test("the same states as the spinoff table's vocabulary, and the eight named events", () => {
+    expect(EVENTS.toSorted()).toEqual(["claim", "stamp", "retry", "fail", "handoff", "sendback", "land", "reopen"].toSorted());
     expect(Object.keys(spinoffMachine.states).toSorted()).toEqual([...SPINOFF_STATUSES].toSorted());
-    expect(Object.keys(SPINOFF_EDGES).toSorted()).toEqual([...SPINOFF_STATUSES].toSorted());
+    expect(SPINOFF_EDGES).toEqual(PINNED_SPINOFF_EDGES);
   });
 
-  test("every pair both ways, with exactly one event per edge", () => {
+  test("every state and event both ways against the pinned edges", () => {
     for (const from of SPINOFF_STATUSES) {
-      for (const to of SPINOFF_STATUSES) {
-        const events = EVENTS.filter((event) => {
-          const d = decide(spinoffMachine, from, event);
-          return d.ok && d.to === to;
-        });
-        const allowed = SPINOFF_TRANSITIONS[from].includes(to);
-        expect(events.length, `${from} -> ${to}: ${events.join(", ")}`).toBe(allowed ? 1 : 0);
+      for (const event of EVENTS) {
+        const d = decide(spinoffMachine, from, event);
+        const to = PINNED_SPINOFF_EDGES[from]![event];
+        if (to) expect(d, `${from} --${event}-->`).toEqual({ ok: true, to });
+        else expect(d, `${from} --${event}-->`).toMatchObject({ ok: false, why: "machine" });
       }
     }
   });
 
-  test("the named edges", () => {
-    expect(decide(spinoffMachine, "launching", "retry")).toEqual({ ok: true, to: "pending" });
-    expect(decide(spinoffMachine, "launched", "stamp")).toEqual({ ok: true, to: "launched" });
-    for (const from of ["pending", "launching", "launched", "ready-for-gate"]) {
-      expect(decide(spinoffMachine, from, "fail")).toEqual({ ok: true, to: "failed" });
+  test("SPINOFF_TRANSITIONS is the view: each state's distinct targets, nothing more", () => {
+    for (const from of SPINOFF_STATUSES) {
+      expect([...SPINOFF_TRANSITIONS[from]].toSorted(), from).toEqual([...new Set(Object.values(PINNED_SPINOFF_EDGES[from]!))].toSorted());
     }
-    expect(decide(spinoffMachine, "failed", "reopen")).toMatchObject({ ok: false, why: "machine" });
+    // cli-coord re-exports the same view, not a table of its own.
+    expect(CLI_COORD_TRANSITIONS).toBe(SPINOFF_TRANSITIONS);
   });
 });

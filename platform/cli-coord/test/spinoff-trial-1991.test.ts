@@ -612,8 +612,8 @@ describe("gateable and the leg's own row (OB-1991)", () => {
   test("gateable shows the pair as one entry with both row ids and a pair field, and no model", async () => {
     const { dbPath, pair } = await pairedTicket();
     const db = openDb(dbPath);
-    await moveSpinoff(db, pair.row_a!, "ready-for-gate");
-    await moveSpinoff(db, pair.row_b!, "ready-for-gate");
+    await moveSpinoff(db, pair.row_a!, "handoff");
+    await moveSpinoff(db, pair.row_b!, "handoff");
     db.close();
     const restoreSh = __setSh(() => ({ ok: true, err: "", out: "" }));
     try {
@@ -633,7 +633,7 @@ describe("gateable and the leg's own row (OB-1991)", () => {
   test("half a pair is one entry, not landable, naming the leg still building; record refuses it", async () => {
     const { dbPath, pair, labelA, id } = await pairedTicket(20, [], false);
     const db = openDb(dbPath);
-    await moveSpinoff(db, pair.row_b!, "ready-for-gate");
+    await moveSpinoff(db, pair.row_b!, "handoff");
     await noteLegHandoff(db, { id: pair.row_b! });
     db.close();
     const restoreSh = __setSh(() => ({ ok: true, err: "", out: "" }));

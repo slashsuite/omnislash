@@ -26,6 +26,8 @@ export interface DecisionOpts {
   actor?: string | null;
   /** The spinoff row id when the transition is a spinoff row's, so the trail links back to it. */
   spinoffRow?: number | null;
+  /** OS-173: the lifecycle machine's event that made the move (`handoff`, `land`, ...), when a machine made it. */
+  event?: string | null;
   /** Facts merged into the event payload (OB-1825's verdict inputs). `from`, `to` and `note` always win. */
   extra?: Record<string, unknown>;
 }
@@ -39,6 +41,8 @@ export interface Decision {
   to: string;
   note: string | null;
   spinoff_row: number | null;
+  /** OS-173: the machine event behind the move; null for a move recorded before OS-173, or not made by an event. */
+  event: string | null;
 }
 
 export const HUMAN_ACTOR = "human";
@@ -61,6 +65,7 @@ export async function recordDecision(
   const payload: Record<string, unknown> = { ...opts.extra, from, to };
   if (note) payload.note = note;
   if (opts.spinoffRow != null) payload.spinoff_row = opts.spinoffRow;
+  if (opts.event) payload.event = opts.event;
   await recordEventFor(db, {
     ts: nowIso(),
     source: DECISION_SOURCE,
@@ -102,7 +107,7 @@ export async function recordPriorityChange(
 export async function decisionsForItem(db: Database | Store, id: string, limit = 50): Promise<Decision[]> {
   const rows = await eventsForItemFor(db, id, limit, { source: DECISION_SOURCE, types: [DECISION_TYPE, PRIORITY_CHANGE_TYPE] });
   return rows.map((r) => {
-    const p = parsePayload<{ from?: string; to?: string; note?: string; spinoff_row?: number }>(r);
+    const p = parsePayload<{ from?: string; to?: string; note?: string; spinoff_row?: number; event?: string }>(r);
     return {
       kind: r.type === PRIORITY_CHANGE_TYPE ? ("priority" as const) : ("transition" as const),
       ts: r.ts,
@@ -111,13 +116,15 @@ export async function decisionsForItem(db: Database | Store, id: string, limit =
       to: p.to ?? "?",
       note: p.note ?? null,
       spinoff_row: typeof p.spinoff_row === "number" ? p.spinoff_row : null,
+      event: typeof p.event === "string" ? p.event : null,
     };
   });
 }
 
-/** One line per decision: `when · who · from → to · note` (the row id rides along when there is one). */
+/** One line per decision: `when · who · from → to · note` (the event and row id ride along when there are any). */
 export function renderDecision(d: Decision): string {
-  const row = d.spinoff_row != null ? ` (row ${d.spinoff_row})` : "";
+  const tags = [d.event, d.spinoff_row != null ? `row ${d.spinoff_row}` : null].filter(Boolean);
+  const row = tags.length > 0 ? ` (${tags.join(", ")})` : "";
   const what = d.kind === "priority" ? `priority ${d.from} → ${d.to}` : `${d.from} → ${d.to}`;
   return `${d.ts} · ${d.who} · ${what}${row}${d.note ? ` · ${d.note}` : ""}`;
 }

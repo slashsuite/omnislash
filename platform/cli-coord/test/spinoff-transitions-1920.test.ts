@@ -71,8 +71,8 @@ describe("stamp checks the from-state (OB-1920)", () => {
         const err = await stampSpinoff(db, { id, outcome, error: "x" }).catch((e) => e);
         expect(err).toBeInstanceOf(SpinoffTransitionRefused);
         const word = status === "merged" ? "landed" : "failed";
-        const target = outcome === "launched" ? "building" : "failed";
-        expect((err as Error).message).toBe(`spinoff #${id} is ${word}; it cannot move to ${target}`);
+        const event = outcome === "launched" ? "stamp" : "fail";
+        expect((err as Error).message).toBe(`spinoff #${id} is ${word}: '${event}' is not a move from there`);
         expect(statusOf(db, id)).toBe(status);
       });
     }
@@ -81,7 +81,7 @@ describe("stamp checks the from-state (OB-1920)", () => {
   test("stamp launched on a pending row is refused: the claim always comes first", async () => {
     const { db, id } = await seed("pending");
     const err = await stampSpinoff(db, { id, outcome: "launched" }).catch((e) => e);
-    expect((err as Error).message).toBe(`spinoff #${id} is queued; it cannot move to building`);
+    expect((err as Error).message).toBe(`spinoff #${id} is queued: 'stamp' is not a move from there`);
     expect(statusOf(db, id)).toBe("pending");
   });
 
@@ -98,7 +98,7 @@ describe("stamp checks the from-state (OB-1920)", () => {
   test("a refused stamp reaches the drain's step as a returned error string, not a throw", async () => {
     const { db, id } = await seed("merged");
     const err = await localSpinoffSteps(db).stamp({ id, outcome: "failed", error: "launcher blew up" });
-    expect(err).toBe(`spinoff #${id} is landed; it cannot move to failed`);
+    expect(err).toBe(`spinoff #${id} is landed: 'fail' is not a move from there`);
     expect(statusOf(db, id)).toBe("merged");
   });
 });
@@ -113,7 +113,7 @@ describe("land checks the from-state (OB-1920)", () => {
       const { db, id } = await seed(status);
       const err = await landSpinoff(db, id, ZERO).catch((e) => e);
       expect(err).toBeInstanceOf(SpinoffTransitionRefused);
-      expect((err as Error).message).toBe(`spinoff #${id} is ${word}; it cannot move to landed`);
+      expect((err as Error).message).toBe(`spinoff #${id} is ${word}: 'land' is not a move from there`);
       expect(statusOf(db, id)).toBe(status);
     });
   }
@@ -204,6 +204,6 @@ describe("abandon keeps every from-state it accepts (OB-1920)", () => {
       finishAgent: async () => ({ done: false, released: [], error: null }),
     };
     const err = await abandonSpinoff(row, deps).catch((e) => e);
-    expect((err as Error).message).toContain(`the row was not retired: spinoff #${id} is landed; it cannot move to failed`);
+    expect((err as Error).message).toContain(`the row was not retired: spinoff #${id} is landed: 'fail' is not a move from there`);
   });
 });
