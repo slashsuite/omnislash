@@ -1,0 +1,76 @@
+name: sync role state machine to slashslash
+
+# OS-174: docs/role-state-machine.json and .mmd are generated here from platform/state-machine/src/role.ts.
+# When a push to main changes them, this opens (or updates) one pull request in slashsuite/slashslash that
+# replaces its copies. The slashslash PR keeps its own review and checks.
+#
+# It needs the SLASHSLASH_SYNC_TOKEN Actions secret: a fine-grained token on slashsuite/slashslash only, with
+# Contents and Pull requests read and write. Without it the job says so and succeeds, doing nothing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/role-state-machine.json
+      - docs/role-state-machine.mmd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-role-state-machine
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SYNC_TOKEN: ${{ secrets.SLASHSLASH_SYNC_TOKEN }}
+      BRANCH: sync/role-state-machine
+    steps:
+      - id: token
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::notice::SLASHSLASH_SYNC_TOKEN is not set; not opening a slashslash pull request"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.token.outputs.skip == 'false'
+        uses: actions/checkout@v7
+        with:
+          path: omnislash
+      - if: steps.token.outputs.skip == 'false'
+        uses: actions/checkout@v7
+        with:
+          repository: slashsuite/slashslash
+          token: ${{ secrets.SLASHSLASH_SYNC_TOKEN }}
+          path: slashslash
+      - if: steps.token.outputs.skip == 'false'
+        working-directory: slashslash
+        env:
+          GH_TOKEN: ${{ secrets.SLASHSLASH_SYNC_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          cp ../omnislash/docs/role-state-machine.json docs/role-state-machine.json
+          cp ../omnislash/docs/role-state-machine.mmd docs/role-state-machine.mmd
+          if git diff --quiet -- docs/role-state-machine.json docs/role-state-machine.mmd; then
+            echo "slashslash already has these files; nothing to do"
+            exit 0
+          fi
+          short="${SHA:0:7}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add docs/role-state-machine.json docs/role-state-machine.mmd
+          git commit -m "docs(roles): regenerate the role state machine from omnislash $short"
+          git push --force origin "$BRANCH"
+          body="The role state machine is defined in omnislash \`platform/state-machine/src/role.ts\`, and these two files are generated from it. This replaces them with the copies from slashsuite/omnislash@$SHA. Do not edit them here: change the machine in omnislash and this pull request follows."
+          pr=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "docs(roles): regenerate the role state machine from omnislash $short" --body "$body"
+          else
+            gh pr create --base main --head "$BRANCH" --title "docs(roles): regenerate the role state machine from omnislash $short" --body "$body"
+          fi
