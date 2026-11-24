@@ -60,6 +60,7 @@ import { cmdTournament } from "./commands/tournament.ts";
 import { cmdCi, cmdGithub } from "./commands/ci.ts";
 import { cmdOvernight } from "./commands/overnight.ts";
 import { cmdModels } from "./commands/models.ts";
+import { cmdApiToken } from "./commands/api-token.ts";
 import { cmdUsage } from "./commands/usage.ts";
 import { cmdCloudflare } from "./commands/cloudflare.ts";
 import { cmdLog } from "./commands/log.ts";
@@ -499,6 +500,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   github: cmdGithub,
   overnight: cmdOvernight,
   models: cmdModels,
+  "api-token": cmdApiToken,
   usage: cmdUsage,
   cloudflare: cmdCloudflare,
   log: cmdLog,

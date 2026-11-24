@@ -73,6 +73,7 @@ export const ENV_VARS: readonly EnvVarHelp[] = [
   { name: "OMNISLASH_ROLE_API", description: "Separate API base URL for team role and inbox routes" },
   { name: "OMNISLASH_ROLE_API_URL_FILE", description: "File holding role API URL (~/.omnislash_role_api_url)" },
   { name: "OB_API_TOKEN_FILE", description: "Bearer token file, mode 0600 (default ~/.ob_api_token)" },
+  { name: "OB_API_TOKENS_FILE", description: "Scoped API tokens file, mode 0600 (default ~/.ob_api_tokens.json)" },
   { name: "OB_API_TIMEOUT_MS", description: "Client API call timeout in ms (default 150000)" },
   { name: "OB_API_REQUEST_TIMEOUT_MS", description: "Server per-request timeout in ms (default 120000)" },
   { name: "OB_API_RETRY_MS", description: "Client retry budget for refused connections (default 30000)" },
@@ -1641,6 +1642,34 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       "Precedence: the local models file, then the server's model_routes, then the default.",
       "A launch moves along a route's chain only on a credit or quota error.",
       "On a client, reads and writes go to the API server; OB_MODELS_FILE moves the local file.",
+    ],
+  },
+  "api-token": {
+    section: "System",
+    summary: "Issue, list and revoke read-only API tokens scoped to named projects",
+    usage: ["api-token add|list|revoke"],
+    subcommands: {
+      add: {
+        summary: "Issue a token for <user>, printed once; only its sha256 is kept",
+        usage: ["api-token add <user> --project <p>[,<p>...]"],
+        flags: [{ flag: "--project <p>[,<p>...]", description: "The projects the token reaches (names or ids)" }],
+        examples: ["api-token add alice --project omnislash"],
+      },
+      list: {
+        summary: "Print each scoped user with its projects and families (never a hash)",
+        usage: ["api-token list [--json]"],
+        examples: ["api-token list", "api-token list --json"],
+      },
+      revoke: {
+        summary: "Remove a user's token; the API refuses it on the next request",
+        usage: ["api-token revoke <user>"],
+        examples: ["api-token revoke alice"],
+      },
+    },
+    notes: [
+      "File: ~/.ob_api_tokens.json (OB_API_TOKENS_FILE moves it), mode 0600 or every scoped token is refused.",
+      "GET only on items, next, search and projects, filtered to its projects; other routes are 403.",
+      "Runs on this machine only: the API host reads the file on every request.",
     ],
   },
 
