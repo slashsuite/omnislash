@@ -1007,6 +1007,19 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["spinoff check APP-12 --architect arch.json --checker check.json"],
         notes: ["Exit 0 on go, exit 1 on no-go; --questions-resolved is retired in favor of --resolutions."],
       },
+      overlap: {
+        summary: "Preview the files a ticket shares with live spinoff rows in its repo, without launching",
+        usage: ["spinoff overlap <ticket> [--repo <p|slug>] [--json]"],
+        flags: [
+          { flag: "--repo <p>", description: "The repo to compare in (default: the ticket's live row, else its project)" },
+          { flag: "--json", description: "Script output: rows, paths and declared_only" },
+        ],
+        examples: ["spinoff overlap APP-12", "spinoff overlap APP-12 --json"],
+        notes: [
+          "Compares the ticket's go check files with each live row's files and its pushed branch's diff.",
+          "Dispatch prints the same lines, records one overlap decision and launches anyway. Always exits 0.",
+        ],
+      },
       brief: {
         summary: "Print the launch brief that spinoff would send without launching",
         usage: ["spinoff brief <ticket> [--repo <p>] [--branch <b>] [--brief <path>]"],

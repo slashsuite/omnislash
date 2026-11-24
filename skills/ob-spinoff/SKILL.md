@@ -74,6 +74,8 @@ stale tree and turns what `main` gained since your fork into your own diff, whic
 the PR's GitHub squash merge folds them into one (except the rebase below). Stage with `git add -A` or explicit paths, **NEVER `git commit -am`**, which stages
 only modified tracked files and silently drops new ones.
 
+**Commit and push at every working step.** Each time a piece works (a test passes, a module is wired, the docs are written), commit it on your own branch as a Conventional Commit with **no `State:` line**, and push that branch (`git push -u origin <branch>` the first time). Your branch on origin is what other builders' overlap checks read (`ob spinoff overlap`), and a pushed step survives a lost worktree or a compacted thread. Only the final commit carries `State:` and `Gate:` (below); the PR's squash merge folds every step into one.
+
 **The rebase you run.** A real `git rebase origin/main` of your own commits: every PR land does it before the push (`ob-land` step 3),
 and a gate that needs origin/main's tip (the PixelSlash visual upload) does it earlier. Run `git fetch origin` first, so origin/main is current, then `git rebase origin/main`. Resolve conflicts by hand
 (`ob-resolving-merge-conflicts`), then re-run the local-only checks (§3), since the rebased tree is new (CI re-gates typecheck and test on the pushed head). The `reset --soft` and `commit-tree` ban above stays.
@@ -98,7 +100,7 @@ it, including the upload when the commit carries a `Visual:` line. The visual-re
 
 **A ticket tagged `spike` answers instead of committing.** It may edit, test and run commands in its worktree. It may commit documentation but never code: when its ticket asks for a report under `docs/`, it commits that file alone as `docs(<ref>): ...`, rebases, pushes and opens a PR, and otherwise it never commits, pushes or opens a PR. It answers the ticket's `## Questions` with `ob note` on the parent ticket: each answer with evidence, what is still unknown, the size it now expects, whether to split. It stops at its `## Box`. When it has answered, it runs `ob spinoff handoff <ticket> --note '<one line>'`: that skips the dirty-worktree check (a spike tries things), refuses naming each path if the branch changes anything but documentation past `base_sha` (a `.md` file outside `apps/`, `platform/`, `domains/`, `skills/` and `ops/`; drop those changes and hand off again), names the open doc PR in the architect's note, and stamps nothing, so there is no `State:` line and no gate. It then stops. The architect reads the notes on the parent, closes the spike and removes its worktree. The rest of this section is for builds.
 
-**Every commit ends with a `State:` line, and it is the first thing the architect reads.** An architect scanning
+**The final commit ends with a `State:` line, and it is the first thing the architect reads.** An architect scanning
 `git log --format='%s%n%b'` across several worktrees must be able to tell, without opening a diff, which builds
 are mergeable, which are waiting on a human, and which stopped. Use exactly one of:
 
