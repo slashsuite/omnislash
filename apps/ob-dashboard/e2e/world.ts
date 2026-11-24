@@ -31,6 +31,9 @@ export const SEED_ROUTES = {
   },
 };
 
+/** OS-23: the last `ob creds check opencode-go` every test starts from: ok, at a fixed time. */
+export const SEED_CREDIT_AT = "2026-11-24T08:30:12.000Z";
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }
