@@ -2,9 +2,9 @@ $schema: '../../.moon/cache/schemas/project.json'
 
 # OS-168: the item and spinoff lifecycles as XState v5 machines, used as pure functions only
 # (docs/spikes/state-machine-library.md). OS-169: cli and cli-coord call them (the shadow check), so they
-# depend on this project, not the other way round. The parity test still reads the live tables in
-# apps/cli/src/status.ts and platform/cli-coord; every ob-ts task hashes the whole workspace, so a change
-# there still re-runs it.
+# depend on this project, not the other way round. OS-173: cli-coord's moveSpinoff moves by the spinoff
+# machine's events through src/apply.ts. The parity test still reads apps/cli/src/status.ts and
+# platform/cli-coord; every ob-ts task hashes the whole workspace, so a change there still re-runs it.
 tags: ['ob-ts']
 
 tasks:

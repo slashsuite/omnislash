@@ -7,8 +7,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, writeSync
 import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
-import { shadowMove } from "../../../../apps/cli/src/machine-shadow.ts";
-import { spinoffEventFor, spinoffMachine } from "../../../state-machine/src/spinoff.ts";
+import { SPINOFF_TRANSITIONS, spinoffMachine, type SpinoffEvent } from "../../../state-machine/src/spinoff.ts";
+import { applyMove } from "../../../state-machine/src/apply.ts";
+import type { RefusalWhy } from "../../../state-machine/src/decide.ts";
 import { sendRoleMessage } from "../../../../apps/cli/src/inbox.ts";
 import { print, warn } from "../../../../apps/cli/src/output.ts";
 import { nowIso } from "../../../../apps/cli/src/db.ts";
@@ -485,115 +486,76 @@ const READYABLE_STATUSES = ["launched", READY_FOR_GATE] as const;
 export type SpinoffStatus = (typeof SPINOFF_STATUSES)[number];
 
 /**
- * OB-1920: every edge a spinoff row's status may take, and nothing else. Derived from the writers that
- * exist, not invented: every status write goes through `moveSpinoff`, which updates only
- * `WHERE id = ? AND status IN (<from-states>)` and refuses by name when no row moved. `failed` is
- * terminal and `merged` nearly so (a re-dispatch inserts a NEW row; `enqueueSpinoff` dedupes only
- * pending/launching): its one exit is `ob spinoff reopen`, for a land that was wrong (OB-2180).
+ * OB-1920, OS-173: every move a spinoff row's status may take is an event of the spinoff machine
+ * (`SPINOFF_EDGES` in platform/state-machine/src/spinoff.ts), and every status write goes through
+ * `moveSpinoff`. `failed` is terminal and `merged` nearly so (a re-dispatch inserts a NEW row;
+ * `enqueueSpinoff` dedupes only pending/launching): its one exit is `reopen`, for a land that was wrong (OB-2180).
  *
- *   pending        → launching (claim) · failed (abandon)
- *   launching      → launched (stamp) · pending (reclaim / spawn-failure retry) · failed (stamp, reclaim,
- *                    spawn failure, abandon)
- *   launched       → launched (384 session-id re-stamp) · ready-for-gate (handoff) · merged (land) ·
- *                    pending (spawn-failure retry) · failed (spawn failure, spike end, abandon)
- *   ready-for-gate → launched (send-back) · merged (land) · failed (spike end, abandon)
+ *   pending        → launching (claim) · failed (fail: abandon)
+ *   launching      → launched (stamp) · pending (retry: reclaim / spawn failure) · failed (fail: stamp,
+ *                    reclaim, spawn failure, abandon)
+ *   launched       → launched (stamp: 384 session-id re-stamp) · ready-for-gate (handoff) · merged (land) ·
+ *                    pending (retry: spawn failure) · failed (fail: spawn failure, spike end, abandon)
+ *   ready-for-gate → launched (sendback) · merged (land) · failed (fail: spike end, abandon)
  *   merged         → launched (reopen, OB-2180)
+ *
+ * `SPINOFF_TRANSITIONS` is the generated target-only view of those edges.
  */
-export const SPINOFF_TRANSITIONS: Readonly<Record<SpinoffStatus, readonly SpinoffStatus[]>> = {
-  pending: ["launching", "failed"],
-  launching: ["launched", "pending", "failed"],
-  launched: ["launched", READY_FOR_GATE, "merged", "pending", "failed"],
-  [READY_FOR_GATE]: ["launched", "merged", "failed"],
-  // OB-2180: a landed row's one way back is `ob spinoff reopen`, for a row reconcile landed wrongly. Every
-  // other move to `launched` names its own narrower from-state, so this edge serves only `markSpinoffReopened`.
-  merged: ["launched"],
-  failed: [],
-};
-
-/** The statuses the table lets a row move from to reach `to`. Pure. */
-function spinoffFromStates(to: SpinoffStatus): SpinoffStatus[] {
-  return SPINOFF_STATUSES.filter((from) => SPINOFF_TRANSITIONS[from].includes(to));
-}
+export { SPINOFF_TRANSITIONS };
 
 /**
- * A status move the table (or the writer's narrower from-set) does not allow. Still an AppError (409 on the
- * API), and since OS-169 a `TransitionRefused` naming the spinoff machine's edge (`to:<to>` when it has none).
+ * A move the spinoff machine (or the writer's narrower from-set) refused. An AppError (409 on the API, exit 1
+ * on the CLI), and a `TransitionRefused` naming the event and why (OS-173: `machine`, `guard` or `race`).
  */
 export class SpinoffTransitionRefused extends TransitionRefused {
-  constructor(id: number, current: string | null, to: SpinoffStatus) {
+  constructor(id: number, current: string | null, event: SpinoffEvent, why: RefusalWhy = "machine") {
     super(
       current === null
         ? `no spinoff #${id}`
-        : `spinoff #${id} is ${spinoffStatusWord(current)}; it cannot move to ${spinoffStatusWord(to)}`,
-      {
-        machine: spinoffMachine.id,
-        id: String(id),
-        from: current ?? "none",
-        event: spinoffEventFor(current, to) ?? `to:${to}`,
-        why: "machine",
-      },
+        : why === "race"
+          ? `spinoff #${id} moved to ${spinoffStatusWord(current)} while '${event}' was deciding; nothing changed, re-run`
+          : why === "guard"
+            ? `spinoff #${id} is ${spinoffStatusWord(current)}: this '${event}' does not move a row from there`
+            : `spinoff #${id} is ${spinoffStatusWord(current)}: '${event}' is not a move from there`,
+      { machine: spinoffMachine.id, id: String(id), from: current ?? "none", event, why },
     );
     this.name = "SpinoffTransitionRefused";
   }
 }
 
 /**
- * OS-169's shadow check for a spinoff row: one SELECT of the stored status, then the spinoff machine's
- * decision on the edge `stored → to`, beside today's answer (the stored status is in `allowed`, which is
- * what the guarded UPDATE will check). A disagreement is logged as `machine_would_refuse`; a missing row is
- * not checked. A race between this read and the write only adds noise to the log. Never throws.
- */
-async function shadowSpinoffMove(s: Store, id: number, to: SpinoffStatus, allowed: readonly SpinoffStatus[]): Promise<void> {
-  let stored: string | null;
-  try {
-    stored = (await getSpinoffRow(s, id))?.status ?? null;
-  } catch {
-    return;
-  }
-  if (stored === null) return;
-  const today = (allowed as readonly string[]).includes(stored) ? "allowed" : "refused";
-  await shadowMove(s, {
-    machine: spinoffMachine,
-    id: String(id),
-    from: stored,
-    event: spinoffEventFor(stored, to) ?? `to:${to}`,
-    to,
-    today,
-    todayMessage: today === "refused" ? new SpinoffTransitionRefused(id, stored, to).message : null,
-    itemId: null,
-    actor: null,
-    extra: { rowId: id },
-  });
-}
-
-/**
- * The one status writer (OB-1920): set `to` (plus `set`) on row `id` only while its status is one of `from`
- * (default: every from-state the table allows; a narrower list is intersected with the table, never widened).
- * Returns the stored row as written; throws `SpinoffTransitionRefused` naming the row, its current status
- * and the target when nothing moved.
+ * The one status writer (OB-1920, OS-173): apply `event` to row `id` through the spinoff machine
+ * (`applyMove`), writing `set` with the new status in one guarded `UPDATE ... WHERE status = <read>`. `from`
+ * narrows the states this writer moves from (a stamp moves only a `launching` row); it never widens the
+ * machine. A row moved by another writer meanwhile is decided again where it now is (see `applyMove`). Returns the stored row as written; throws `SpinoffTransitionRefused` naming the row, its status
+ * and the event when nothing moved.
  */
 export async function moveSpinoff(
   db: Database | Store,
   id: number,
-  to: SpinoffStatus,
+  event: SpinoffEvent,
   set: Partial<SpinoffRow> = {},
-  from: readonly SpinoffStatus[] = spinoffFromStates(to),
+  from?: readonly SpinoffStatus[],
   /** OS-179: one more condition on the same conditional UPDATE (a scoped claim's project filter). */
   also?: SQL,
 ): Promise<SpinoffRow> {
   const s = asStore(db);
-  const allowed = from.filter((f) => SPINOFF_TRANSITIONS[f].includes(to));
-  await shadowSpinoffMove(s, id, to, allowed);
-  if (allowed.length > 0) {
-    const rows = (await s.q
-      .update(s.t.spinoff)
-      // A handoff and a merge are each reported once by the watch (OB-1924): re-arm reported_at on both.
-      .set({ ...set, status: to, ...(to === READY_FOR_GATE || to === "merged" ? { reported_at: null } : {}) })
-      .where(and(eq(s.t.spinoff.id, id), inArray(s.t.spinoff.status, allowed), also))
-      .returning()) as SpinoffRow[];
-    if (rows[0]) return rows[0];
-  }
-  throw new SpinoffTransitionRefused(id, (await getSpinoffRow(s, id))?.status ?? null, to);
+  const moved = await applyMove<SpinoffRow>(spinoffMachine, {
+    event,
+    from,
+    read: async () => (await getSpinoffRow(s, id))?.status ?? null,
+    write: async (stored, to) => {
+      const rows = (await s.q
+        .update(s.t.spinoff)
+        // A handoff and a merge are each reported once by the watch (OB-1924): re-arm reported_at on both.
+        .set({ ...set, status: to, ...(to === READY_FOR_GATE || to === "merged" ? { reported_at: null } : {}) })
+        .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, stored), also))
+        .returning()) as SpinoffRow[];
+      return rows[0] ?? null;
+    },
+  });
+  if (moved.ok) return moved.row;
+  throw new SpinoffTransitionRefused(id, moved.from, event, moved.why);
 }
 
 /** The stored row by id, or null. */
@@ -676,11 +638,13 @@ async function recordRowDecision(
   from: string,
   to: string,
   decision: DecisionOpts = {},
+  /** OS-173: the machine event that made the move; omitted for a trail line that is not a move. */
+  event?: SpinoffEvent,
 ): Promise<void> {
   try {
     const itemId = row.item_id ?? (await rowItemId(asStore(db), row));
     if (!itemId) return;
-    await recordDecision(db, itemId, from, to, { ...decision, spinoffRow: row.id });
+    await recordDecision(db, itemId, from, to, { ...decision, spinoffRow: row.id, event: event ?? null });
   } catch (e) {
     warn(`  ⚠ decision not recorded for ${row.ticket_ref}: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -2083,7 +2047,7 @@ export async function claimSpinoffRow(
     row = await moveSpinoff(
       s,
       id,
-      "launching",
+      "claim",
       { launch_attempts: (pending.launch_attempts ?? 0) + 1, launched_at: nowIso() },
       ["pending"],
       inScope,
@@ -2127,7 +2091,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
   // 384: the TUI exists only AFTER the first launched stamp, so a later pass writes the captured
   // opencode id onto an already-launched row. That must not increment launch_attempts or re-register.
   if (row.status === "launched" && input.outcome === "launched" && input.session_id) {
-    await moveSpinoff(s, row.id, "launched", { session_id: input.session_id }, ["launched"]);
+    await moveSpinoff(s, row.id, "stamp", { session_id: input.session_id }, ["launched"]);
     await registerAgent(s, {
       id: builderIdOf(row),
       ticket: legRef(row.ticket_ref, row.trial_leg),
@@ -2164,7 +2128,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
     await moveSpinoff(
       s,
       row.id,
-      "launched",
+      "stamp",
       { ...resolved, agent_id: builderIdOf(row), launched_at: nowIso() }, // OB-1921: the attempt was counted at the claim
       ["launching"],
     );
@@ -2190,7 +2154,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
     });
   } else {
     // OB-1920: any live row may fail (drain, spike end, abandon from pending); a merged or failed one may not.
-    await moveSpinoff(s, row.id, "failed", { ...resolved, error: (input.error ?? "").slice(0, 500) });
+    await moveSpinoff(s, row.id, "fail", { ...resolved, error: (input.error ?? "").slice(0, 500) });
     // OB-2230: a failed row frees the one flake slot now, not after its 6 hour TTL, so the next flake dispatches.
     await releaseLease(s, FLAKE_SLOT_KEY, builderIdOf(row));
   }
@@ -2204,6 +2168,7 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
     spinoffStatusWord(row.status),
     spinoffStatusWord(input.outcome === "launched" ? "launched" : "failed"),
     input.decision,
+    input.outcome === "launched" ? "stamp" : "fail",
   );
 }
 
@@ -2236,9 +2201,9 @@ export async function reclaimSpinoffs(db: Database | Store): Promise<ReclaimEntr
     const retrying = attempts < MAX_LAUNCH_ATTEMPTS;
     try {
       if (retrying) {
-        await moveSpinoff(s, row.id, "pending", { error, agent_id: null, launched_at: null, launch_attempts: attempts }, ["launching"]);
+        await moveSpinoff(s, row.id, "retry", { error, agent_id: null, launched_at: null, launch_attempts: attempts }, ["launching"]);
       } else {
-        await moveSpinoff(s, row.id, "failed", { error, launch_attempts: attempts }, ["launching"]);
+        await moveSpinoff(s, row.id, "fail", { error, launch_attempts: attempts }, ["launching"]);
       }
     } catch (e) {
       if (e instanceof SpinoffTransitionRefused) continue; // stamped since it was read: not abandoned after all
@@ -2270,9 +2235,9 @@ export async function landSpinoff(
   // OB-1920: only a building or handed-off row lands; a queued or launching one has nothing to land.
   // OB-1993: a zero read (a machine with no transcripts) never overwrites a count the row already has.
   const keep = usage.totalTokens === 0 && (row.total_tokens ?? 0) > 0;
-  await moveSpinoff(s, row.id, "merged", keep ? {} : tokenColumns(usage));
+  await moveSpinoff(s, row.id, "land", keep ? {} : tokenColumns(usage));
   const landDecision = prUrl ? { ...decision, extra: { ...decision.extra, pr_url: prUrl } } : decision;
-  await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord("merged"), landDecision);
+  await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord("merged"), landDecision, "land");
   await finishAgent(s, builderIdOf(row)); // 341: does not drop an architect hold the builder inherited
   await noteTrialLanded(s, row.id); // OB-1991: a trial winner's launch to landed
 }
@@ -2405,7 +2370,7 @@ export function renderBackfill(entries: BackfillEntry[], json: boolean): string 
 export function trialStoreDeps(db: Database | Store): TrialDeps {
   return {
     retire: async (row, error) => {
-      await moveSpinoff(db, row.id, "failed", { error: abandonedError(error) });
+      await moveSpinoff(db, row.id, "fail", { error: abandonedError(error) });
       await finishAgent(db, builderIdOf(row));
     },
   };
@@ -2976,8 +2941,8 @@ export async function recordSpinoffSpawnFailure(
   // Clearing agent_id/launched_at on a retry keeps the row from claiming a launch it no longer has;
   // the next drain re-stamps both when it actually relaunches.
   try {
-    if (retrying) await moveSpinoff(s, row.id, "pending", { error, agent_id: null, launched_at: null }, ["launching", "launched"]);
-    else await moveSpinoff(s, row.id, "failed", { error }, ["launching", "launched"]);
+    if (retrying) await moveSpinoff(s, row.id, "retry", { error, agent_id: null, launched_at: null }, ["launching", "launched"]);
+    else await moveSpinoff(s, row.id, "fail", { error }, ["launching", "launched"]);
   } catch (e) {
     if (e instanceof SpinoffTransitionRefused) return null; // moved since it was read: nothing launched to record
     throw e;
@@ -3252,7 +3217,7 @@ export async function relaunchCreditFailures(db: Database | Store, mirrored: rea
         launch: (models, routeEffort) => launchT3Spinoff(seam, withRouteEffort(row, routeEffort), repoPath, title, models),
         recordMove: routeMoveRecorder(db, row),
         relaunched: async (outcome) => {
-          await moveSpinoff(s, row.id, "launched", { t3_thread_id: outcome.threadId, t3_run_id: outcome.runId, model: outcome.model, effort: outcome.effort, tier: row.tier, complexity: row.complexity ?? null }, ["launched"]);
+          await moveSpinoff(s, row.id, "stamp", { t3_thread_id: outcome.threadId, t3_run_id: outcome.runId, model: outcome.model, effort: outcome.effort, tier: row.tier, complexity: row.complexity ?? null }, ["launched"]);
           await registerAgent(s, { id: builderIdOf(row), ticket: legRef(row.ticket_ref, row.trial_leg), branch: row.branch, sessionId: outcome.threadId, ttlS: AGENT_LEASE_TTL_S });
         },
         fail: async (reason) => {
@@ -3669,8 +3634,8 @@ export async function markSpinoffReady(
       });
     }
   } else if (!already) {
-    updated = await moveSpinoff(s, row.id, READY_FOR_GATE, {}, ["launched"]);
-    await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord(READY_FOR_GATE), decision);
+    updated = await moveSpinoff(s, row.id, "handoff", {}, ["launched"]);
+    await recordRowDecision(s, row, spinoffStatusWord(row.status), spinoffStatusWord(READY_FOR_GATE), decision, "handoff");
     await noteLegHandoff(s, row); // OB-1991: a trial leg's wall time ends at its handoff
     const agentId = builderIdOf(row);
     const existing = await getAgent(s, agentId);
@@ -3710,8 +3675,8 @@ export async function markSpinoffSentBack(db: Database | Store, row: SpinoffRow,
   }
   const s = asStore(db);
   await retakeFlakeSlot(s, row, "send back"); // OB-2230: the handoff freed it, and the fix is building again
-  const moved = await moveSpinoff(s, row.id, "launched", {}, [READY_FOR_GATE]);
-  await recordRowDecision(s, row, spinoffStatusWord(READY_FOR_GATE), spinoffStatusWord("launched"), decision);
+  const moved = await moveSpinoff(s, row.id, "sendback", {}, [READY_FOR_GATE]);
+  await recordRowDecision(s, row, spinoffStatusWord(READY_FOR_GATE), spinoffStatusWord("launched"), decision, "sendback");
   await noteLegSendback(s, row); // OB-1991: a trial leg sent back did not pass the gate first time
   const existing = await getAgent(s, builderIdOf(row));
   if (existing) {
@@ -3752,8 +3717,8 @@ export async function markSpinoffReopened(db: Database | Store, row: SpinoffRow,
   }
   const s = asStore(db);
   await retakeFlakeSlot(s, row, "reopen"); // OB-2230: the land freed it, and the fix is building again
-  const moved = await moveSpinoff(s, row.id, "launched", {}, ["merged"]);
-  await recordRowDecision(s, row, spinoffStatusWord("merged"), spinoffStatusWord("launched"), decision);
+  const moved = await moveSpinoff(s, row.id, "reopen", {}, ["merged"]);
+  await recordRowDecision(s, row, spinoffStatusWord("merged"), spinoffStatusWord("launched"), decision, "reopen");
   return moved;
 }
 

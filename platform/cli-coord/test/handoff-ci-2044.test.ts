@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { freshDbPath, runCli, omnislashTeamFor } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { addTags, createItem } from "../../../apps/cli/src/items.ts";
-import { decisionsForItem } from "../../../apps/cli/src/decisions.ts";
+import { decisionsForItem, renderDecision } from "../../../apps/cli/src/decisions.ts";
 import { __setT3Seam, readyingNote, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 import type { T3SendInput } from "../../../apps/cli/src/t3/client.ts";
 import { registerAgent } from "../src/agent.ts";
@@ -296,6 +296,10 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
     const t = await trail(dbPath, itemId);
     expect(t).toContain("landed the guard");
     expect(t).toContain("ci: gate pass, ui-review pass on aaaaaaa");
+    // OS-173: the handoff's trail entry names the machine event it took.
+    const moved = (await decisionsForItem(openDb(dbPath), itemId)).find((d) => d.to === "handed-off");
+    expect(moved?.event).toBe("handoff");
+    expect(renderDecision(moved!)).toContain("(handoff, row ");
   });
 
   test("the readying note sent to the sentinel thread carries the ci line on its gate line (the real wiring)", async () => {
