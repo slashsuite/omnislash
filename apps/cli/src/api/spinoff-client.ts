@@ -1366,9 +1366,11 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
         : await announceReadyOverApi(ctx, res.row, state, gateNoteWithCi(res.builder_note ?? null, ci), tierFitRecorded, res.already, res.spike === true, spikeDoc);
     const rendered = renderReadyNoteOutcome(note);
     if (ctx.mode === "json") {
-      print(JSON.stringify({ ...readyResultJson(res, state), spike: res.spike === true, ...(spikeDoc ? { pr_url: spikeDoc.prUrl } : {}), architect_note: note }, null, 2));
+      print(JSON.stringify({ ...readyResultJson(res, state), spike: res.spike === true, ...(spikeDoc ? { pr_url: spikeDoc.prUrl } : {}), architect_note: note, pixelslash_review_owed: ci.owed ?? [] }, null, 2));
     } else {
       print(res.spike ? formatSpikeReport(res.row, spikeDoc ?? {}) : formatReadyReport(res.row, state, res.already));
+      // OB-2544: a pending PixelSlash review is not CI; the handoff goes through and names what the architect owes.
+      for (const owed of ci.owed ?? []) print(`  ${owed}`);
       if (!tierFit) print(TIER_FIT_HINT);
       if (rendered.warning) warn(rendered.line);
       else print(rendered.line);

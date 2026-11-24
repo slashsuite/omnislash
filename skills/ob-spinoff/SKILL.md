@@ -143,9 +143,9 @@ This is a moon workspace, run the gate through moon, not raw ad-hoc commands. **
 `ci.yml`'s `gate` job runs `bunx moon run --concurrency 3 :typecheck :test` on your PR head, and a green `gate` on the current head
 SHA is the gate for those two. Run them locally while you build as your own feedback; they are not a second required
 pass before the handoff, and you do not re-run them after the rebase. **You do wait for CI, though:** open the PR, then
-`gh pr checks <N> --watch` until every check on the PR head is green. A failing check is fixed on the branch (push, watch again),
+`~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` until every check on the PR head is green (PixelSlash is a review, not CI: `ob-babysit-pr`): a pending PixelSlash review is not waited on, it is named as `PixelSlash review owed:`. A failing check is fixed on the branch (push, watch again),
 or reported as a flake (below), never handed off. `ob spinoff handoff` enforces this: with an open PR it refuses a pending or failing
-check, a PR head that is not your HEAD, and a `gh` it cannot read (`COULD NOT READ CI`, never treated as green). "I believe the ticket
+check, a PR head that is not your HEAD, and a `gh` it cannot read (`COULD NOT READ CI`, never treated as green). A pending PixelSlash status is not a pending check: the handoff goes through and names it as `PixelSlash review owed:`; a failed one still refuses. "I believe the ticket
 is done" is not the trigger; a green PR is. The rest stays yours to run and report:
 - `ob` still loads (the on-PATH `ob` runs this source; try `ob next`).
 - `bunx moon run <project>:typecheck` and `bunx moon run <project>:test` while you build (feedback; CI gates the PR head).
@@ -236,7 +236,7 @@ Once the build is committed, finish in this order. It is the only normal complet
   outlives the chat, e.g. `--note 'verification rung: admin page + migration 0011; 25 tests x2'`. Optional, and
   separate from the gate facts above: that note announces to the architect, this one is the record. It moves the row to `handed-off`, sends the note to the architect
   thread, and releases the builder's `ticket:`/`worktree:` holds; the readying note tells the architect to gate and merge the PR. Who runs it:
-  - **The builder**, when the commit says `State: landable`, once every gate in §3 is green and the PR is open (c) **and its CI has passed**: run `gh pr checks <N> --watch` after `gh pr create` and hand off only on a green PR. The handoff reads the check
+  - **The builder**, when the commit says `State: landable`, once every gate in §3 is green and the PR is open (c) **and its CI has passed**: run `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` after `gh pr create` and hand off only on a green PR (never `gh pr checks --watch`, which waits on a PixelSlash review for ever). The handoff reads the check
     rollup itself and refuses a pending or failing PR, naming the checks (a branch with no open PR, as for `blocked` or `partial`, has
     nothing to wait for). A failing check is fixed on the branch or reported as a flake, never handed off. If CI genuinely cannot be
     read (no `gh`, no network), `--ci-unchecked '<why>'` hands off and records the reason; do not use it to skip a wait or a failure.

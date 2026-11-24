@@ -11,11 +11,11 @@ import { freshDbPath, runCli, omnislashTeamFor } from "../../../apps/cli/test/he
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { addTags, createItem } from "../../../apps/cli/src/items.ts";
 import { decisionsForItem, renderDecision } from "../../../apps/cli/src/decisions.ts";
-import { __setT3Seam, readyingNote, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
+import { __setT3Seam, readyingNote, reviewLineFrom, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 import type { T3SendInput } from "../../../apps/cli/src/t3/client.ts";
 import { registerAgent } from "../src/agent.ts";
 import { __setSh, enqueueSpinoff, gateNoteWithCi, listSpinoffs } from "../src/commands/spinoff.ts";
-import { COULD_NOT_READ_CI, assertHandoffCi, ciLine, normaliseCheck, repoRunsCiOnPullRequests, type HandoffCiInput } from "../src/commands/handoff-ci.ts";
+import { COULD_NOT_READ_CI, assertHandoffCi, isPixelSlashCheck, ciLine, normaliseCheck, repoRunsCiOnPullRequests, type HandoffCiInput } from "../src/commands/handoff-ci.ts";
 
 const restores: Array<() => void> = [];
 afterEach(() => {
@@ -95,7 +95,7 @@ describe("assertHandoffCi: the guard (OB-2044)", () => {
   test("a pending check is refused, naming it and the wait command", () => {
     for (const status of ["IN_PROGRESS", "QUEUED", "PENDING", "WAITING"]) {
       const g = guard({ ok: true, prs: [pr([green("ui-review"), run("gate", status, "")])] });
-      expect(() => g.run()).toThrow("CI still running on aaaaaaa: gate. Wait with `gh pr checks 431 --watch`, then hand off.");
+      expect(() => g.run()).toThrow("CI still running on aaaaaaa: gate. Wait with `~/.claude/skills/ob-babysit-pr/scripts/pr-wait 431 --until green` (it skips a pending PixelSlash review), then hand off.");
     }
     const status = guard({ ok: true, prs: [pr([{ __typename: "StatusContext", context: "ci/legacy", state: "PENDING" }])] });
     expect(() => status.run()).toThrow("CI still running on aaaaaaa: ci/legacy");
@@ -110,7 +110,7 @@ describe("assertHandoffCi: the guard (OB-2044)", () => {
     const wt = tempDir("ob-wt-2044-wf-");
     workflowOnPullRequest(wt);
     const g = guard({ ok: true, prs: [pr([])] }, {}, wt);
-    expect(() => g.run()).toThrow("CI has not reported on PR #431 (aaaaaaa) yet, and this repo runs workflows on pull_request. Wait with `gh pr checks 431 --watch`");
+    expect(() => g.run()).toThrow("CI has not reported on PR #431 (aaaaaaa) yet, and this repo runs workflows on pull_request. Wait with `~/.claude/skills/ob-babysit-pr/scripts/pr-wait 431 --until green`");
   });
 
   test("no checks in a repo with no pull_request workflow passes with a plain line", () => {
@@ -266,10 +266,73 @@ function fakeGitGh(gh: Gh): void {
 const status = async (dbPath: string): Promise<string> => (await listSpinoffs(openDb(dbPath)))[0]!.status;
 const trail = async (dbPath: string, itemId: string): Promise<string> => (await decisionsForItem(openDb(dbPath), itemId)).map((d) => d.note ?? "").join("\n");
 
+/** A PixelSlash commit status, as `gh pr list --json statusCheckRollup` prints it (no description in the rollup). */
+const pixel = (state: string, context = "PixelSlash / hackcove-ui-actions") => ({
+  __typename: "StatusContext",
+  context,
+  state,
+  targetUrl: "http://pixelslash.lan/builds/1",
+});
+
+describe("a PixelSlash review is not CI (OB-2544)", () => {
+  test("green CI with a pending PixelSlash status passes, naming the owed review", () => {
+    const r = guard({ ok: true, prs: [pr([green("gate"), pixel("PENDING"), pixel("PENDING", "PixelSlash")])] }).run();
+    expect(r.kind).toBe("checked");
+    expect(r.owed).toEqual([
+      "PixelSlash review owed: PixelSlash / hackcove-ui-actions http://pixelslash.lan/builds/1",
+      "PixelSlash review owed: PixelSlash http://pixelslash.lan/builds/1",
+    ]);
+    expect(r.line).toBe("ci: gate pass on aaaaaaa; PixelSlash review owed: PixelSlash / hackcove-ui-actions http://pixelslash.lan/builds/1; PixelSlash review owed: PixelSlash http://pixelslash.lan/builds/1");
+    // The owed line never reads as the note's review line.
+    expect(reviewLineFrom(r.line)).toBeNull();
+  });
+
+  test("a failed or errored PixelSlash status still refuses: a broken upload, not a review", () => {
+    for (const state of ["FAILURE", "ERROR"]) {
+      expect(() => guard({ ok: true, prs: [pr([green("gate"), pixel(state)])] }).run()).toThrow(`CI is failing on PR #431 (aaaaaaa). Nothing was handed off:\n  PixelSlash / hackcove-ui-actions: ${state.toLowerCase()}`);
+    }
+  });
+
+  test("other CI still running is still waited on, and the refusal says the PixelSlash review is not", () => {
+    const g = guard({ ok: true, prs: [pr([run("gate", "IN_PROGRESS", ""), pixel("PENDING")])] });
+    expect(() => g.run()).toThrow(/CI still running on aaaaaaa: gate\..*A pending PixelSlash review is not waited on: PixelSlash review owed: PixelSlash \/ hackcove-ui-actions/);
+  });
+
+  test("a passed PixelSlash status is plain CI, and a look-alike name is not PixelSlash", () => {
+    expect(guard({ ok: true, prs: [pr([green("gate"), pixel("SUCCESS")])] }).run()).toEqual({ kind: "checked", line: "ci: gate pass, PixelSlash / hackcove-ui-actions pass on aaaaaaa" });
+    expect(isPixelSlashCheck("PixelSlash")).toBe(true);
+    expect(isPixelSlashCheck("pixelslash/visual")).toBe(true);
+    expect(isPixelSlashCheck("PixelSlashed")).toBe(false);
+    expect(isPixelSlashCheck("ci / PixelSlash")).toBe(false);
+    expect(() => guard({ ok: true, prs: [pr([green("gate"), pixel("PENDING", "PixelSlashed")])] }).run()).toThrow("CI still running on aaaaaaa: PixelSlashed");
+  });
+
+  test("ob spinoff handoff goes through on green CI with a pending PixelSlash review, naming it on the trail and in its output", async () => {
+    const dbPath = freshDbPath();
+    const { itemId } = await seedHandoff(dbPath);
+    fakeGitGh({ ok: true, prs: [pr([green("gate"), pixel("PENDING")])] });
+    const r = await runCli(dbPath, ["spinoff", "handoff", itemId]);
+    expect(r.code).toBe(0);
+    expect(await status(dbPath)).toBe("ready-for-gate");
+    expect(await trail(dbPath, itemId)).toContain("PixelSlash review owed: PixelSlash / hackcove-ui-actions http://pixelslash.lan/builds/1");
+    expect(r.out).toContain("PixelSlash review owed: PixelSlash / hackcove-ui-actions http://pixelslash.lan/builds/1");
+  });
+
+  test("ob spinoff handoff still refuses a failed PixelSlash status and stamps nothing", async () => {
+    const dbPath = freshDbPath();
+    const { itemId } = await seedHandoff(dbPath);
+    fakeGitGh({ ok: true, prs: [pr([green("gate"), pixel("FAILURE")])] });
+    const r = await runCli(dbPath, ["spinoff", "handoff", itemId]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("PixelSlash / hackcove-ui-actions: failure http://pixelslash.lan/builds/1");
+    expect(await status(dbPath)).toBe("launched");
+  });
+});
+
 describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
   test("pending, failing, no checks yet and a stale PR head all refuse, and none moves the row", async () => {
     const cases: Array<[string, Gh, string[]]> = [
-      ["pending", { ok: true, prs: [pr([green("ui-review"), run("gate", "IN_PROGRESS", "")])] }, ["CI still running on aaaaaaa: gate", "gh pr checks 431 --watch", "Nothing was handed off"]],
+      ["pending", { ok: true, prs: [pr([green("ui-review"), run("gate", "IN_PROGRESS", "")])] }, ["CI still running on aaaaaaa: gate", "pr-wait 431 --until green", "Nothing was handed off"]],
       ["failing", { ok: true, prs: [pr([run("gate", "COMPLETED", "FAILURE", "https://github.com/o/r/actions/runs/7")])] }, ["CI is failing on PR #431", "gate: failure https://github.com/o/r/actions/runs/7"]],
       ["no checks yet", { ok: true, prs: [pr([])] }, ["CI has not reported on PR #431", "runs workflows on pull_request"]],
       ["stale head", { ok: true, prs: [pr([green("gate")], OTHER)] }, ["PR #431 head is bbbbbbb, your HEAD is aaaaaaa: the two differ: push (or pull, if the PR is ahead)"]],

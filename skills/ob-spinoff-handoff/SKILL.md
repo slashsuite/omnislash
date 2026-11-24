@@ -31,7 +31,8 @@ The branch need not be on main.
    `ob-land`, where the note would go to the architect's own thread.
 2a. **CI must have passed.** With an open PR for the branch, `ob spinoff handoff` reads its checks and refuses a pending
    or failing PR, a PR head that is not the branch HEAD, and a `gh` it cannot read (`COULD NOT READ CI`). Wait with
-   `gh pr checks <N> --watch` and fix a failure on the branch, then hand off again. This applies to the human's `/ob-spinoff-handoff`
+   `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` and fix a failure on the branch, then hand off again. A pending PixelSlash status is a review the architect owes, not
+   CI: it is not waited on, and the handoff goes through naming it as `PixelSlash review owed:`; a failed one still refuses (PixelSlash is a review, not CI: `ob-babysit-pr`). This applies to the human's `/ob-spinoff-handoff`
    too. `--ci-unchecked '<why>'` is the override: it hands off anyway and puts the reason on the ticket's trail and in the readying
    note, use it only when CI truly cannot be read or waited for, never to get past a red or running check. The guard does not enforce that (the recorded reason is the control), so the architect sees `ci: UNCHECKED` and judges it.
 3. Pass `--note '<one line>'` when you have one: that is the **decision record** on the ticket's trail

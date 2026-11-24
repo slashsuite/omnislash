@@ -4,17 +4,22 @@
   pr-wait <pr> [--repo owner/name] [--until ready|green|any-change] [--gate gate] [--interval 20]
 
 Adapted from t3dotgg/tstack (babysit-pr/scripts/pr-wait) for OmniSlash. OmniSlash runs no review bots, so the
-signals are the gate check on the PR head (`gate`, from .github/workflows/ci.yml; --gate renames it) plus the
-merge state. Greptile, Macroscope and CodeRabbit are not read.
+signals are the checks on the PR head (the `gate` check, from .github/workflows/ci.yml; --gate renames it, and a
+repo with no check of that name needs every other check passed and at least one) plus the merge state. Greptile, Macroscope and CodeRabbit are not read.
 
 --until
-  green       the gate check passed on the current head
-  ready       gate green and the PR mergeable (default)
+  green       the gate check and every other check on the current head passed (PixelSlash aside, below)
+  ready       green and the PR mergeable (default)
   any-change  stop on the first event
+
+PixelSlash is a review, not CI (OB-2544; the rule is skills/ob-babysit-pr/SKILL.md, "PixelSlash is a review,
+not CI"). A status whose name is PixelSlash, or starts with it, waits on a human, so a pending one is never
+waited on and never a failure: green and ready print `PixelSlash review owed: <status> <link>` for each one
+still pending, before the final line. A failed or errored PixelSlash status is a broken upload and exits 1.
 
 Exit codes
   0  the --until condition is met, or the PR merged
-  1  it needs action: the gate failed, the branch conflicts (DIRTY) or is BEHIND, or the PR closed
+  1  it needs action: a check failed, the branch conflicts (DIRTY) or is BEHIND, or the PR closed
   2  bad arguments, unknown PR, or another pr-wait already watches this PR
 
 Events, one line each on stdout: gate failed or passed; merged or closed; DIRTY or BEHIND; a comment,
@@ -37,6 +42,7 @@ from pathlib import Path
 STATE_DIR = Path.home() / ".local" / "state" / "pr-wait"
 MERGEABLE = {"CLEAN", "HAS_HOOKS", "UNSTABLE"}
 FAILED = {"fail", "cancel"}
+PASSED = {"pass", "skipping"}
 MAX_FAILED_POLLS = 10
 
 
@@ -61,6 +67,17 @@ def gh(args: list[str], ok: tuple[int, ...] = (0,)) -> str:
 def snippet(text: str, limit: int = 100) -> str:
     flat = " ".join((text or "").split())
     return flat if len(flat) <= limit else flat[: limit - 3] + "..."
+
+
+def is_pixelslash(name: str) -> bool:
+    """A PixelSlash visual status: named PixelSlash, or starting with it (`PixelSlash / hackcove-ui-actions`)."""
+    head = (name or "").strip().lower()
+    return head == "pixelslash" or (head.startswith("pixelslash") and not (head[10].isalnum() or head[10] == "_"))
+
+
+def owed_line(row: dict) -> str:
+    desc = " ".join((row.get("description") or "").split())
+    return "PixelSlash review owed: " + " ".join(p for p in (row["name"], f"({desc})" if desc else "", row.get("link") or "") if p)
 
 
 def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
@@ -146,10 +163,11 @@ class Watcher:
         self.save()
         sys.exit(code)
 
-    def checks(self) -> dict[str, dict]:
+    def checks(self) -> list[dict]:
         # gh pr checks exits 1 when a check failed and 8 while checks are pending: states, not errors.
-        out = gh(["pr", "checks", str(self.pr), "-R", self.repo, "--json", "name,bucket,link"], ok=(0, 1, 8))
-        return {row["name"]: row for row in json.loads(out or "[]")}
+        # A list, not a dict by name: two workflows can report checks of the same name, and every one counts.
+        out = gh(["pr", "checks", str(self.pr), "-R", self.repo, "--json", "name,bucket,link,description"], ok=(0, 1, 8))
+        return json.loads(out or "[]")
 
     def others_comments(self, author: str) -> list[tuple[str, str, str]]:
         """Comments, reviews and inline comments from people other than the author and the gh user."""
@@ -172,11 +190,23 @@ class Watcher:
             self.finish(1, f"closed without merging: {url}")
 
         head, short = pr["headRefOid"], pr["headRefOid"][:7]
-        gate = self.checks().get(self.gate)
-        bucket = gate["bucket"] if gate else "pending"  # no gate check yet is pending, never green
-        if bucket in FAILED:
-            link = gate["link"]
-            self.finish(1, f"gate failed on {short}: {link}")
+        checks = self.checks()
+        gates = [r for r in checks if r["name"] == self.gate]
+        for gate in gates:
+            if gate["bucket"] in FAILED:
+                self.finish(1, f"gate failed on {short}: {gate['link']}")
+        for row in checks:
+            if row["bucket"] in FAILED:
+                name = row["name"]
+                what = "PixelSlash failed (a broken upload, not a review)" if is_pixelslash(name) else f"check {name} failed"
+                self.finish(1, f"{what} on {short}: {row['link']}")
+        # A pending PixelSlash status waits on a human review: not waited on, reported as owed (OB-2544).
+        owed = [owed_line(r) for r in checks if is_pixelslash(r["name"]) and r["bucket"] not in PASSED]
+        others = [r for r in checks if not is_pixelslash(r["name"]) and r["name"] != self.gate]
+        # Green needs every check that is not PixelSlash passed, and at least one: the gate check, or, in a repo whose
+        # CI has no check of that name, any other. No checks yet is pending, never green.
+        gate_ok = all(g["bucket"] in PASSED for g in gates) if gates else bool(others)
+        bucket = "pass" if gate_ok and all(r["bucket"] in PASSED for r in others) else "pending"
 
         merge = pr["mergeStateStatus"]
         if merge == "DIRTY":
@@ -189,10 +219,13 @@ class Watcher:
 
         done = bucket == "pass" and (self.until == "green" or (self.until == "ready" and merge in MERGEABLE))
         if bucket == "pass" and not done:
-            self.emit(f"pass:{head}", f"gate passed on {short}")
+            self.emit(f"pass:{head}", f"checks passed on {short}")
         for cid, login, link, body in self.others_comments(pr["author"]["login"]):
             self.emit(f"c:{cid}", f"comment from {login}: {snippet(body)} {link}")
 
+        if done:
+            for line in owed:
+                print(f"#{self.pr} {line}", flush=True)
         if done and self.until == "green":
             self.finish(0, f"green on {short}")
         if done:

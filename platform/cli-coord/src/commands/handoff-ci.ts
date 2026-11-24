@@ -12,6 +12,10 @@
  *  - any check failing (a conclusion other than success, skipped or neutral): refuse, naming each with its link;
  *  - any check pending, or no checks yet while the repo has a workflow that runs on `pull_request`: refuse, wait;
  *  - `gh` cannot be read: refuse with `COULD NOT READ CI`. A read failure is never green;
+ *  - a pending PixelSlash status (OB-2544) waits on a human review, not a runner: it is neither waited on nor a
+ *    failure, and the result names it as `PixelSlash review owed: <status> <link>`. A failed or errored one still
+ *    refuses (a broken upload). The rule is written once for agents in skills/ob-babysit-pr/SKILL.md
+ *    ("PixelSlash is a review, not CI"); `pr-wait` in that skill applies the same rule.
  *  - `--ci-unchecked '<why>'` skips the read and returns the reason for the trail and the readying note.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -34,6 +38,24 @@ export interface HandoffCiResult {
   /** `checked`: a green PR. `no-pr`: the branch has no open PR. `no-checks`: a PR, and the repo runs no CI on it. `unchecked`: overridden. */
   kind: "checked" | "no-pr" | "no-checks" | "unchecked";
   line: string | null;
+  /** OB-2544: one `PixelSlash review owed: ...` line per pending PixelSlash status; also folded into `line`. */
+  owed?: string[];
+}
+
+/**
+ * OB-2544: is this check a PixelSlash visual status? Its context is `PixelSlash`, or starts with it
+ * (`PixelSlash / hackcove-ui-actions`). Pure.
+ */
+export function isPixelSlashCheck(name: string): boolean {
+  return /^pixelslash\b/i.test(name.trim());
+}
+
+/** The line that names a PixelSlash review still owed, so the architect sees it. Colons and `;` are flattened
+ * past the label, so it never reads as another label or segment of the one-line readying note. Pure. */
+function pixelSlashOwedLine(check: CiCheck, prUrl?: string | null): string {
+  const flat = (s: string) => s.replace(/;/g, ",").replace(/\s*:\s*/g, " ").trim();
+  const link = check.url ?? prUrl ?? null;
+  return `PixelSlash review owed: ${flat(check.name)}${link ? ` ${link}` : ""}`;
 }
 
 const PASSING = new Set(["success", "skipped", "neutral"]);
@@ -149,7 +171,9 @@ export function assertHandoffCi(input: HandoffCiInput, fail: (message: string) =
   // `gh pr list --head` matches by branch name, so more than one open PR can come back: every one must pass.
   const results = prs.map((pr) => checkPr(pr, input, fail, cannot));
   // One PR reports its own line; several report each, so the trail never names just the first.
-  return results.length === 1 ? results[0]! : { kind: results[0]!.kind, line: results.map((r) => r.line).filter(Boolean).join("; ") || null };
+  if (results.length === 1) return results[0]!;
+  const owed = results.flatMap((r) => r.owed ?? []);
+  return { kind: results[0]!.kind, line: results.map((r) => r.line).filter(Boolean).join("; ") || null, ...(owed.length > 0 ? { owed } : {}) };
 }
 
 /** One open PR against the worktree HEAD. Throws the refusal; returns the pass. */
@@ -168,7 +192,13 @@ function checkPr(
   }
   // `gh` prints `[]` for a PR with no checks; a missing or non-list field is an unreadable answer, never "no CI".
   if (!Array.isArray(pr.statusCheckRollup)) throw cannot(`PR #${n} came back with no statusCheckRollup list`);
-  const rollup = pr.statusCheckRollup.map(normaliseCheck);
+  const all = pr.statusCheckRollup.map(normaliseCheck);
+  // OB-2544: a pending PixelSlash status is a human review the architect owes, not CI still running.
+  const owedChecks = all.filter((c) => c.state === "pending" && isPixelSlashCheck(c.name));
+  const owed = owedChecks.map((c) => pixelSlashOwedLine(c, pr.url));
+  const rollup = all.filter((c) => !owedChecks.includes(c));
+  const withOwed = (r: HandoffCiResult): HandoffCiResult =>
+    owed.length === 0 ? r : { ...r, line: [r.line, ...owed].filter(Boolean).join("; "), owed };
   const failing = rollup.filter((c) => c.state === "fail");
   if (failing.length > 0) {
     throw fail(
@@ -181,7 +211,7 @@ function checkPr(
   }
   const pending = rollup.filter((c) => c.state === "pending");
   if (pending.length > 0) {
-    throw fail(`CI still running on ${short(prHead)}: ${pending.map((c) => c.name).join(", ")}. Wait with \`gh pr checks ${n} --watch\`, then hand off. Nothing was handed off.`);
+    throw fail(`CI still running on ${short(prHead)}: ${pending.map((c) => c.name).join(", ")}. Wait with \`~/.claude/skills/ob-babysit-pr/scripts/pr-wait ${n} --until green\` (it skips a pending PixelSlash review), then hand off. Nothing was handed off.${owed.length > 0 ? ` (A pending PixelSlash review is not waited on: ${owed.join("; ")}.)` : ""}`);
   }
   if (rollup.length === 0) {
     let runsCi: boolean;
@@ -191,9 +221,9 @@ function checkPr(
       throw cannot(`the workflows under .github/workflows could not be read (${e instanceof Error ? e.message : String(e)}), so it is unknown whether this repo runs CI on pull_request`);
     }
     if (runsCi) {
-      throw fail(`CI has not reported on PR #${n} (${short(prHead)}) yet, and this repo runs workflows on pull_request. Wait with \`gh pr checks ${n} --watch\`, then hand off (a workflow filtered by paths that never applies to this PR: \`--ci-unchecked '<why>'\`). Nothing was handed off.`);
+      throw fail(`CI has not reported on PR #${n} (${short(prHead)}) yet, and this repo runs workflows on pull_request. Wait with \`~/.claude/skills/ob-babysit-pr/scripts/pr-wait ${n} --until green\` (it skips a pending PixelSlash review), then hand off (a workflow filtered by paths that never applies to this PR: \`--ci-unchecked '<why>'\`). Nothing was handed off.`);
     }
-    return { kind: "no-checks", line: `no CI checks on PR #${n}` };
+    return withOwed({ kind: "no-checks", line: `no CI checks on PR #${n}` });
   }
-  return { kind: "checked", line: ciLine(rollup, prHead) };
+  return withOwed({ kind: "checked", line: ciLine(rollup, prHead) });
 }
