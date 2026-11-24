@@ -307,7 +307,7 @@ function closedAtFor(s: Store, status: string, now: string) {
 async function writeStatus(s: Store, id: string, from: string, to: string, set: Record<string, unknown>): Promise<void> {
   const rows = (await s.q
     .update(s.t.item)
-    .set(set)
+    .set({ ...set, status: to })
     .where(and(eq(s.t.item.id, id), eq(s.t.item.status, from)))
     .returning({ id: s.t.item.id })) as Array<{ id: string }>;
   if (rows.length === 0) throw new StatusRaced(id, from, to);
@@ -317,7 +317,7 @@ async function writeStatus(s: Store, id: string, from: string, to: string, set: 
 export async function setStatus(db: Database | Store, id: string, from: string, status: string): Promise<void> {
   const s = asStore(db);
   const now = nowIso();
-  await writeStatus(s, id, from, status, { status, closed_at: closedAtFor(s, status, now), updated_at: now });
+  await writeStatus(s, id, from, status, { closed_at: closedAtFor(s, status, now), updated_at: now });
 }
 
 /** Block `id` from `from`. Refused with `StatusRaced` when it is no longer `from`. */
@@ -329,7 +329,7 @@ export async function setBlocked(
   owner: string | null,
 ): Promise<void> {
   const s = asStore(db);
-  await writeStatus(s, id, from, "blocked", { status: "blocked", block_reason: reason, block_owner: owner, updated_at: nowIso() });
+  await writeStatus(s, id, from, "blocked", { block_reason: reason, block_owner: owner, updated_at: nowIso() });
 }
 
 /**
@@ -340,7 +340,6 @@ export async function clearBlock(db: Database | Store, id: string, from: string,
   const s = asStore(db);
   const now = nowIso();
   await writeStatus(s, id, from, status, {
-    status,
     closed_at: closedAtFor(s, status, now),
     block_reason: null,
     block_owner: null,
