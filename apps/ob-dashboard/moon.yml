@@ -16,6 +16,15 @@ tasks:
     # and the dev push all set it, so a push to main and its deploy still share the hash.
     inputs: ['$BUILD_COMMIT']
     outputs: ['dist']
+  # OS-186: Storybook for the components, on a LAN port from `ob ports next` (OB-2041), bound to 0.0.0.0.
+  storybook:
+    command: 'bun run storybook'
+    preset: 'server'
+  # OS-186: the static Storybook build. It runs in CI's gate (.github/workflows/ci.yml), so a story that
+  # stops building fails the PR.
+  build-storybook:
+    command: 'bun run build-storybook'
+    outputs: ['storybook-static']
   # Writes the gitignored src/routeTree.gen.ts, so it is never cached: a hit would skip the write.
   generate-routes:
     command: 'bun run generate-routes'
