@@ -568,6 +568,14 @@ const path = {
  */
 export const ROLE_ROUTE = /^\/teams\/[^/]+\/(runs|brief|notes|tick|inbox)(\/|\?|$)/;
 
+/**
+ * OS-189: the routes that read or enforce a project's status (OS-134), which the omnibus server on CT 130 does not
+ * know: every `/projects` route (edit, the pause/resume/archive aliases, list), `/next` (leaves held projects out),
+ * the spinoff enqueue (`/spinoffs`, refuses a held project) and `/spinoffs/launchable` (keeps a held row pending).
+ * They go to the same server as the role routes, which shares the database. `/spinoffs/<anything else>` stays.
+ */
+export const PROJECT_STATUS_ROUTE = /^\/(projects|next)(\/|\?|$)|^\/spinoffs(\/launchable)?(\?|$)/;
+
 export class ApiClient {
 	private readonly base: string;
 	private readonly roleOption: string | null | undefined;
@@ -595,11 +603,11 @@ export class ApiClient {
 	}
 
 	/**
-	 * OS-76: the server a route is sent to. Only a team role route can go to the role base, and the role base is read
-	 * on the first such call (not at construction), so a bad role setting fails the role routes and nothing else.
+	 * OS-76: the server a route is sent to. Only a team role route (or, OS-189, a project status route) can go to the role base, and the role base is read
+	 * on the first such call (not at construction), so a bad role setting fails the role and project status routes and nothing else.
 	 */
 	private baseFor(route: string): string {
-		if (!ROLE_ROUTE.test(route)) return this.base;
+		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route)) return this.base;
 		return this.roleBaseUrl() ?? this.base;
 	}
 

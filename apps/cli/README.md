@@ -350,6 +350,14 @@ route stays on `OMNISLASH_API`, including `/teams`, `/teams/:name`, `/teams/:nam
 headers, and an error from the role server names the role url it called. Unset or empty, every route goes to
 `OMNISLASH_API` exactly as before, so nothing changes until the file is written.
 
+**Project status routes go there too (OS-189).** The omnibus server does not know a project's status
+(OS-134): it refuses `--status` and leaves `status` off its rows. So with a role base set, every `/projects`
+route (list, add, edit and the `pause`, `resume` and `archive` aliases, rename, rm), `GET /next`, the spinoff
+enqueue (`POST /spinoffs`, and `GET /spinoffs`) and `POST /spinoffs/launchable` go to the role server as well.
+Both servers share one database, so a status written there is the status every reader sees. The other
+`/spinoffs/...` routes stay on `OMNISLASH_API`. So with a role base set, `ob next`, every `ob project`
+command and `ob spinoff` dispatch need the role server to answer.
+
 **Nothing waits forever (1616).** On 2026-10-20 a leaked Postgres pool slot left every `omnislash-web` write
 hanging for 43 minutes with no error. Now each side has a bound that names the call: the client gives up
 after `OB_API_TIMEOUT_MS` (default 150000) with `did not answer POST /items within 150000ms (timed out, not
