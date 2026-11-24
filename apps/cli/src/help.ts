@@ -1495,30 +1495,35 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   // --- Reviews & Models ---
   review: {
     section: "Reviews & Models",
-    summary: "Inspect and configure skeptical-review readers per tier",
-    usage: ["review readers [--tier simple|medium|complex]", "review readers set|rm|tier ..."],
+    summary: "Inspect and configure skeptical-review readers per complexity range",
+    usage: ["review readers [--complexity <1-10>]", "review readers set|rm|range ..."],
     subcommands: {
       readers: {
-        summary: "List or edit skeptical-review readers and tier assignments",
+        summary: "List or edit skeptical-review readers and the complexity ranges they run on",
         usage: [
-          "review readers [--tier simple|medium|complex]",
+          "review readers [--complexity <1-10>]",
           "review readers set <leg> --model <id>",
           "review readers rm <leg>",
-          "review readers tier <simple|medium|complex> <leg>...",
+          "review readers range <from-to> <leg>...",
         ],
         flags: [
-          { flag: "--tier <tier>", description: "Filter readers for simple, medium, or complex" },
+          { flag: "--complexity <n>", description: "The readers a row scored n runs (the range covering n)" },
+          { flag: "--tier <tier>", description: "Old spelling: simple, medium, complex read as scores 2, 5, 8" },
           { flag: "--model <id>", description: "Model id for 'review readers set'" },
         ],
         examples: [
-          "review readers --tier complex -q",
+          "review readers --complexity 7 -q",
           "review readers set opus --model claude-opus-5-5",
-          "review readers tier medium neon opus",
+          "review readers range 4-6 neon opus",
         ],
-        notes: ["Default when unset: neon and opus on every tier."],
+        notes: [
+          "The ranges cover 1-10 with no gap and no overlap; a range you set is carved out of the ones it overlaps.",
+          "'tier <simple|medium|complex>' is the old spelling of the ranges 1-3, 4-6 and 7-10, kept for one release.",
+          "Default when unset: neon and opus on every score.",
+        ],
       },
     },
-    examples: ["review readers", "review readers --tier medium -q"],
+    examples: ["review readers", "review readers --complexity 5 -q"],
   },
 
   machine: {
@@ -1656,10 +1661,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["models use claude"],
       },
       reader: {
-        summary: "Add or remove a review reader, or set the readers a tier runs",
-        usage: ["models reader add <leg> <model>", "models reader remove <leg>", "models reader tier <tier> <leg>..."],
+        summary: "Add or remove a review reader, or set the readers a complexity range runs",
+        usage: ["models reader add <leg> <model>", "models reader remove <leg>", "models reader range <from-to> <leg>... (old: reader tier <tier>)"],
         flags: [{ flag: "--profile <p>", description: "The profile to write (default: the active one)" }],
-        examples: ["models reader add glm glm-5.3-flash", "models reader tier simple glm"],
+        examples: ["models reader add glm glm-5.3-flash", "models reader range 1-3 glm"],
       },
       list: {
         summary: "List this machine's models-file profiles and mark its active one",

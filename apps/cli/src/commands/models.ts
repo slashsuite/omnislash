@@ -3,10 +3,10 @@ import { join } from "node:path";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, warn } from "../output.ts";
-import { ModelsFileError, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, tierOfComplexity, type ModelsFile } from "../models-file.ts";
+import { ModelsFileError, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, rangeText, tierOfComplexity, type ModelsFile } from "../models-file.ts";
 import { CREDIT_HIT_WINDOW_HOURS, recentCreditHits } from "../models-credit.ts";
 import { formatTrendLine, legTrend, readLegRecords } from "../review-legs.ts";
-import { REVIEW_TIERS, ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
+import { ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
 import {
   BUILDER_SET,
   ModelRoutesError,
@@ -22,6 +22,7 @@ import {
   resolveReview,
   resolveRoute,
   serverReview,
+  setReaderRange,
   setReaderTier,
   sourceLabel,
   useProfile,
@@ -51,7 +52,7 @@ const USAGE = [
   "ob models use <profile>",
   "ob models reader add <leg> <model> [--profile <p>]",
   "ob models reader remove <leg> [--profile <p>]",
-  "ob models reader tier <tier> <leg>... [--profile <p>]",
+  "ob models reader range <from-to> <leg>... [--profile <p>]   (`reader tier <tier>` is the old spelling)",
   "ob models list | init | legs [--days <n>]",
 ].join("\n");
 
@@ -117,7 +118,7 @@ function activeLine(inputs: RouteInputs): string {
 }
 
 function readersText(v: ReviewReaders): string[] {
-  return REVIEW_TIERS.map((t) => `  ${t.padEnd(7)} ${v.tiers[t].map((l) => `${l}=${v.readers[l]!.model}`).join(", ")}`);
+  return v.tiers.map((r) => `  ${rangeText(r).padEnd(7)} ${r.legs.map((l) => `${l}=${v.readers[l]!.model}`).join(", ")}`);
 }
 
 async function show(ctx: Ctx): Promise<void> {
@@ -279,12 +280,18 @@ async function reader(ctx: Ctx): Promise<void> {
       if (!leg) throw new UsageError("usage: ob models reader remove <leg>");
       return removeReader(v, leg);
     }
+    if (verb === "range") {
+      const [range, ...legs] = rest;
+      if (!range || legs.length === 0) throw new UsageError("usage: ob models reader range <from-to> <leg>...");
+      return setReaderRange(v, range, legs);
+    }
     if (verb === "tier") {
+      // The old spelling of a range (simple 1-3, medium 4-6, complex 7-10), kept for one release (OS-175).
       const [tier, ...legs] = rest;
-      if (!tier || legs.length === 0) throw new UsageError("usage: ob models reader tier <tier> <leg>...");
+      if (!tier || legs.length === 0) throw new UsageError("usage: ob models reader tier <tier> <leg>... (old spelling of reader range <from-to>)");
       return setReaderTier(v, tier, legs);
     }
-    throw new UsageError(`unknown models reader subcommand '${verb ?? ""}' (add|remove|tier)`);
+    throw new UsageError(`unknown models reader subcommand '${verb ?? ""}' (add|remove|range)`);
   };
   await refusing(async () => {
     let profile = "";

@@ -191,7 +191,7 @@ describe("OS-145: model routes", () => {
 
       const refused = run(["models", "reader", "remove", "glm"]);
       expect(refused.code).not.toBe(0);
-      expect(refused.err).toContain("simple");
+      expect(refused.err).toContain("range 1-3");
       expect(run(["models", "reader", "tier", "simple", "neon"]).code).toBe(0);
       expect(run(["models", "reader", "remove", "glm"]).code).toBe(0);
       expect(Object.keys((JSON.parse(run(["review", "readers", "--json"]).out) as { readers: object }).readers)).not.toContain("glm");

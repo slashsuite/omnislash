@@ -1,48 +1,72 @@
-// OB-2173: which skeptical-review readers run, on which model, per task tier.
+// OB-2173: which skeptical-review readers run, on which model, per complexity range (OS-175; per tier before).
 //
-// One setting, `review_readers`, in the SERVER's config table, so the dashboard's Reviewers page, every
-// machine's `ob review readers` and every builder's review read the same value. Its shape:
+// One setting, `review_readers`, in the SERVER's config table (since OS-145 also a models profile's `review`), so
+// the dashboard, every machine's `ob review readers` and every builder's review read the same value. Its shape:
 //
-//   {"readers": {"<leg>": {"model": "<id>"}}, "tiers": {"simple": ["<leg>"], "medium": [...], "complex": [...]}}
+//   {"readers": {"<leg>": {"model": "<id>"}}, "tiers": [{"from": 1, "to": 3, "legs": ["<leg>"]}, ...]}
 //
-// Unset means the default two legs: neon and opus on every tier. A reader may sit in no tier (kept
-// but off). This module is PURE (no store, no ob imports beyond models-file's table) so review-leg.ts, a
-// standalone bun script, and the dashboard can both import it cheaply. Reads and writes go through a
-// `ConfigIO` the caller supplies: the store locally and on the dashboard, the API client in API mode.
+// `tiers` is a list of complexity ranges covering 1 to 10 with no gap and no overlap (the same check as the
+// builder ranges of OS-177). The old `{"simple": [...], "medium": [...], "complex": [...]}` form still loads, as
+// the ranges 1-3, 4-6 and 7-10, and is written back as the list.
+//
+// Unset means the default two legs: neon and opus on every score. A reader may sit in no range (kept but off).
+// This module is PURE (no store, no ob imports beyond models-file's table) so review-leg.ts, a standalone bun
+// script, and the dashboard can both import it cheaply. Reads and writes go through a `ConfigIO` the caller
+// supplies: the store locally and on the dashboard, the API client in API mode.
 
-import { DEFAULT_REVIEW_LEGS, DEFAULT_REVIEW_MODELS, type SpinoffTier } from "./models-file.ts";
+import {
+  COMPLEXITY_MAX,
+  COMPLEXITY_MIN,
+  DEFAULT_REVIEW_LEGS,
+  DEFAULT_REVIEW_MODELS,
+  TIER_BANDS,
+  TIER_COMPLEXITY,
+  isComplexity,
+  isSpinoffTier,
+  rangeCoverError,
+  rangeText,
+  type ComplexityRange,
+  type SpinoffTier,
+} from "./models-file.ts";
 
 export const REVIEW_READERS_KEY = "review_readers";
 
-/** The tiers a reader set is chosen for: the builder tiers (1480), cheapest first. */
+/** The old tier names, cheapest first: still read in the old object form and by the `tier` alias verbs. */
 export const REVIEW_TIERS = ["simple", "medium", "complex"] as const satisfies readonly SpinoffTier[];
-export type ReviewTier = (typeof REVIEW_TIERS)[number];
 
-/** The tier a row with no tier is reviewed as. */
-export const DEFAULT_REVIEW_TIER: ReviewTier = "medium";
+/** One complexity range and the readers a row scored inside it runs, in order. */
+export interface ReviewRange extends ComplexityRange {
+  legs: string[];
+}
 
 export interface ReviewReaders {
   readers: Record<string, { model: string }>;
-  tiers: Record<ReviewTier, string[]>;
+  /** The ranges, sorted, covering 1-10 exactly once. */
+  tiers: ReviewRange[];
 }
 
 /** A leg name: lowercase letters, digits and dashes. */
 export const LEG_NAME = /^[a-z0-9-]+$/;
 
-/** The value an unset setting stands for: neon and opus, on every tier. */
+/** The value an unset setting stands for: neon and opus, on every score (as the three old tier bands). */
 export function defaultReviewReaders(): ReviewReaders {
   const legs = [...DEFAULT_REVIEW_LEGS];
   return {
     readers: Object.fromEntries(legs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg] }])),
-    tiers: { simple: [...legs], medium: [...legs], complex: [...legs] },
+    tiers: REVIEW_TIERS.map((t) => ({ ...TIER_BANDS[t], legs: [...legs] })),
   };
 }
 
-/** The setting is malformed or would leave a tier without a reader. The message names what is wrong. */
+/** The setting is malformed or would leave a range without a reader. The message names what is wrong. */
 export class ReviewReadersError extends Error {}
 
-export function isReviewTier(v: string): v is ReviewTier {
-  return (REVIEW_TIERS as readonly string[]).includes(v);
+/** `4-6` or `5` as a range inside 1-10, or null. Pure. */
+export function parseReviewRange(text: string): ComplexityRange | null {
+  const m = /^(\d+)(?:-(\d+))?$/.exec(text.trim());
+  if (!m) return null;
+  const from = Number(m[1]);
+  const to = m[2] === undefined ? from : Number(m[2]);
+  return isComplexity(from) && isComplexity(to) && from <= to ? { from, to } : null;
 }
 
 function checkModel(leg: string, model: unknown): string {
@@ -52,34 +76,50 @@ function checkModel(leg: string, model: unknown): string {
   return m;
 }
 
+/** The old `{simple, medium, complex}` object as the ranges 1-3, 4-6 and 7-10 (a missing tier is an empty range). */
+function rangesOfTierObject(tiersIn: Record<string, unknown>): unknown[] {
+  for (const t of Object.keys(tiersIn)) if (!isSpinoffTier(t)) throw new ReviewReadersError(`unknown tier '${t}' (use ${REVIEW_TIERS.join(", ")}, or a list of {from, to, legs} ranges)`);
+  return REVIEW_TIERS.map((t) => {
+    const list = tiersIn[t];
+    if (list !== undefined && !Array.isArray(list)) throw new ReviewReadersError(`tier '${t}' must be a list of reader names`);
+    return { ...TIER_BANDS[t], legs: list ?? [] };
+  });
+}
+
 /**
- * Check a parsed value and return it normalised. Every tier must list at least one reader, and every reader
- * a tier lists must exist. Throws ReviewReadersError naming the fault.
+ * Check a parsed value and return it normalised (ranges sorted). The ranges cover 1-10 with no gap and no overlap,
+ * every range lists at least one reader, and every reader a range lists exists. Throws ReviewReadersError naming the
+ * fault and the range.
  */
 export function validateReviewReaders(v: unknown): ReviewReaders {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new ReviewReadersError("review_readers must be a JSON object with readers and tiers");
   const raw = v as { readers?: unknown; tiers?: unknown };
   if (!raw.readers || typeof raw.readers !== "object" || Array.isArray(raw.readers)) throw new ReviewReadersError("review_readers.readers must be an object of leg to {model}");
-  if (!raw.tiers || typeof raw.tiers !== "object" || Array.isArray(raw.tiers)) throw new ReviewReadersError("review_readers.tiers must be an object of tier to a list of legs");
+  if (!raw.tiers || typeof raw.tiers !== "object") throw new ReviewReadersError("review_readers.tiers must be a list of {from, to, legs} ranges covering 1-10");
   const readers: ReviewReaders["readers"] = {};
   for (const [leg, spec] of Object.entries(raw.readers as Record<string, unknown>)) {
     if (!LEG_NAME.test(leg)) throw new ReviewReadersError(`reader name '${leg}' must be lowercase letters, digits and dashes`);
     const model = spec && typeof spec === "object" ? (spec as { model?: unknown }).model : undefined;
     readers[leg] = { model: checkModel(leg, model) };
   }
-  const tiersIn = raw.tiers as Record<string, unknown>;
-  for (const t of Object.keys(tiersIn)) if (!isReviewTier(t)) throw new ReviewReadersError(`unknown tier '${t}' (use ${REVIEW_TIERS.join(", ")})`);
-  const tiers = {} as ReviewReaders["tiers"];
-  for (const t of REVIEW_TIERS) {
-    const list = tiersIn[t];
-    if (list !== undefined && !Array.isArray(list)) throw new ReviewReadersError(`tier '${t}' must be a list of reader names`);
-    const legs = [...new Set((list ?? []) as unknown[])].map(String);
-    if (legs.length === 0) throw new ReviewReadersError(`tier '${t}' has no readers: every tier needs at least one`);
+  const entries = Array.isArray(raw.tiers) ? raw.tiers : rangesOfTierObject(raw.tiers as Record<string, unknown>);
+  const tiers: ReviewRange[] = entries.map((e) => {
+    if (!e || typeof e !== "object" || Array.isArray(e)) throw new ReviewReadersError("each review range must be {from, to, legs}");
+    const { from, to, legs: list } = e as { from?: unknown; to?: unknown; legs?: unknown };
+    if (!isComplexity(from) || !isComplexity(to) || from > to) {
+      throw new ReviewReadersError(`review range ${String(from)}-${String(to)} must be whole numbers ${COMPLEXITY_MIN} to ${COMPLEXITY_MAX}, from no higher than to`);
+    }
+    const name = rangeText({ from, to });
+    if (!Array.isArray(list)) throw new ReviewReadersError(`review range ${name} must list its readers in legs`);
+    const legs = [...new Set(list as unknown[])].map(String);
+    if (legs.length === 0) throw new ReviewReadersError(`review range ${name} has no readers: every range needs at least one`);
     const missing = legs.filter((l) => readers[l] === undefined);
-    if (missing.length) throw new ReviewReadersError(`tier '${t}' names ${missing.map((m) => `'${m}'`).join(", ")}, which ${missing.length === 1 ? "is not a reader" : "are not readers"}`);
-    tiers[t] = legs;
-  }
-  return { readers, tiers };
+    if (missing.length) throw new ReviewReadersError(`review range ${name} names ${missing.map((m) => `'${m}'`).join(", ")}, which ${missing.length === 1 ? "is not a reader" : "are not readers"}`);
+    return { from, to, legs };
+  });
+  const cover = rangeCoverError(tiers, "review ranges");
+  if (cover) throw new ReviewReadersError(cover);
+  return { readers, tiers: tiers.sort((a, b) => a.from - b.from) };
 }
 
 /** The stored text, parsed and checked. Empty or null is the default set. Throws ReviewReadersError. */
@@ -94,34 +134,64 @@ export function parseReviewReaders(raw: string | null | undefined): ReviewReader
   return validateReviewReaders(parsed);
 }
 
+/**
+ * The form a value is stored in. Ranges that are exactly the old bands (1-3, 4-6, 7-10) are written as the old
+ * `{simple, medium, complex}` object, so an `ob`, API server or dashboard that predates OS-175 still reads the
+ * setting during the alias release; any other split is written as the list, which only OS-175 and later read.
+ */
+export function storedReviewReaders(v: ReviewReaders): { readers: ReviewReaders["readers"]; tiers: ReviewRange[] | Record<SpinoffTier, string[]> } {
+  const bands = REVIEW_TIERS.map((t) => v.tiers.find((r) => r.from === TIER_BANDS[t].from && r.to === TIER_BANDS[t].to));
+  if (v.tiers.length !== REVIEW_TIERS.length || bands.some((r) => r === undefined)) return { readers: v.readers, tiers: v.tiers };
+  return { readers: v.readers, tiers: Object.fromEntries(REVIEW_TIERS.map((t, i) => [t, bands[i]!.legs])) as Record<SpinoffTier, string[]> };
+}
+
 export function serializeReviewReaders(v: ReviewReaders): string {
-  return JSON.stringify(validateReviewReaders(v));
+  return JSON.stringify(storedReviewReaders(validateReviewReaders(v)));
 }
 
-/** The readers a tier runs, with their models, in the tier's order. */
-export function readersForTier(v: ReviewReaders, tier: ReviewTier): Array<{ leg: string; model: string }> {
-  return v.tiers[tier].map((leg) => ({ leg, model: v.readers[leg]!.model }));
+/** The range covering score `c`. Throws when none does (a validated value always has one). */
+export function reviewRangeAt(v: ReviewReaders, c: number): ReviewRange {
+  const range = v.tiers.find((r) => r.from <= c && c <= r.to);
+  if (!range) throw new ReviewReadersError(`no review range covers complexity ${c}`);
+  return range;
 }
 
-/** Add a reader or change its model. A new reader joins no tier. */
+/** The readers a row scored `c` runs, with their models, in the range's order. The run-time lookup (OS-175). */
+export function readersForComplexity(v: ReviewReaders, c: number): Array<{ leg: string; model: string }> {
+  return reviewRangeAt(v, c).legs.map((leg) => ({ leg, model: v.readers[leg]!.model }));
+}
+
+/** Add a reader or change its model. A new reader joins no range. */
 export function withReader(v: ReviewReaders, leg: string, model: string): ReviewReaders {
   if (!LEG_NAME.test(leg)) throw new ReviewReadersError(`reader name '${leg}' must be lowercase letters, digits and dashes`);
   return validateReviewReaders({ ...v, readers: { ...v.readers, [leg]: { model: checkModel(leg, model) } } });
 }
 
-/** Remove a reader and take it off every tier; refused when a tier would be left with none. */
+/** Remove a reader and take it off every range; refused, naming the range, when a range would be left with none. */
 export function withoutReader(v: ReviewReaders, leg: string): ReviewReaders {
   if (v.readers[leg] === undefined) throw new ReviewReadersError(`no reader named '${leg}'`);
   const readers = Object.fromEntries(Object.entries(v.readers).filter(([l]) => l !== leg));
-  const tiers = Object.fromEntries(REVIEW_TIERS.map((t) => [t, v.tiers[t].filter((l) => l !== leg)])) as ReviewReaders["tiers"];
-  const emptied = REVIEW_TIERS.filter((t) => tiers[t].length === 0);
-  if (emptied.length) throw new ReviewReadersError(`'${leg}' is the only reader on ${emptied.join(", ")}: add another reader to that tier first`);
+  const tiers = v.tiers.map((r) => ({ ...r, legs: r.legs.filter((l) => l !== leg) }));
+  const emptied = tiers.filter((r) => r.legs.length === 0).map(rangeText);
+  if (emptied.length) throw new ReviewReadersError(`'${leg}' is the only reader on range ${emptied.join(", ")}: add another reader to that range first`);
   return validateReviewReaders({ readers, tiers });
 }
 
-/** Replace one tier's reader list. */
-export function withTier(v: ReviewReaders, tier: ReviewTier, legs: string[]): ReviewReaders {
-  return validateReviewReaders({ ...v, tiers: { ...v.tiers, [tier]: legs } });
+/**
+ * `legs` on `range`: the range is carved out of the ranges it overlaps (what is left of each keeps its legs), so
+ * `4-6` on a 1-10 setting gives 1-3, 4-6 and 7-10. Throws ReviewReadersError.
+ */
+export function withRange(v: ReviewReaders, range: ComplexityRange, legs: string[]): ReviewReaders {
+  const tiers: ReviewRange[] = [];
+  for (const r of v.tiers) {
+    if (r.to < range.from || r.from > range.to) tiers.push(r);
+    else {
+      if (r.from < range.from) tiers.push({ ...r, to: range.from - 1 });
+      if (r.to > range.to) tiers.push({ ...r, from: range.to + 1 });
+    }
+  }
+  tiers.push({ ...range, legs });
+  return validateReviewReaders({ ...v, tiers });
 }
 
 /** How the setting is read and written: the store locally, the API client in API mode. */
@@ -139,6 +209,6 @@ export async function loadReviewReaders(io: ConfigIO): Promise<{ stored: boolean
 
 export async function saveReviewReaders(io: ConfigIO, v: ReviewReaders): Promise<ReviewReaders> {
   const clean = validateReviewReaders(v);
-  await io.set(REVIEW_READERS_KEY, JSON.stringify(clean));
+  await io.set(REVIEW_READERS_KEY, serializeReviewReaders(clean));
   return clean;
 }

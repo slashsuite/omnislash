@@ -114,9 +114,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
 
     const defaults = defaultReviewReaders();
     expect(Object.keys(defaults.readers)).toEqual(["neon", "opus"]);
-    expect(defaults.tiers.simple).toEqual(["neon", "opus"]);
-    expect(defaults.tiers.medium).toEqual(["neon", "opus"]);
-    expect(defaults.tiers.complex).toEqual(["neon", "opus"]);
+    expect(defaults.tiers.map((r) => r.legs)).toEqual([["neon", "opus"], ["neon", "opus"], ["neon", "opus"]]);
 
     const emptyIO: ConfigIO = { get: async () => null, set: async () => {} };
     const loaded = await loadReviewReaders(emptyIO);
@@ -148,10 +146,10 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
 
       const j = Bun.spawnSync(["bun", CLI_ENTRY, "review", "readers", "--json"], { env, stdout: "pipe", stderr: "pipe" });
       expect(j.exitCode).toBe(0);
-      const parsed = JSON.parse(j.stdout.toString()) as { stored: boolean; readers: Record<string, { model: string }>; tiers: Record<string, string[]> };
+      const parsed = JSON.parse(j.stdout.toString()) as { stored: boolean; readers: Record<string, { model: string }>; tiers: Array<{ from: number; to: number; legs: string[] }> };
       expect(parsed.stored).toBe(false);
       expect(Object.keys(parsed.readers)).toEqual(["neon", "opus"]);
-      expect(parsed.tiers.complex).toEqual(["neon", "opus"]);
+      expect(parsed.tiers.at(-1)).toEqual({ from: 7, to: 10, legs: ["neon", "opus"] });
     });
   });
 

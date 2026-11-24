@@ -80,7 +80,7 @@ This is the full list of what OmniSlash does today, read from the source. The sh
 - `ob-doc`: Keep reference documents per project: list, add, show (with earlier versions), history and set. How to reach it: `ob doc list|add|show|history|set`. Source: `apps/cli/src/commands/doc.ts`.
 - `ob-learning`: List learning items, or show one. How to reach it: `ob learning [list | <id>]`. Source: `apps/cli/src/commands/learning.ts`.
 - `ob-review-miss`: Record what a code review missed, by class, and rank the classes. How to reach it: `ob review-miss add`, `ob review-miss top`. Source: `apps/cli/src/commands/reviewmiss.ts`.
-- `ob-review`: Show and set the skeptical-review readers and their models per task tier. How to reach it: `ob review readers [set|rm|tier]`. Source: `apps/cli/src/commands/review.ts`.
+- `ob-review`: Show and set the skeptical-review readers and their models per complexity range (1-10). How to reach it: `ob review readers [--complexity <n>] [set|rm|range]`. Source: `apps/cli/src/commands/review.ts`.
 - `ob-test-user`: Keep a registry of test accounts with their secrets in the encrypted store: add, list, show and check. How to reach it: `ob test-user add|list|show|check`. Source: `apps/cli/src/commands/testuser.ts`.
 
 ## People
