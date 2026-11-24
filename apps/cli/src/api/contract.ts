@@ -127,6 +127,8 @@ export const OB_API_AUTH_HEADER = "authorization";
 export const OB_API_ERROR_CODES = [
   /** No token, or the wrong one. The two are DELIBERATELY indistinguishable (D5). */
   "unauthorized",
+  /** OS-178: a scoped token asked for a route family (or a method) it is not granted. */
+  "forbidden",
   /** No token file is configured on the server, so the API serves nothing rather than serving openly. */
   "api_disabled",
   /** The method+path is not one this API serves. The response names what IS served. */
@@ -178,6 +180,11 @@ export interface ObApiRoute {
   method: "GET" | "POST" | "DELETE";
   /** Path under the prefix, with `:param` segments. */
   path: string;
+  /**
+   * OS-178: the route family a scoped token is granted by. Every family is in exactly one of
+   * OB_API_SCOPABLE_FAMILIES or OB_API_ADMIN_FAMILIES, and a test fails on one that is in neither.
+   */
+  family: string;
   /** What it does, one line -- this is what an `unknown_endpoint` refusal lists. */
   what: string;
 }
@@ -187,212 +194,256 @@ export interface ObApiRoute {
  * not here is not reachable over HTTP, and asks for it are refused BY NAME rather than half-answered.
  */
 export const OB_API_ROUTES: readonly ObApiRoute[] = [
-  { method: "GET", path: "/health", what: "liveness plus which store the server is on" },
-  { method: "GET", path: "/next", what: "the worklist" },
-  { method: "GET", path: "/items", what: "query items (state, project, type, tag, kind, priority, limit)" },
-  { method: "POST", path: "/items", what: "create an item" },
-  { method: "GET", path: "/items/:id", what: "one item with its detail" },
-  { method: "POST", path: "/items/:id/close", what: "close it, mirroring onto its linked GitHub issue" },
-  { method: "POST", path: "/items/:id/reopen", what: "reopen it, mirroring onto its linked GitHub issue" },
-  { method: "POST", path: "/items/:id/state", what: "start / ready / block / unblock / set a state" },
+  { method: "GET", path: "/health", family: "health", what: "liveness plus which store the server is on" },
+  { method: "GET", path: "/next", family: "next", what: "the worklist" },
+  { method: "GET", path: "/items", family: "items", what: "query items (state, project, type, tag, kind, priority, limit)" },
+  { method: "POST", path: "/items", family: "items", what: "create an item" },
+  { method: "GET", path: "/items/:id", family: "items", what: "one item with its detail" },
+  { method: "POST", path: "/items/:id/close", family: "items", what: "close it, mirroring onto its linked GitHub issue" },
+  { method: "POST", path: "/items/:id/reopen", family: "items", what: "reopen it, mirroring onto its linked GitHub issue" },
+  { method: "POST", path: "/items/:id/state", family: "items", what: "start / ready / block / unblock / set a state" },
   // OB-1762: the native app's item sheet. One call, and the answer is the FRESH detail, so the sheet redraws
   // without a second round trip (the dashboard's transitionItem / setTodayRank, over HTTP).
-  { method: "POST", path: "/items/:id/transition", what: "start / ready / block / unblock / close / reopen, answering the fresh item detail (OB-1762)" },
-  { method: "POST", path: "/items/:id/rank", what: "rank into Today (or the next slot; clear: true removes it), answering the fresh item detail (OB-1762)" },
-  { method: "POST", path: "/items/:id/order", what: "place it in its project's queue: top, before or after another item; a move across a priority band sets the priority, answering the fresh item detail (OB-2083)" },
-  { method: "GET", path: "/snapshot", what: "the dashboard's full snapshot (status rollup incl. the Today list, standup, spinoffs, agents, WhatsApp feed + Status tray, alert count; OB-1762)" },
-  { method: "POST", path: "/items/:id/notes", what: "append a note to the body" },
-  { method: "POST", path: "/items/:id/tags", what: "add and/or remove tags" },
-  { method: "POST", path: "/items/:id/links", what: "add an item-to-item link (rel + other id)" },
-  { method: "POST", path: "/items/:id/edit", what: "edit title, body, priority, project" },
-  { method: "DELETE", path: "/items/:id", what: "delete an item" },
-  { method: "POST", path: "/today", what: "set or clear today's rank" },
-  { method: "GET", path: "/focus", what: "the current focus project" },
-  { method: "POST", path: "/focus", what: "set or clear the focus project" },
-  { method: "GET", path: "/search", what: "full-text search (?q=)" },
-  { method: "GET", path: "/status", what: "the status rollup" },
-  { method: "GET", path: "/agents", what: "the agent registry" },
-  { method: "POST", path: "/agents", what: "register / heartbeat / finish an agent, claiming its ticket lease" },
-  { method: "POST", path: "/agents/reset", what: "wipe the agent registry and release every lease (437)" },
-  { method: "GET", path: "/agents/active", what: "is any agent alive in the last ?within_min minutes (StayAwake)" },
-  { method: "GET", path: "/leases", what: "every lease with its computed expiry" },
-  { method: "POST", path: "/leases", what: "acquire or heartbeat a lease" },
-  { method: "POST", path: "/leases/sweep", what: "delete leases expired for over a day (OB-1922)" },
-  { method: "DELETE", path: "/leases/:resource", what: "release a lease" },
-  { method: "GET", path: "/secrets", what: "the stored secrets' NAMES and ages -- never a value" },
-  { method: "POST", path: "/secrets/read", what: "decrypt ONE secret and return its value" },
-  { method: "POST", path: "/secrets", what: "store one secret's value" },
-  { method: "POST", path: "/secrets/remove", what: "delete one secret" },
-  { method: "GET", path: "/creds", what: "the credential inventory: presence, age, last verdict" },
-  { method: "POST", path: "/creds/check", what: "run one credential's live check, or every checkable one" },
+  { method: "POST", path: "/items/:id/transition", family: "items", what: "start / ready / block / unblock / close / reopen, answering the fresh item detail (OB-1762)" },
+  { method: "POST", path: "/items/:id/rank", family: "items", what: "rank into Today (or the next slot; clear: true removes it), answering the fresh item detail (OB-1762)" },
+  { method: "POST", path: "/items/:id/order", family: "items", what: "place it in its project's queue: top, before or after another item; a move across a priority band sets the priority, answering the fresh item detail (OB-2083)" },
+  { method: "GET", path: "/snapshot", family: "snapshot", what: "the dashboard's full snapshot (status rollup incl. the Today list, standup, spinoffs, agents, WhatsApp feed + Status tray, alert count; OB-1762)" },
+  { method: "POST", path: "/items/:id/notes", family: "items", what: "append a note to the body" },
+  { method: "POST", path: "/items/:id/tags", family: "items", what: "add and/or remove tags" },
+  { method: "POST", path: "/items/:id/links", family: "items", what: "add an item-to-item link (rel + other id)" },
+  { method: "POST", path: "/items/:id/edit", family: "items", what: "edit title, body, priority, project" },
+  { method: "DELETE", path: "/items/:id", family: "items", what: "delete an item" },
+  { method: "POST", path: "/today", family: "today", what: "set or clear today's rank" },
+  { method: "GET", path: "/focus", family: "focus", what: "the current focus project" },
+  { method: "POST", path: "/focus", family: "focus", what: "set or clear the focus project" },
+  { method: "GET", path: "/search", family: "search", what: "full-text search (?q=)" },
+  { method: "GET", path: "/status", family: "status", what: "the status rollup" },
+  { method: "GET", path: "/agents", family: "agents", what: "the agent registry" },
+  { method: "POST", path: "/agents", family: "agents", what: "register / heartbeat / finish an agent, claiming its ticket lease" },
+  { method: "POST", path: "/agents/reset", family: "agents", what: "wipe the agent registry and release every lease (437)" },
+  { method: "GET", path: "/agents/active", family: "agents", what: "is any agent alive in the last ?within_min minutes (StayAwake)" },
+  { method: "GET", path: "/leases", family: "leases", what: "every lease with its computed expiry" },
+  { method: "POST", path: "/leases", family: "leases", what: "acquire or heartbeat a lease" },
+  { method: "POST", path: "/leases/sweep", family: "leases", what: "delete leases expired for over a day (OB-1922)" },
+  { method: "DELETE", path: "/leases/:resource", family: "leases", what: "release a lease" },
+  { method: "GET", path: "/secrets", family: "secrets", what: "the stored secrets' NAMES and ages -- never a value" },
+  { method: "POST", path: "/secrets/read", family: "secrets", what: "decrypt ONE secret and return its value" },
+  { method: "POST", path: "/secrets", family: "secrets", what: "store one secret's value" },
+  { method: "POST", path: "/secrets/remove", family: "secrets", what: "delete one secret" },
+  { method: "GET", path: "/creds", family: "creds", what: "the credential inventory: presence, age, last verdict" },
+  { method: "POST", path: "/creds/check", family: "creds", what: "run one credential's live check, or every checkable one" },
   // ob 360: the spinoff QUEUE. Every launch stays on the client; none of these opens a tab.
-  { method: "GET", path: "/spinoffs", what: "the launch queue's rows (?status=)" },
-  { method: "POST", path: "/spinoffs", what: "enqueue a launch" },
-  { method: "POST", path: "/spinoffs/check", what: "record a measure-twice verdict: both score sheets in, the server computes and records it (OB-1825)" },
-  { method: "POST", path: "/spinoffs/overlap", what: "a ticket's declared files (op declared), or one overlap decision recorded on its trail (op record), for the dispatch overlap warning (OS-47)" },
-  { method: "POST", path: "/spinoffs/planned-files", what: "each row's planned files from its ticket's newest go check, for the files: line of gateable and show (OB-2131)" },
-  { method: "POST", path: "/spinoffs/serving", what: "the rows that SERVE one item — the join settle-on-close uses, resolved where the store is (1226)" },
-  { method: "GET", path: "/spinoffs/config", what: "the launcher configuration the launching machine needs" },
-  { method: "POST", path: "/spinoffs/launchable", what: "what a drain could launch now: live counts, pending rows, holds" },
-  { method: "POST", path: "/spinoffs/claim", what: "claim ONE pending row for the caller (the atomic exclusion)" },
-  { method: "POST", path: "/spinoffs/stamp", what: "record the outcome of a launch the caller performed" },
-  { method: "POST", path: "/spinoffs/land", what: "retire a merged row: status, tokens, its agent and leases" },
-  { method: "POST", path: "/spinoffs/tokens", what: "record the token count a client read for a landed row that has none (OB-1993)" },
-  { method: "POST", path: "/spinoffs/ready", what: "mark a launched row ready-for-gate, printed handed-off (human declared; no merge, no lease release)" },
-  { method: "POST", path: "/spinoffs/sendback", what: "move a handed-off row back to building (architect send-back; the T3 note to the builder is sent by the client)" },
-  { method: "POST", path: "/spinoffs/reopen", what: "move a landed row back to building (OB-2180: a wrong land; the client has already checked main for a landing commit)" },
-  { method: "POST", path: "/spinoffs/note-error", what: "record or clear why a row's readying note did not reach the architect (OB-2172)" },
-  { method: "POST", path: "/spinoffs/verdict", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)" },
-  { method: "POST", path: "/spinoffs/trial", what: "one model-trial operation: start, status, stop, a pair's open/attach/void, record, report (OB-1991)" },
-  { method: "POST", path: "/spinoffs/reclaim", what: "take back rows claimed by a drain that never stamped them" },
-  { method: "POST", path: "/spinoffs/cleanup-guard", what: "the holds and agent row covering ONE worktree/branch a sweep wants to remove" },
+  { method: "GET", path: "/spinoffs", family: "spinoffs", what: "the launch queue's rows (?status=)" },
+  { method: "POST", path: "/spinoffs", family: "spinoffs", what: "enqueue a launch" },
+  { method: "POST", path: "/spinoffs/check", family: "spinoffs", what: "record a measure-twice verdict: both score sheets in, the server computes and records it (OB-1825)" },
+  { method: "POST", path: "/spinoffs/overlap", family: "spinoffs", what: "a ticket's declared files (op declared), or one overlap decision recorded on its trail (op record), for the dispatch overlap warning (OS-47)" },
+  { method: "POST", path: "/spinoffs/planned-files", family: "spinoffs", what: "each row's planned files from its ticket's newest go check, for the files: line of gateable and show (OB-2131)" },
+  { method: "POST", path: "/spinoffs/serving", family: "spinoffs", what: "the rows that SERVE one item — the join settle-on-close uses, resolved where the store is (1226)" },
+  { method: "GET", path: "/spinoffs/config", family: "spinoffs", what: "the launcher configuration the launching machine needs" },
+  { method: "POST", path: "/spinoffs/launchable", family: "spinoffs", what: "what a drain could launch now: live counts, pending rows, holds" },
+  { method: "POST", path: "/spinoffs/claim", family: "spinoffs", what: "claim ONE pending row for the caller (the atomic exclusion)" },
+  { method: "POST", path: "/spinoffs/stamp", family: "spinoffs", what: "record the outcome of a launch the caller performed" },
+  { method: "POST", path: "/spinoffs/land", family: "spinoffs", what: "retire a merged row: status, tokens, its agent and leases" },
+  { method: "POST", path: "/spinoffs/tokens", family: "spinoffs", what: "record the token count a client read for a landed row that has none (OB-1993)" },
+  { method: "POST", path: "/spinoffs/ready", family: "spinoffs", what: "mark a launched row ready-for-gate, printed handed-off (human declared; no merge, no lease release)" },
+  { method: "POST", path: "/spinoffs/sendback", family: "spinoffs", what: "move a handed-off row back to building (architect send-back; the T3 note to the builder is sent by the client)" },
+  { method: "POST", path: "/spinoffs/reopen", family: "spinoffs", what: "move a landed row back to building (OB-2180: a wrong land; the client has already checked main for a landing commit)" },
+  { method: "POST", path: "/spinoffs/note-error", family: "spinoffs", what: "record or clear why a row's readying note did not reach the architect (OB-2172)" },
+  { method: "POST", path: "/spinoffs/verdict", family: "spinoffs", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)" },
+  { method: "POST", path: "/spinoffs/trial", family: "spinoffs", what: "one model-trial operation: start, status, stop, a pair's open/attach/void, record, report (OB-1991)" },
+  { method: "POST", path: "/spinoffs/reclaim", family: "spinoffs", what: "take back rows claimed by a drain that never stamped them" },
+  { method: "POST", path: "/spinoffs/cleanup-guard", family: "spinoffs", what: "the holds and agent row covering ONE worktree/branch a sweep wants to remove" },
   // `ob config` over the API: the config table the SERVER keeps, so a client flips a setting like
   // `spinoff_engine` without a database path. The client's OWN pointer is not a config key (see the
   // client handler's `remote_host` refusal).
-  { method: "GET", path: "/config", what: "the config table (?key= for one key)" },
-  { method: "POST", path: "/config", what: "set one config value, or unset it with value:null" },
+  { method: "GET", path: "/config", family: "config", what: "the config table (?key= for one key)" },
+  { method: "POST", path: "/config", family: "config", what: "set one config value, or unset it with value:null" },
   // `ob issue` (169 + 389): pairing is DATA and is served. `landed`/`drift` SPLIT like spinoff:
   // pairing + store facts over the API; git runs on THIS machine. `reconcile` and `add --issue` use
   // the GitHub credential on the API host, so they are served rather than refused.
-  { method: "GET", path: "/issues", what: "the ob item <-> GitHub issue pairs" },
-  { method: "POST", path: "/issues/link", what: "pair an existing item with an existing issue" },
-  { method: "POST", path: "/issues/unlink", what: "clear whichever reference an item holds (issue or Linear)" },
-  { method: "GET", path: "/issues/pairing", what: "store facts landed/drift need: pairs, spinoffs, unlinked ids, tracker repo" },
-  { method: "GET", path: "/issues/github", what: "the wayfinder-labelled GitHub issues (credential stays on the host)" },
-  { method: "GET", path: "/issues/reconcile", what: "candidate unlinked ob<->issue pairs (?limit=)" },
+  { method: "GET", path: "/issues", family: "issues", what: "the ob item <-> GitHub issue pairs" },
+  { method: "POST", path: "/issues/link", family: "issues", what: "pair an existing item with an existing issue" },
+  { method: "POST", path: "/issues/unlink", family: "issues", what: "clear whichever reference an item holds (issue or Linear)" },
+  { method: "GET", path: "/issues/pairing", family: "issues", what: "store facts landed/drift need: pairs, spinoffs, unlinked ids, tracker repo" },
+  { method: "GET", path: "/issues/github", family: "issues", what: "the wayfinder-labelled GitHub issues (credential stays on the host)" },
+  { method: "GET", path: "/issues/reconcile", family: "issues", what: "candidate unlinked ob<->issue pairs (?limit=)" },
   // `ob triage` (375): the cross-architect inbox as DATA. `reject` closes the item SERVER-side (clear +
   // `done`); the client never closes -- exactly what the local command's `reject` does.
-  { method: "GET", path: "/triage", what: "the triage inbox: items awaiting triage, newest first" },
-  { method: "POST", path: "/triage/:id/clear", what: "clear the triage flag, keeping the item open" },
-  { method: "POST", path: "/triage/:id/reject", what: "close the item through the same door as /close (validated, on the trail, mirrored, spinoff rows landed); any close clears the flag" },
+  { method: "GET", path: "/triage", family: "triage", what: "the triage inbox: items awaiting triage, newest first" },
+  { method: "POST", path: "/triage/:id/clear", family: "triage", what: "clear the triage flag, keeping the item open" },
+  { method: "POST", path: "/triage/:id/reject", family: "triage", what: "close the item through the same door as /close (validated, on the trail, mirrored, spinoff rows landed); any close clears the flag" },
   // `ob whatsapp` (366): search/recent are ingested messages in Postgres.
-  { method: "GET", path: "/whatsapp/search", what: "FTS over ingested WhatsApp messages (?q=&limit=)" },
-  { method: "GET", path: "/whatsapp/recent", what: "most-recent ingested WhatsApp messages (?limit=&since=)" },
+  { method: "GET", path: "/whatsapp/search", family: "whatsapp", what: "FTS over ingested WhatsApp messages (?q=&limit=)" },
+  { method: "GET", path: "/whatsapp/recent", family: "whatsapp", what: "most-recent ingested WhatsApp messages (?limit=&since=)" },
   // OB-1809: the rest of `ob whatsapp`. The bridge runs on this host, so these reach it from anywhere. The send's
   // human gate stays on the caller's terminal, and the route refuses a body without the literal confirm:true.
-  { method: "POST", path: "/whatsapp/send", what: "send through this host's bridge; refused unless the body carries confirm:true, set only after a human confirmed the exact text and recipient (OB-1809)" },
-  { method: "POST", path: "/whatsapp/prefs", what: "set one chat's hide/show/ai-off/ai-on/favorite/unfavorite and answer its prefs (OB-1809)" },
-  { method: "GET", path: "/whatsapp/prefs/hidden", what: "the hidden chats (OB-1809)" },
-  { method: "GET", path: "/whatsapp/prefs/favorites", what: "the favourite chats (OB-1809)" },
+  { method: "POST", path: "/whatsapp/send", family: "whatsapp", what: "send through this host's bridge; refused unless the body carries confirm:true, set only after a human confirmed the exact text and recipient (OB-1809)" },
+  { method: "POST", path: "/whatsapp/prefs", family: "whatsapp", what: "set one chat's hide/show/ai-off/ai-on/favorite/unfavorite and answer its prefs (OB-1809)" },
+  { method: "GET", path: "/whatsapp/prefs/hidden", family: "whatsapp", what: "the hidden chats (OB-1809)" },
+  { method: "GET", path: "/whatsapp/prefs/favorites", family: "whatsapp", what: "the favourite chats (OB-1809)" },
   // `ob gmail` / `ob cal` / `ob agenda` (415): store reads plus sync ON THE HOST using secret `google`.
   // `ob google auth` (420) is the DESKTOP half: loopback RUNS on THIS machine, persist via POST /secrets.
   // 1305 adds the HOSTED half: /google/auth + /google/callback are the only BROWSER routes (no bearer --
   // the one-time `state` is their guard) and persist through the same secret path, so a phone can finish
   // a re-auth. /google/auth-url mints through the same state store for `ob google auth-url`.
-  { method: "GET", path: "/gmail/search", what: "FTS over ingested email (?q=&limit=)" },
-  { method: "GET", path: "/gmail/list", what: "most-recent ingested email (?limit=&since=)" },
-  { method: "POST", path: "/gmail/sync", what: "poll Gmail on the API host using secret google" },
+  { method: "GET", path: "/gmail/search", family: "gmail", what: "FTS over ingested email (?q=&limit=)" },
+  { method: "GET", path: "/gmail/list", family: "gmail", what: "most-recent ingested email (?limit=&since=)" },
+  { method: "POST", path: "/gmail/sync", family: "gmail", what: "poll Gmail on the API host using secret google" },
   // 1757: a DRAFT is all an agent can make; sending an existing draft needs `confirm: true` (a human's --confirm).
-  { method: "GET", path: "/gmail/messages/:id", what: "read one Gmail message: headers, text body, attachment list (1680)" },
-  { method: "GET", path: "/gmail/messages/:id/attachments", what: "a message's attachments with bytes (?name= for one) (1680)" },
-  { method: "POST", path: "/gmail/drafts", what: "create a Gmail DRAFT, optionally with attachments and a Send-as `from` (never sends)" },
-  { method: "GET", path: "/gmail/drafts", what: "the newest Gmail drafts with recipients and subject (?limit=) (OB-1750)" },
-  { method: "GET", path: "/gmail/drafts/:id", what: "a draft's recipients, subject and body preview" },
-  { method: "POST", path: "/gmail/drafts/:id/edit", what: "replace from/to/cc/subject/body/attachments of a draft in place; never sends (OB-1750)" },
-  { method: "DELETE", path: "/gmail/drafts/:id", what: "delete a draft outright; refused without ?confirm=true (OB-1750)" },
-  { method: "POST", path: "/gmail/drafts/:id/send", what: "send an EXISTING draft; refused without confirm: true" },
-  { method: "GET", path: "/cal/agenda", what: "today's calendar events from the store" },
-  { method: "POST", path: "/cal/sync", what: "poll Google Calendar on the API host using secret google" },
-  { method: "GET", path: "/google/auth", what: "302 to Google consent for a state minted by auth-url (browser; the state is the guard)" },
-  { method: "GET", path: "/google/callback", what: "verify+burn state, exchange the code, store secret google (browser)" },
-  { method: "POST", path: "/google/auth-url", what: "mint a state and return the authorize URL (`ob google auth-url`)" },
+  { method: "GET", path: "/gmail/messages/:id", family: "gmail", what: "read one Gmail message: headers, text body, attachment list (1680)" },
+  { method: "GET", path: "/gmail/messages/:id/attachments", family: "gmail", what: "a message's attachments with bytes (?name= for one) (1680)" },
+  { method: "POST", path: "/gmail/drafts", family: "gmail", what: "create a Gmail DRAFT, optionally with attachments and a Send-as `from` (never sends)" },
+  { method: "GET", path: "/gmail/drafts", family: "gmail", what: "the newest Gmail drafts with recipients and subject (?limit=) (OB-1750)" },
+  { method: "GET", path: "/gmail/drafts/:id", family: "gmail", what: "a draft's recipients, subject and body preview" },
+  { method: "POST", path: "/gmail/drafts/:id/edit", family: "gmail", what: "replace from/to/cc/subject/body/attachments of a draft in place; never sends (OB-1750)" },
+  { method: "DELETE", path: "/gmail/drafts/:id", family: "gmail", what: "delete a draft outright; refused without ?confirm=true (OB-1750)" },
+  { method: "POST", path: "/gmail/drafts/:id/send", family: "gmail", what: "send an EXISTING draft; refused without confirm: true" },
+  { method: "GET", path: "/cal/agenda", family: "cal", what: "today's calendar events from the store" },
+  { method: "POST", path: "/cal/sync", family: "cal", what: "poll Google Calendar on the API host using secret google" },
+  { method: "GET", path: "/google/auth", family: "google", what: "302 to Google consent for a state minted by auth-url (browser; the state is the guard)" },
+  { method: "GET", path: "/google/callback", family: "google", what: "verify+burn state, exchange the code, store secret google (browser)" },
+  { method: "POST", path: "/google/auth-url", family: "google", what: "mint a state and return the authorize URL (`ob google auth-url`)" },
   // 416: already Postgres-servable. Purpose-built endpoints, not POST /rpc.
-  { method: "GET", path: "/projects", what: "the project table" },
-  { method: "POST", path: "/projects", what: "register a project (refuses a name that exists with a different kind/remote)" },
-  { method: "POST", path: "/projects/:name/edit", what: "change a project's remote and/or kind" },
-  { method: "DELETE", path: "/projects/:name", what: "remove a project row (?force=true past open items)" },
-  { method: "GET", path: "/teams", what: "teams with their members and role threads (OB-2255)" },
-  { method: "POST", path: "/teams", what: "add a team (optionally with its first projects)" },
-  { method: "POST", path: "/teams/leave", what: "take projects out of whatever team they are in" },
-  { method: "GET", path: "/teams/:name", what: "one team with its members and role threads" },
-  { method: "POST", path: "/teams/:name/edit", what: "change a team's icon and/or display name" },
-  { method: "POST", path: "/teams/:name/join", what: "put projects into a team (refused for a project in another team)" },
-  { method: "DELETE", path: "/teams/:name", what: "remove a team (?force=true clears its members and role rows)" },
-  { method: "POST", path: "/teams/:name/handoffs", what: "record a role thread's handoff for `ob t3 team restart` (OB-2257); from_thread_id names the writer (OB-2275)" },
-  { method: "GET", path: "/teams/:name/handoffs/latest", what: "a role's newest handoff (?role=; ?from=<thread> keeps that thread's, ?created_before=<iso> those recorded by then, OB-2275), or null" },
-  { method: "POST", path: "/teams/:name/handoffs/:id/consume", what: "mark a handoff seeded into its replacement thread" },
-  { method: "GET", path: "/teams/:name/runs", what: "the team's open role runs (?role= keeps one role's)" },
-  { method: "POST", path: "/teams/:name/runs", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
-  { method: "POST", path: "/teams/:name/runs/:id", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
-  { method: "GET", path: "/teams/:name/tick", what: "what needs the team's architect, from the store (`ob role tick`, OS-67): stale builders, unfixed flakes, idle projects; each with its stamp" },
-  { method: "GET", path: "/teams/:name/brief", what: "the store facts of a role's start brief (?role=); a read, so the waiting note stays until note-shown" },
-  { method: "POST", path: "/teams/:name/notes", what: "store a role's successor note on its open run, else its last ended one ({role, body}; 40 lines, 4000 characters)" },
-  { method: "POST", path: "/teams/:name/runs/:id/note-shown", what: "mark a run's successor note shown (after `ob role brief` printed it or `ob role start` delivered it)" },
-  { method: "POST", path: "/teams/:name/inbox", what: "store a message for a team role (`ob send`); a handoff's client_key stores it once" },
-  { method: "GET", path: "/teams/:name/inbox", what: "a team role's messages, oldest first (?role=; unread and not withdrawn unless ?unread=false)" },
-  { method: "POST", path: "/teams/:name/inbox/read", what: "mark a role's messages read by a run or agent ({role, ids, by})" },
-  { method: "GET", path: "/brief", what: "work-state brief (?q= id, or ?in_flight=true)" },
-  { method: "GET", path: "/log", what: "standup journal entries (?type=&since=)" },
-  { method: "POST", path: "/log", what: "capture a journal entry (kudos|suggestion|comment)" },
-  { method: "GET", path: "/jobs", what: "per-job health of the declared daemon fleet" },
-  { method: "POST", path: "/deploys/run", what: "start the live deploy fire-and-forget through systemd ({sha?} pins it); the bearer token is required, with no exemption (OB-1809)" },
-  { method: "GET", path: "/alerts", what: "active unsnoozed alerts" },
-  { method: "POST", path: "/alerts/snooze", what: "snooze one alert by key, answering the fresh alert list" },
-  { method: "POST", path: "/alerts/ack", what: "ack (dismiss) one alert by key, answering the fresh alert list (OB-1762)" },
-  { method: "GET", path: "/decisions", what: "decision items (?status=)" },
-  { method: "GET", path: "/decisions/:id", what: "one decision with its chain" },
-  { method: "POST", path: "/decisions/supersede", what: "new decision supersedes old (one txn)" },
-  { method: "GET", path: "/docs", what: "reference documents, newest updated first (?project=) (OB-2004)" },
-  { method: "POST", path: "/docs", what: "create a reference document ({title, project, body})" },
-  { method: "GET", path: "/docs/:id", what: "one reference document: its whole body and its earlier versions" },
-  { method: "POST", path: "/docs/:id/set", what: "replace a reference's title and/or body in place; the replaced text is kept as a version" },
-  { method: "GET", path: "/learnings", what: "learning items (?status=)" },
-  { method: "GET", path: "/learnings/:id", what: "one learning item with detail" },
-  { method: "GET", path: "/roadmaps", what: "roadmap items with progress" },
-  { method: "GET", path: "/roadmaps/:id", what: "one roadmap with members and on-track" },
-  { method: "POST", path: "/roadmaps/:id/members", what: "add a member to a roadmap" },
-  { method: "GET", path: "/standup/latest", what: "the newest standup row" },
-  { method: "POST", path: "/standup/save", what: "save generated standup markdown" },
-  { method: "POST", path: "/standup/set", what: "save edited standup markdown" },
-  { method: "POST", path: "/standup/posted", what: "mark today's standup posted and advance the cursor" },
-  { method: "GET", path: "/slack/unread", what: "most-recent ingested Slack messages (?limit=). No poll." },
+  { method: "GET", path: "/projects", family: "projects", what: "the project table" },
+  { method: "POST", path: "/projects", family: "projects", what: "register a project (refuses a name that exists with a different kind/remote)" },
+  { method: "POST", path: "/projects/:name/edit", family: "projects", what: "change a project's remote and/or kind" },
+  { method: "DELETE", path: "/projects/:name", family: "projects", what: "remove a project row (?force=true past open items)" },
+  { method: "GET", path: "/teams", family: "teams", what: "teams with their members and role threads (OB-2255)" },
+  { method: "POST", path: "/teams", family: "teams", what: "add a team (optionally with its first projects)" },
+  { method: "POST", path: "/teams/leave", family: "teams", what: "take projects out of whatever team they are in" },
+  { method: "GET", path: "/teams/:name", family: "teams", what: "one team with its members and role threads" },
+  { method: "POST", path: "/teams/:name/edit", family: "teams", what: "change a team's icon and/or display name" },
+  { method: "POST", path: "/teams/:name/join", family: "teams", what: "put projects into a team (refused for a project in another team)" },
+  { method: "DELETE", path: "/teams/:name", family: "teams", what: "remove a team (?force=true clears its members and role rows)" },
+  { method: "POST", path: "/teams/:name/handoffs", family: "teams", what: "record a role thread's handoff for `ob t3 team restart` (OB-2257); from_thread_id names the writer (OB-2275)" },
+  { method: "GET", path: "/teams/:name/handoffs/latest", family: "teams", what: "a role's newest handoff (?role=; ?from=<thread> keeps that thread's, ?created_before=<iso> those recorded by then, OB-2275), or null" },
+  { method: "POST", path: "/teams/:name/handoffs/:id/consume", family: "teams", what: "mark a handoff seeded into its replacement thread" },
+  { method: "GET", path: "/teams/:name/runs", family: "teams", what: "the team's open role runs (?role= keeps one role's)" },
+  { method: "POST", path: "/teams/:name/runs", family: "teams", what: "open a role run's marker and take its lease, or answer the open run (created false)" },
+  { method: "POST", path: "/teams/:name/runs/:id", family: "teams", what: "record a role run's thread id or activity, or end it (end_reason releases its lease)" },
+  { method: "GET", path: "/teams/:name/tick", family: "teams", what: "what needs the team's architect, from the store (`ob role tick`, OS-67): stale builders, unfixed flakes, idle projects; each with its stamp" },
+  { method: "GET", path: "/teams/:name/brief", family: "teams", what: "the store facts of a role's start brief (?role=); a read, so the waiting note stays until note-shown" },
+  { method: "POST", path: "/teams/:name/notes", family: "teams", what: "store a role's successor note on its open run, else its last ended one ({role, body}; 40 lines, 4000 characters)" },
+  { method: "POST", path: "/teams/:name/runs/:id/note-shown", family: "teams", what: "mark a run's successor note shown (after `ob role brief` printed it or `ob role start` delivered it)" },
+  { method: "POST", path: "/teams/:name/inbox", family: "teams", what: "store a message for a team role (`ob send`); a handoff's client_key stores it once" },
+  { method: "GET", path: "/teams/:name/inbox", family: "teams", what: "a team role's messages, oldest first (?role=; unread and not withdrawn unless ?unread=false)" },
+  { method: "POST", path: "/teams/:name/inbox/read", family: "teams", what: "mark a role's messages read by a run or agent ({role, ids, by})" },
+  { method: "GET", path: "/brief", family: "brief", what: "work-state brief (?q= id, or ?in_flight=true)" },
+  { method: "GET", path: "/log", family: "log", what: "standup journal entries (?type=&since=)" },
+  { method: "POST", path: "/log", family: "log", what: "capture a journal entry (kudos|suggestion|comment)" },
+  { method: "GET", path: "/jobs", family: "jobs", what: "per-job health of the declared daemon fleet" },
+  { method: "POST", path: "/deploys/run", family: "deploys", what: "start the live deploy fire-and-forget through systemd ({sha?} pins it); the bearer token is required, with no exemption (OB-1809)" },
+  { method: "GET", path: "/alerts", family: "alerts", what: "active unsnoozed alerts" },
+  { method: "POST", path: "/alerts/snooze", family: "alerts", what: "snooze one alert by key, answering the fresh alert list" },
+  { method: "POST", path: "/alerts/ack", family: "alerts", what: "ack (dismiss) one alert by key, answering the fresh alert list (OB-1762)" },
+  { method: "GET", path: "/decisions", family: "decisions", what: "decision items (?status=)" },
+  { method: "GET", path: "/decisions/:id", family: "decisions", what: "one decision with its chain" },
+  { method: "POST", path: "/decisions/supersede", family: "decisions", what: "new decision supersedes old (one txn)" },
+  { method: "GET", path: "/docs", family: "docs", what: "reference documents, newest updated first (?project=) (OB-2004)" },
+  { method: "POST", path: "/docs", family: "docs", what: "create a reference document ({title, project, body})" },
+  { method: "GET", path: "/docs/:id", family: "docs", what: "one reference document: its whole body and its earlier versions" },
+  { method: "POST", path: "/docs/:id/set", family: "docs", what: "replace a reference's title and/or body in place; the replaced text is kept as a version" },
+  { method: "GET", path: "/learnings", family: "learnings", what: "learning items (?status=)" },
+  { method: "GET", path: "/learnings/:id", family: "learnings", what: "one learning item with detail" },
+  { method: "GET", path: "/roadmaps", family: "roadmaps", what: "roadmap items with progress" },
+  { method: "GET", path: "/roadmaps/:id", family: "roadmaps", what: "one roadmap with members and on-track" },
+  { method: "POST", path: "/roadmaps/:id/members", family: "roadmaps", what: "add a member to a roadmap" },
+  { method: "GET", path: "/standup/latest", family: "standup", what: "the newest standup row" },
+  { method: "POST", path: "/standup/save", family: "standup", what: "save generated standup markdown" },
+  { method: "POST", path: "/standup/set", family: "standup", what: "save edited standup markdown" },
+  { method: "POST", path: "/standup/posted", family: "standup", what: "mark today's standup posted and advance the cursor" },
+  { method: "GET", path: "/slack/unread", family: "slack", what: "most-recent ingested Slack messages (?limit=). No poll." },
   // 456: remaining DATA commands.
-  { method: "GET", path: "/people", what: "the person registry" },
-  { method: "POST", path: "/people", what: "register a person" },
-  { method: "GET", path: "/people/show", what: "one person by id, handle, or name (?q=&reveal=)" },
-  { method: "POST", path: "/people/set", what: "update a person's fields" },
-  { method: "POST", path: "/people/rm", what: "delete a person by id" },
-  { method: "GET", path: "/whois", what: "resolve a handle to a person (?handle=)" },
+  { method: "GET", path: "/people", family: "people", what: "the person registry" },
+  { method: "POST", path: "/people", family: "people", what: "register a person" },
+  { method: "GET", path: "/people/show", family: "people", what: "one person by id, handle, or name (?q=&reveal=)" },
+  { method: "POST", path: "/people/set", family: "people", what: "update a person's fields" },
+  { method: "POST", path: "/people/rm", family: "people", what: "delete a person by id" },
+  { method: "GET", path: "/whois", family: "whois", what: "resolve a handle to a person (?handle=)" },
   // OB-1808: `db`, `backup` and `cert` run ON the API host, as a job a client polls, because they
   // shell out for minutes and must not hold a request open. The client names a kind, never an argv.
-  { method: "POST", path: "/host-jobs", what: "start a host job, or return the identical one already running (OB-1808)" },
-  { method: "GET", path: "/host-jobs", what: "recent host jobs, newest first, without output (OB-1808)" },
-  { method: "GET", path: "/host-jobs/:id", what: "one host job: status, exit code and, once finished, its scrubbed output (OB-1808)" },
-  { method: "GET", path: "/db/snapshots/:name", what: "download one snapshot from the host's rotated history (OB-1808)" },
+  { method: "POST", path: "/host-jobs", family: "host-jobs", what: "start a host job, or return the identical one already running (OB-1808)" },
+  { method: "GET", path: "/host-jobs", family: "host-jobs", what: "recent host jobs, newest first, without output (OB-1808)" },
+  { method: "GET", path: "/host-jobs/:id", family: "host-jobs", what: "one host job: status, exit code and, once finished, its scrubbed output (OB-1808)" },
+  { method: "GET", path: "/db/snapshots/:name", family: "db", what: "download one snapshot from the host's rotated history (OB-1808)" },
   // OB-2271: `ob tournament`, persona tournaments. ob validates and stores; it never decides a winner.
-  { method: "GET", path: "/tournaments", what: "every tournament with its candidate and match counts (?repo=; OB-2271)" },
-  { method: "POST", path: "/tournaments", what: "start a tournament: subject, repo, criteria, ref (OB-2271)" },
-  { method: "GET", path: "/tournaments/:id", what: "one tournament with its candidates, matches and calls, finalists and pick (OB-2271)" },
-  { method: "POST", path: "/tournaments/:id/candidates", what: "register a candidate or update its label, images, revises (OB-2271)" },
-  { method: "POST", path: "/tournaments/:id/matches", what: "record a match file (the parsed JSON); replace=true overwrites one by name (OB-2271)" },
-  { method: "POST", path: "/tournaments/:id/pick", what: "record the owner's pick of a candidate (OB-2271)" },
+  { method: "GET", path: "/tournaments", family: "tournaments", what: "every tournament with its candidate and match counts (?repo=; OB-2271)" },
+  { method: "POST", path: "/tournaments", family: "tournaments", what: "start a tournament: subject, repo, criteria, ref (OB-2271)" },
+  { method: "GET", path: "/tournaments/:id", family: "tournaments", what: "one tournament with its candidates, matches and calls, finalists and pick (OB-2271)" },
+  { method: "POST", path: "/tournaments/:id/candidates", family: "tournaments", what: "register a candidate or update its label, images, revises (OB-2271)" },
+  { method: "POST", path: "/tournaments/:id/matches", family: "tournaments", what: "record a match file (the parsed JSON); replace=true overwrites one by name (OB-2271)" },
+  { method: "POST", path: "/tournaments/:id/pick", family: "tournaments", what: "record the owner's pick of a candidate (OB-2271)" },
   // OB-2276: GitHub webhooks, `ob ci main` and `ob github hooks`. The webhook carries no bearer token: GitHub's
   // X-Hub-Signature-256 over the body, keyed on the github-webhook-secret secret, is its guard.
-  { method: "POST", path: "/github/webhook", what: "GitHub's webhook receiver: no bearer, X-Hub-Signature-256 required; 202, 200 for ping or a redelivery (OB-2276)" },
-  { method: "GET", path: "/ci/main", what: "each project's latest completed push run on main per workflow (?project=; OB-2276)" },
-  { method: "POST", path: "/ci/main/notify", what: "the catch-up: tell each red run on main the receiver missed, and each recovery (OB-2276)" },
-  { method: "GET", path: "/github/hooks", what: "per project, whether its webhook to the receiver exists and is right; changes nothing (OB-2276)" },
-  { method: "POST", path: "/github/hooks", what: "create or fix each project's webhook to the receiver (OB-2276)" },
+  { method: "POST", path: "/github/webhook", family: "github", what: "GitHub's webhook receiver: no bearer, X-Hub-Signature-256 required; 202, 200 for ping or a redelivery (OB-2276)" },
+  { method: "GET", path: "/ci/main", family: "ci", what: "each project's latest completed push run on main per workflow (?project=; OB-2276)" },
+  { method: "POST", path: "/ci/main/notify", family: "ci", what: "the catch-up: tell each red run on main the receiver missed, and each recovery (OB-2276)" },
+  { method: "GET", path: "/github/hooks", family: "github", what: "per project, whether its webhook to the receiver exists and is right; changes nothing (OB-2276)" },
+  { method: "POST", path: "/github/hooks", family: "github", what: "create or fix each project's webhook to the receiver (OB-2276)" },
   // OB-2097: `ob overnight`, the overnight decision log. A night is a run doc per project per date, a decision a
   // `decision` item; the project is resolved on the caller's machine and always sent.
-  { method: "POST", path: "/overnight/start", what: "create the night's run doc from the template, or return the existing one (OB-2097)" },
-  { method: "POST", path: "/overnight/decide", what: "record a decision with what, why, doubt, undo; --night joins it to a run (OB-2097)" },
-  { method: "POST", path: "/overnight/summary", what: "append a bullet to one section of a night's summary (OB-2097)" },
-  { method: "POST", path: "/overnight/show", what: "a night: its summary, problems and decisions in the order made (OB-2097)" },
-  { method: "GET", path: "/overnight/runs", what: "one row per run with decision and Review these counts (?project=&since=; OB-2097)" },
-  { method: "POST", path: "/review-misses", what: "record a review-miss class" },
-  { method: "GET", path: "/review-misses/top", what: "ranked review-miss classes (?scope=&limit=)" },
-  { method: "GET", path: "/cursors", what: "one skill_cursor value (?skill=&key=)" },
-  { method: "POST", path: "/cursors", what: "set a skill_cursor value" },
-  { method: "GET", path: "/test-users", what: "the test-user registry (?role=&env=)" },
-  { method: "POST", path: "/test-users", what: "register a test user and store its secret (host keychain)" },
-  { method: "GET", path: "/test-users/show", what: "one test user (?label=)" },
-  { method: "POST", path: "/test-users/check", what: "existence-check a test-user secret" },
+  { method: "POST", path: "/overnight/start", family: "overnight", what: "create the night's run doc from the template, or return the existing one (OB-2097)" },
+  { method: "POST", path: "/overnight/decide", family: "overnight", what: "record a decision with what, why, doubt, undo; --night joins it to a run (OB-2097)" },
+  { method: "POST", path: "/overnight/summary", family: "overnight", what: "append a bullet to one section of a night's summary (OB-2097)" },
+  { method: "POST", path: "/overnight/show", family: "overnight", what: "a night: its summary, problems and decisions in the order made (OB-2097)" },
+  { method: "GET", path: "/overnight/runs", family: "overnight", what: "one row per run with decision and Review these counts (?project=&since=; OB-2097)" },
+  { method: "POST", path: "/review-misses", family: "review-misses", what: "record a review-miss class" },
+  { method: "GET", path: "/review-misses/top", family: "review-misses", what: "ranked review-miss classes (?scope=&limit=)" },
+  { method: "GET", path: "/cursors", family: "cursors", what: "one skill_cursor value (?skill=&key=)" },
+  { method: "POST", path: "/cursors", family: "cursors", what: "set a skill_cursor value" },
+  { method: "GET", path: "/test-users", family: "test-users", what: "the test-user registry (?role=&env=)" },
+  { method: "POST", path: "/test-users", family: "test-users", what: "register a test user and store its secret (host keychain)" },
+  { method: "GET", path: "/test-users/show", family: "test-users", what: "one test user (?label=)" },
+  { method: "POST", path: "/test-users/check", family: "test-users", what: "existence-check a test-user secret" },
   // OB-1765 (OB-1760 phase 0d): the native WhatsApp screen's reads. Read-only; sends stay confirm-gated and local.
-  { method: "GET", path: "/whatsapp/status", what: "the current WhatsApp Status tray, or a history page when ?before= is set (?limit=&before=&sender=; OB-1765)" },
-  { method: "GET", path: "/whatsapp/chats", what: "the chat list: the latest message per chat, newest first (?limit=&hidden=; OB-1765)" },
-  { method: "POST", path: "/sync", what: "GitHub ingest on the API host" },
+  { method: "GET", path: "/whatsapp/status", family: "whatsapp", what: "the current WhatsApp Status tray, or a history page when ?before= is set (?limit=&before=&sender=; OB-1765)" },
+  { method: "GET", path: "/whatsapp/chats", family: "whatsapp", what: "the chat list: the latest message per chat, newest first (?limit=&hidden=; OB-1765)" },
+  { method: "POST", path: "/sync", family: "sync", what: "GitHub ingest on the API host" },
 ] as const;
+
+/**
+ * OS-178: the families a scoped token may be granted, read only (GET). Everything else, and every write
+ * method, is 403 to a scoped token. Writes and spinoffs come in OS-179.
+ */
+export const OB_API_SCOPABLE_FAMILIES: readonly string[] = ["items", "next", "search", "projects"];
+
+/** OS-178: the families only the admin token reaches. Named, so a new family must be classified. */
+export const OB_API_ADMIN_FAMILIES: readonly string[] = [
+  "agents", "alerts", "brief", "cal", "ci", "config", "creds", "cursors", "db", "decisions", "deploys", "docs",
+  "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "leases", "log",
+  "overnight", "people", "review-misses", "roadmaps", "secrets", "slack", "snapshot", "spinoffs", "standup",
+  "status", "sync", "teams", "test-users", "today", "tournaments", "triage", "whatsapp", "whois",
+];
+
+/**
+ * OS-178: the OB_API_ROUTES entry a request is, or null. `rest` is the path under the prefix, already
+ * split and decoded; a `:param` pattern segment matches any one segment. A literal match wins over a
+ * parameter one, so `/agents/active` is never read as some `/agents/:x`.
+ */
+export function matchApiRoute(method: string, segments: readonly string[]): ObApiRoute | null {
+  let best: ObApiRoute | null = null;
+  let bestLiterals = -1;
+  for (const r of OB_API_ROUTES) {
+    if (r.method !== method) continue;
+    const pattern = r.path.split("/").filter((s) => s.length > 0);
+    if (pattern.length !== segments.length) continue;
+    let literals = 0;
+    let ok = true;
+    for (let i = 0; i < pattern.length; i++) {
+      if (pattern[i]!.startsWith(":")) continue;
+      if (pattern[i] !== segments[i]) {
+        ok = false;
+        break;
+      }
+      literals++;
+    }
+    if (ok && literals > bestLiterals) {
+      best = r;
+      bestLiterals = literals;
+    }
+  }
+  return best;
+}
 
 /** `METHOD /api/ob/path  -- what`, for the self-documenting refusal. */
 export function describeRoutes(): string[] {
@@ -419,6 +470,7 @@ export const OB_API_LOCAL_ONLY: Readonly<Record<string, string>> = {
   // rest carry the thread id) plus the team itself, which are tracker DATA, so its database half goes over the API. Not listed here any more for the
   // same reason `spinoff` is not: the classification is per-half, and the handler owns both.
   models: "the models file is local to the machine that launches (~/.config/ob/models.jsonc, OB-1969); nothing reads it over the API",
+  "api-token": "writes the scoped API tokens file on THIS machine (~/.ob_api_tokens.json, OS-178); a token is never sent over HTTP",
   usage: "reads the Claude transcripts on THIS machine (~/.claude/projects, OB-2278); the thread names alone come over the API",
 };
 

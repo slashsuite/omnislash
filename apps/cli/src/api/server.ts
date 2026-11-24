@@ -28,7 +28,9 @@ import type { TokenUsage } from "../../../../platform/cli-coord/src/spinoff-toke
 import { VALID_TYPES, isValidStatus, statusVocab } from "../status.ts";
 import {
   describeRoutes,
+  matchApiRoute,
   OB_API_AGENT_ACTIONS,
+  OB_API_SCOPABLE_FAMILIES,
   OB_API_LOCAL_ONLY,
   OB_API_PREFIX,
   apiTimeoutFor,
@@ -45,7 +47,9 @@ import {
   type SpinoffPlannedFilesRequest,
 } from "./contract.ts";
 import { ApiFault } from "./fault.ts";
-import { bearerFrom, loadApiToken, tokenMatches, type TokenLoad } from "./token.ts";
+import { bearerFrom, loadApiToken, type TokenLoad } from "./token.ts";
+import { ADMIN_PRINCIPAL, authenticate, loadScopedTokens, type Principal, type TokensLoad } from "./scoped-tokens.ts";
+import { projectScopeFor, type ProjectScope } from "../project-scope.ts";
 import type { RoleMessageRequest } from "./contract.ts";
 import type { ItemQuery, ItemSort } from "../worklist.ts";
 import type { GmailDraftAttachmentInput } from "../../../../platform/cli-sources/src/gmail-draft.ts";
@@ -84,6 +88,8 @@ export interface ObApiDeps {
   store: () => Promise<Store>;
   /** The loaded token. A thunk so a deployment can re-read the file without rebuilding the handler. */
   token: () => TokenLoad;
+  /** OS-178: the scoped tokens file. Default: re-read ~/.ob_api_tokens.json (OB_API_TOKENS_FILE) per request. */
+  scopedTokens?: () => TokensLoad;
   /**
    * ob 357: the master key the secret endpoints decrypt against. Left undefined in production, where the
    * real provider reads the Keychain (or the 0600 file on the API host). Injected by tests, which are FORBIDDEN
@@ -523,7 +529,18 @@ export function createObApi(deps: ObApiDeps): (req: Request) => Promise<Response
     // browser cannot send a bearer token, and a 401 here is a flow a phone can never complete. They are
     // guarded by the one-time state instead (see isGoogleBrowserPath). Everything else still authenticates.
     const browserRoute = isGoogleBrowserPath(url.pathname, req.method) || isGithubWebhookPath(url.pathname, req.method);
-    if (!browserRoute && !tokenMatches(bearerFrom(req), load.token)) return unauthorized();
+    // OS-178: auth answers WHO, not just yes or no. The admin token is every route; a scoped one (from
+    // ~/.ob_api_tokens.json, re-read per request) is the families and projects its entry names.
+    let principal: Principal = ADMIN_PRINCIPAL;
+    if (!browserRoute) {
+      const auth = authenticate(bearerFrom(req), load.token, deps.scopedTokens ?? (() => loadScopedTokens()));
+      if (!auth.ok) {
+        // A refused tokens file is the server's problem, said with its path (never a hash).
+        if (auth.disabledMessage) return fail("api_disabled", 503, auth.disabledMessage);
+        return unauthorized();
+      }
+      principal = auth.principal;
+    }
 
     // 2. Route.
     const rest = url.pathname.slice(OB_API_PREFIX.length).replace(/\/+$/, "");
@@ -539,11 +556,24 @@ export function createObApi(deps: ObApiDeps): (req: Request) => Promise<Response
       } catch {
         throw new ApiFault("invalid_request", 400, `the path ${url.pathname} is not valid percent-encoding`);
       }
+      // OS-178: a scoped principal reaches only a GET on a route in one of its granted families. Deny by
+      // default: a path with no OB_API_ROUTES entry is 403 too, so a route() branch someone forgot to list
+      // fails safe.
+      const scopedProjects = principal.all ? null : principal.projects;
+      if (!principal.all) {
+        const entry = matchApiRoute(method, segments);
+        if (!entry || method !== "GET" || !OB_API_SCOPABLE_FAMILIES.includes(entry.family) || !principal.families.includes(entry.family)) {
+          return fail("forbidden", 403, `${method} ${url.pathname} is not granted to the token of '${principal.user}'`);
+        }
+      }
       // 1616: the store call has no timeout of its own (a leaked pool slot waits forever), so the request
       // does. The 504 names the call and the budget instead of the connection sitting open for 43 minutes.
-      const response = await withDeadline(`${method} ${url.pathname}`, apiTimeoutFor(rest, deps.requestTimeoutMs ?? API_REQUEST_TIMEOUT_MS), async () =>
-        route(await deps.store(), req, url, method, segments, deps, googleStates),
-      );
+      const response = await withDeadline(`${method} ${url.pathname}`, apiTimeoutFor(rest, deps.requestTimeoutMs ?? API_REQUEST_TIMEOUT_MS), async () => {
+        const store = await deps.store();
+        // Inside the deadline: resolving the scope is a store call like any other.
+        const scope = scopedProjects ? await projectScopeFor(store, scopedProjects) : undefined;
+        return route(store, req, url, method, segments, deps, googleStates, scope);
+      });
       if (response) return response;
       // A local-only command (map D3) refuses BY NAME with its reason rather than as a generic miss, so a
       // client that tried to route one here is told it asked the wrong machine, not that it typo'd.
@@ -592,6 +622,8 @@ async function route(
   segments: string[],
   deps: ObApiDeps,
   googleStates: GoogleStateStore,
+  /** OS-178: set only for a scoped principal; the item reads filter to its projects. */
+  scope?: ProjectScope,
 ): Promise<Response | null> {
   const [head, second, third] = segments;
 
@@ -663,12 +695,12 @@ async function route(
   }
 
   if (head === "next" && segments.length === 1 && method === "GET") {
-    return json(await h.next(store, url.searchParams.get("project") ?? undefined));
+    return json(await h.next(store, url.searchParams.get("project") ?? undefined, scope));
   }
 
   if (head === "items") {
     if (segments.length === 1 && method === "GET") {
-      return json(await h.items(store, itemQueryFrom(url.searchParams)));
+      return json(await h.items(store, itemQueryFrom(url.searchParams), scope));
     }
     if (segments.length === 1 && method === "POST") {
       const body = await readJson(req);
@@ -708,7 +740,7 @@ async function route(
       );
     }
     if (second !== undefined && segments.length === 2 && method === "GET") {
-      return json(await h.item(store, second));
+      return json(await h.item(store, second, scope));
     }
     if (second !== undefined && segments.length === 2 && method === "DELETE") {
       return json(await h.remove(store, second));
@@ -1052,7 +1084,7 @@ async function route(
   if (head === "search" && segments.length === 1 && method === "GET") {
     const q = url.searchParams.get("q")?.trim() ?? "";
     if (!q) bad("'q' is required");
-    return json(await h.search(store, q));
+    return json(await h.search(store, q, scope));
   }
 
   if (head === "status" && segments.length === 1 && method === "GET") {
@@ -1422,7 +1454,7 @@ async function route(
 
   // 416: already-servable store commands. Purpose-built endpoints, not POST /rpc.
   if (head === "projects" && segments.length === 1) {
-    if (method === "GET") return json(await h.projects(store));
+    if (method === "GET") return json(await h.projects(store, scope));
     if (method === "POST") {
       const body = await readJson(req);
       return json(await h.projectCreate(store, { name: reqString(body, "name"), kind: reqString(body, "kind"), remote: optString(body, "remote") ?? null, key: optString(body, "key") ?? null, icon: optString(body, "icon") ?? null, display_name: optString(body, "display_name") ?? null }), 201);

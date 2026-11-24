@@ -243,6 +243,8 @@ if (testSynchronous && /^(OFF|NORMAL|FULL|EXTRA)$/i.test(testSynchronous)) {
  */
 process.env.OMNISLASH_API_URL_FILE ??= join(scratch, "no-such-api-url");
 process.env.OB_API_TOKEN_FILE ??= join(scratch, "no-such-api-token");
+// OS-178: the scoped tokens file, likewise, so no test reads the developer's real one.
+process.env.OB_API_TOKENS_FILE ??= join(scratch, "no-such-api-tokens.json");
 // The env var outranks the file, so an inherited one would route the WHOLE suite over HTTP at a live host.
 // Deleted rather than defaulted: a test that wants API mode injects its own base and transport.
 delete process.env.OMNISLASH_API;
