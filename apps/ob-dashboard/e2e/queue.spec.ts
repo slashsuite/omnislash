@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openPage } from "./nav.ts";
-import { cliEnv, QUEUE_PROJECT, QUEUE_SEED } from "./world.ts";
+import { cliEnv, GROUP_LABEL, GROUP_TEAM, QUEUE_PROJECT, QUEUE_SEED, SIBLING_PROJECT, SIBLING_TITLE } from "./world.ts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
 
@@ -29,8 +29,8 @@ function nextTitles(): string[] {
 const BANDS = ["critical", "urgent", "flake", "high", "medium", "low", "none"];
 
 /** The page's titles, band by band, read from each row's grip label. */
-async function shown(page: Page): Promise<Record<string, string[]>> {
-  return await page.getByRole("grid", { name: `${QUEUE_PROJECT} queue` }).evaluate((grid) => {
+async function shown(page: Page, scope: string = QUEUE_PROJECT): Promise<Record<string, string[]>> {
+  return await page.getByRole("grid", { name: `${scope} queue` }).evaluate((grid) => {
     const out: Record<string, string[]> = {};
     for (const g of grid.querySelectorAll("[role=rowgroup]")) {
       out[g.getAttribute("aria-label") ?? ""] = [...g.querySelectorAll("button[aria-label^='Reorder ']")].map((b) => b.getAttribute("aria-label")!.slice("Reorder ".length));
@@ -52,8 +52,8 @@ async function expectOrder(page: Page, want: Record<string, string[]>): Promise<
  * drop. The line starts just after the item and stops before every row, each band's end row included, so one
  * step up is a no-op (before the item itself) and two is before the item above.
  */
-async function keyMove(page: Page, title: string, steps: number): Promise<void> {
-  const saved = page.waitForResponse((r) => r.url().includes("/_serverFn/") && r.request().method() === "POST");
+async function keyMove(page: Page, title: string, steps: number, save = true): Promise<void> {
+  const saved = !save ? null : page.waitForResponse((r) => r.url().includes("/_serverFn/") && r.request().method() === "POST");
   // A tap on the title focuses the row (the grip's own .focus() is moved back to the row by the grid).
   await page.getByRole("row", { name: title, exact: true }).getByText(title, { exact: true }).click();
   await page.keyboard.press("ArrowRight");
@@ -63,7 +63,7 @@ async function keyMove(page: Page, title: string, steps: number): Promise<void> 
   await expect(page.locator("[aria-live]").getByText(/Started dragging/)).toBeAttached();
   for (let i = 0; i < Math.abs(steps); i++) await page.keyboard.press(steps > 0 ? "ArrowDown" : "ArrowUp");
   await page.keyboard.press("Enter");
-  await saved;
+  if (saved) await saved;
 }
 
 test.beforeEach(() => reseed());
@@ -80,10 +80,43 @@ test("the queue lists the project's open items in ob next order, banded by prior
   await expect(grid.getByText("#auth")).toBeVisible();
 });
 
-test("the bare /queue opens on the default project", async ({ page }) => {
+// OS-185: the page opens on a group, its projects merged, and drills into one project from the Project select.
+test("the bare /queue opens on the Slash group with its projects merged, each row naming its project", async ({ page }) => {
   await openPage(page, "/queue");
+  await expect(page.getByRole("combobox", { name: "Group" })).toHaveValue(GROUP_TEAM.name);
+  await expect(page.getByRole("combobox", { name: "Project" })).toHaveValue("");
+  const grid = page.getByRole("grid", { name: `${GROUP_LABEL} queue` });
+  // The sibling project's item sits in high beside QUEUE_PROJECT's, after them (its queue rank is 9).
+  await expect.poll(async () => (await shown(page, GROUP_LABEL)).high?.slice(0, 4)).toEqual([...seeded().high!, SIBLING_TITLE]);
+  await expect(grid.getByRole("row", { name: SIBLING_TITLE, exact: true }).getByText(SIBLING_PROJECT, { exact: true })).toBeVisible();
+  await expect(grid.getByRole("row", { name: "Band headings", exact: true }).getByText(QUEUE_PROJECT, { exact: true })).toBeVisible();
+});
+
+test("in the group view a move inside a band is refused with a hint, since a queue's order is per project", async ({ page }) => {
+  await openPage(page, "/queue");
+  const before = await shown(page, GROUP_LABEL);
+  // Two places up: before QUEUE_PROJECT's last high item, which setQueueOrder would refuse across projects.
+  await keyMove(page, SIBLING_TITLE, -2, false);
+  await expect(page.getByText(/pick a project to reorder its queue/)).toBeVisible();
+  await expect.poll(() => shown(page, GROUP_LABEL)).toEqual(before);
+});
+
+test("the Project select drills into one project of the group, and a reload keeps it", async ({ page }) => {
+  await openPage(page, "/queue");
+  await page.getByRole("combobox", { name: "Project" }).selectOption(QUEUE_PROJECT);
+  await expect(page).toHaveURL(new RegExp(`team=${GROUP_TEAM.name}.*project=${QUEUE_PROJECT}|project=${QUEUE_PROJECT}.*team=${GROUP_TEAM.name}`));
+  await expectOrder(page, seeded());
+  // One project: no project chip on the rows.
+  await expect(page.getByRole("grid", { name: `${QUEUE_PROJECT} queue` }).getByText(QUEUE_PROJECT, { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("html[data-hydrated]")).toBeAttached();
+  await expect(page.getByRole("combobox", { name: "Group" })).toHaveValue(GROUP_TEAM.name);
   await expect(page.getByRole("combobox", { name: "Project" })).toHaveValue(QUEUE_PROJECT);
   await expectOrder(page, seeded());
+  // Back to the whole group.
+  await page.getByRole("combobox", { name: "Project" }).selectOption("");
+  await expect(page.getByRole("grid", { name: `${GROUP_LABEL} queue` })).toBeVisible();
+  await expect(page).not.toHaveURL(/project=/);
 });
 
 test("a move inside a band reorders it and keeps every priority", async ({ page }) => {

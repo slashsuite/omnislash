@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import {
   Button,
   Callout,
@@ -12,7 +12,6 @@ import {
   Pill,
   Section,
   SegmentedControl,
-  Select,
   Stack,
   StatTile,
   SubsectionHeading,
@@ -30,13 +29,15 @@ import {
 } from "@hackcove/ui-react";
 import { fmtSpan, type Cursor, type FeedEntry, type FeedKind, type TimelineView } from "../lib/timeline.ts";
 import { getTimeline } from "../server/timeline.ts";
+import { GroupPicker, groupSearch, type GroupSearch } from "../components/GroupPicker.tsx";
 
-// OS-27: one project's timeline. A project Select, 7 (default), 30 and 90 day presets or a custom from and to,
+// OS-27: the timeline. OS-185: a group's projects together (`?team=`, each line naming its project), or one
+// project's (`?project=`). The group and project Selects, 7 (default), 30 and 90 day presets or a custom from and to,
 // all in the URL; four tiles (Opened, Closed, Net, task-only Median cycle) and a weekly table over the whole
 // range; the feed grouped by day, newest first, paged by "Load older". Build steps are folded per spinoff row
 // and shown only with the Builds switch (`builds=true`). Read-only: nothing on this page writes.
 
-type Search = { project?: string; from?: string; to?: string; builds?: boolean };
+type Search = GroupSearch & { from?: string; to?: string; builds?: boolean };
 
 const DAY = 86_400_000;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -48,14 +49,14 @@ const isDate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{
 
 export const Route = createFileRoute("/timeline")({
   validateSearch: (s: Record<string, unknown>): Search => ({
-    ...(typeof s.project === "string" && s.project ? { project: s.project } : {}),
+    ...groupSearch(s),
     ...(isDate(s.from) ? { from: s.from } : {}),
     ...(isDate(s.to) ? { to: s.to } : {}),
     ...(s.builds === true || s.builds === 1 || s.builds === "1" ? { builds: true } : {}),
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ deps }) =>
-    await getTimeline({ data: { project: deps.project, from: deps.from ?? daysAgo(DEFAULT_DAYS), to: deps.to ?? today(), builds: deps.builds === true } }),
+    await getTimeline({ data: { team: deps.team, project: deps.project, from: deps.from ?? daysAgo(DEFAULT_DAYS), to: deps.to ?? today(), builds: deps.builds === true } }),
   component: TimelinePage,
 });
 
@@ -76,7 +77,7 @@ const dayHeading = (day: string) =>
   new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const clock = (ts: string) => new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
-function Entry({ e }: { e: FeedEntry }) {
+function Entry({ e, projectLabel }: { e: FeedEntry; projectLabel: string | null }) {
   const k = KIND[e.kind];
   const who = e.who && e.who !== "human" ? `by ${e.who}` : null;
   return (
@@ -93,6 +94,7 @@ function Entry({ e }: { e: FeedEntry }) {
               {e.ref}
             </Pill>
           )}
+          {projectLabel && <Pill size="sm">{projectLabel}</Pill>}
           <Text as="span">{e.title}</Text>
         </Cluster>
       }
@@ -125,7 +127,7 @@ function Feed({ v }: { v: TimelineView }) {
     setLoading(true);
     setError(null);
     try {
-      const older = await getTimeline({ data: { project: v.project.id, from: v.from, to: v.to, builds: v.builds, before: next } });
+      const older = await getTimeline({ data: { team: v.group.id, project: v.project?.id, from: v.from, to: v.to, builds: v.builds, before: next } });
       setFeed((f) => [...f, ...older.feed]);
       setNext(older.next);
     } catch (e) {
@@ -135,6 +137,7 @@ function Feed({ v }: { v: TimelineView }) {
     }
   };
 
+  const labelOf = new Map(v.group.projects.map((p) => [p.id, p.label]));
   const days: { day: string; entries: FeedEntry[] }[] = [];
   for (const e of feed) {
     const day = e.at.slice(0, 10);
@@ -150,7 +153,7 @@ function Feed({ v }: { v: TimelineView }) {
           <SubsectionHeading size="sm">{dayHeading(d.day)}</SubsectionHeading>
           <Timeline label={`Events on ${d.day}`}>
             {d.entries.map((e) => (
-              <Entry key={e.key} e={e} />
+              <Entry key={e.key} e={e} projectLabel={v.project === null && e.project ? (labelOf.get(e.project) ?? e.project) : null} />
             ))}
           </Timeline>
         </Stack>
@@ -178,16 +181,13 @@ function TimelinePage() {
 
   return (
     <>
-      <PageHeader title="Timeline" description="What happened to one project's tickets over a range: opened, closed, status moves, blocks, priority changes and merges." />
+      <PageHeader
+        title="Timeline"
+        description="What happened to a group's tickets over a range: opened, closed, status moves, blocks, priority changes and merges. Pick a project to see only its tickets."
+      />
       <Stack>
         <Cluster gap="sm" align="end">
-          <Select
-            aria-label="Project"
-            size="sm"
-            value={v.project.id}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => go({ project: e.target.value })}
-            items={v.projects.map((p) => ({ value: p.id, label: p.label }))}
-          />
+          <GroupPicker group={v.group} groups={v.groups} project={v.project} onChange={go} />
           <SegmentedControl
             size="sm"
             label="Range"
@@ -209,7 +209,7 @@ function TimelinePage() {
         <Section title="Feed" size="sm">
           <Stack gap="sm">
             <Switch size="sm" label="Builds" hint="one line per spinoff row" checked={v.builds} onChange={(on) => go({ builds: on ? true : undefined })} />
-            <Feed key={`${v.project.id}|${v.from}|${v.to}|${v.builds}`} v={v} />
+            <Feed key={`${v.group.id}|${v.project?.id ?? ""}|${v.from}|${v.to}|${v.builds}`} v={v} />
           </Stack>
         </Section>
 

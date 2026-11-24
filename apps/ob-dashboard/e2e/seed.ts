@@ -13,12 +13,14 @@ import { eq, inArray } from "../../cli/src/db/orm.ts";
 import { DECISION_SOURCE, DECISION_TYPE } from "../../cli/src/decisions.ts";
 import { addTags, createItem } from "../../cli/src/items.ts";
 import { registerProject } from "../../cli/src/project.ts";
+import { addTeam } from "../../cli/src/team.ts";
 import { assignRef } from "../../cli/src/refs.ts";
 import { registerAgent } from "../../../platform/cli-coord/src/agent.ts";
 import {
   BUSY_MOVES,
   DB_PATH,
   FOCUS_TITLES,
+  GROUP_TEAM,
   QUEUE_PROJECT,
   QUEUE_SEED,
   REVIEW_NOTE,
@@ -26,6 +28,9 @@ import {
   REVIEW_TITLE,
   SEED_CREDIT_AT,
   SEED_ROUTES,
+  SIBLING_OPENED,
+  SIBLING_PROJECT,
+  SIBLING_TITLE,
   TIMELINE_PR,
   TIMELINE_PROJECT,
   TIMELINE_TITLES,
@@ -164,12 +169,27 @@ export async function seedTimeline(store: Store): Promise<void> {
   ]);
 }
 
+/** OS-185: the Slash group over the queue's and timeline's projects, and its sibling project's one item. */
+export async function seedGroup(store: Store): Promise<void> {
+  await registerProject(store, { name: SIBLING_PROJECT, kind: "side" });
+  await addTeam(store, { ...GROUP_TEAM, projects: [QUEUE_PROJECT, TIMELINE_PROJECT, SIBLING_PROJECT] });
+  const [row] = (await store.q.select({ id: store.t.item.id }).from(store.t.item).where(eq(store.t.item.title, SIBLING_TITLE)).limit(1)) as { id: string }[];
+  const id = row?.id ?? (await createItem(store, { type: "task", title: SIBLING_TITLE, projectId: SIBLING_PROJECT, priority: 2 }));
+  await resetItem(store, id, null);
+  // Ranked 9, so it sits after QUEUE_PROJECT's ranked high items (1 to 3) in the merged high band.
+  await store.q
+    .update(store.t.item)
+    .set({ priority: 2, queue_rank: 9, created_at: SIBLING_OPENED, updated_at: "2025-12-31T00:00:00.000Z" })
+    .where(eq(store.t.item.id, id));
+}
+
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
   await seedCredit(store, "ok");
   await seedHome(store, "full");
   await seedQueue(store);
   await seedTimeline(store);
+  await seedGroup(store);
 }
 
 if (import.meta.main) {
