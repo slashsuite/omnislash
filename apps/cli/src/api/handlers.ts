@@ -407,6 +407,11 @@ async function requireItem(store: Store, id: string, opts: { trusted?: boolean; 
   return item;
 }
 
+/** OS-178: the focus project is a project id, so a scoped token sees it only when it is one of its own. */
+function focusInScope(scope: ProjectScope | undefined, focus: string | null): string | null {
+  return !scope || (focus !== null && scope.ids.has(focus)) ? focus : null;
+}
+
 /** OS-178: a `?project=` a scoped token names must be one of its projects; any other is the unknown-project 404. */
 async function requireScopedProject(store: Store, scope: ProjectScope | undefined, project: string | undefined): Promise<void> {
   if (!scope || project === undefined) return;
@@ -936,7 +941,7 @@ export async function next(store: Store, project?: string, scope?: ProjectScope)
   return {
     items: items.map((i) => itemView(i, focusProject)),
     triage_count: triageCount,
-    focus_project: focusProject,
+    focus_project: focusInScope(scope, focusProject),
   };
 }
 
@@ -946,7 +951,7 @@ export async function items(store: Store, query: ItemQuery, scope?: ProjectScope
     if (e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     throw e;
   });
-  return { items: rows.map((i) => itemView(i, focusProject)), focus_project: focusProject };
+  return { items: rows.map((i) => itemView(i, focusProject)), focus_project: focusInScope(scope, focusProject) };
 }
 
 export async function create(
@@ -1190,7 +1195,7 @@ export async function search(store: Store, q: string, scope?: ProjectScope): Pro
     const row = await getItem(store, id);
     if (row) views.push(itemView(row, focusProject));
   }
-  return { query: q, items: views, focus_project: focusProject };
+  return { query: q, items: views, focus_project: focusInScope(scope, focusProject) };
 }
 
 export async function status(store: Store): Promise<StatusResponse> {

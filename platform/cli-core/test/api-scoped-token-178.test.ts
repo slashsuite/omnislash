@@ -29,6 +29,7 @@ import {
 import { registerProject } from "../../../apps/cli/src/project.ts";
 import { addLink, createItem, getItem } from "../../../apps/cli/src/items.ts";
 import { cmdApiToken } from "../../../apps/cli/src/commands/api-token.ts";
+import { setConfig } from "../../../apps/cli/src/config.ts";
 
 const ADMIN = "an-admin-bearer-token-that-is-long-enough";
 const ALICE = "alice-scoped-token-0123456789abcdef0123456789";
@@ -265,7 +266,7 @@ describe("a scoped token over the API (OS-178)", () => {
   test(
     "lists, next, search, projects and item detail come back filtered to its projects",
     async () => {
-      await withScopedApi(tokensFile([alice()]), async ({ call, ids, refs }) => {
+      await withScopedApi(tokensFile([alice()]), async ({ store, call, ids, refs }) => {
         const items = await call("/items?state=all");
         expect(items.status).toBe(200);
         expect(items.body.items.map((i: any) => i.id).sort()).toEqual([ids.a1, ids.a2].sort());
@@ -287,6 +288,12 @@ describe("a scoped token over the API (OS-178)", () => {
         expect(detail.status, detail.text).toBe(200);
         expect(detail.body.item.links.map((l: any) => l.other)).toEqual([ids.a2]);
         expect(detail.text).not.toContain("zebra beta secret");
+
+        // The focus project is a project id: beta's is not the scoped token's to see, alpha's is.
+        await setConfig(store, "focus_project", "beta");
+        for (const p of ["/next", "/items", "/search?q=zebra"]) expect((await call(p)).body.focus_project, p).toBeNull();
+        await setConfig(store, "focus_project", "alpha");
+        expect((await call("/next")).body.focus_project).toBe("alpha");
 
         // The admin still sees everything.
         const all = await call("/items?state=all", { token: ADMIN });
