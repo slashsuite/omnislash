@@ -73,6 +73,8 @@ export const POSTGRES_SERVABLE_COMMANDS: ReadonlySet<string> = new Set([
 	"wiki",
 	// OB-2278: `usage` reaches only listSpinoffs, listAgents and listProjects, all through ctx.store, plus transcript files on this machine.
 	"usage",
+	// OS-182: `skills` reads only the repo_checkouts setting through ctx.store, plus the links in ~/.claude/skills.
+	"skills",
 	// OB-2286: `ci` and `github` reach only ci-main.ts through storeCiBackend(ctx.store), the same functions the webhook route runs on Postgres.
 	"ci",
 	"github",
