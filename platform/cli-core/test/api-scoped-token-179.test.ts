@@ -236,7 +236,7 @@ describe("spinoffs through a scoped token (OS-179)", () => {
 
         const list = await call("/spinoffs");
         expect(list.body.spinoffs.map((r: any) => r.id)).toEqual([id]);
-        expect((await call("/spinoffs", { token: ADMIN })).body.spinoffs.map((r: any) => r.id).sort()).toEqual([beta.row.id, id].sort());
+        expect((await call("/spinoffs", { token: ADMIN })).body.spinoffs.map((r: any) => r.id).sort((x: number, y: number) => x - y)).toEqual([beta.row.id, id].sort((x, y) => x - y));
 
         const launchable = await call("/spinoffs/launchable", post({}));
         expect(launchable.status, launchable.text).toBe(200);
