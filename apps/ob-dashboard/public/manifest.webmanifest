@@ -1,7 +1,7 @@
 {
-  "name": "OB",
-  "short_name": "OB",
-  "description": "OB: the tracker, its agents and its alerts.",
+  "name": "OmniSlash",
+  "short_name": "OmniSlash",
+  "description": "OmniSlash: the tracker, its agents and its alerts.",
   "id": "/ob",
   "start_url": "/",
   "scope": "/",

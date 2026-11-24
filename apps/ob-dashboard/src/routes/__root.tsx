@@ -11,7 +11,7 @@ import { PWA_LINKS, PWA_META, VIEWPORT } from "../lib/pwa.ts";
 
 export const Route = createRootRoute({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: VIEWPORT }, ...PWA_META, { title: "OB" }, BUILD_COMMIT_META],
+    meta: [{ charSet: "utf-8" }, { name: "viewport", content: VIEWPORT }, ...PWA_META, { title: "OmniSlash" }, BUILD_COMMIT_META],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
@@ -37,7 +37,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <IosStatusBarBand />
         <ObFrame>{children}</ObFrame>
-        <PwaRegister appName="OB" />
+        <PwaRegister appName="OmniSlash" />
         <Scripts />
       </body>
     </html>

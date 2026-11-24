@@ -40,7 +40,7 @@ function Home() {
 
   return (
     <>
-      <PageHeader title="OB" description="What is waiting on you: builders parked on your answer, and today's ranked focus." />
+      <PageHeader title="OmniSlash" description="What is waiting on you: builders parked on your answer, and today's ranked focus." />
       <Stack>
         <Card title="To review" count={s.needs_review.length} flush={s.needs_review.length > 0}>
           {s.needs_review.length === 0 ? (

@@ -22,7 +22,7 @@ export function ObFrame({ children }: { children: ReactNode }) {
     // 0.11 sets running text at 1rem; the OB dashboard keeps the 14px step, as the dashboard does.
     <AppShell
       density="compact"
-      brand={<AppShellBrand logo={<img src="/omnislash-logo-light.svg" alt="" />} label="OB" href="/" />}
+      brand={<AppShellBrand logo={<img src="/omnislash-logo-light.svg" alt="" />} label="OmniSlash" href="/" />}
       nav={<Tabs label="Pages" items={PAGES.map((p) => ({ label: p.label, href: p.href, selected: pathname === p.href }))} />}
       controls={
         <>
