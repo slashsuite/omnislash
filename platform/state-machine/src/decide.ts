@@ -1,10 +1,11 @@
 import { type AnyStateMachine, transition } from "xstate";
 
 /**
- * Why a move was refused. Only `machine` in this step (OS-168): the machine has no such move from that
- * state, or the stored state is not one of its states. `guard` and `race` come with the guarded writer.
+ * Why a move was refused. `decide` gives only `machine` so far (OS-168): the machine has no such move from
+ * that state, or the stored state is not one of its states. `guard` and `race` come with the guarded writer;
+ * the type is wide now (OS-169) so `TransitionRefused` in apps/cli/src/errors.ts can carry any of them.
  */
-export type RefusalWhy = "machine" | "guard";
+export type RefusalWhy = "machine" | "guard" | "race";
 
 export type Decision =
   | { ok: true; to: string }

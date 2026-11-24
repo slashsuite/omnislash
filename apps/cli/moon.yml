@@ -1,6 +1,7 @@
 $schema: '../../.moon/cache/schemas/project.json'
 
 tags: ['ob-ts']
+dependsOn: ['state-machine']
 
 tasks:
   test:

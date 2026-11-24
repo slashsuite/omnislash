@@ -31,3 +31,14 @@ export const spinoffMachine = setup({ types: { events: {} as { type: SpinoffEven
     ]),
   ),
 });
+
+/**
+ * The event of the edge `from → to`, or null when the table has none (OS-169: the reverse lookup the shadow
+ * check and `SpinoffTransitionRefused` use). `from` is the stored status, free text, or null for a missing row.
+ */
+export function spinoffEventFor(from: string | null, to: string): SpinoffEvent | null {
+  if (from === null || !Object.hasOwn(SPINOFF_EDGES, from)) return null;
+  const edges = SPINOFF_EDGES[from as SpinoffState];
+  for (const [event, target] of Object.entries(edges)) if (target === to) return event as SpinoffEvent;
+  return null;
+}

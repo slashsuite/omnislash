@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, writeSync, closeSync, statSync, realpathSync, watch, type FSWatcher } from "node:fs";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
-import { UsageError, AppError } from "../../../../apps/cli/src/errors.ts";
+import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
+import { shadowMove } from "../../../../apps/cli/src/machine-shadow.ts";
+import { spinoffEventFor, spinoffMachine } from "../../../state-machine/src/spinoff.ts";
 import { sendRoleMessage } from "../../../../apps/cli/src/inbox.ts";
 import { print, warn } from "../../../../apps/cli/src/output.ts";
 import { nowIso } from "../../../../apps/cli/src/db.ts";
@@ -510,16 +512,55 @@ function spinoffFromStates(to: SpinoffStatus): SpinoffStatus[] {
   return SPINOFF_STATUSES.filter((from) => SPINOFF_TRANSITIONS[from].includes(to));
 }
 
-/** A status move the table (or the writer's narrower from-set) does not allow. Still an AppError (409 on the API). */
-export class SpinoffTransitionRefused extends AppError {
+/**
+ * A status move the table (or the writer's narrower from-set) does not allow. Still an AppError (409 on the
+ * API), and since OS-169 a `TransitionRefused` naming the spinoff machine's edge (`to:<to>` when it has none).
+ */
+export class SpinoffTransitionRefused extends TransitionRefused {
   constructor(id: number, current: string | null, to: SpinoffStatus) {
     super(
       current === null
         ? `no spinoff #${id}`
         : `spinoff #${id} is ${spinoffStatusWord(current)}; it cannot move to ${spinoffStatusWord(to)}`,
+      {
+        machine: spinoffMachine.id,
+        id: String(id),
+        from: current ?? "none",
+        event: spinoffEventFor(current, to) ?? `to:${to}`,
+        why: "machine",
+      },
     );
     this.name = "SpinoffTransitionRefused";
   }
+}
+
+/**
+ * OS-169's shadow check for a spinoff row: one SELECT of the stored status, then the spinoff machine's
+ * decision on the edge `stored → to`, beside today's answer (the stored status is in `allowed`, which is
+ * what the guarded UPDATE will check). A disagreement is logged as `machine_would_refuse`; a missing row is
+ * not checked. A race between this read and the write only adds noise to the log. Never throws.
+ */
+async function shadowSpinoffMove(s: Store, id: number, to: SpinoffStatus, allowed: readonly SpinoffStatus[]): Promise<void> {
+  let stored: string | null;
+  try {
+    stored = (await getSpinoffRow(s, id))?.status ?? null;
+  } catch {
+    return;
+  }
+  if (stored === null) return;
+  const today = (allowed as readonly string[]).includes(stored) ? "allowed" : "refused";
+  await shadowMove(s, {
+    machine: spinoffMachine,
+    id: String(id),
+    from: stored,
+    event: spinoffEventFor(stored, to) ?? `to:${to}`,
+    to,
+    today,
+    todayMessage: today === "refused" ? new SpinoffTransitionRefused(id, stored, to).message : null,
+    itemId: null,
+    actor: null,
+    extra: { rowId: id },
+  });
 }
 
 /**
@@ -537,6 +578,7 @@ export async function moveSpinoff(
 ): Promise<SpinoffRow> {
   const s = asStore(db);
   const allowed = from.filter((f) => SPINOFF_TRANSITIONS[f].includes(to));
+  await shadowSpinoffMove(s, id, to, allowed);
   if (allowed.length > 0) {
     const rows = (await s.q
       .update(s.t.spinoff)
