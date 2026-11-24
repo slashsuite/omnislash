@@ -235,7 +235,7 @@ describe("ob api-token (OS-178)", () => {
 
 describe("a scoped token over the API (OS-178)", () => {
   test(
-    "every route-family pair: GET on a granted family passes the gate, everything else is 403 forbidden",
+    "every route-family pair: a marked route on a granted family passes the gate, everything else is 403 forbidden",
     async () => {
       await withScopedApi(tokensFile([alice()]), async ({ call }) => {
         for (const r of OB_API_ROUTES) {
@@ -245,7 +245,8 @@ describe("a scoped token over the API (OS-178)", () => {
             continue;
           }
           const res = await call(concrete(r.path), { method: r.method, ...(r.method === "POST" ? { body: {} } : {}) });
-          const granted = r.method === "GET" && OB_API_SCOPABLE_FAMILIES.includes(r.family);
+          // OS-179: a route opens only when marked `scoped`, and a non-GET only when marked `write`.
+          const granted = r.scoped !== undefined && OB_API_SCOPABLE_FAMILIES.includes(r.family) && (r.method === "GET" || r.scoped === "write");
           if (granted) expect(res.status, `${r.method} ${r.path}`).not.toBe(403);
           else {
             expect(res.status, `${r.method} ${r.path}`).toBe(403);
@@ -258,7 +259,8 @@ describe("a scoped token over the API (OS-178)", () => {
         for (const p of ["/secrets", "/gmail/search", "/whatsapp/recent", "/status", "/snapshot", "/no-such-family", "/items/x/y/z"]) {
           expect((await call(p)).status, p).toBe(403);
         }
-        for (const m of ["POST", "PATCH", "DELETE"]) expect((await call("/items", { method: m, body: {} })).status, m).toBe(403);
+        for (const m of ["PATCH", "DELETE"]) expect((await call("/items", { method: m, body: {} })).status, m).toBe(403);
+        expect((await call("/items/x", { method: "DELETE" })).status).toBe(403);
       });
     },
     BUDGET,
@@ -319,8 +321,8 @@ describe("a scoped token over the API (OS-178)", () => {
         expect(missing.status).toBe(404);
         expect(hidden.body.error.code).toBe(missing.body.error.code);
         expect((await call(`/items/${refs.loose}`)).status).toBe(404);
-        // teams is an admin family: an unknown team's 404 would name which teams exist.
-        expect((await call("/items?team=anything")).status).toBe(403);
+        // OS-179: a team outside the scope reads like an unknown one.
+        expect((await call("/items?team=anything")).status).toBe(404);
         for (const p of ["/items?project=beta", "/next?project=beta", "/items?project=nope", "/next?project=nope"]) {
           expect((await call(p)).status, p).toBe(404);
         }
