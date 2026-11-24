@@ -423,7 +423,8 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
         return { ok: true, err: "", out: cmd.join(" ").includes("rev-list") ? "0\n" : "" };
       }),
     );
-    await runCli(dbPath, ["spinoff", "handoff", itemId]);
+    // OS-180: with the claims-review line, so the handoff gets past that refusal and could have read CI.
+    expect((await runCli(dbPath, ["spinoff", "handoff", itemId, "--note", "claims-review: 0 cut, 0 open (opus: 0, neon: 0)"])).code).toBe(0);
     expect(ghCalled).toBe(false);
   });
 });

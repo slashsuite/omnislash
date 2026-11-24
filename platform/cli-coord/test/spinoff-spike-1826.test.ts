@@ -24,6 +24,7 @@ import {
   isSpikeEnd,
   isSpikeTagged,
   missingSpikeSections,
+  spikeClaimsReviewMissing,
   spikeCommitRefusal,
   spikeEndError,
   spikeGateMissing,
@@ -246,6 +247,9 @@ function fakeGit(changed: string[] | null = [], pr: { url: string } | "fail" = "
   );
 }
 
+/** OS-180: the claims-review line every spike handoff carries once its claims review is clean. */
+const CLAIMS = ["--note", "claims-review: 3 cut, 0 open (opus: 2, neon: 1)"];
+
 describe("ob spinoff handoff on a spike (OB-1826)", () => {
   test("a dirty worktree with no commit succeeds; the row is not ready-for-gate and not gateable", async () => {
     const s = await seedTickets();
@@ -254,7 +258,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(0);
     expect(res.out).toContain("spike answered");
     expect(res.out).not.toContain("handed off");
@@ -276,7 +280,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     fakeGit();
     restores.push(__setT3Seam(fakeSeam().seam));
 
-    expect((await runCli(s.dbPath, ["spinoff", "handoff", s.spike, "--note", "the cache key is per repo"])).code).toBe(0);
+    expect((await runCli(s.dbPath, ["spinoff", "handoff", s.spike, "--note", "the cache key is per repo; claims-review: 3 cut, 0 open (opus: 2, neon: 1)"])).code).toBe(0);
     expect((await runCli(s.dbPath, ["show", s.spike])).out).toContain("the cache key is per repo");
   });
 
@@ -288,7 +292,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(1);
     expect(res.err).toContain("spike-branch");
     expect(res.err).toContain("documentation only");
@@ -307,7 +311,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(0);
     expect(res.out).toContain("spike answered");
     expect(res.out).toContain("documentation commit");
@@ -341,7 +345,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(0);
     expect(res.out).toContain(url);
     expect(fake.sends).toHaveLength(1);
@@ -356,7 +360,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(1);
     expect(res.err).toContain("State:");
     expect(rowOf(s.dbPath, rowId).status).toBe("launched");
@@ -370,7 +374,7 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const fake = fakeSeam();
     restores.push(__setT3Seam(fake.seam));
 
-    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...CLAIMS]);
     expect(res.code).toBe(0);
     expect(fake.sends).toHaveLength(1);
     expect(fake.sends[0]!.message).not.toContain("https://");
@@ -382,10 +386,68 @@ describe("ob spinoff handoff on a spike (OB-1826)", () => {
     const { rowId } = await seedSpikeRow(s);
     fakeGit();
     restores.push(__setT3Seam(fakeSeam().seam));
+    // No claims-review line: a build is refused for its own reason, never the spike's (OS-180).
     const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike]);
     expect(res.code).toBe(1);
     expect(res.err).toContain("worktree is dirty");
+    expect(res.err).not.toContain("claims");
     expect(rowOf(s.dbPath, rowId).status).toBe("launched");
+  });
+});
+
+describe("a spike hands off only after a clean claims review (OS-180)", () => {
+  /** Hand off a spike with `args`; return the result, the row's status and what the architect was sent. */
+  async function handoff(...args: string[]) {
+    const s = await seedTickets();
+    const { rowId } = await seedSpikeRow(s);
+    fakeGit();
+    const fake = fakeSeam();
+    restores.push(__setT3Seam(fake.seam));
+    const res = await runCli(s.dbPath, ["spinoff", "handoff", s.spike, ...args]);
+    return { res, status: rowOf(s.dbPath, rowId).status, sends: fake.sends, s };
+  }
+
+  test("no claims-review line is refused, and nothing is sent", async () => {
+    const { res, status, sends } = await handoff("--note", "the cache key is per repo");
+    expect(res.code).toBe(1);
+    expect(res.err).toContain("spike handoff needs a 'claims-review: N cut, 0 open' line");
+    expect(status).toBe("launched");
+    expect(sends).toHaveLength(0);
+  });
+
+  test("open findings are refused with the open count", async () => {
+    const { res, sends, s } = await handoff("--note", "claims-review: 1 cut, 2 open (opus: 2, neon: 1)");
+    expect(res.code).toBe(1);
+    expect(res.err).toContain("claims review still has 2 open");
+    expect(sends).toHaveLength(0);
+    expect((await runCli(s.dbPath, ["show", s.spike])).out).not.toContain("claims-review: 1 cut, 2 open");
+  });
+
+  test("'3 cut, 0 open' hands off, and the line is on the trail", async () => {
+    const { res, status, sends, s } = await handoff("--note", "claims-review: 3 cut, 0 open (opus: 2, neon: 1)");
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("spike answered");
+    expect(status).toBe("launched");
+    expect(sends).toHaveLength(1);
+    expect((await runCli(s.dbPath, ["show", s.spike])).out).toContain("claims-review: 3 cut, 0 open");
+  });
+
+  test("the line may come from --report, which the handoff merges into the note", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "os180-"));
+    restores.push(() => rmSync(dir, { recursive: true, force: true }));
+    const report = join(dir, "report.md");
+    writeFileSync(report, "## Claims review\nclaims-review: 0 cut, 0 open (opus: 0, neon: 0)\n");
+    const { res } = await handoff("--report", report);
+    expect(res.code).toBe(0);
+  });
+});
+
+describe("spikeClaimsReviewMissing (OS-180)", () => {
+  test("names the missing line, the open count, or nothing", () => {
+    expect(spikeClaimsReviewMissing(null)).toContain("needs a 'claims-review: N cut, 0 open' line");
+    expect(spikeClaimsReviewMissing("skeptical-review: 0 cut, 0 open")).toContain("needs a");
+    expect(spikeClaimsReviewMissing("a; claims-review: 0 cut, 4 open (opus: 2, neon: 2)")).toContain("still has 4 open");
+    expect(spikeClaimsReviewMissing("a; claims-review: 3 cut, 0 open (opus: 2, neon: 1)")).toBeNull();
   });
 });
 
