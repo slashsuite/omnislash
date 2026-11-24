@@ -67,6 +67,7 @@ import { parseProjectLabel, parseProjectPatch, projectRepoPrivate, renderProject
 import { briefQuiet, renderBrief, type AnyBrief } from "../commands/brief.ts";
 import { isJournalType, JOURNAL_TYPES, renderJournalCapture, renderJournalList } from "../commands/log.ts";
 import { renderJobs } from "../commands/jobs.ts";
+import { MACHINE_USAGE, machineAuditOptions, printMachineAudit } from "../commands/machine.ts";
 import {
 	DEPLOY_RESULTS,
 	DEPLOY_SHA_RE,
@@ -2545,6 +2546,15 @@ async function apiReviewMiss(ctx: ApiCtx): Promise<void> {
 	throw new UsageError(`unknown review-miss subcommand '${sub ?? ""}' (add|top)`);
 }
 
+/** OS-170: `ob machine audit` over the API; the same options and rendering as the local command. */
+async function apiMachine(ctx: ApiCtx): Promise<void> {
+	const sub = ctx.args[0];
+	if (sub !== "audit") throw new UsageError(`unknown machine subcommand '${sub ?? ""}' (audit)\n${MACHINE_USAGE}`);
+	const opts = machineAuditOptions(ctx.flags);
+	const audit = await usageOn400(ctx.client.machineAudit({ since: opts.since, stale_days: opts.staleDays }));
+	printMachineAudit(audit, ctx.mode);
+}
+
 async function apiCursor(ctx: ApiCtx): Promise<void> {
 	const sub = ctx.args[0];
 	if (sub === "get") {
@@ -2723,6 +2733,7 @@ export const API_HANDLERS: Record<string, (ctx: ApiCtx) => Promise<void>> = {
 	// OB-2097: the overnight decision log, the same command as locally over an HTTP backend.
 	overnight: apiOvernight,
 	"review-miss": apiReviewMiss,
+	machine: apiMachine,
 	review: apiReview,
 	cursor: apiCursor,
 	"test-user": apiTestUser,

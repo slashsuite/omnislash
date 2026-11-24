@@ -96,6 +96,7 @@ export const READ_COMMANDS: Record<string, ReadRule> = {
   decision: { bare: true, subs: ["list"] },
   learning: { bare: true, subs: ["list"] },
   "review-miss": { subs: ["top"] },
+  machine: { subs: ["audit"] }, // OS-170: a read over item, spinoff and event rows; writes nothing
   log: { subs: ["list"] },
   issue: { bare: true, subs: ["list", "landed", "reconcile", "drift"] },
   spinoff: { subs: ["list", "brief", "show", "overlap"] },

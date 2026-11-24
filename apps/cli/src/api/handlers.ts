@@ -2352,6 +2352,7 @@ import { addTournament, listTournaments, pickTournament, recordMatch, setCandida
 import { addSummaryLine, decide, listRuns, showNight, startRun } from "../overnight.ts";
 import { syncGithub } from "../ingest/github.ts";
 import { rankClasses, scopeFromPr } from "../commands/reviewmiss.ts";
+import { machineAudit } from "../machine-audit.ts";
 import { getSkillCursorFor, setSkillCursorFor } from "../commands/admin.ts";
 import {
   addTestUserFor,
@@ -2416,6 +2417,7 @@ import type {
   ReviewMissAddRequest,
   ReviewMissAddResponse,
   ReviewMissTopResponse,
+  MachineAuditResponse,
   SyncRequest,
   SyncResponse,
   TestUserCheckRequest,
@@ -2549,6 +2551,11 @@ export async function reviewMissTop(store: Store, query: { scope?: string; limit
     })
     .filter((e) => e.class.length > 0);
   return { ranked: rankClasses(events, new Date(), { scope: query.scope, limit }) };
+}
+
+/** OS-170: the read-only machine audit. */
+export async function machineAuditRead(store: Store, query: { since?: string; staleDays?: number }): Promise<MachineAuditResponse> {
+  return machineAudit(store, query);
 }
 
 export async function cursorGet(store: Store, skill: string, key: string): Promise<CursorGetResponse> {

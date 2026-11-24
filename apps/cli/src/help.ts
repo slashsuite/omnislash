@@ -1498,6 +1498,26 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ["review readers", "review readers --tier medium -q"],
   },
 
+  machine: {
+    section: "System",
+    summary: "Audit rows against the lifecycle machines, read-only",
+    usage: ["machine audit [--json] [--since <date>] [--stale-days N]"],
+    subcommands: {
+      audit: {
+        summary: "List unresolvable statuses, stale spinoff rows and would-refuse events",
+        usage: ["machine audit [--json] [--since <date>] [--stale-days N]"],
+        flags: [
+          { flag: "--since <date>", description: "Would-refuse events from this date or ISO time (default 7 days ago)" },
+          { flag: "--stale-days <n>", description: "A launching/launched row unmoved this many days is stale (default 7)" },
+          { flag: "--json", description: "Print {unresolvable, stale, wouldRefuse}" },
+        ],
+        examples: ["machine audit", "machine audit --stale-days 14 --since 2026-11-01 --json"],
+        notes: ["Changes nothing and always exits 0."],
+      },
+    },
+    examples: ["machine audit"],
+  },
+
   "review-miss": {
     section: "Reviews & Models",
     summary: "Log and rank defects missed during code review",

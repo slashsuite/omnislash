@@ -65,6 +65,7 @@ import {
 } from "../../../../platform/cli-sources/src/google-hosted.ts";
 import type { TokenExchanger } from "../../../../platform/cli-sources/src/commands/google.ts";
 import * as h from "./handlers.ts";
+import { parseAuditSince, parseStaleDays } from "../machine-audit.ts";
 import { kickLiveDeploy, type DeployKickDeps } from "./deploy-kick.ts";
 import {
   hostOutputSecretValues,
@@ -1951,6 +1952,19 @@ async function route(
           limit: queryPositiveInt(url.searchParams, "limit"),
         }),
       );
+    }
+    return null;
+  }
+
+  if (head === "machine") {
+    if (second === "audit" && segments.length === 2 && method === "GET") {
+      const sinceRaw = url.searchParams.get("since")?.trim();
+      const staleRaw = url.searchParams.get("stale_days")?.trim();
+      const since = sinceRaw ? parseAuditSince(sinceRaw) : undefined;
+      if (since === null) bad("'since' must be a date or an ISO time");
+      const staleDays = staleRaw ? parseStaleDays(staleRaw) : undefined;
+      if (staleDays === null) bad("'stale_days' must be a whole number of days");
+      return json(await h.machineAuditRead(store, { since, staleDays }));
     }
     return null;
   }

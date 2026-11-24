@@ -288,6 +288,8 @@ export const POSTGRES_SERVABLE_COMMANDS: ReadonlySet<string> = new Set([
 	// OB-2097: the overnight log. Every path is overnight.ts (items.ts + doc.ts) through the store seam.
 	"overnight",
 	"review-miss",
+	// OS-170: `ob machine audit` reads items, spinoff rows and events through the store seam only.
+	"machine",
 	"review",
 	"audit",
 	"cursor",

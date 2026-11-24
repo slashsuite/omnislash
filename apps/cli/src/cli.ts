@@ -54,6 +54,7 @@ import { cmdLearning } from "./commands/learning.ts";
 import { cmdMemory } from "./commands/memory.ts";
 import { cmdTestUser } from "./commands/testuser.ts";
 import { cmdReviewMiss } from "./commands/reviewmiss.ts";
+import { cmdMachine } from "./commands/machine.ts";
 import { cmdReview } from "./commands/review.ts";
 import { cmdPerson, cmdWhois } from "./commands/person.ts";
 import { cmdTournament } from "./commands/tournament.ts";
@@ -164,6 +165,8 @@ export const FLAGS = {
   query: { type: "string" },
   max: { type: "string" },
   "updated-after": { type: "string" },
+  // OS-170: `ob machine audit --stale-days N`.
+  "stale-days": { type: "string" },
   by: { type: "string" },
   limit: { type: "string" },
   remote: { type: "string" },
@@ -492,6 +495,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   memory: cmdMemory,
   "test-user": cmdTestUser,
   "review-miss": cmdReviewMiss,
+  machine: cmdMachine,
   review: cmdReview,
   person: cmdPerson,
   whois: cmdWhois,
