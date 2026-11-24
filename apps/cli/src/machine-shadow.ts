@@ -89,15 +89,9 @@ export async function shadowItemMove(
   opts: { todayMessage?: string | null; actor?: string | null } = {},
 ): Promise<void> {
   if (it.status === to) return;
-  let machine: AnyStateMachine;
-  try {
-    machine = itemMachineFor(it.type, it.project_kind);
-  } catch {
-    return;
-  }
   const actor = typeof opts.actor === "string" && opts.actor.trim() !== "" ? opts.actor.trim() : null;
   await shadowMove(db, {
-    machine,
+    machine: itemMachineFor(it.type, it.project_kind),
     id: it.id,
     from: it.status,
     event: moveEvent(to),

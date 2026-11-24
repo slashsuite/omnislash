@@ -7,6 +7,7 @@ import { print } from "../output.ts";
 import { asStore, type Store } from "../db/store.ts";
 import { getItem, getLinearRef, getLinks, getTags, type ItemRow } from "../items.ts";
 import { parsePayload, type EventRow } from "../events.ts";
+import { MACHINE_SHADOW_SOURCE } from "../machine-shadow.ts";
 import { inFlightPrsFor, type InFlightPr, type PrState } from "./status.ts";
 
 // ob brief (138 Part A): assemble the WORK-STATE material for a topic so a reply to a
@@ -143,6 +144,8 @@ export async function buildItemBrief(db: Database | Store, row: ItemRow): Promis
     return { rel_type: l.rel_type, direction: l.direction, id: l.other, title: other?.title ?? null, status: other?.status ?? null };
   }));
   const events = recentEvents(await eventRows(db), (row2, p) => {
+    // OS-169: the state-machine shadow's `machine_would_refuse` rows are telemetry, not the item's story.
+    if (row2.source === MACHINE_SHADOW_SOURCE) return false;
     if (row2.item_id === row.id) return true;
     return !!ticket && p.entity === ticket;
   });

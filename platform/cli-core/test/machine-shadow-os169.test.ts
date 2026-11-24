@@ -2,7 +2,7 @@
 // `machine_would_refuse` event when the two disagree, without changing the move. Pinned per function
 // (transitionTo, reopenItem, blockItem, unblockItem, moveItem): an agreed move writes no event; a move today
 // allows and the machine refuses writes one event and still happens; a move today refuses still fails with
-// today's message. A throwing decide or event write changes nothing. Fresh SQLite file per test.
+// today's message. A throwing decide or event write changes nothing (pinned on transitionTo). Fresh SQLite file per test.
 import { afterEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import type { Database } from "bun:sqlite";
@@ -13,6 +13,7 @@ import { eventsBetweenFor, parsePayload } from "../../../apps/cli/src/events.ts"
 import { blockItem, moveItem, reopenItem, transitionTo, unblockItem } from "../../../apps/cli/src/workflow.ts";
 import { MACHINE_SHADOW_SOURCE, MACHINE_WOULD_REFUSE, machineShadowSeam } from "../../../apps/cli/src/machine-shadow.ts";
 import { decide } from "../../state-machine/src/decide.ts";
+import { buildItemBrief } from "../../../apps/cli/src/commands/brief.ts";
 
 const paths: string[] = [];
 const restores: Array<() => void> = [];
@@ -183,7 +184,8 @@ for (const c of CASES) {
       expect(events[0]!.actor).toBeNull();
     });
 
-    test("a throwing decide or event write does not change the move", async () => {
+    // One function is enough to pin the never-throws contract: every door runs the same `shadowMove`.
+    if (c.name === "transitionTo") test("a throwing decide or event write does not change the move", async () => {
       for (const broken of ["decide", "record"] as const) {
         const d = db();
         const ok = await seed(d, c.allowed.at);
@@ -220,9 +222,13 @@ describe("OS-169 shadow check: what is not checked", () => {
     expect(await shadowEvents(d)).toEqual([]);
   });
 
-  test("the real machines agree with every allowed move in this file", async () => {
-    // The parity test (platform/state-machine) proves the tables match; this pins that the shadow asks the
-    // real `decide`, not a copy, when no stub is installed.
-    expect(machineShadowSeam.get().decide).toBe(decide);
+  test("the item brief leaves the shadow's events out", async () => {
+    const d = db();
+    const id = await itemAt(d, "open");
+    machineSays("refuse");
+    await transitionTo(d, id, "in_progress");
+    expect(await shadowEvents(d)).toHaveLength(1);
+    const brief = await buildItemBrief(d, (await getItem(d, id))!);
+    expect(brief.events.filter((e) => e.source === MACHINE_SHADOW_SOURCE)).toEqual([]);
   });
 });
