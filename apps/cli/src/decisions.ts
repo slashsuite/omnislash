@@ -84,7 +84,9 @@ export async function recordPriorityChange(
   opts: DecisionOpts = {},
 ): Promise<void> {
   const note = cleanNote(opts.note);
-  const payload: Record<string, unknown> = { ...opts.extra, from: priorityName(from), to: priorityName(to) };
+  // Unset and `none` (0) both print as `none`; between the two, unset is named `unset` so the line is not `none → none`.
+  const name = (p: number | null, other: number | null) => (p === null && other === 0 ? "unset" : priorityName(p));
+  const payload: Record<string, unknown> = { ...opts.extra, from: name(from, to), to: name(to, from) };
   if (note) payload.note = note;
   await recordEventFor(db, {
     ts: nowIso(),

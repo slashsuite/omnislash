@@ -9,6 +9,7 @@ import { freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts"
 import { openStore, sqliteStoreFor, type Store } from "../../../apps/cli/src/db/store.ts";
 import { createItem, editItem, getItem } from "../../../apps/cli/src/items.ts";
 import { registerProject } from "../../../apps/cli/src/project.ts";
+import { setConfig } from "../../../apps/cli/src/config.ts";
 import { DECISION_TYPE, decisionsForItem, PRIORITY_CHANGE_TYPE } from "../../../apps/cli/src/decisions.ts";
 import { eventsForItemFor, parsePayload } from "../../../apps/cli/src/events.ts";
 import { blockItem, setQueueOrder, startItem, unblockItem } from "../../../apps/cli/src/workflow.ts";
@@ -58,6 +59,17 @@ describe("editItem records a priority change (OS-26)", () => {
     await editItem(store, id, { priority: null });
     expect(await priorityRows(store, id)).toEqual([{ actor: "human", from: "high", to: "none" }]);
     expect((await getItem(store, id))!.priority).toBeNull();
+  });
+
+  test("unset to none (0) and back are named so the line is never none → none", async () => {
+    const store = sqliteStoreFor(freshDb());
+    const id = await createItem(store, { type: "task", title: "p", priority: null });
+    await editItem(store, id, { priority: 0 });
+    await editItem(store, id, { priority: null });
+    expect(await priorityRows(store, id)).toEqual([
+      { actor: "human", from: "none", to: "unset" },
+      { actor: "human", from: "unset", to: "none" },
+    ]);
   });
 
   test("the update and the event share a transaction: a failing write leaves neither", async () => {
@@ -113,6 +125,7 @@ describe("ob edit --priority and ob order (OS-26)", () => {
   test("ob order --top --priority on an unset focus item writes the band and records unset → high", async () => {
     const store = sqliteStoreFor(freshDb());
     await registerProject(store, { name: "alpha", kind: "side" });
+    await setConfig(store, "focus_project", "alpha");
     const id = await createItem(store, { type: "task", title: "u", projectId: "alpha", priority: null });
     await setQueueOrder(store, id, { top: true, priority: HIGH }, { actor: "dashboard" });
     expect(await priorityRows(store, id)).toEqual([{ actor: "dashboard", from: "none", to: "high" }]);

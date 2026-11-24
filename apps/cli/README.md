@@ -1095,7 +1095,7 @@ readers that look only at transitions, `unblock` and the spinoff checks, never s
 `priority <from> → <to>`. One is written, in the same transaction as the update, whenever the stored priority
 actually changes: `ob edit --priority`, an `ob order` that crosses into another band, and the dashboard
 (actor `dashboard`). `--note` and `--holder` on `ob edit` and `ob order` carry the why and the who. A priority
-given at `ob add` is not a change; clearing one records `→ none`. History from before OS-26 does not exist.
+given at `ob add` is not a change; clearing one records `→ none` (between unset and an explicit `none`, unset is named `unset`). History from before OS-26 does not exist.
 
 ```
     2026-11-24T09:12:40.031Z · architect-os · priority medium → urgent · prod is down
