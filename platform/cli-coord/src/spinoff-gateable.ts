@@ -1,4 +1,5 @@
 import type { Mode } from "../../../apps/cli/src/output.ts";
+import { complexityLabel, complexityOf } from "../../../apps/cli/src/models-file.ts";
 import { stateDisplayLines } from "./spinoff-state-reason.ts";
 import { isLandableToken } from "./spinoff-vocab.ts";
 import { compareFiles, filesLine, type FilesComparison } from "./spinoff-files.ts";
@@ -22,6 +23,8 @@ export interface GateableSource {
   repo: string;
   /** 1480: the tier it was rated and the model it ran on — a stalled cheap build reads as such here. */
   tier?: string | null;
+  /** OS-177: the score 1-10 it was rated; null on a row from before the column (read as its tier's alias). */
+  complexity?: number | null;
   model?: string | null;
   /** OB-2172: why the last readying note did not reach the architect (`<iso time> <reason>`), or null. */
   note_error?: string | null;
@@ -40,6 +43,8 @@ export interface GateableRow {
   worktree: string;
   repo: string;
   tier: string | null;
+  /** OS-177: the row's score, its tier's alias value for an older row; null only when the stamp is not a score. */
+  complexity: number | null;
   model: string | null;
   state: string | null;
   landable: boolean;
@@ -152,6 +157,7 @@ export function assessGateable(row: GateableSource, facts: GateableFacts, planne
     worktree: row.worktree,
     repo: row.repo,
     tier: row.tier ?? null,
+    complexity: complexityOf(row.complexity, row.tier),
     model: row.model ?? null,
     state,
     landable: !facts.missing && isLandable(state, { handedOff: true }),
@@ -218,6 +224,7 @@ export function groupTrialPairs(rows: GateableRow[], pairs: GateablePair[]): Gat
       worktree: legs.map((l) => l.worktree).join(" "),
       repo: row.repo,
       tier: row.tier,
+      complexity: row.complexity,
       model: null,
       state: null,
       // a pair is judged on both diffs, so half a pair is not landable yet
@@ -256,7 +263,7 @@ function formatGateableRow(r: GateableRow): string {
   return [
     `${r.ticket}  #${r.id}  ${r.branch}  ${r.worktree}  ${r.repo}`,
     ...stateDisplayLines(r.state, "  ", "State: (none)"),
-    `  tier: ${r.tier ?? "-"} · model: ${r.model ?? "-"}`,
+    `  ${r.complexity === null ? `complexity -` : complexityLabel(r.complexity)} · model: ${r.model ?? "-"}`,
     `  landable: ${r.landable ? "yes" : "no"}`,
     ...(noteErrorLine(r.note_error) ? [noteErrorLine(r.note_error)!] : []),
     ...(r.files ? [`  ${filesLine(r.files)}`] : []),

@@ -1244,6 +1244,9 @@ async function route(
       // 1480: an unknown tier is refused by name too — a guessed tier is a guessed model.
       const tier = optString(body, "tier")?.trim();
       if (tier) oneOf<SpinoffTier>(tier, SPINOFF_TIERS, "tier");
+      // OS-177: the complexity score, an integer 1-10. It is the routing key; `tier` is the old alias.
+      const complexity = optPositiveInt(body, "complexity");
+      if (complexity !== undefined && complexity > 10) bad("'complexity' must be an integer 1-10");
       // OB-1815: and an unknown effort level, by name.
       const effort = optString(body, "effort")?.trim();
       if (effort) oneOf<SpinoffEffort>(effort, SPINOFF_EFFORTS, "effort");
@@ -1257,6 +1260,7 @@ async function route(
           brief: reqString(body, "brief"),
           launcher: launcher || null,
           tier: tier || null,
+          complexity: complexity ?? null,
           effort: effort || null,
           note: optString(body, "note") ?? null,
           no_check: optString(body, "no_check") ?? null,

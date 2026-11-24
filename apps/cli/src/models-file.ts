@@ -40,6 +40,143 @@ export function isSpinoffTier(s: string): s is SpinoffTier {
   return (SPINOFF_TIERS as readonly string[]).includes(s);
 }
 
+// --- OS-177: complexity -----------------------------------------------------------------------------------
+// The architect scores a dispatch 1 to 10 (1-3 trivial copy, 4-6 straightforward functionality, 7-10 not
+// one-shottable). The score is the routing key; a tier is only the label of the band a score falls in.
+
+export const COMPLEXITY_MIN = 1;
+export const COMPLEXITY_MAX = 10;
+/** A dispatch that names no score runs at this one. */
+export const DEFAULT_COMPLEXITY = 5;
+/** The old `--tier` names as scores (`--tier simple` = `--complexity 2`), and a NULL-complexity row's reading. */
+export const TIER_COMPLEXITY: Readonly<Record<SpinoffTier, number>> = { simple: 2, medium: 5, complex: 8 };
+/** The bands each tier label covers; the old `builder.<tier>` routes load as these ranges. */
+export const TIER_BANDS: Readonly<Record<SpinoffTier, ComplexityRange>> = {
+  simple: { from: 1, to: 3 },
+  medium: { from: 4, to: 6 },
+  complex: { from: 7, to: 10 },
+};
+/** An urgent ticket runs at least at this score (OS-177; was "urgent forces complex", OB-2075). */
+export const URGENT_COMPLEXITY = 7;
+
+export interface ComplexityRange {
+  from: number;
+  to: number;
+}
+
+export function isComplexity(n: unknown): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n >= COMPLEXITY_MIN && n <= COMPLEXITY_MAX;
+}
+
+/** `--complexity <text>` checked: a whole number 1 to 10, or null. Pure. */
+export function parseComplexity(text: string): number | null {
+  const t = text.trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return isComplexity(n) ? n : null;
+}
+
+/** The tier label a score's band carries (1-3 simple, 4-6 medium, 7-10 complex). Pure. */
+export function tierOfComplexity(c: number): SpinoffTier {
+  return c <= TIER_BANDS.simple.to ? "simple" : c <= TIER_BANDS.medium.to ? "medium" : "complex";
+}
+
+/**
+ * A row's score: its stamped complexity, else its tier's alias value, else the default (5). A recorded tier
+ * that is not a tier is null, so the caller refuses it rather than guessing. Pure.
+ */
+export function complexityOf(complexity: number | null | undefined, tier: string | null | undefined): number | null {
+  if (complexity !== null && complexity !== undefined) return isComplexity(complexity) ? complexity : null;
+  if (tier === null || tier === undefined || tier === "") return DEFAULT_COMPLEXITY;
+  return isSpinoffTier(tier) ? TIER_COMPLEXITY[tier] : null;
+}
+
+/** `complexity N/10`, the line every printer shares. Pure. */
+export function complexityLabel(c: number): string {
+  return `complexity ${c}/10`;
+}
+
+/** `builder.<from>-<to>`: a builder range route. */
+export const BUILDER_RANGE_ROUTE = /^builder\.(\d+)-(\d+)$/;
+
+/** The range a `builder.<from>-<to>` route names, or null for any other name (or a range outside 1-10). Pure. */
+export function builderRangeOf(route: string): ComplexityRange | null {
+  const m = BUILDER_RANGE_ROUTE.exec(route);
+  if (!m) return null;
+  const from = Number(m[1]);
+  const to = Number(m[2]);
+  if (String(from) !== m[1] || String(to) !== m[2] || !isComplexity(from) || !isComplexity(to) || from > to) return null;
+  return { from, to };
+}
+
+export function rangeText(r: ComplexityRange): string {
+  return r.from === r.to ? `${r.from}` : `${r.from}-${r.to}`;
+}
+
+export function rangeRoute(r: ComplexityRange): string {
+  return `builder.${r.from}-${r.to}`;
+}
+
+/** The old tier routes, `builder.simple|medium|complex`, which name the tier's band. */
+export function builderTierOf(route: string): SpinoffTier | null {
+  if (!route.startsWith("builder.")) return null;
+  const t = route.slice("builder.".length);
+  return isSpinoffTier(t) ? t : null;
+}
+
+/**
+ * Do these ranges cover 1-10 exactly once? Null when they do, else the refusal naming the gap or the overlap. Pure.
+ */
+export function rangeCoverError(ranges: readonly ComplexityRange[]): string | null {
+  const sorted = [...ranges].sort((a, b) => a.from - b.from || a.to - b.to);
+  let next = COMPLEXITY_MIN;
+  for (const r of sorted) {
+    if (r.from > next) return `builder ranges leave a gap at ${rangeText({ from: next, to: r.from - 1 })}: the ranges must cover 1-10 with no gap`;
+    if (r.from < next) {
+      const prev = sorted[sorted.indexOf(r) - 1]!;
+      return `builder ranges ${rangeText(prev)} and ${rangeText(r)} overlap at ${rangeText({ from: r.from, to: Math.min(prev.to, r.to) })}: each score belongs to one range`;
+    }
+    next = r.to + 1;
+  }
+  if (next <= COMPLEXITY_MAX) return `builder ranges leave a gap at ${rangeText({ from: next, to: COMPLEXITY_MAX })}: the ranges must cover 1-10 with no gap`;
+  return null;
+}
+
+/** One builder band and the model its launch runs (the first of its chain). */
+export interface RangeModel extends ComplexityRange {
+  model: string;
+}
+
+/**
+ * A builder's models: the bands (OS-177), or the old tier → model map, read as the tier bands. Every launch and
+ * refusal that picks a builder model takes this, so a caller holding either works. Pure readers below.
+ */
+export type BuilderModels = Readonly<Record<SpinoffTier, string>> | readonly RangeModel[];
+
+/** The tier map as bands. Pure. */
+export function bandsOfTierModels(tierModels: Readonly<Record<SpinoffTier, string>>): RangeModel[] {
+  return (["simple", "medium", "complex"] as const).map((t) => ({ ...TIER_BANDS[t], model: tierModels[t] }));
+}
+
+/** The band covering `c`. Pure; throws when none does (the ranges were validated to cover 1-10). */
+export function bandFor(models: BuilderModels, c: number): RangeModel {
+  const bands = Array.isArray(models) ? (models as readonly RangeModel[]) : bandsOfTierModels(models as Readonly<Record<SpinoffTier, string>>);
+  const band = bands.find((b) => b.from <= c && c <= b.to);
+  if (!band) throw new Error(`no builder range covers complexity ${c}`);
+  return band;
+}
+
+/** The model a launch at score `c` runs. Pure. */
+export function modelForComplexity(models: BuilderModels, c: number): string {
+  return bandFor(models, c).model;
+}
+
+/** `models` with the band covering `c` swapped to `model` (a trial leg's own model). Pure. */
+export function withModelAt(models: BuilderModels, c: number, model: string): RangeModel[] {
+  const bands = Array.isArray(models) ? [...(models as readonly RangeModel[])] : bandsOfTierModels(models as Readonly<Record<SpinoffTier, string>>);
+  return bands.map((b) => (b.from <= c && c <= b.to ? { ...b, model } : b));
+}
+
 export function emptyHalfOf(value: string): "provider" | "model" | "provider or model" {
   if (/^\s*:/.test(value)) return "provider";
   if (/:\s*$/.test(value)) return "model";
@@ -138,12 +275,12 @@ export type FixedRoute = (typeof FIXED_ROUTES)[number];
 export const JOB_ROUTE = /^job\.[a-z0-9-]+$/;
 
 export function isRouteName(name: string): boolean {
-  return (FIXED_ROUTES as readonly string[]).includes(name) || JOB_ROUTE.test(name);
+  return (FIXED_ROUTES as readonly string[]).includes(name) || JOB_ROUTE.test(name) || builderRangeOf(name) !== null;
 }
 
 /** The route-name refusal, naming every fixed route and the job form. Pure. */
 export function routeNameRejection(name: string): string {
-  return `'${name}' is not a route (use ${FIXED_ROUTES.join(", ")} or job.<name>, a name of lowercase letters, digits and dashes)`;
+  return `'${name}' is not a route (use builder.<from>-<to> (a complexity range inside 1-10), ${FIXED_ROUTES.join(", ")} or job.<name>, a name of lowercase letters, digits and dashes)`;
 }
 
 /** The effort levels a route may name. Anything else is refused by name; omitted means the launcher's default. */
@@ -288,6 +425,8 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
         profile.routes[route] = checkRouteSpec(`${path}: profile '${name}'.routes.${route}`, spec);
       }
     }
+    const formError = builderFormError(Object.keys(profile.routes), Object.keys(profile.builder));
+    if (formError) throw new ModelsFileError(`${path}: profile '${name}': ${formError}`);
     profiles[name] = profile;
   }
   const active = typeof raw.active === "string" ? raw.active.trim() : null;
@@ -299,6 +438,21 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
     fallback = (raw.fallback as string[]).map((f) => f.trim());
   }
   return { path, active, fallback, profiles };
+}
+
+/**
+ * One layer's builder routes checked (OS-177): either the old tier form (`builder.simple|medium|complex`, or the
+ * file's `builder` keys) or the range form (`builder.<from>-<to>`), never both, and ranges cover 1-10 exactly.
+ * Null when they are fine, else the refusal. `tierKeys` are the file's old `builder` object keys. Pure.
+ */
+export function builderFormError(routes: readonly string[], tierKeys: readonly string[] = []): string | null {
+  const ranges = routes.map(builderRangeOf).filter((r): r is ComplexityRange => r !== null);
+  const tiers = [...routes.filter((r) => builderTierOf(r) !== null), ...tierKeys.map((t) => `builder.${t}`)];
+  if (ranges.length === 0) return null;
+  if (tiers.length > 0) {
+    return `mixes builder ranges (${ranges.map(rangeRoute).join(", ")}) with the old tier form (${[...new Set(tiers)].join(", ")}): use one form per layer (the tiers are the ranges 1-3, 4-6 and 7-10)`;
+  }
+  return rangeCoverError(ranges);
 }
 
 /**

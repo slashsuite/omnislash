@@ -1,0 +1,55 @@
+// ob models file (OB-1969). Copy to ~/.config/ob/models.jsonc with `ob models init`.
+// One file says which model runs what, grouped into profiles (one per account).
+// `ob models use <profile>` changes "active"; `ob models show` prints what runs where.
+// Model values use the <provider>:<model> form for builders: the provider is a T3 provider
+// instance id, a bare id runs on the T3 project's own provider. Model ids only: no secret here.
+{
+  "active": "claude",
+  // Profiles tried in order when an account is out of credits (OB-1970): the active one first,
+  // then this list. A spinoff launch and a review leg each move to the next one on a credit or
+  // quota error only, never on any other error.
+  "fallback": ["antigravity", "claude"],
+  "profiles": {
+    // OB-2501 (2026-11-20): Gemini 4 Neon on Antigravity runs every builder tier; the checker stays Haiku.
+    // The review keeps the Opus leg here; the Neon leg arrives with its own ticket.
+    "antigravity": {
+      "builder": {
+        "complex": "antigravity:gemini-4-neon",
+        "medium": "antigravity:gemini-4-neon",
+        "simple": "antigravity:gemini-4-neon"
+      },
+      "checker": "claude-haiku-5-5",
+      "review": {
+        "opus": "claude-opus-5-5"
+      }
+    },
+    "claude": {
+      // Which model a spinoff builder runs on, by `ob spinoff --tier`.
+      "builder": {
+        "complex": "claudeAgent:claude-opus-5-5",
+        "medium": "claudeAgent:claude-opus-5-5",
+        "simple": "claudeAgent:claude-haiku-5-5"
+      },
+      // The blind scorer in the architect's measure-twice step.
+      "checker": "claude-haiku-5-5",
+      // The skeptical-review legs. An opencode/ or opencode-go/ id runs through opencode, anything else
+      // through claude, so a profile may move a leg between providers.
+      "review": {
+        "sonnet": "claude-opus-5-5",
+        "deepseek": "opencode-go/deepseek-v4.1-flash#high",
+        "luna": "opencode-go/gpt-6-luna#high"
+      }
+    }
+    // A second account: add a profile, then `ob models use claude2`. The provider before the colon is the
+    // id of a second Claude provider instance added in T3 Code (Settings, Providers), not a credential.
+    // ,"claude2": {
+    //   "builder": {
+    //     "complex": "claudeAgent2:claude-opus-5-5",
+    //     "medium": "claudeAgent2:claude-sonnet-5-5",
+    //     "simple": "claudeAgent2:claude-haiku-5-5"
+    //   },
+    //   "checker": "claude-haiku-5-5",
+    //   "review": { "sonnet": "claude-opus-5-5" }
+    // }
+  }
+}

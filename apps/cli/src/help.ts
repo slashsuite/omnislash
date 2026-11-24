@@ -826,7 +826,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     section: "Spinoffs & Agents",
     summary: "Dispatch, inspect, hand off, and clean up builder worktrees",
     usage: [
-      "spinoff <ticket|#issue> [--repo <slug|path>] [--tier <t>] [--effort <e>] [flags]",
+      "spinoff <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--effort <e>] [flags]",
       "spinoff <subcommand> [args]",
     ],
     acceptsPositional: true,
@@ -834,13 +834,14 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     subcommands: {
       queue: {
         summary: "Enqueue a spinoff row without launching it immediately",
-        usage: ["spinoff queue <ticket|#issue> [--repo <slug|path>] [--tier <t>] [--effort <e>]"],
+        usage: ["spinoff queue <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--effort <e>]"],
         flags: [
           { flag: "--repo <p>", description: "Target repo path or org/name slug" },
           { flag: "--branch <name>", description: "Explicit git branch name" },
           { flag: "--worktree <dir>", description: "Explicit existing worktree path" },
           { flag: "--launcher <l>", description: "Launcher (t3)" },
-          { flag: "--tier <tier>", description: "complex, medium (default), or simple" },
+          { flag: "--complexity <n>", description: "Score 1-10 that picks the builder model (default 5)" },
+          { flag: "--tier <tier>", description: "Old alias: simple=2, medium=5, complex=8" },
           { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
           { flag: "--opus-high <q>", description: "Owner ask quote required for Opus high+ effort" },
           { flag: "--brief <path>", description: "Brief file or '-' for stdin" },
@@ -851,7 +852,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--over-usage <why>", description: "Override the >=95% weekly usage gate" },
           { flag: "--no-trial", description: "Launch a single build during an active model trial" },
         ],
-        examples: ["spinoff queue APP-12 --tier medium"],
+        examples: ["spinoff queue APP-12 --complexity 5"],
       },
       drain: {
         summary: "Reclaim lapsed claims, reconcile landed work, and launch queued rows",
@@ -954,7 +955,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       trial: {
         summary: "Run and score blind A/B model trials across paired spinoff builds",
         usage: [
-          "spinoff trial start --target <n> --a <model> --b <model> [--tier <t>] [--name <n>]",
+          "spinoff trial start --target <n> --a <model> --b <model> [--range <a-b>] [--name <n>]",
           "spinoff trial status | stop | report",
           "spinoff trial pair <ticket|#pair> [--diffs <dir>]",
           "spinoff trial record <ticket|#pair> (--x <s> --y <s> | --forfeit <X|Y> | --void)",
@@ -967,7 +968,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--b <model>", description: "Leg B <provider:model>[#effort]" },
           { flag: "--a-price <csv>", description: "Leg A list prices: in,out,cw,cr per million tokens" },
           { flag: "--b-price <csv>", description: "Leg B list prices: in,out,cw,cr per million tokens" },
-          { flag: "--tier <tier>", description: "Tier to pair (default medium)" },
+          { flag: "--range <a-b>", description: "Complexity range to pair (default 4-6)" },
+          { flag: "--tier <tier>", description: "Old alias for its band: 1-3, 4-6 or 7-10" },
           { flag: "--name <name>", description: "Optional trial name" },
           { flag: "--diffs <dir>", description: "Write blind X.diff and Y.diff files into <dir>" },
           { flag: "--x <score>", description: "Blind score for X (0-10, blocked, or partial)" },
@@ -1064,7 +1066,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--t3-run <id>", description: "T3 run id" },
           { flag: "--model <id>", description: "Resolved model id" },
           { flag: "--effort <text>", description: "Stamped effort description" },
-          { flag: "--raised", description: "Mark tier as raised (e.g. urgent)" },
+          { flag: "--raised", description: "Mark complexity as raised (urgent, to 7 or more)" },
           { flag: "--error <msg>", description: "Error text when --outcome failed" },
           { flag: "-m, --note <why>", description: "Note recorded on the ticket trail" },
         ],
@@ -1104,7 +1106,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--branch <name>", description: "Explicit git branch name" },
       { flag: "--worktree <dir>", description: "Existing worktree checkout path" },
       { flag: "--launcher <l>", description: "Launcher override (only t3 is routable)" },
-      { flag: "--tier <tier>", description: "complex, medium (default), or simple (urgent forces complex)" },
+      { flag: "--complexity <n>", description: "Score 1-10 that picks the builder model (default 5; urgent raises it to 7)" },
+      { flag: "--tier <tier>", description: "Old alias: simple=2, medium=5, complex=8; not with --complexity" },
       { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
       { flag: "--opus-high <q>", description: "Owner ask quote required for Opus at high+ effort" },
       { flag: "--brief <path>", description: "Custom brief file or '-' for stdin" },
@@ -1116,7 +1119,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--no-trial", description: "Run a single build while a model trial is active" },
     ],
     examples: [
-      "spinoff APP-12 --tier medium",
+      "spinoff APP-12 --complexity 5",
       "spinoff gateable --team core",
       "spinoff handoff APP-12 --tier-fit right --tier-fit-why 'Clean fit'",
     ],
@@ -1633,7 +1636,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     },
     examples: ["models show", "models get sweep.first", "models use claude", "models legs"],
     notes: [
-      "Routes: builder.<tier>, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
+      "Builder routes: builder.<from>-<to>, covering 1-10; builder.simple|medium|complex read 1-3, 4-6, 7-10.",
+      "Routes: builder.*, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
       "Precedence: the local models file, then the server's model_routes, then the default.",
       "A launch moves along a route's chain only on a credit or quota error.",
       "On a client, reads and writes go to the API server; OB_MODELS_FILE moves the local file.",

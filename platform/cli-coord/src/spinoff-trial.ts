@@ -1,4 +1,4 @@
-// OB-1991: the model trial. While a trial is active, a dispatch at its tier runs twice: leg a on one model and
+// OB-1991: the model trial. While a trial is active, a dispatch inside its complexity range (OS-177) runs twice: leg a on one model and
 // leg b on another, the same brief word for word, neither builder told. The architect reviews the two diffs blind
 // (labels X and Y, drawn at random per pair), records a score for each, and only the winner is gated and landed.
 // After `target` recorded pairs the trial ends by itself, and `trial report` is the one place the labels are
@@ -13,7 +13,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { asStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { AppError, UsageError } from "../../../apps/cli/src/errors.ts";
 import { nowIso } from "../../../apps/cli/src/db.ts";
-import { SPINOFF_TIERS } from "../../../apps/cli/src/models-file.ts";
+import { DEFAULT_COMPLEXITY, SPINOFF_TIERS, TIER_BANDS, TIER_COMPLEXITY, isComplexity, isSpinoffTier, rangeText, tierOfComplexity, type ComplexityRange } from "../../../apps/cli/src/models-file.ts";
 import { isSpinoffEffort, SPINOFF_EFFORTS } from "../../../apps/cli/src/t3/dispatch.ts";
 import { normalizeRef } from "../../../apps/cli/src/refs.ts";
 import { getItem } from "../../../apps/cli/src/items.ts";
@@ -94,6 +94,9 @@ export interface TrialRow {
   id: number;
   name: string;
   tier: string;
+  // OS-177 (0004): the complexity range the trial pairs (`--range 4-6`); null = started before OS-177 (its tier's band)
+  complexity_from?: number | null;
+  complexity_to?: number | null;
   target: number;
   a_model: string;
   a_effort: string | null;
@@ -175,20 +178,48 @@ export interface StartTrialInput {
   a: LegSpec;
   b: LegSpec;
   tier?: string;
+  /** OS-177: `<from>-<to>`, the complexity range the trial pairs; `--tier` is its old alias (the tier's band). */
+  range?: string;
   name?: string;
   /** `in,out,cw,cr`, USD per million tokens. */
   aPrice?: string | null;
   bPrice?: string | null;
 }
 
+/**
+ * The range a trial pairs (OS-177): `--range <from>-<to>` (or one score), else the band of the old `--tier`, else
+ * 4-6 (the medium band, the old default). Both flags, or a range outside 1-10, are UsageErrors. Pure.
+ */
+export function trialRangeOf(range: string | undefined | null, tier: string | undefined | null): ComplexityRange {
+  if (range && tier) throw new UsageError("trial start: pass --range <from>-<to> or --tier, not both (--tier is the old name of --range)");
+  if (range) {
+    const m = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(range);
+    const from = m ? Number(m[1]) : NaN;
+    const to = m ? Number(m[2] ?? m[1]) : NaN;
+    if (!isComplexity(from) || !isComplexity(to) || from > to) throw new UsageError(`trial start --range '${range}' is not a complexity range: use <from>-<to> within 1-10, e.g. 4-6`);
+    return { from, to };
+  }
+  if (tier) {
+    if (!isSpinoffTier(tier)) throw new UsageError(`trial start --tier is one of ${SPINOFF_TIERS.join(", ")}; got '${tier}'`);
+    return TIER_BANDS[tier];
+  }
+  return TIER_BANDS.medium;
+}
+
+/** The range a trial row pairs: its stamped range, or its tier's band for a trial started before OS-177. Pure. */
+export function trialRange(t: Pick<TrialRow, "tier" | "complexity_from" | "complexity_to">): ComplexityRange {
+  if (t.complexity_from != null && t.complexity_to != null) return { from: t.complexity_from, to: t.complexity_to };
+  return isSpinoffTier(t.tier) ? TIER_BANDS[t.tier] : TIER_BANDS.medium;
+}
+
 /** Start a trial. Refused while one is active. */
 export async function startTrial(db: Database | Store, input: StartTrialInput): Promise<TrialRow> {
   const s = asStore(db);
   if (!Number.isInteger(input.target) || input.target < 1) throw new UsageError(`trial start --target takes a whole number of pairs, 1 or more; got ${input.target}`);
-  const tier = input.tier ?? "medium";
+  const range = trialRangeOf(input.range, input.tier);
+  const tier = tierOfComplexity(range.to);
   const aPrice = input.aPrice ? parsePrice(input.aPrice, "--a-price").join(",") : null;
   const bPrice = input.bPrice ? parsePrice(input.bPrice, "--b-price").join(",") : null;
-  if (!(SPINOFF_TIERS as readonly string[]).includes(tier)) throw new UsageError(`trial start --tier is one of ${SPINOFF_TIERS.join(", ")}; got '${tier}'`);
   return s.txn("start a model trial", async (tx) => {
     const live = await activeTrial(tx);
     if (live) throw new AppError(`trial #${live.id} (${live.name}) is still active: stop it first (ob spinoff trial stop)`);
@@ -198,6 +229,8 @@ export async function startTrial(db: Database | Store, input: StartTrialInput): 
       .values({
         name: input.name?.trim() || `trial ${now.slice(0, 10)}`,
         tier,
+        complexity_from: range.from,
+        complexity_to: range.to,
         target: input.target,
         a_model: input.a.model,
         a_effort: input.a.effort,
@@ -273,12 +306,14 @@ export interface TrialPlan {
 }
 
 /**
- * Should a dispatch at `tier` be paired? Only while a trial is active, at the trial's tier, and while open
- * plus recorded pairs are below the target. Read from the store, so every architect and repo counts toward one total.
+ * Should a dispatch at score `complexity` be paired? Only while a trial is active, the score is inside the trial's
+ * range (OS-177), and open plus recorded pairs are below the target. Read from the store, so every architect and repo counts toward one total.
  */
-export async function trialPlanFor(db: Database | Store, tier: string): Promise<TrialPlan | null> {
+export async function trialPlanFor(db: Database | Store, complexity: number): Promise<TrialPlan | null> {
   const trial = await activeTrial(db);
-  if (!trial || trial.tier !== tier) return null;
+  if (!trial) return null;
+  const r = trialRange(trial);
+  if (complexity < r.from || complexity > r.to) return null;
   if (pairsCounted(await pairsOf(db, trial.id)) >= trial.target) return null;
   return { trial, a: { model: trial.a_model, effort: trial.a_effort }, b: { model: trial.b_model, effort: trial.b_effort } };
 }
@@ -899,7 +934,7 @@ export function renderTrialStatus(st: TrialStatus, json: boolean): string {
   if (json) {
     return JSON.stringify(
       {
-        trial: st.trial ? { id: st.trial.id, name: st.trial.name, tier: st.trial.tier, target: st.trial.target, active: st.trial ? isActive(st.trial) : false, started_at: st.trial.started_at, ended_at: st.trial.ended_at, end_reason: st.trial.end_reason } : null,
+        trial: st.trial ? { id: st.trial.id, name: st.trial.name, tier: st.trial.tier, range: rangeText(trialRange(st.trial)), target: st.trial.target, active: st.trial ? isActive(st.trial) : false, started_at: st.trial.started_at, ended_at: st.trial.ended_at, end_reason: st.trial.end_reason } : null,
         recorded: st.recorded,
         open: st.open,
         void: st.void,
@@ -912,7 +947,7 @@ export function renderTrialStatus(st: TrialStatus, json: boolean): string {
   if (!st.trial) return "no model trial has been started";
   const t = st.trial;
   const lines = [
-    `trial #${t.id} (${t.name}): ${isActive(t) ? "active" : `ended ${t.ended_at ?? ""} (${t.end_reason ?? "stopped"})`}, tier ${t.tier}`,
+    `trial #${t.id} (${t.name}): ${isActive(t) ? "active" : `ended ${t.ended_at ?? ""} (${t.end_reason ?? "stopped"})`}, complexity ${rangeText(trialRange(t))}`,
     `  ${st.recorded}/${t.target} recorded · ${st.open} open · ${st.void} void`,
   ];
   for (const p of st.pairs) {
@@ -1098,7 +1133,7 @@ export function renderTrialReport(r: TrialReport, json: boolean): string {
   if (!r.trial) return "no model trial has been started";
   const t = r.trial;
   const lines = [
-    `trial #${t.id} (${t.name}), tier ${t.tier}: ${r.pairs.length}/${t.target} recorded · ${r.open} open · ${r.void} void`,
+    `trial #${t.id} (${t.name}), complexity ${rangeText(trialRange(t))}: ${r.pairs.length}/${t.target} recorded · ${r.open} open · ${r.void} void`,
     `  a: ${formatLegSpec(t.a_model, t.a_effort)}${t.a_price ? ` (list $/M in,out,cw,cr ${t.a_price})` : ""}`,
     `  b: ${formatLegSpec(t.b_model, t.b_effort)}${t.b_price ? ` (list $/M in,out,cw,cr ${t.b_price})` : ""}`,
     `  ${r.cost_basis}`,
@@ -1220,10 +1255,10 @@ export function writePairDiffs(blind: BlindPair, dir: string, diffOf: (leg: Blin
 // --- one op dispatcher, for the local CLI and `POST /spinoffs/trial` --------------
 
 export type TrialOpRequest =
-  | { op: "start"; target: number; a: string; b: string; tier?: string | null; name?: string | null; a_price?: string | null; b_price?: string | null }
+  | { op: "start"; target: number; a: string; b: string; tier?: string | null; range?: string | null; name?: string | null; a_price?: string | null; b_price?: string | null }
   | { op: "status" }
   | { op: "stop" }
-  | { op: "plan"; tier: string }
+  | { op: "plan"; complexity?: number | null; tier?: string | null }
   | { op: "open"; trial_id: number; ticket_ref: string; repo: string }
   | { op: "attach"; pair_id: number; row_a?: number | null; row_b?: number | null }
   | { op: "void"; pair_id: number; reason: string }
@@ -1259,6 +1294,7 @@ export async function runTrialOp(db: Database | Store, req: TrialOpRequest, deps
           a: parseLegSpec(req.a, "--a"),
           b: parseLegSpec(req.b, "--b"),
           tier: req.tier ?? undefined,
+          range: req.range ?? undefined,
           name: req.name ?? undefined,
           aPrice: req.a_price ?? null,
           bPrice: req.b_price ?? null,
@@ -1269,7 +1305,8 @@ export async function runTrialOp(db: Database | Store, req: TrialOpRequest, deps
     case "stop":
       return { op: "stop", ...(await stopTrial(db)) };
     case "plan":
-      return { op: "plan", plan: await trialPlanFor(db, req.tier) };
+      // OS-177: an old client sends the tier; it plans at the tier's alias score.
+      return { op: "plan", plan: await trialPlanFor(db, req.complexity ?? (req.tier && isSpinoffTier(req.tier) ? TIER_COMPLEXITY[req.tier] : DEFAULT_COMPLEXITY)) };
     case "open":
       return { op: "open", pair: await openPair(db, req) };
     case "attach":
@@ -1295,7 +1332,7 @@ export async function runTrialOp(db: Database | Store, req: TrialOpRequest, deps
 
 /** The usage line for `ob spinoff trial`. */
 export const TRIAL_USAGE =
-  "spinoff trial start --target <n> --a <provider:model>[#effort] --b <provider:model>[#effort] [--tier medium] [--a-price in,out,cw,cr] [--b-price in,out,cw,cr] [--name <n>] | status | stop | " +
+  "spinoff trial start --target <n> --a <provider:model>[#effort] --b <provider:model>[#effort] [--range 4-6] [--a-price in,out,cw,cr] [--b-price in,out,cw,cr] [--name <n>] | status | stop | " +
   "pair <ticket> [--diffs <dir>] | record <ticket> --x <0-10|blocked|partial> --y <...> [--notes <file>] | record <ticket> --forfeit <X|Y> | record <ticket> --void [--reason <why>] | " +
   "feedback <ticket> --label <X|Y> --note <text> [--rating 1-5] | fix <ticket> --note <text> | report";
 
@@ -1312,10 +1349,10 @@ export function renderStop(r: { trial: TrialRow; voided: PairRow[] }, json: bool
 export function renderStart(t: TrialRow, json: boolean): string {
   if (json) return JSON.stringify(t, null, 2);
   return [
-    `started trial #${t.id} (${t.name}): ${t.target} pairs at tier ${t.tier}`,
+    `started trial #${t.id} (${t.name}): ${t.target} pairs at complexity ${rangeText(trialRange(t))}`,
     `  a: ${formatLegSpec(t.a_model, t.a_effort)}`,
     `  b: ${formatLegSpec(t.b_model, t.b_effort)}`,
-    `  every 'ob spinoff <ref> --tier ${t.tier}' now dispatches a pair until ${t.target} verdicts are recorded (--no-trial for one build)`,
+    `  every 'ob spinoff <ref> --complexity <${rangeText(trialRange(t))}>' now dispatches a pair until ${t.target} verdicts are recorded (--no-trial for one build)`,
   ].join("\n");
 }
 
@@ -1337,7 +1374,7 @@ export interface PairLegOutcome {
 
 /** The IO a paired dispatch performs, so the local path and the API client share one sequence. */
 export interface PairDispatchDeps {
-  /** The trial plan for this dispatch's tier, or null for a single build. */
+  /** The trial plan for this dispatch's score, or null for a single build. */
   plan(): Promise<TrialPlan | null>;
   open(plan: TrialPlan): Promise<PairRow>;
   /** Enqueue and launch one leg with the same brief; the leg's own report is printed by the caller. */

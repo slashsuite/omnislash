@@ -76,9 +76,12 @@ import { assertSpikeDocsOnly, formatSpikeReport, isSpikeTagged, spikeEndError } 
 import { renderSendBack, sendBackSpinoff, type SendBackDeps } from "../spinoff-sendback.ts";
 import { renderReopen, reopenSpinoff, type ReopenDeps } from "../spinoff-reopen.ts";
 import { isLandable, noteErrorLine, reportGateable, type GateableFacts, type GateableSource, type PlannedFiles } from "../spinoff-gateable.ts";
+import { DEFAULT_COMPLEXITY, TIER_COMPLEXITY, URGENT_COMPLEXITY, complexityLabel, complexityOf, tierOfComplexity, type RangeModel } from "../../../../apps/cli/src/models-file.ts";
 import {
   DEFAULT_SPINOFF_TIER,
   T3_LAUNCHER,
+  dispatchComplexityFlags,
+  rowComplexity,
   effortRejection,
   isSpinoffEffort,
   refuseUnusableEffort,
@@ -641,6 +644,8 @@ export interface SpinoffRow {
   trial_model?: string | null;
   // OB-2172 (0044): why the last readying note did not reach the architect, `<iso time> <reason>`; null = it went
   note_error?: string | null;
+  // OS-177 (0004): the architect's 1-10 score, the routing key; null = queued before OS-177 (reads as its tier's value)
+  complexity?: number | null;
 }
 export interface EnqueueInput {
   ticketRef: string;
@@ -650,7 +655,8 @@ export interface EnqueueInput {
   brief: string;
   worktree?: string; // explicit --worktree override; takes precedence over the derived <repo>.<branch> path
   launcher?: LauncherName | null; // explicit --launcher override (#135), recorded at QUEUE time so the drain honours it
-  tier?: SpinoffTier | null; // --tier (1480); absent = DEFAULT_SPINOFF_TIER, recorded on the row either way
+  tier?: SpinoffTier | null; // --tier (1480): an old client's label, read as its alias score when no complexity is named
+  complexity?: number | null; // --complexity (OS-177); absent = the tier's alias score, else 5, recorded on the row either way
   effort?: SpinoffEffort | null; // --effort (OB-1815); absent = no level named: the model's own default, nothing recorded at queue
   decision?: DecisionOpts; // --note/-m (1515): why this was dispatched at this tier; recorded on the item's trail
   trialLeg?: "a" | "b" | null; // OB-1991: a trial leg; b's worktree and builder id carry `-b`
@@ -837,18 +843,25 @@ function isTrialRow(row: { trial_leg?: string | null; trial_model?: string | nul
 }
 
 /**
- * The launch-time half of the urgent rule (OB-2075): the row as it must LAUNCH, and the tier it was raised
- * from (null when nothing was raised). Pure of writes: the caller decides whether to record the raise.
- * A row whose item is not urgent, a trial leg, and a row already on `complex` come back untouched.
+ * The launch-time half of the urgent rule (OB-2075, OS-177): the row as it must LAUNCH, at least complexity 7, and
+ * the score it was raised from (null when nothing was raised). Pure of writes: the caller decides whether to record the raise.
+ * A row whose item is not urgent, a trial leg, and a row already at 7 or above come back untouched.
  */
 export async function urgentLaunchRow(
   db: Database | Store,
   row: SpinoffRow,
-): Promise<{ row: SpinoffRow; raisedFrom: SpinoffTier | null; urgent: boolean }> {
+): Promise<{ row: SpinoffRow; raisedFrom: number | null; urgent: boolean }> {
   if (isTrialRow(row)) return { row, raisedFrom: null, urgent: false };
   if (!(await itemIsUrgent(db, await rowItemId(db, row)))) return { row, raisedFrom: null, urgent: false };
-  if (row.tier === "complex") return { row, raisedFrom: null, urgent: true };
-  return { row: { ...row, tier: "complex" }, raisedFrom: row.tier && isSpinoffTier(row.tier) ? row.tier : DEFAULT_SPINOFF_TIER, urgent: true };
+  const c = rowComplexity(row);
+  if (c >= URGENT_COMPLEXITY) return { row, raisedFrom: null, urgent: true };
+  return { row: urgentRaised(row), raisedFrom: c, urgent: true };
+}
+
+/** OS-177: the row raised to the urgent floor, `max(score, 7)`, its tier label following the score. Pure. */
+export function urgentRaised<R extends { complexity?: number | null; tier?: string | null }>(row: R): R {
+  const c = Math.max(rowComplexity(row), URGENT_COMPLEXITY);
+  return { ...row, complexity: c, tier: tierOfComplexity(c) };
 }
 
 /**
@@ -865,7 +878,7 @@ export async function urgentLaunchRow(
 export async function enqueueSpinoff(
   db: Database | Store,
   input: EnqueueInput,
-): Promise<{ row: SpinoffRow; deduped: boolean; collision: string | null; urgent: boolean; raisedFrom: SpinoffTier | null }> {
+): Promise<{ row: SpinoffRow; deduped: boolean; collision: string | null; urgent: boolean; raisedFrom: number | null }> {
   const s = asStore(db);
   // 1949: one row per ITEM, named by its `<KEY>-<seq>` ref however it was typed (the bare id, a lowercase
   // ref, an alias a move left). A branch the caller only defaulted from the typed ref follows the ref too,
@@ -884,7 +897,10 @@ export async function enqueueSpinoff(
   // where every dispatch goes through (the local `ob spinoff` and the API's enqueue alike). A trial leg
   // (OB-1991) keeps its recorded tier.
   const urgent = !input.trialLeg && !input.trialModel && (await itemIsUrgent(s, typedItem));
-  const raisedFromOf = (named: SpinoffTier | null | undefined): SpinoffTier | null => (urgent && named && named !== "complex" ? named : null);
+  // OS-177: the score named (`--complexity`, or an old client's `--tier` read as its alias), and the urgent floor
+  // `max(score, 7)`, which replaces "urgent forces complex".
+  const named = input.complexity ?? (input.tier ? TIER_COMPLEXITY[input.tier] : undefined);
+  const raisedFromOf = (c: number | null | undefined): number | null => (urgent && c !== null && c !== undefined && c < URGENT_COMPLEXITY ? c : null);
   const sameTicket = typedItem
     ? or(
         eq(s.t.spinoff.ticket_ref, input.ticketRef),
@@ -920,18 +936,21 @@ export async function enqueueSpinoff(
     // picked a model yet, so the newer rating is the one to launch at. A `launching` row is left alone (its
     // model may already be resolved), and no --tier leaves the rating alone.
     // OB-2075: an urgent item is re-rated to complex too, named tier or not.
-    const priorTier = active.tier && isSpinoffTier(active.tier) ? active.tier : null;
-    const wantTier = urgent && !isTrialRow(active) ? "complex" : input.tier;
+    const priorC = complexityOf(active.complexity, active.tier);
+    const want = urgent && !isTrialRow(active) ? Math.max(named ?? priorC ?? DEFAULT_COMPLEXITY, URGENT_COMPLEXITY) : named;
+    const activeC = active.complexity ?? null;
     // OB-2107: a re-rate moves a pending row onto another tier's model at the effort it already carries, so
     // Opus above its default needs his ask here too (a dispatch with no --effort skipped the check upstream).
     // The ask is the quote the dispatch's own note carries, so the API's enqueue is checked the same way.
-    if (active.status === "pending" && !isTrialRow(active) && ((wantTier && wantTier !== active.tier) || (input.effort && input.effort !== active.effort))) {
-      const tier: SpinoffTier = wantTier ?? priorTier ?? DEFAULT_SPINOFF_TIER;
-      refuseOpusHigh(await tierModelsOrRefuse(s), tier, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
+    if (active.status === "pending" && !isTrialRow(active) && ((want !== undefined && want !== activeC) || (input.effort && input.effort !== active.effort))) {
+      const c = want ?? priorC ?? DEFAULT_COMPLEXITY;
+      refuseOpusHigh(await tierModelsOrRefuse(s), c, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
     }
-    if (wantTier && wantTier !== active.tier && active.status === "pending") {
-      await s.q.update(s.t.spinoff).set({ tier: wantTier }).where(eq(s.t.spinoff.id, active.id));
-      active.tier = wantTier;
+    if (want !== undefined && want !== activeC && active.status === "pending") {
+      const tier = tierOfComplexity(want);
+      await s.q.update(s.t.spinoff).set({ complexity: want, tier }).where(eq(s.t.spinoff.id, active.id));
+      active.complexity = want;
+      active.tier = tier;
     }
     // OB-1815: --effort follows --tier exactly. A still-PENDING row is re-rated in place; a launching row is
     // left alone; no --effort leaves the rating alone.
@@ -943,14 +962,15 @@ export async function enqueueSpinoff(
       row: active,
       deduped: true,
       collision: await collidingRefItem(s, active.ticket_ref, resolved ?? active.item_id),
-      urgent: urgent && !isTrialRow(active) && active.tier === "complex",
-      raisedFrom: active.tier === "complex" ? raisedFromOf(input.tier ?? priorTier) : null,
+      urgent: urgent && !isTrialRow(active) && (complexityOf(active.complexity, active.tier) ?? 0) >= URGENT_COMPLEXITY,
+      raisedFrom: (complexityOf(active.complexity, active.tier) ?? 0) >= URGENT_COMPLEXITY ? raisedFromOf(named ?? priorC) : null,
     };
   }
   // The ob ITEM this row serves (1163), resolved here — the one place every dispatch goes through, the
   // local `ob spinoff` and the API's enqueue alike. Best effort: a ref that resolves to no item records
   // NULL, which is exactly what a row that is not about a tracker item should say.
   const itemId = typedItem;
+  const queuedC = urgent ? Math.max(named ?? DEFAULT_COMPLEXITY, URGENT_COMPLEXITY) : (named ?? DEFAULT_COMPLEXITY);
   const inserted = (await s.q
     .insert(s.t.spinoff)
     .values({
@@ -968,8 +988,9 @@ export async function enqueueSpinoff(
       launcher: input.launcher ?? null,
       // 1480: the tier is recorded at QUEUE time, like the launcher, and always — a dispatch that named
       // none records the default, so the pending row says what it will cost before it launches.
-      // OB-2075: an urgent item records complex.
-      tier: urgent ? "complex" : (input.tier ?? DEFAULT_SPINOFF_TIER),
+      // OS-177: the score is recorded beside its tier label, always; an urgent item records at least 7 (OB-2075).
+      complexity: queuedC,
+      tier: tierOfComplexity(queuedC),
       // OB-1815: only a level that was NAMED is recorded; the launch stamps the final text.
       effort: input.effort ?? null,
       trial_leg: input.trialLeg ?? null,
@@ -979,7 +1000,7 @@ export async function enqueueSpinoff(
     })
     .returning()) as SpinoffRow[];
   await recordRowDecision(s, inserted[0]!, "—", spinoffStatusWord("pending"), input.decision);
-  return { row: inserted[0]!, deduped: false, collision: await collidingRefItem(s, input.ticketRef, itemId), urgent, raisedFrom: raisedFromOf(input.tier) };
+  return { row: inserted[0]!, deduped: false, collision: await collidingRefItem(s, input.ticketRef, itemId), urgent, raisedFrom: raisedFromOf(named) };
 }
 
 /**
@@ -1334,9 +1355,9 @@ export interface LaunchEffect {
 }
 
 /** The one stderr line an urgent launch owes: the raise, or that an adopted thread kept its model (OB-2075). */
-export function warnUrgentTier(ticketRef: string, raisedFrom: string | null, adopted: boolean | undefined): void {
+export function warnUrgentTier(ticketRef: string, raisedFrom: number | null, adopted: boolean | undefined): void {
   if (adopted) warn(`  ↳ ${ticketRef} is urgent, but its adopted T3 thread keeps its model`);
-  else if (raisedFrom) warn(`  ↳ ${ticketRef} tier: complex (urgent, raised from ${raisedFrom})`);
+  else if (raisedFrom !== null) warn(`  ↳ ${ticketRef} ${complexityLabel(URGENT_COMPLEXITY)} (urgent, raised from ${raisedFrom})`);
 }
 
 /** The urgent note the launched line may carry: none when the launch adopted a thread, which kept its own model (OB-2075). */
@@ -1366,7 +1387,7 @@ export async function t3LauncherFor(db: Database | Store, row: SpinoffRow): Prom
   // after queueing, or a row queued before the rule). The stamp records the raise on the row; an adopted
   // thread keeps its own model.
   const { row: launchRow, urgent, raisedFrom } = await urgentLaunchRow(db, row);
-  // OS-145: the row's route `builder.<tier>`, moving along its chain on a quota error.
+  // OS-145, OS-177: the builder band covering the row's score, moving along its chain on a quota error.
   const outcome = await launchAcrossProfiles(launchRow, await routeInputsOrRefuse(db), (models, routeEffort) => {
     const r = withRouteEffort(launchRow, routeEffort);
     refuseRaisedOpusHigh(r, models, raisedFrom); // OB-2107
@@ -1413,18 +1434,20 @@ function effortNote(effort: string | null | undefined): string {
  * raised, or null when none was named (or the named one was already complex).
  */
 export interface UrgentTierNote {
-  from: SpinoffTier | null;
+  from: number | null;
 }
 
-/** The urgent half of a tier line: `urgent` or `urgent, raised from medium`. Pure. */
+/** The urgent half of a complexity line: `urgent` or `urgent, raised from 4`. Pure. */
 function urgentWord(note: UrgentTierNote): string {
-  return note.from ? `urgent, raised from ${note.from}` : "urgent";
+  return note.from !== null ? `urgent, raised from ${note.from}` : "urgent";
 }
 
-/** The tier half of the queue line (1480): `tier: simple`, `tier: medium (default)`, or `tier: complex (urgent, raised from medium)` (OB-2075). */
-function tierNote(tier: string | null, defaulted: boolean, urgent?: UrgentTierNote | null): string {
-  if (urgent) return `tier: ${tier ?? "complex"} (${urgentWord(urgent)})`;
-  return `tier: ${tier ?? DEFAULT_SPINOFF_TIER}${defaulted && (tier ?? DEFAULT_SPINOFF_TIER) === DEFAULT_SPINOFF_TIER ? " (default)" : ""}`;
+/** The score half of the queue line (OS-177): `complexity 2/10 (simple)`, `complexity 5/10 (medium, default)`, or `complexity 7/10 (complex, urgent, raised from 4)`. */
+function tierNote(row: { complexity?: number | null; tier?: string | null }, defaulted: boolean, urgent?: UrgentTierNote | null): string {
+  const c = complexityOf(row.complexity, row.tier) ?? DEFAULT_COMPLEXITY;
+  const label = `${complexityLabel(c)} (${tierOfComplexity(c)}`;
+  if (urgent) return `${label}, ${urgentWord(urgent)})`;
+  return `${label}${defaulted && c === DEFAULT_COMPLEXITY ? ", default" : ""})`;
 }
 
 /**
@@ -1433,7 +1456,7 @@ function tierNote(tier: string | null, defaulted: boolean, urgent?: UrgentTierNo
  * decide.
  */
 export function renderQueuedLine(row: SpinoffRow, deduped: boolean, tierNamed: boolean, urgent?: UrgentTierNote | null): string {
-  const tier = tierNote(row.tier, !tierNamed && !deduped, urgent);
+  const tier = tierNote(row, !tierNamed && !deduped, urgent);
   if (deduped) return `already ${spinoffStatusWord(row.status)}: ${row.ticket_ref} (#${row.id})${threadNote(row.t3_thread_id)}; ${tier}${effortNote(row.effort)}`;
   return `queued ${row.ticket_ref} → ${row.branch} (#${row.id})${row.launcher ? ` via ${row.launcher}` : ""}; ${tier}${effortNote(row.effort)}; 'ob spinoff drain' launches it`;
 }
@@ -1453,7 +1476,7 @@ export function renderAlreadyLine(row: SpinoffRow, statusWord: string): string {
 
 /** The line a bare `ob spinoff <ref>` prints once its thread is open (1589), local, split and API alike. */
 export function renderLaunchedLine(row: SpinoffRow, threadId: string | null, model: string | null, deduped: boolean, tierNamed: boolean, effort?: string | null, urgent?: UrgentTierNote | null): string {
-  const tier = tierNote(row.tier, !tierNamed && !deduped, urgent);
+  const tier = tierNote(row, !tierNamed && !deduped, urgent);
   return `launched ${row.ticket_ref} → ${row.branch} (#${row.id}) in T3 thread ${threadId ?? "(no id)"}${model ? ` on ${model}` : ""}; ${tier}${effortNote(effort)}`;
 }
 
@@ -1462,7 +1485,7 @@ export function renderLaunchedLine(row: SpinoffRow, threadId: string | null, mod
  * it: the launcher's throw is what stamps the row `failed` with the reason, and a malformed map must not
  * quietly launch every tier at its default.
  */
-export async function tierModelsOrRefuse(db?: Database | Store): Promise<Record<SpinoffTier, string>> {
+export async function tierModelsOrRefuse(db?: Database | Store): Promise<RangeModel[]> {
   // OS-145: each tier's route `builder.<tier>` in the active profile (local file, then the server's
   // `model_routes`, then `spinoff_tier_models` over the defaults), first chain entry. A value that does not parse
   // refuses by name rather than launching on the defaults.
@@ -2108,7 +2131,11 @@ export async function stampSpinoff(db: Database | Store, input: StampInput): Pro
   // OB-1815: the launch's final effort text replaces the level --effort named at queue, as the model is stamped.
   if (input.effort) resolved.effort = input.effort;
   // OB-2075: the launch says whether it ran an urgent item on complex (`raised`), so the row records what ran, not a fresh read of the priority.
-  if (input.outcome === "launched" && input.raised) resolved.tier = "complex";
+  if (input.outcome === "launched" && input.raised) {
+    const raised = urgentRaised(row); // OS-177: max(score, 7), its label following
+    resolved.complexity = raised.complexity;
+    resolved.tier = raised.tier;
+  }
   if (input.outcome === "launched") {
     // OB-1920: only a claimed (`launching`) row is launched; a pending row is claimed first, and a merged or
     // failed one is never brought back.
@@ -2715,7 +2742,7 @@ export async function launchQueuedRow(
     return {
       kind: "launched",
       // OB-2075: the line reports the tier the thread ran on, which a launch-time raise moved to complex.
-      row: effect.raised ? { ...row, tier: "complex" } : row,
+      row: effect.raised ? urgentRaised(row) : row,
       effect,
       dbFailure: stampError ? { ticket: row.ticket_ref, detail: launchNotStamped(row, stamp, stampError) } : undefined,
     };
@@ -3183,7 +3210,7 @@ export async function relaunchCreditFailures(db: Database | Store, mirrored: rea
         launch: (models, routeEffort) => launchT3Spinoff(seam, withRouteEffort(row, routeEffort), repoPath, title, models),
         recordMove: routeMoveRecorder(db, row),
         relaunched: async (outcome) => {
-          await moveSpinoff(s, row.id, "launched", { t3_thread_id: outcome.threadId, t3_run_id: outcome.runId, model: outcome.model, effort: outcome.effort, tier: row.tier }, ["launched"]);
+          await moveSpinoff(s, row.id, "launched", { t3_thread_id: outcome.threadId, t3_run_id: outcome.runId, model: outcome.model, effort: outcome.effort, tier: row.tier, complexity: row.complexity ?? null }, ["launched"]);
           await registerAgent(s, { id: builderIdOf(row), ticket: legRef(row.ticket_ref, row.trial_leg), branch: row.branch, sessionId: outcome.threadId, ttlS: AGENT_LEASE_TTL_S });
         },
         fail: async (reason) => {
@@ -5523,7 +5550,7 @@ export async function launchRowIn(
   row: SpinoffRow,
   ticketTitle?: string | null,
   /** OB-2075: the item is urgent (the host sent the raised row), so an adopted thread keeps its model. */
-  urgent?: { raisedFrom: string | null } | null,
+  urgent?: { raisedFrom: number | null } | null,
   /** OS-145: collects the moves along the route, which the caller's stamp carries to the host's Decisions trail. */
   routeMoves?: Array<{ from: string; to: string; note: string }>,
 ): Promise<LaunchEffect> {
@@ -5617,6 +5644,14 @@ export function showStateFor(row: SpinoffRow): string | null {
   return existsSync(row.worktree) ? rowVerdictState(row) : null;
 }
 
+/** `complexity 5/10 (medium)`, and `, from tier medium` for a row queued before OS-177. Pure. */
+function showComplexity(row: SpinoffRow): string {
+  const c = complexityOf(row.complexity, row.tier);
+  if (c === null) return `${row.complexity ?? row.tier} (not a score)`;
+  const from = row.complexity == null ? (row.tier ? `, from tier ${row.tier}` : ", unrated") : "";
+  return `${complexityLabel(c)} (${tierOfComplexity(c)}${from})`;
+}
+
 /**
  * One row's full detail — the inspect half of `ob spinoff show`. `state` is the branch's last `State:`
  * paragraph the caller read (1579): printed as the verdict word plus its one-line reason, never the paragraph.
@@ -5633,7 +5668,8 @@ export function renderSpinoffShow(row: SpinoffRow, json: boolean, state?: string
     `  engine:    ${row.engine ?? "claude"}`,
     // 1480: the tier it was RATED (null = queued before tiers: launches as the default) and the model the
     // launch actually ran on, stamped — never re-derived from today's tier map.
-    `  tier:      ${row.tier ?? `${DEFAULT_SPINOFF_TIER} (unrated)`}`,
+    // OS-177: the score; a row queued before OS-177 reads as its tier's value, and says so.
+    `  rated:     ${showComplexity(row)}`,
     `  model:     ${row.model ?? "-"}`,
     // OB-1815: the stamped effort text; a row with none (not launched, or queued before 0039) says `default`.
     `  effort:    ${row.effort ?? "default"}`,
@@ -5679,7 +5715,7 @@ export function renderSpinoffList(
     .map((r) => {
       // engine next to the launcher: WHERE the tab lives vs WHICH harness ran in it. A pre-0023 row reads
       // as claude (NULL), which is truthful — nothing before it could have launched opencode.
-      return `${r.id}\t${spinoffStatusWord(r.status)}\t${r.ticket_ref}\t${r.branch}\t${r.launcher ?? "-"}\t${r.engine ?? "claude"}\t${r.tier ?? "-"}\t${r.model ?? "-"}\t${formatTokens(r.total_tokens)} tok${r.error ? `\t(${r.error})` : ""}`;
+      return `${r.id}\t${spinoffStatusWord(r.status)}\t${r.ticket_ref}\t${r.branch}\t${r.launcher ?? "-"}\t${r.engine ?? "claude"}\t${complexityOf(r.complexity, r.tier) ?? "-"}/10\t${r.model ?? "-"}\t${formatTokens(r.total_tokens)} tok${r.error ? `\t(${r.error})` : ""}`;
     })
     .join("\n");
 }
@@ -6344,7 +6380,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   if (launcherFlag !== undefined && !isLauncherName(launcherFlag)) {
     throw new UsageError(launcherRejection("spinoff --launcher", launcherFlag));
   }
-  const tier = tierFlag(flag(ctx, "tier")); // 1480: refused before anything is read or written
+  const complexity = dispatchComplexityFlags(flag(ctx, "complexity"), flag(ctx, "tier")); // OS-177: refused before anything is read or written
   const effort = effortFlag(flag(ctx, "effort")); // OB-1815: the same, at the flag
   let custom = flag(ctx, "brief");
   if (custom === "-") custom = await readStdin();
@@ -6353,7 +6389,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   const noFlakeSlot = flag(ctx, "no-flake-slot"); // OB-2230
 
   if (!queueOnly && ctx.remote) {
-    await enqueueAndLaunchSplit(ctx, ctx.remote, rawRef, { launcher: launcherFlag, tier, effort, brief: custom, under });
+    await enqueueAndLaunchSplit(ctx, ctx.remote, rawRef, { launcher: launcherFlag, complexity, effort, brief: custom, under });
     return;
   }
 
@@ -6385,7 +6421,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // `queue` skips it: that is the server's DB half and T3 is on the caller's machine, which ran the check.
   // OB-2075: the check reads the tier the build will run on, and an urgent ticket runs on complex whatever was named.
   if (effort !== undefined) {
-    const effortTier = (await itemIsUrgent(store, await ticketItemIdFor(store, ticketRef))) ? "complex" : (tier ?? DEFAULT_SPINOFF_TIER);
+    const named = complexity ?? DEFAULT_COMPLEXITY;
+    const effortTier = (await itemIsUrgent(store, await ticketItemIdFor(store, ticketRef))) ? Math.max(named, URGENT_COMPLEXITY) : named;
     // OB-2107: the Opus-high check needs no T3, so `queue` runs it too (the split client forwards --opus-high).
     if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(store), effortTier, effort, flag(ctx, "opus-high"));
     else await refuseUnusableEffortFor(store, repo, effortTier, effort, flag(ctx, "opus-high"));
@@ -6407,7 +6444,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // OB-2230: a flake ticket runs no trial either: two legs would be two flake fixes on one machine.
   if (!queueOnly && ctx.flags["no-trial"] !== true && !flake) {
     const paired = await dispatchTrialPair({
-      plan: async () => refuseOpusHighTrial(await trialPlanFor(store, tier ?? DEFAULT_SPINOFF_TIER), tier ?? DEFAULT_SPINOFF_TIER, flag(ctx, "opus-high")),
+      plan: async () => refuseOpusHighTrial(await trialPlanFor(store, complexity ?? DEFAULT_COMPLEXITY), complexity ?? DEFAULT_COMPLEXITY, flag(ctx, "opus-high")),
       open: (plan) => openPair(store, { trial_id: plan.trial.id, ticket_ref: ticketRef, repo }),
       leg: async (leg, spec) => {
         const legBranchName = legBranch(branch, leg);
@@ -6424,7 +6461,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
           mode: "interactive",
           brief,
           launcher: launcherFlag,
-          tier,
+          complexity,
           effort: (spec.effort ?? undefined) as SpinoffEffort | undefined,
           trialLeg: leg,
           trialModel: spec.model,
@@ -6434,11 +6471,11 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
           // The ticket already had a live row: a queued one is launched as the single build it was queued as; a
           // launching, building or handed-off one is left as it is (nothing new is launched).
           const was = queued.row.status;
-          await launchAndReport(ctx, store, queued.row, true, tier !== undefined, under, spinoffSteps(ctx, under));
+          await launchAndReport(ctx, store, queued.row, true, complexity !== undefined, under, spinoffSteps(ctx, under));
           const outcome = was === "pending" ? "launched as a single build" : "nothing new was launched";
           return { row: null, launched: false, error: `${ticketRef} already had ${spinoffStatusWord(was)} row #${queued.row.id}, ${outcome}`, settled: true };
         }
-        return { row: queued.row, launched: await launchAndReport(ctx, store, queued.row, false, tier !== undefined, under, spinoffSteps(ctx, under)) };
+        return { row: queued.row, launched: await launchAndReport(ctx, store, queued.row, false, complexity !== undefined, under, spinoffSteps(ctx, under)) };
       },
       void: async (id, reason) => {
         await voidPair(store, id, reason);
@@ -6462,7 +6499,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     mode: "interactive",
     brief,
     launcher: launcherFlag,
-    tier,
+    complexity,
     effort,
     decision: dispatchDecisionOf(ctx), // OB-2107: carries the --opus-high quote
   });
@@ -6475,20 +6512,20 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   if (flake && noFlakeSlot) await recordNoFlakeSlot(store, row, noFlakeSlot, under || null);
   if (queueOnly) {
     if (ctx.mode === "json")
-      print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), deduped, launcher: row.launcher, tier: row.tier, effort: row.effort, urgent, raised_from: raisedFrom, row }));
+      print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status), deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort: row.effort, urgent, raised_from: raisedFrom, row }));
     else if (ctx.mode === "quiet") print(String(row.id));
-    else print(renderQueuedLine(row, deduped, tier !== undefined, urgent ? { from: raisedFrom } : null));
+    else print(renderQueuedLine(row, deduped, complexity !== undefined, urgent ? { from: raisedFrom } : null));
     return;
   }
-  await launchAndReport(ctx, store, row, deduped, tier !== undefined, under, spinoffSteps(ctx, under), urgent ? { from: raisedFrom } : null);
+  await launchAndReport(ctx, store, row, deduped, complexity !== undefined, under, spinoffSteps(ctx, under), urgent ? { from: raisedFrom } : null);
 }
 
 /**
  * The pre-enqueue check of `--effort` (OB-1815), run where T3 is (this machine). The repo path and the tier →
  * model map are the ones a launch from here would read, so the check and the launch agree.
  */
-async function refuseUnusableEffortFor(db: Database | Store, repo: string, tier: SpinoffTier, effort: SpinoffEffort, opusHighAsk?: string): Promise<void> {
-  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), tier, await tierModelsOrRefuse(db), effort, opusHighAsk);
+async function refuseUnusableEffortFor(db: Database | Store, repo: string, complexity: number, effort: SpinoffEffort, opusHighAsk?: string): Promise<void> {
+  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), complexity, await tierModelsOrRefuse(db), effort, opusHighAsk);
 }
 
 /** A pending row's recorded effort, or undefined when it names none (or one no longer known). */
@@ -6526,7 +6563,7 @@ async function enqueueAndLaunchSplit(
   ctx: Ctx,
   remote: RemoteWriter,
   rawRef: string,
-  opts: { launcher?: string; tier?: SpinoffTier; effort?: SpinoffEffort; brief?: string; under: string },
+  opts: { launcher?: string; complexity?: number; effort?: SpinoffEffort; brief?: string; under: string },
 ): Promise<void> {
   const argv = ["spinoff", "queue", rawRef];
   const repoFlag = flag(ctx, "repo");
@@ -6544,7 +6581,8 @@ async function enqueueAndLaunchSplit(
   // OB-1815: T3 is on THIS machine, so the check of --effort runs here, before anything crosses the wire.
   if (opts.effort !== undefined) {
     const urgent = await itemIsUrgent(ctx.db, await ticketItemIdFor(ctx.db, rawRef)); // OB-2075
-    await refuseUnusableEffortFor(ctx.db, repo, urgent ? "complex" : (opts.tier ?? DEFAULT_SPINOFF_TIER), opts.effort, flag(ctx, "opus-high"));
+    const named = opts.complexity ?? DEFAULT_COMPLEXITY;
+    await refuseUnusableEffortFor(ctx.db, repo, urgent ? Math.max(named, URGENT_COMPLEXITY) : named, opts.effort, flag(ctx, "opus-high"));
   }
   if (repoFlag !== undefined) argv.push("--repo", repoFlag);
   // OB-2107: --opus-high crosses too: the server's `queue` re-checks it and puts the quote on the trail note.
@@ -6553,7 +6591,7 @@ async function enqueueAndLaunchSplit(
     if (value !== undefined) argv.push(`--${name}`, value);
   }
   if (opts.launcher !== undefined) argv.push("--launcher", opts.launcher);
-  if (opts.tier !== undefined) argv.push("--tier", opts.tier);
+  if (opts.complexity !== undefined) argv.push("--complexity", String(opts.complexity));
   if (opts.effort !== undefined) argv.push("--effort", opts.effort);
   if (opts.brief !== undefined) argv.push("--brief", opts.brief);
   // --repo crosses the wire as a SLUG (217), resolved here against this machine's checkouts.
@@ -6564,12 +6602,12 @@ async function enqueueAndLaunchSplit(
   const queueArgv = [...rewrite.argv, "--json"];
   const outcome = remote.write(queueArgv);
   if (!outcome.ok) throw new AppError(outcome.message ?? `'ob ${queueArgv.join(" ")}' failed on the server`);
-  const parsed = parseStepAnswer<{ row: SpinoffRow; deduped: boolean; urgent?: boolean; raised_from?: SpinoffTier | null }>(queueArgv, outcome.stdout);
+  const parsed = parseStepAnswer<{ row: SpinoffRow; deduped: boolean; urgent?: boolean; raised_from?: number | null }>(queueArgv, outcome.stdout);
   if (!parsed.value?.row) throw new AppError(parsed.error ?? `'ob ${queueArgv.join(" ")}' answered no row`);
   const urgentNote = parsed.value.urgent ? { from: parsed.value.raised_from ?? null } : null; // OB-2075: the server decided it
   // OS-47: read off this machine's replica and checkout; the trail is the server's, so the split client only prints.
   await warnDispatchOverlap(ctx.db, { ref: parsed.value.row.ticket_ref, repo }, { ...overlapSeams(ctx.db), noCheck: flag(ctx, "no-check"), record: async () => {} });
-  await launchAndReport(ctx, ctx.db, parsed.value.row, parsed.value.deduped === true, opts.tier !== undefined, opts.under, spinoffSteps(ctx, opts.under), urgentNote);
+  await launchAndReport(ctx, ctx.db, parsed.value.row, parsed.value.deduped === true, opts.complexity !== undefined, opts.under, spinoffSteps(ctx, opts.under), urgentNote);
 }
 
 /**
@@ -6599,7 +6637,7 @@ async function launchAndReport(
     : r.kind === "remote-error" ? r.error
     : null;
   if (ctx.mode === "json") {
-    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status, deduped, launcher: row.launcher, tier: row.tier, effort: r.kind === "launched" ? (r.effect.effort ?? row.effort ?? null) : (row.effort ?? null), t3_thread_id: threadId, model: r.kind === "launched" ? (r.effect.model ?? null) : null, error: reason }));
+    print(JSON.stringify({ id: row.id, ticket: row.ticket_ref, status, deduped, launcher: row.launcher, tier: row.tier, complexity: row.complexity ?? null, effort: r.kind === "launched" ? (r.effect.effort ?? row.effort ?? null) : (row.effort ?? null), t3_thread_id: threadId, model: r.kind === "launched" ? (r.effect.model ?? null) : null, error: reason }));
   } else if (ctx.mode === "quiet") {
     print(threadId ?? String(row.id));
   } else if (r.kind === "launched") {

@@ -66,7 +66,7 @@ export async function runTrialCli(ctx: TrialCliCtx, io: TrialCliIO): Promise<voi
       if (!a || !b) throw new UsageError(`spinoff trial start requires --a and --b. Usage: ${TRIAL_USAGE}`);
       const n = Number(target);
       if (!Number.isInteger(n) || n < 1) throw new UsageError(`--target must be a whole number of pairs, 1 or more (got '${target}')`);
-      const res = await io.op({ op: "start", target: n, a, b, tier: str(ctx, "tier") ?? null, name: str(ctx, "name") ?? null, a_price: str(ctx, "a-price") ?? null, b_price: str(ctx, "b-price") ?? null });
+      const res = await io.op({ op: "start", target: n, a, b, tier: str(ctx, "tier") ?? null, range: str(ctx, "range") ?? null, name: str(ctx, "name") ?? null, a_price: str(ctx, "a-price") ?? null, b_price: str(ctx, "b-price") ?? null });
       if (res.op === "start") io.print(renderStart(res.trial, json));
       return;
     }

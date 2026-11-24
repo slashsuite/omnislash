@@ -134,7 +134,7 @@ function apply(inputs: RouteInputs, op: ModelsOp) {
   const review = (change: (v: ReviewReaders) => ReviewReaders) => withProfileReview(inputs.server, profile, change(serverReview(inputs, profile).value));
   switch (op.op) {
     case "setRoute":
-      return withRoute(inputs.server, profile, op.route, parseChain(op.chain), op.effort ? checkEffort(op.effort) : undefined);
+      return withRoute(inputs.server, profile, op.route, parseChain(op.chain), op.effort ? checkEffort(op.effort) : undefined, inputs.tierModels);
     case "unsetRoute":
       return withoutRoute(inputs.server, profile, op.route);
     case "use":

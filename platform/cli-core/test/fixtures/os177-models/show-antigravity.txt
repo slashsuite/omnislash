@@ -1,0 +1,20 @@
+models file: <file>
+active profile: antigravity [this machine's models file]
+fallback order: antigravity -> claude
+
+builder.simple    antigravity:gemini-4-neon   [local]
+builder.medium    antigravity:gemini-4-neon   [local]
+builder.complex   antigravity:gemini-4-neon   [local]
+checker           claude-haiku-5-5   [local]
+role.architect    antigravity:gemini-4-neon   [local (builder.complex)]
+role.sentinel     antigravity:gemini-4-neon   [local (builder.complex)]
+role.muse         antigravity:gemini-4-neon   [local (builder.complex)]
+sweep.first       claude-haiku-5-5   [default]
+sweep.escalate    claude-opus-5-5   [default]
+subagent.explore  claude-haiku-5-5   [default]
+subagent.fixup    claude-opus-5-5   [default]
+
+review readers [default]:
+  simple  neon=antigravity:gemini-4-neon, opus=claude-opus-5-5
+  medium  neon=antigravity:gemini-4-neon, opus=claude-opus-5-5
+  complex neon=antigravity:gemini-4-neon, opus=claude-opus-5-5

@@ -1208,6 +1208,8 @@ export interface EnqueueSpinoffRequest {  ticket_ref: string;
   launcher?: string | null;
   /** 1480: the complexity tier (`complex|medium|simple`). Absent = the default tier, recorded as such. */
   tier?: string | null;
+  /** OS-177: the complexity score 1-10 (`--complexity`), the routing key. Wins over `tier` when both are sent. */
+  complexity?: number | null;
   /** OB-1815: the reasoning level `--effort` named (`low|medium|high|xhigh|max`). Absent = none named. */
   effort?: string | null;
   /** OB-1825: `--note`, for the Decisions trail's `— → queued` line. */
@@ -1285,7 +1287,7 @@ export interface EnqueueSpinoffResponse {
    */
   urgent?: boolean;
   /** OB-2075: the lower tier the caller named that the urgent rule raised to complex; null when none was. */
-  raised_from?: string | null;
+  raised_from?: number | null;
   /** OB-2230: the item is at priority `flake`: the row takes flake:slot and its brief carries the flake-box paragraph. */
   flake?: boolean;
 }
@@ -1315,7 +1317,7 @@ export interface LaunchableSpinoff {
   /** OB-2075: the item is urgent: the row sent is on complex, and an adopted thread keeps its own model. */
   urgent?: boolean;
   /** OB-2075: the tier the host raised this row from, or null. The row's tier is recorded at the stamp, not here. */
-  raised_from?: string | null;
+  raised_from?: number | null;
 }
 
 /**

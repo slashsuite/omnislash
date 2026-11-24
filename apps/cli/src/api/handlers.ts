@@ -1497,6 +1497,8 @@ export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise
     launcher: (req.launcher ?? null) as LauncherName | null,
     // server.ts validated it against SPINOFF_TIERS (1480).
     tier: (req.tier ?? null) as SpinoffTier | null,
+    // OS-177: server.ts validated it as 1-10. It wins over `tier`; a tier-only client still routes by the tier's alias.
+    complexity: req.complexity ?? undefined,
     // server.ts validated it against SPINOFF_EFFORTS (OB-1815).
     effort: (req.effort ?? null) as SpinoffEffort | null,
     decision: { note: req.note, actor: req.actor },
