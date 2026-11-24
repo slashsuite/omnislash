@@ -111,7 +111,7 @@ that names a decision, a destructive step (back up first, and say so), or anythi
 
 Dispatch every build with **`ob spinoff <ref>`**. That opens a T3 thread: `ob spinoff` resolves to the `t3`
 launcher. The `spinoff_launcher` setting is `t3` (the code default, and the only value `config set` accepts). The thread runs on the
-**model its tier picks**, on the T3 project's own provider: see "Rate every dispatch" below. `spinoff_engine`
+**model its complexity score picks**, on the T3 project's own provider: see "Rate every dispatch" below. `spinoff_engine`
 only picks which transcript reader the row is stamped with, not the model.
 Always interactive: the owner steers; the owner hands it off (`ob spinoff handoff` / `/ob-spinoff-handoff`; the old `ob spinoff ready` / `/ob-spinoff-done` still work).
 `ob agent register` is a registry write, not a launch. Never `ob spinoff --agent`.
@@ -156,7 +156,7 @@ The rules below are spread over this skill; this is their order, for every repo'
 1. **By priority band:** urgent, then flake, then high, medium, low, none (`ob next --project <slug>` already lists them in that order). Within a band, the order `ob order` set.
 2. **A flaky-test ticket goes ahead of everything but an urgent** (Flaky tests come first, below).
 3. **One regular builder per repo, unless the architect clears the 98% no-conflict bar** (One builder per repo by default, above). A flake fix is exempt and runs beside them, one flake fix on the whole machine at a time, holding `flake:slot`.
-4. **An urgent ticket builds on Opus:** `ob spinoff <ref> --tier complex`. `ob spinoff` raises any lower tier for an urgent itself, so the flag is a statement, not the guard.
+4. **An urgent ticket builds at 7 or more (Opus):** `ob spinoff <ref> --complexity 7` or higher. `ob spinoff` raises any lower score for an urgent itself, so the flag is a statement, not the guard.
 5. Every dispatch still needs `## Drilled`, `## Done when` and a `go` from `ob spinoff check` (below).
 
 ## Claude usage pacing: ahead of the week means high and above only
@@ -381,7 +381,7 @@ Measure twice, cut once. After the drill-down and before `ob spinoff`, score the
    - **Read, do not ignore, the `read:` lines.** They are printed and stored, and do not refuse: either side under 70 or any 0 (more planning may be owed: drill down, run a spike or split, not a reworded ticket), more than 15 points apart (you high and the checker low means the plan is in your head, not the ticket; checker high and you low means you know something unwritten), or no shared file path. Act on one by changing the ticket and checking again when it points at a real gap. An old record that says `investigate` or `read the gap` still refuses at the gate until the body is checked again.
 4. **Change the ticket and repeat**, with a new sealed score, a new checker and a new `ob spinoff check`, at most twice. A score rises only when the ticket changed. Neither score ever moves to close the gap: lowering your own score after a refusal, with the ticket unchanged on that point, is gaming the check, a hack to get the criteria to pass. The gap closes only by changing the ticket and re-running the checker; your sealed score stays what it was unless the ticket's change gives it a reason to move.
 
-**A low score is yours to answer.** If you are not confident, more planning or more investigation is needed. A hard limit on the confidence is not practical, but dispatching anything below 70% is inadvisable. The score measures readiness, not difficulty: a hard ticket scores high once it is planned, and its difficulty shows in the tier and any split, so "it is a hard ticket" answers nothing. Every criterion you score under 2 carries a line in your sealed scores: why it is low, what would raise it. Then, by what is missing:
+**A low score is yours to answer.** If you are not confident, more planning or more investigation is needed. A hard limit on the confidence is not practical, but dispatching anything below 70% is inadvisable. The score measures readiness, not difficulty: a hard ticket scores high once it is planned, and its difficulty shows in the complexity score and any split, so "it is a hard ticket" answers nothing. Every criterion you score under 2 carries a line in your sealed scores: why it is low, what would raise it. Then, by what is missing:
 
 - **Findable by reading or asking:** drill down more, or ask the owner if the call is theirs. Rescore.
 - **Only knowable by trying:** a spike, below. Its findings go on this ticket. Rescore.
@@ -392,7 +392,7 @@ Measure twice, cut once. After the drill-down and before `ob spinoff`, score the
 
 A spike is a bounded investigation for what cannot be found by reading: it takes running something, prototyping or measuring. It answers your questions and ships nothing. A spike does not commit code; it only answers questions from the architect. It is allowed to make changes, run tests and run commands. It may commit documentation, never code: a report under `docs/` on its own branch and PR, which you merge like a chart.
 
-- A normal ticket tagged `spike`, linked to its parent, dispatched with `ob spinoff`, under the one-builder-per-repo rule. Simple or medium tier; the question decides. It takes no measure-twice score and needs no `--no-check`: `ob spinoff <spike>` instead refuses, by name and leaving no row, a spike with no `## Questions`, `## Box` or `## Done when`, or no `spun_off_from` link to the parent (`ob link <spike> spun_off_from <parent>`). The tag is exactly `spike`.
+- A normal ticket tagged `spike`, linked to its parent, dispatched with `ob spinoff`, under the one-builder-per-repo rule. Score it 1-6; the question decides. It takes no measure-twice score and needs no `--no-check`: `ob spinoff <spike>` instead refuses, by name and leaving no row, a spike with no `## Questions`, `## Box` or `## Done when`, or no `spun_off_from` link to the parent (`ob link <spike> spun_off_from <parent>`). The tag is exactly `spike`.
 - The body has `## Questions` (what must be known, and which low criterion on the parent each should raise), `## Box` (the limit, in time or things to try) and `## Done when`.
 - In its worktree it may edit files, run tests and run commands, and its output is answers. It never commits code; the one commit it may make is documentation (a `.md` file outside `apps/`, `platform/`, `domains/`, `skills/` and `ops/`), which it pushes and opens as a `docs(<ref>): ...` PR itself. A kept edit is described in the findings, and the build writes it properly. Nothing sends externally and no destructive step, here as anywhere.
 - It answers with `ob note` on the parent: each question with answer and evidence, what is still unknown, the size it now expects, whether to split. A new question goes in that note for you to decide. "Cannot be known yet" and "this is several builds" are good results. Running out of box stops it, and it reports what it has.
@@ -404,75 +404,80 @@ A spike is a bounded investigation for what cannot be found by reading: it takes
 
 ## Rate every dispatch
 
-Every `ob spinoff <ref>` carries **`--tier complex|medium|simple`**, and the tier picks the builder's model:
-complex: Opus, medium: Opus, simple: Haiku (`claudeAgent:claude-haiku-5-5`)
-(route `builder.<tier>`: `ob models get builder.medium` prints it, and `ob models set builder.<tier> <model>,<fallback>` changes it for everyone). Rate it yourself; do not ask the owner to.
+Every `ob spinoff <ref>` carries **`--complexity <1-10>`**, and the score picks the builder's model from the
+profile's builder ranges. The defaults: 1-3 Haiku (`claudeAgent:claude-haiku-5-5`), 4-6 Opus, 7-10 Opus.
+`ob models show` prints the ranges, `ob models get builder.4-6` one of them, and `ob models set builder.<from>-<to> <model>,<fallback>`
+changes one for everyone (the dashboard's Models page edits, splits and merges them). Rate it yourself; do not ask the owner to.
 
-**No Sonnet anywhere.** Sonnet's results were unimpressive, so Opus on the default effort level replaces it. The medium tier runs Opus, and every Opus build runs at its default effort: send no `--effort` unless a failed build earns one more level (below). A machine whose `models.jsonc` still names Sonnet for a tier or a review leg is changed to Opus.
+**The rubric:**
 
-**No builder runs on OpenCode Go.** The OpenCode subscription was running out too fast: simple-tier builders on DeepSeek were a large share of its spend (the review legs were most of the rest), so the simple tier moved to Haiku. A machine whose `models.jsonc` still names
-`opencode:opencode-go/...` for a tier is changed to Haiku, not left as is.
+- 1 to 3: trivial copy changes. 1 is one place, 3 is many places.
+- 4 to 6: functionality changes that are still straightforward. Everything is foreseeable.
+- 7 to 10: not one-shottable. 7 has one or two open questions, and 10 is wide open, with no knowing whether it is possible.
 
-**Urgent always runs on complex.** A ticket at priority `urgent` builds on the complex tier (Opus) in every repo, whatever `--tier` you name or leave off: the row records `complex`, a lower tier is raised and the line says `tier: complex (urgent, raised from medium)`, and a ticket made urgent after queueing is raised at launch. `flake`, `high` and lower keep the tier you name. A builder already running when its ticket turns urgent keeps its model; move it by hand with `t3_thread_configure`.
+No score means 5. `--tier` is an alias for one release (simple=2, medium=5, complex=8): it prints `ob: --tier is now --complexity; simple=2 medium=5 complex=8`, and passing both is refused.
 
-**The simple tier is the default builder (on Haiku).** Pass `--tier simple` unless the ticket is one of the
-medium or complex kinds below. Do not leave `--tier` off: for now, no `--tier` still runs **medium**
-(Opus), and the queue line says `tier: medium (default)`. Why it was made the default: across the five recorded
-trial pairs DeepSeek won four, met 91% of Done when items against Sonnet's 85%, and cost about a twelfth as much
-at list price; its one loss was new code with concurrency (`ob spinoff trial report`). Haiku has no trial record
-yet, so a simple-tier build that misses its Done when is redispatched on medium (Opus) and noted in the close.
+**No Sonnet anywhere.** Sonnet's results were unimpressive, so Opus on the default effort level replaces it. The 4-6 range runs Opus, and every Opus build runs at its default effort: send no `--effort` unless a failed build earns one more level (below). A machine whose `models.jsonc` still names Sonnet for a builder range or a review leg is changed to Opus.
 
-**Target mix: 70% simple (Haiku), 20% medium (Opus), 10% complex (Opus).** Check it with
-`ob spinoff mix`. Opus is for genuinely difficult work, not the default.
+**No builder runs on OpenCode Go.** The OpenCode subscription was running out too fast: low-score builders on DeepSeek were a large share of its spend (the review legs were most of the rest), so the 1-3 range moved to Haiku. A machine whose `models.jsonc` still names
+`opencode:opencode-go/...` for a builder range is changed to Haiku, not left as is.
 
-**Decompose first, then rate.** Before choosing a tier, split the ticket until each piece is **one concern**,
-with an explicit Done when list and the exact files in scope. A medium-sized ticket that can be split gets
-split, not rated medium. Each piece is its own ticket on the repo's tracker (your main repo: `ob add`) and its own
+**Urgent is 7 or more.** A ticket at priority `urgent` builds at complexity 7 or more in every repo: the row records `max(score, 7)`, a lower score is raised and the queue line says so, and a ticket made urgent after queueing is raised at launch. `flake`, `high` and lower keep the score you give. A builder already running when its ticket turns urgent keeps its model; move it by hand with `t3_thread_configure`.
+
+**Score low when the rubric allows it.** Most drilled tickets are copy (1-3) or foreseeable functionality (4-6). Do not leave `--complexity` off: no score runs at **5**
+(Opus), and the queue line says so. Haiku has no trial record yet, so a 1-3 build that misses its Done when is redispatched at 4 or more (Opus) and noted in the close.
+
+**Target mix: 70% in 1-3 (Haiku), 20% in 4-6 (Opus), 10% in 7-10 (Opus).** Check it with
+`ob spinoff mix`, which counts the bands 1-3, 4-6 and 7-10. Opus is for genuinely difficult work, not the default.
+
+**Decompose first, then rate.** Before scoring, split the ticket until each piece is **one concern**,
+with an explicit Done when list and the exact files in scope. A ticket that can be split gets
+split, not scored higher. Each piece is its own ticket on the repo's tracker (your main repo: `ob add`) and its own
 `ob spinoff` row, dispatched in the order the **One builder per repo by default** rule sets.
 
-- **simple** (Haiku): a drilled ticket with its design calls made, following the existing design: bug fixes,
-  UI and design system work, tests, copy, scripts, docs and config, and a feature in one area. DeepSeek keeps to
-  the brief; what it misses is structure it has to invent (DeepSeek's trial record; Haiku is not yet measured), so the brief names the files and the calls. Its brief
-  follows the **simple brief rule** below.
-- **medium** (Opus, default effort): new code that has to find its own structure (a new module, SDK, service or package), and a
-  refactor that cuts across several areas.
-- **complex**: only for real difficulty: a design call the brief cannot settle, concurrency or leases, DB
-  migrations, live infra or deploy, security/secrets, or **a piece that already failed at medium**. A large file
-  count or a long diff alone is not complex; split it.
+- **1-3** (Haiku): a drilled copy change with its design calls made, following the existing design: wording, labels,
+  docs and config text. Haiku keeps to the brief; what it misses is structure it has to invent, so the brief names
+  the files and the calls. Its brief follows the **low-score brief rule** below.
+- **4-6** (Opus, default effort): a functionality change where everything is foreseeable: bug fixes, UI and design
+  system work, tests, scripts, a feature in one area, new code that has to find its own structure (a new module,
+  SDK, service or package), and a refactor that cuts across several areas.
+- **7-10**: only for real open questions: a design call the brief cannot settle, concurrency or leases, DB
+  migrations, live infra or deploy, security/secrets, or **a piece that already failed at a lower score**. A large file
+  count or a long diff alone is not a 7; split it.
 
-**Simple brief rule.** A simple brief names the **exact files** to touch, the **exact change** (the text
-to add, the value to set, the function to write), and the **gate command** (e.g. `bunx moon run cli:test`). The builder must
-not have to make a design call: if the brief leaves a choice open, the piece is not simple yet. Decide it in the
+**Low-score brief rule.** A 1-3 brief names the **exact files** to touch, the **exact change** (the text
+to add, the value to set), and the **gate command** (e.g. `bunx moon run cli:test`). The builder must
+not have to make a design call: if the brief leaves a choice open, the piece is not 1-3 yet. Decide it in the
 brief, or split it again.
 
-Say the tier in your dispatch message to the owner ("dispatched <ref> · tier complex (Opus): migration + leases").
+Say the score in your dispatch message to the owner ("dispatched <ref> · complexity 8 (Opus): migration + leases").
 
-**Rate the effort with the tier.** Every dispatch also decides the reasoning level: `ob spinoff <ref> --tier medium --effort medium`.
+**Rate the effort with the score.** Every dispatch also decides the reasoning level: `ob spinoff <ref> --complexity 5 --effort medium`.
 The reference is Anthropic's tutorial, [Choosing the right effort level in Claude Code](https://academy.claude.com/tutorials/choosing-the-right-effort-level-in-claude-code)
 (with the [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort) and the
 [model and effort post](https://claude.com/blog/claude-model-and-effort-level-in-claude-code)). **Start at the model's own default
 (send no `--effort`) and move one level, with the reason in `--note`.** `ob spinoff show <n>` prints what the launch ran at.
 
-- **Opus stays at its default.** The owner asked for Opus on the default effort level, so a medium or complex dispatch sends no `--effort`.
-- **Opus on `high`, `xhigh` or `max` only when the owner explicitly asks for it.** No architect, builder or reviewer raises Opus above its default on its own judgment, not for hard work and not after a failed build. Quote the owner's ask in `--note`. The raises below apply to Haiku (the simple tier); an Opus build that falls short gets a better brief, and a raise only on the owner's yes.
-- **Up one level (Haiku only)** when the work takes many turns and double-checking, or nobody can quickly check the result (migrations, leases, live infra, security). For that kind of work, pick the medium or complex tier (Opus at default) instead of raising Haiku.
+- **Opus stays at its default.** The owner asked for Opus on the default effort level, so a dispatch at 4 or more sends no `--effort`.
+- **Opus on `high`, `xhigh` or `max` only when the owner explicitly asks for it.** No architect, builder or reviewer raises Opus above its default on its own judgment, not for hard work and not after a failed build. Quote the owner's ask in `--note`. The raises below apply to Haiku (1-3); an Opus build that falls short gets a better brief, and a raise only on the owner's yes.
+- **Up one level (Haiku only)** when the work takes many turns and double-checking, or nobody can quickly check the result (migrations, leases, live infra, security). For that kind of work, score it 4 or more (Opus at default) instead of raising Haiku.
 - **Down one level** only for a task type already run at the default with no drop in quality. `low` on Haiku needs that evidence first: the docs warn it skips checks.
 - **`xhigh` or `max`** on Haiku only after a level below fell short, and back to the default on the next ticket. On Opus, only on the owner's explicit ask (above).
 - **A failed build:** first ask whether the brief lacked context, and fix that. On Haiku, then raise the effort one level and rerun (`ob spinoff <ref> --effort <next>`
-  re-rates a pending row; a launched one needs its thread settled first), and raise the **tier** (to Opus at default) only if more effort did not fix it. On Opus, rerun at the default with the better brief; raising the effort is the owner's call.
-- **Say the effort beside the tier** in the dispatch message to the owner ("dispatched <ref> · tier medium (Opus), effort default: one feature, spec'd").
+  re-rates a pending row; a launched one needs its thread settled first), and raise the **score** (to 4 or more, Opus at default) only if more effort did not fix it. On Opus, rerun at the default with the better brief; raising the effort is the owner's call.
+- **Say the effort beside the score** in the dispatch message to the owner ("dispatched <ref> · complexity 5 (Opus), effort default: one feature, spec'd").
 - **When a new model arrives, revisit these choices.**
 - **The levels `--effort` takes:** `low|medium|high|xhigh|max`. A model that does not list the one you name refuses by name before anything is queued; read the
   levels it lists off the refusal. `ultrathink` is not a level. The architect thread's own effort and the reviews (Opus at default effort) are not rated this way.
 
-**Pass the rationale on the command, not only in chat:** `ob spinoff <ref> --tier complex --note '<why this
-size>'` records it on the ticket's Decisions trail, which `ob show <ref>` prints. One line (the shape that decided
+**Pass the rationale on the command, not only in chat:** `ob spinoff <ref> --complexity 8 --note '<why this
+score>'` records it on the ticket's Decisions trail, which `ob show <ref>` prints. One line (the shape that decided
 it, "migration + leases; two areas") so a later session reads the call instead of re-deriving it. Optional, and
 never a substitute for saying it to the owner.
-When a cheaper build stalls, re-dispatch the same ref with a higher `--tier`: a still-pending row is re-rated in
+When a cheaper build stalls, re-dispatch the same ref with a higher `--complexity`: a still-pending row is re-rated in
 place; a launched one needs its old thread settled first (the launch refuses by name, naming that thread, rather
-than adopting it on the old model). `ob spinoff show <n>` prints the tier and the model the launch actually ran on.
-The tier is for builders only: this architect thread's own model and the reviews (Opus at default effort) are not tiered.
+than adopting it on the old model). `ob spinoff show <n>` prints the score and the model the launch actually ran on.
+The score picks builders only: this architect thread's own model is not scored, and the reviews pick their readers from the review ranges (`ob review readers --complexity <n>`).
 
 **Role threads run Opus at medium, the default effort.** Every architect, sentinel and muse thread, in every team, runs `claude-opus-5-5` with effort `medium` and fast mode off. `ob t3 team restart` and `ob t3 <role>` launch on the project's default model and send no effort, so a new role thread starts there. A role thread found on another model or a higher effort (read it with `t3_thread_configure` and no selection) is set back with `t3_thread_configure` and that `modelSelection`; raising it is the owner's call.
 
@@ -480,13 +485,13 @@ The tier is for builders only: this architect thread's own model and the reviews
 
 **No trial runs by default.** Every dispatch is a single build. Start a trial only when the owner asks for one. `ob spinoff trial report` reads past pairs. The rest of this section describes the tooling.
 
-A trial runs the next N dispatches at one tier twice, to compare two builder models on real tickets.
+A trial runs the next N dispatches in one complexity range twice, to compare two builder models on real tickets.
 `ob spinoff trial start --target 20 --a claudeAgent:claude-sonnet-5-5 --b 'opencode:opencode-go/deepseek-v4.1-flash#high' --a-price <in,out,cw,cr> --b-price <...>`
 starts one (medium by default; list prices per million tokens). The count is read from the store, so every architect and repo feeds the same total.
 
-- **Dispatch as usual.** `ob spinoff <ref> --tier medium` (or no `--tier`) makes two rows: `<branch>` (leg a) and `<branch>-b` (leg b), each with its own
+- **Dispatch as usual.** `ob spinoff <ref> --complexity 5` (or no `--complexity`) makes two rows: `<branch>` (leg a) and `<branch>-b` (leg b), each with its own
   worktree, builder id and `ticket:` lease, the same brief and its own model and effort stamped. Never tell either builder about the trial, never vary the
-  brief, never pair a simple or complex dispatch. `--no-trial` is one build. A leg that fails to launch voids the pair; the other goes on as a single build.
+  brief, never pair a dispatch outside the trial's range. `--no-trial` is one build. A leg that fails to launch voids the pair; the other goes on as a single build.
 - **A pair is one builder** for the one-builder-per-repo rule. `ob spinoff gateable` shows it as one entry with both row ids; wait for both handoffs.
 - **Review blind.** `ob spinoff trial pair <ref> --diffs <dir>` writes `X.diff` and `Y.diff` and names no model. Score each 0 to 10 with
   `ob-skeptical-review`'s blind pair review, then `ob spinoff trial record <ref> --x <n> --y <n> --notes <file>`. A tie goes to leg a; blocked, partial
@@ -635,7 +640,7 @@ command) to prune worktrees/branches for done/merged tickets: merged + clean onl
 - **`ob spinoff drain` launches every queued row of the current repo (`--all`: every repo).** To launch one ticket, run `ob spinoff <ref>`.
 - **Log a call you make with `ob overnight decide`.** An architect decision worth reviewing later (an order, a design call on a ticket, a land over an objection) is one command, day or night: `ob overnight decide "<the decision>" --what '...' --why '...' --doubt '...' --undo '...' --project <p>`. By day it takes no `--night`; at night `ob-going-to-bed` adds `--night <date>`. It is a decision item in your project, so every machine and the timeline read it. Never a review file in your planning maps. Your main repo's decision log is unchanged.
 - **Asking the owner: always the question tool (`AskUserQuestion`), never plain text.** The question at most 400 characters of plain words: the exact question, 2 to 4 options with your recommendation first, and the command or URL. File lists, test counts and history stay out unless the owner asks. If the call isn't theirs, make it. A builder's `needs you` is relayed to the owner through the tool too. Several decisions are asked one per call: see `skills/ob-ask-one-by-one`.
-- **Every dispatch is rated:** `ob spinoff <ref> --tier complex|medium|simple`, with an `--effort` chosen by the rubric above, and both are said in the dispatch message.
+- **Every dispatch is rated:** `ob spinoff <ref> --complexity <1-10>`, with an `--effort` chosen by the rubric above, and both are said in the dispatch message.
 - **A dispatched ticket is not an architect lease.** Name it in `--note`, register this row `--no-lease`, and release `ticket:<n>` if you already hold it. `ob spinoff` refuses under that hold unless it carries `--holder architect-<team>`.
 - **Live deploy is fire-and-forget.** On "deploy", `ob deploy run` and move on. Proof later is `ob status` / `ob deploy status`. No thread, no wait, no OpenCode Task, no web-dev.
 - **Nothing sends to an external service without explicit human confirmation**: drafted output stays a draft.

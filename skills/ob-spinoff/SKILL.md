@@ -59,10 +59,10 @@ server printouts and stay as they are. If the ufw rule for the range is missing,
 **Past 200k context, checkpoint and start fresh.** In one usage review, builders in the day's top ten rode to 363k to 366k context, 11% of a day's usage, re-reading all of it on every call. Watch the context meter T3 shows for your thread. Past 200k: commit a WIP checkpoint on your own branch (a Conventional Commit, no `State:` line yet), `ob note <ref> "<where you are, what is left, what you learned>"`, then ask the owner with the question tool to open a fresh thread on this worktree seeded with `/ob-spinoff <ref>` and that note. The fresh thread reads the note and the branch and carries on; nothing in the old context needs to survive.
 
 **You are a T3 thread: there is no app to restart.** T3 Code is the only harness. `ob spinoff` resolves to the `t3` launcher, which opens a thread bound to the row's worktree on
-the model the architect's **tier** picked (complex → Opus, medium → Opus, simple → Haiku, on the T3
-project's own provider; `ob spinoff show <row>` prints both). If the job turns out bigger than its tier (a
+the model the architect's **complexity score** picked (1-3 → Haiku, 4-6 → Opus, 7-10 → Opus by default, on the T3
+project's own provider; `ob spinoff show <row>` prints both). If the job turns out bigger than its score (a
 design call, a migration, a lease race the brief did not mention), say so and stamp `needs-human` rather
-than pushing through; the architect re-dispatches at a higher `--tier`. An urgent ticket always runs on the complex tier (Opus), whatever `--tier` named, so a builder on an urgent ticket is on the top tier (a thread that was already open keeps the model it opened with, and the launch says so). The owner steers you there. The old headless launcher and the drain
+than pushing through; the architect re-dispatches at a higher `--complexity`. An urgent ticket always builds at complexity 7 or more (Opus), whatever `--complexity` named, so a builder on an urgent ticket is on the top range (a thread that was already open keeps the model it opened with, and the launch says so). The owner steers you there. The old headless launcher and the drain
 daemon are gone: `ob spinoff <ref>` opens your thread in the same invocation. The rules that used to guard the
 release instance are moot. The general one stands: never kill or relaunch a process you did not start, and
 never `ob lease release <resource> --force` a live holder.

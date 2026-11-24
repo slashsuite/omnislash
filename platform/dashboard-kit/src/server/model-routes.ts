@@ -14,6 +14,7 @@ import {
   ModelRoutesError,
   activeProfileOf,
   addReader,
+  builderBandsIn,
   checkEffort,
   loadServerRoutes,
   parseChain,
@@ -23,9 +24,10 @@ import {
   routeNames,
   saveModelRoutes,
   serverReview,
-  setReaderRange,
+  setReaderRanges,
   sourceLabel,
   useProfile,
+  withBuilderRanges,
   withProfileReview,
   withRoute,
   withoutRoute,
@@ -50,6 +52,15 @@ export interface ModelsRouteRow {
   server: { chain: string[]; effort: string | null } | null;
 }
 
+/** One band of the profile's builder set (OS-176): its range, chain and effort, and the layer it came from. */
+export interface ModelsBuilderBand {
+  from: number;
+  to: number;
+  chain: string[];
+  effort: string | null;
+  source: RouteSource;
+}
+
 export interface ModelsView {
   /** The dashboard host's models file: shown, never written. */
   file: { path: string; present: boolean };
@@ -59,7 +70,13 @@ export interface ModelsView {
   profiles: string[];
   /** The profile these rows resolve in and every edit lands on. */
   profile: string;
+  /** Every route but the builder's, which are the ranges in `builder`. */
   routes: ModelsRouteRow[];
+  /**
+   * The builder set this profile runs on the server (what the range editor changes), and whether this host's
+   * models file overrides it here.
+   */
+  builder: { bands: ModelsBuilderBand[]; local: boolean };
   /** The readers this profile runs on the server (what the reader edits change), and the file's local legs. */
   review: { source: "server" | "legacy" | "default"; value: ReviewReaders; local: Record<string, string> };
   efforts: string[];
@@ -71,7 +88,8 @@ export type ModelsOp =
   | { op: "use"; profile: string }
   | { op: "readerAdd"; profile: string; leg: string; model: string }
   | { op: "readerRemove"; profile: string; leg: string }
-  | { op: "readerRange"; profile: string; range: string; legs: string[] };
+  | { op: "builderRanges"; profile: string; ranges: Array<{ from: number; to: number; chain: string; effort?: string }> }
+  | { op: "readerRanges"; profile: string; ranges: Array<{ from: number; to: number; legs: string[] }> };
 
 export type ModelsEditResult = { ok: true; view: ModelsView } | { ok: false; error: string };
 
@@ -89,7 +107,7 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
   const profile = writeProfile(inputs, named);
   const shown = as(inputs, profile);
   const serverRoutes = inputs.server.profiles[profile]?.routes ?? {};
-  const routes = routeNames(shown).map((route): ModelsRouteRow => {
+  const routes = routeNames(shown).filter((route) => !route.startsWith("builder.")).map((route): ModelsRouteRow => {
     const r = resolveRouteIn(shown, route, profile);
     const own = serverRoutes[route];
     return {
@@ -102,6 +120,9 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
     };
   });
   const review = serverReview(inputs, profile);
+  const bands = builderBandsIn(shown, profile, { local: false }).map((b): ModelsBuilderBand => ({ from: b.from, to: b.to, chain: [...b.chain], effort: b.effort ?? null, source: b.source }));
+  const fileProfile = inputs.file?.profiles[profile];
+  const local = fileProfile !== undefined && (Object.keys(fileProfile.routes).some((r) => r.startsWith("builder.")) || Object.keys(fileProfile.builder ?? {}).length > 0);
   return {
     file,
     active: activeProfileOf(inputs),
@@ -109,6 +130,7 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
     profiles: Object.keys(inputs.server.profiles).sort(),
     profile,
     routes,
+    builder: { bands, local },
     review: { source: review.source, value: review.value, local: { ...inputs.file?.profiles[profile]?.review } },
     efforts: [...EFFORT_LEVELS],
   };
@@ -141,8 +163,14 @@ function apply(inputs: RouteInputs, op: ModelsOp) {
       return review((v) => addReader(v, op.leg, op.model));
     case "readerRemove":
       return review((v) => removeReader(v, op.leg));
-    case "readerRange":
-      return review((v) => setReaderRange(v, op.range, op.legs));
+    case "builderRanges":
+      return withBuilderRanges(
+        inputs.server,
+        profile,
+        op.ranges.map((r) => ({ from: r.from, to: r.to, chain: parseChain(r.chain), ...(r.effort ? { effort: checkEffort(r.effort) } : {}) })),
+      );
+    case "readerRanges":
+      return review((v) => setReaderRanges(v, op.ranges));
   }
 }
 
