@@ -11,6 +11,7 @@ import { parsePayload, type EventRow } from "./events.ts";
 import { asStore, readNumber, type Store } from "./db/store.ts";
 import { item } from "./db/schema.ts";
 import { canTransition, isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
+import { shadowItemMove } from "./machine-shadow.ts";
 
 // The single validated-transition core. The CLI workflow commands (`ob start/ready/close/reopen/block/
 // today`) and the dashboard's transitionItem server fn BOTH go through here — no state logic is
@@ -34,6 +35,26 @@ function refuseReference(it: { id: string; type: string }): void {
 }
 
 /**
+ * OS-169: today's edge check (`assertTransition`), then the machine's shadow check on the same move (after
+ * the check, before the write). A refusal is shadowed as `refused` and rethrown unchanged. A door's own
+ * precondition ("is not closed", "is not blocked") is thrown before this, so only the edge is compared.
+ */
+async function assertTransitionShadowed(
+  db: Database | Store,
+  it: { id: string; type: string; status: string; project_kind: string | null },
+  to: string,
+  decision: DecisionOpts,
+): Promise<void> {
+  try {
+    await assertTransition(db, it.id, to);
+  } catch (e) {
+    if (e instanceof AppError) await shadowItemMove(db, it, to, "refused", { todayMessage: e.message, actor: decision.actor });
+    throw e;
+  }
+  await shadowItemMove(db, it, to, "allowed", { actor: decision.actor });
+}
+
+/**
  * The validation half of a transition, with no write, so a `--dry-run` preview fails on exactly the
  * moves the real transition would reject instead of promising something impossible.
  */
@@ -52,9 +73,10 @@ export async function assertTransition(db: Database | Store, id: string, to: str
 
 /** Validated status move: rejects a status the type/kind can't hold, and an edge the model forbids. */
 export async function transitionTo(db: Database | Store, id: string, to: string, decision: DecisionOpts = {}): Promise<void> {
-  id = (await requireItem(db, id)).id;
-  await assertTransition(db, id, to);
-  const from = (await requireItem(db, id)).status;
+  const it = await requireItem(db, id);
+  id = it.id;
+  await assertTransitionShadowed(db, it, to, decision);
+  const from = it.status;
   await setStatus(db, id, to);
   // OB-1928: any close takes the item out of the triage inbox, after the move is validated and written,
   // so a refused close leaves the flag set.
@@ -79,18 +101,24 @@ export async function closeItem(db: Database | Store, id: string, decision: Deci
   else await transitionTo(db, it.id, "done", decision);
 }
 
-/** The validation half of a reopen (a reopen also requires the item to actually be closed). No write. */
+/** The door half of a reopen: a reopen requires the item to actually be closed. */
+function refuseUnlessReopenable(it: { id: string; type: string; status: string }): void {
+  refuseReference(it);
+  if (it.status !== "done") throw new AppError(`item '${it.id}' is not closed`);
+}
+
+/** The validation half of a reopen. No write. */
 export async function assertReopen(db: Database | Store, id: string): Promise<void> {
   const it = await requireItem(db, id);
-  id = it.id;
-  refuseReference(it);
-  if (it.status !== "done") throw new AppError(`item '${id}' is not closed`);
-  await assertTransition(db, id, "open");
+  refuseUnlessReopenable(it);
+  await assertTransition(db, it.id, "open");
 }
 
 export async function reopenItem(db: Database | Store, id: string, decision: DecisionOpts = {}): Promise<void> {
-  id = (await requireItem(db, id)).id;
-  await assertReopen(db, id);
+  const it = await requireItem(db, id);
+  id = it.id;
+  refuseUnlessReopenable(it);
+  await assertTransitionShadowed(db, it, "open", decision);
   await setStatus(db, id, "open");
   await recordDecision(db, id, "done", "open", decision);
 }
@@ -110,7 +138,7 @@ export async function blockItem(
   const it = await requireItem(db, id);
   id = it.id;
   if (it.status === "blocked") throw new AppError(`item '${id}' is already blocked`);
-  await assertTransition(db, id, "blocked");
+  await assertTransitionShadowed(db, it, "blocked", decision);
   await setBlocked(db, id, reason, owner);
   // OS-26: the owner rides on the transition, so who a block waited on survives the block being cleared.
   const extra = owner ? { ...decision.extra, block_owner: owner } : decision.extra;
@@ -163,19 +191,14 @@ export async function unblockItem(
   id = it.id;
   if (it.status !== "blocked") throw new AppError(`item '${id}' is not blocked`);
   const kind = it.project_kind as Kind | null;
-  let target: string;
-  if (opts.to !== undefined) {
-    target = opts.to;
-    await assertTransition(db, id, target);
-  } else {
-    const prior = await statusBeforeBlock(db, id);
-    target =
-      prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
-        ? prior
-        : "open";
-    // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
-    await assertTransition(db, id, target);
-  }
+  const prior = opts.to === undefined ? await statusBeforeBlock(db, id) : null;
+  const target =
+    opts.to ??
+    (prior && prior !== "done" && isValidStatus(prior, it.type, kind) && canTransition("blocked", prior, it.type, kind)
+      ? prior
+      : "open");
+  // A legacy blocked row of a type with no `open` (a decision, say) is refused by name, never written open.
+  await assertTransitionShadowed(db, it, target, decision);
   await clearBlock(db, id, target);
   if (target === "done") await clearTriage(db, id);
   await recordDecision(db, id, "blocked", target, decision);
@@ -184,6 +207,9 @@ export async function unblockItem(
 export type MoveResult = "blocked" | "unblocked" | "reopened" | "moved";
 
 /**
+ * OS-169: no shadow check of its own. Every door below runs one (`blockItem`, `unblockItem`, `reopenItem`,
+ * `transitionTo`), so each move is checked exactly once, on the door it takes.
+ *
  * The one generic move (OB-1928) that `ob state <id> <to>` and the API `/state` `set` action share, so
  * neither has its own branches: a block goes through `blockItem`, any move off `blocked` through
  * `unblockItem`, `done -> open` through `reopenItem`, and the rest through `transitionTo`. Returns which

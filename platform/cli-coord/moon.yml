@@ -1,7 +1,7 @@
 $schema: '../../.moon/cache/schemas/project.json'
 
 tags: ['ob-ts']
-dependsOn: ['cli', 'cli-db']
+dependsOn: ['cli', 'cli-db', 'state-machine']
 
 tasks:
   test:

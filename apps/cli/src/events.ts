@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { orm } from "./db/orm.ts";
 import { asStore, type Store } from "./db/store.ts";
@@ -173,11 +173,12 @@ export async function eventsForItemFor(
   db: Database | Store,
   id: string,
   limit = 50,
-  filter: { source?: string; type?: string; types?: string[] } = {},
+  filter: { source?: string; notSource?: string; type?: string; types?: string[] } = {},
 ): Promise<EventRow[]> {
   const s = asStore(db);
   const conditions = [eq(s.t.event.item_id, id)];
   if (filter.source) conditions.push(eq(s.t.event.source, filter.source));
+  if (filter.notSource) conditions.push(ne(s.t.event.source, filter.notSource));
   if (filter.type) conditions.push(eq(s.t.event.type, filter.type));
   if (filter.types?.length) conditions.push(inArray(s.t.event.type, filter.types));
   return (await s.q

@@ -18,6 +18,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@omnislash/state-machine": "workspace:*",
     "@sentry/bun": "11.13.0",
     "drizzle-orm": "^0.45.4"
   },

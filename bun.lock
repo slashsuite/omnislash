@@ -20,6 +20,7 @@
         "ob": "src/index.ts",
       },
       "dependencies": {
+        "@omnislash/state-machine": "workspace:*",
         "@sentry/bun": "11.13.0",
         "drizzle-orm": "^0.45.4",
       },
@@ -69,6 +70,7 @@
       "name": "@omnislash/cli-coord",
       "version": "0.0.0",
       "dependencies": {
+        "@omnislash/state-machine": "workspace:*",
         "drizzle-orm": "^0.45.4",
       },
     },
