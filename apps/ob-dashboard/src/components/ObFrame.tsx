@@ -13,6 +13,7 @@ const PAGES = [
   { label: "Alerts", href: "/alerts" },
   { label: "Tokens", href: "/tokens" },
   { label: "Models", href: "/models" },
+  { label: "Timeline", href: "/timeline" },
 ] as const;
 
 export function ObFrame({ children }: { children: ReactNode }) {
