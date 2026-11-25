@@ -216,9 +216,29 @@ export function parseTierModels(raw: string | null | undefined): { models: Recor
 export const DEFAULT_REVIEW_MODELS = {
   neon: "antigravity:gemini-4-neon",
   opus: "claude-opus-5-5",
-  deepseek: "opencode-go/deepseek-v4.1-flash#high",
-  luna: "opencode-go/gpt-6-luna#high",
 } as const;
+
+/**
+ * Review legs retired in OS-206: DeepSeek and Luna are no longer part of the review setup. A models profile,
+ * `review_readers`, or a leg named on the command line that names one of them (or a model id that does) is refused.
+ */
+const RETIRED_REVIEW_LEGS = ["deepseek", "luna"] as const;
+
+/**
+ * Print the warning for a retired review entry that was dropped (OS-206, Jacobus 2026-11-25: drop with a warning,
+ * never refuse the whole file). `where` says which file and profile or setting it sat in.
+ */
+export function warnRetiredReview(where: string, refused: string): void {
+  console.warn(`ob: warning: ${where}: dropped ${refused}`);
+}
+
+/** The refusal for a retired review leg or model id, or null when the name is fine. Pure. Case-insensitive, as a word. */
+export function retiredReviewMessage(leg: string, model?: string): string | null {
+  const named = (text: string, r: string) => new RegExp(`\\b${r}\\b`, "i").test(text);
+  const retired = RETIRED_REVIEW_LEGS.find((r) => named(leg, r) || (model !== undefined && named(model, r)));
+  if (retired === undefined) return null;
+  return `review reader '${retired}' is retired (OS-206): DeepSeek and Luna are no longer part of the review setup; use neon or opus`;
+}
 
 /** The default skeptical-review leg set when `review_readers` is unset: Neon and Opus. */
 export const DEFAULT_REVIEW_LEGS = ["neon", "opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
@@ -315,7 +335,7 @@ export function checkRouteSpec(where: string, v: unknown): RouteSpec {
 export interface ModelsProfile {
   builder: Partial<Record<SpinoffTier, string>>;
   checker?: string;
-  /** Review leg name (`neon`, `opus`, `deepseek`, `luna`, ...; `sonnet` is read as `opus`) to model id. */
+  /** Review leg name (`neon`, `opus`; `sonnet` is read as `opus`; `deepseek` and `luna` are refused, OS-206) to model id. */
   review: Record<string, string>;
   /** OS-145: route overrides for this machine (`builder.medium`, `role.architect`, `job.<name>`, ...). */
   routes: Record<string, RouteSpec>;
@@ -417,7 +437,14 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
     if (p.checker !== undefined) profile.checker = modelString(path, `profile '${name}'.checker`, p.checker);
     if (p.review !== undefined) {
       if (!isObject(p.review)) throw new ModelsFileError(`${path}: profile '${name}'.review must be an object of leg to model`);
-      for (const [leg, model] of Object.entries(p.review)) profile.review[leg] = modelString(path, `profile '${name}'.review.${leg}`, model);
+      for (const [leg, model] of Object.entries(p.review)) {
+        const refused = retiredReviewMessage(leg, typeof model === "string" ? model : undefined);
+        if (refused) {
+          warnRetiredReview(`${path}: profile '${name}'.review`, refused);
+          continue;
+        }
+        profile.review[leg] = modelString(path, `profile '${name}'.review.${leg}`, model);
+      }
     }
     if (p.routes !== undefined) {
       if (!isObject(p.routes)) throw new ModelsFileError(`${path}: profile '${name}'.routes must be an object of route to {chain, effort}`);

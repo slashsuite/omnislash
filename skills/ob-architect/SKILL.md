@@ -494,7 +494,7 @@ The score picks builders only: this architect thread's own model is not scored, 
 **No trial runs by default.** Every dispatch is a single build. Start a trial only when the owner asks for one. `ob spinoff trial report` reads past pairs. The rest of this section describes the tooling.
 
 A trial runs the next N dispatches in one complexity range twice, to compare two builder models on real tickets.
-`ob spinoff trial start --target 20 --a claudeAgent:claude-sonnet-5-5 --b 'opencode:opencode-go/deepseek-v4.1-flash#high' --a-price <in,out,cw,cr> --b-price <...>`
+`ob spinoff trial start --target 20 --a claudeAgent:claude-sonnet-5-5 --b 'opencode:opencode-go/qwen3.8-flash#high' --a-price <in,out,cw,cr> --b-price <...>`
 starts one (medium by default; list prices per million tokens). The count is read from the store, so every architect and repo feeds the same total.
 
 - **Dispatch as usual.** `ob spinoff <ref> --complexity 5` (or no `--complexity`) makes two rows: `<branch>` (leg a) and `<branch>-b` (leg b), each with its own

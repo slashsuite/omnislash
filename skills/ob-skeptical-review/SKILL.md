@@ -64,7 +64,7 @@ The default readers:
 1. **`antigravity:gemini-4-neon`** (run by `agy --sandbox` through `review-leg.ts`), named `neon`.
 2. **`claude-opus-5-5` at its default effort** (run by `claude -p` through `review-leg.ts`), named `opus` (old name `sonnet`, an alias that a `models.jsonc` `review.sonnet` still feeds). It passes no `--effort`. **Opus never runs a review on `high` or above unless the owner explicitly asks for it.** It replaced Sonnet.
 
-`deepseek` (`opencode-go/deepseek-v4.1-flash#high`, paid) and `luna` (`opencode-go/gpt-6-luna#high`, paid) left the default set and stay runnable whenever a models profile or `review_readers` names them.
+`deepseek` and `luna` are retired (OS-206): they are no longer part of the review setup. A models profile, `review_readers`, or a leg named on the command line that names either (or a model id that does) is refused with a clear message, and no leg runs them.
 
 A reader the owner left on is run; it is not skipped in advance because `ob creds check opencode-go` warns "running low"
 (choosing is the owner's, and the page shows the credit state). An `opencode-go/` reader that fails on a credit error is
@@ -81,15 +81,15 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   in one stderr line and uses the models file. A models file that does not parse makes the leg fail by name; report
   that leg as failed.
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
-  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the Opus stand-in rule below applies).
+  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the fallback rule below applies).
 - **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ neon: failed (exit 1: model gemini-4-neon unavailable)`), never a bare `failed`. It is never retried around and
-  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the stand-in
+  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the fallback
   rule below.
 - **Profiles first.** `review-leg.ts` already reruns a leg that ends on a credit or quota error on the
   next models profile that gives that leg another (kind, model) (`ob models show`, the `fallback` list), and says so on
   stderr. For `agy` (`antigravity:` legs), quota, rate limit, `RESOURCE_EXHAUSTED`, `429` or a JSON `status` other than `SUCCESS` with such text triggers the same fallback. The rule below applies only once the leg has exited non-zero after that.
 - **Out of credits rule.** No required reader is paid, so a paid
-  leg (`deepseek` or `luna`, when a profile names one) out of credits reports `skipped (no credits)` and files nothing; the owed-review
+  leg (an `opencode-go/` reader, when a profile names one) out of credits reports `skipped (no credits)` and files nothing; the owed-review
   steps below apply only if a paid reader is made required again. When a required `opencode-go/...` reader
   exits non-zero, run `ob creds check opencode-go`. Only if it reports `FAILED` is the reader `skipped (no credits)`
   and not `failed`. The review carries on with the readers that ran, and the land is not blocked. If the check
@@ -100,17 +100,16 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
     records the result. One owed ticket per reviewed ticket, covering every reader it is owed:
     `ob add "Owed review: <ticket>, <readers>" --project <project> --priority medium --tag review-owed --body "<body>"`
     The body names the ticket, the branch (the PR may not exist yet: round 1 usually runs before `gh pr create`, so
-    the architect finds the PR by `gh pr list --state all --search <ticket>`), the readers owed (the paid ones, such as `deepseek` or `luna`), the
+    the architect finds the PR by `gh pr list --state all --search <ticket>`), the readers owed (the paid ones), the
     round they missed, and the review kind: skeptical review, or hill climb with its kit path. The body also says
     "the architect pays this back under Owed reviews, not through `ob spinoff`". Note the ticket's ref.
   - A reader skipped for independence (`skipped (builder)`) is not owed and files nothing.
   - **Paying it back** is the architect's: `skills/ob-architect` (Step 0 and the queue pass) runs the owed readers once the
     creds check passes and closes the ticket.
-- **Optional legs:** `deepseek`, `luna`, `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
+- **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
-- **Opus unavailable** → the other default leg (`neon`) stands in for Opus, or `deepseek`/`luna` when `neon` is
-  skipped (builder) or out of credits, and the report says so. The review is never skipped and never stamped
+- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it; by default Opus falls back to `neon`), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
   `needs-human` for want of a reviewer.
 - **Independence, not consensus.** Each leg gets the **same shared part of the brief** and the **same diff**, and
   from round 2 only its **own** previous findings and answers (How to run), with **no knowledge of the others'
@@ -132,8 +131,8 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 
   Report Neon and Opus (plus any extra or configured leg), naming the model that
   actually ran: `skeptical-review: N cut, 0 open (neon: a + opus: b)`. A failed leg reads
-  `+ neon: failed (exit 1: <reason>)`, copied from its `review-leg: neon failed: ...` line (Failure, above), a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ luna: skipped (no credits)`,
-  and an Opus stand-in `(neon(for opus): a)`.
+  `+ neon: failed (exit 1: <reason>)`, copied from its `review-leg: neon failed: ...` line (Failure, above), a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ opencode-go/<model>: skipped (no credits)`,
+  and a fallback run `(neon(for opus): a)`.
   A model that keeps returning `ok` should be visible, not averaged away.
 - **Never `opencode-go/gemini-4-argon-contributor` and never `opencode-go/grok-4.7`** (too expensive). Do not reach for them to make a review "stronger", and do not re-propose them.
 - **Escalating:** when a diff is hairy or a finding sounds thin, re-run on the narrowed question (one
@@ -148,7 +147,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   pipes and redirects are denied on the OpenCode and Claude legs (the Antigravity legs also list them in their deny rules, but that is unverified; see the Antigravity bullet). That ends two past accidents: a reader that shell-executed `ob spinoff cleanup`
   through an unescaped backtick, and one that left edits in six files.
   - **Antigravity legs (`neon`, or any `antigravity:<model>`)** have no shell-metacharacter denial verified: their read-only guarantee is `--sandbox` plus the `--settings` allow list only. Until a live run shows agy's matcher refuses a compound command, treat them as read-only by instruction and sandbox, not by proof. They run `agy --model <model> --sandbox --output-format json --settings '<read-only permissions>' --add-dir <briefDir> -p '<short prompt>'` (no `--mode plan`, no `--dangerously-skip-permissions`). The brief is written to a temp file under `$TMPDIR` so briefs over 128 KiB never hit E2BIG; `review-leg.ts` prints `response` as plain text and records `usage` tokens in `review-legs.jsonl`.
-  - **OpenCode legs (`deepseek`, `luna`, or `opencode/<model>`)** run `opencode run --standalone --agent ob-reviewer -m <model>#high`. `OPENCODE_CONFIG_DIR`
+  - **OpenCode legs (`opencode/<model>` or `opencode-go/<model>`)** run `opencode run --standalone --agent ob-reviewer -m <model>#high`. `OPENCODE_CONFIG_DIR`
     carries the profile, so it applies in any repo under review. The brief goes on stdin, as it does to the
     Opus leg, never in argv, which avoids the 128 KiB cap on one argv string (a larger one fails with
     E2BIG). An agent that fails to resolve stops the run
@@ -347,11 +346,11 @@ Rounds: 2
 
 | Reader | Round 1 | Round 2 (rebuttal) |
 | --- | --- | --- |
-| claude-sonnet-5-5 (high) | 7/10 | 8/10 |
-| opencode-go/deepseek-v4.1-flash | 6/10 | 8/10 |
-| opencode-go/gpt-6-luna | 8/10 | 9/10 |
+| claude-opus-5-5 | 7/10 | 8/10 |
+| antigravity:gemini-4-neon | 6/10 | 8/10 |
+| opencode-go/qwen3.8-flash | 8/10 | 9/10 |
 
-Rebuttals: round 2, 4 accepted, 0 rejected (sonnet 2, deepseek 1, luna 1).
+Rebuttals: round 2, 4 accepted, 0 rejected (opus 2, neon 1, qwen 1).
 
 The scores above are a format example. Sonnet has no recorded score yet.
 

@@ -34,7 +34,7 @@ describe("OS-175: review readers per complexity range", () => {
     });
     expect(v.tiers.map((r) => [r.from, r.to])).toEqual([[1, 2], [3, 8], [9, 10]]);
     expect([1, 2, 3, 8, 9, 10].map((c) => legsAt(v, c))).toEqual([["glm"], ["glm"], ["opus"], ["opus"], ["neon", "opus", "glm"], ["neon", "opus", "glm"]]);
-    expect(readersForComplexity(v, 9)[2]).toEqual({ leg: "glm", model: "glm-5.3-flash" });
+    expect(readersForComplexity(v, 9)[2]).toEqual({ leg: "glm", model: "glm-5.3-flash", fallback: null });
   });
 
   test("an old {simple, medium, complex} setting loads as 1-3, 4-6 and 7-10 with the same legs per band", () => {
@@ -113,7 +113,7 @@ describe("OS-175: review readers per complexity range", () => {
       expect(run("models", "reader", "range", "8-10", "neon")).toMatchObject({ code: 0 });
       expect(run("review", "readers", "--complexity", "9", "-q").out).toBe("neon");
       const table = run("review", "readers").out;
-      expect(table.split("\n")[0]).toMatch(/reader\s+model\s+1-3\s+4-7\s+8-10$/);
+      expect(table.split("\n")[0]).toMatch(/reader\s+model\s+fallback\s+1-3\s+4-7\s+8-10$/);
       const both = run("review", "readers", "--complexity", "2", "--tier", "complex", "-q");
       expect(both.code).toBe(2);
       expect(both.err).toContain("not both");

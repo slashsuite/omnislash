@@ -5,14 +5,14 @@ The two brief templates of an earlier design council, with the site names, file 
 Placeholders:
 
 - `{{PRODUCT_KIND}}`: what the sites are, plural, as a short phrase (the worked example used `visual-testing product websites`). Describe the kind of product only, never which site is ours.
-- `{{ROLE}}`: how the reader is introduced. Round 1, always: `a senior product designer`, so one brief serves every stage of the leg. Round 2, by the readers that ran: `one of two senior product designers on a design council`, `one of three senior product designers on a design council`.
-- `{{READERS}}`: round 2 only. `three readers, A, B and C` or `two readers, A and B`.
+- `{{ROLE}}`: how the reader is introduced. Round 1, always: `a senior product designer`, so one brief serves every stage of the leg. Round 2, by the readers that ran: `one of two senior product designers on a design council`.
+- `{{READERS}}`: round 2 only. `two readers, A and B`.
 - `{{COUNT}}`: the number of sites in words (`two`, `three`), so "two" follows the real count.
 - `{{SITE_A}}`, `{{SITE_B}}` and `{{DOMAIN_A}}`, `{{DOMAIN_B}}`: the sites in a random order, so which one is ours is not disclosed. With more sites, add each one to the sentence ("{{SITE_A}} (…), {{SITE_B}} (…) and {{SITE_C}} (…)") and a light and dark column pair to every table. With more than two sites, "either" in "no stake in either" reads "any of them". Skip a site's column in a theme where it has no screenshots (`n/a`).
 - `{{FILES}}`: the PNG names in `shots/`, space separated, from `ls`.
 - `{{THEME_FACTS}}`: one bullet per site from the capture record (step 2): which pages exist in which theme, and which column rests on which pages. Measured facts only. No scores, no targets, no mention of which site is ours.
 - `{{COLUMNS}}`: the table header, `Category | {{SITE_A}} light | {{SITE_A}} dark | {{SITE_B}} light | {{SITE_B}} dark`.
-- `{{ROUND1_TABLES}}`: round 2 only. Every reader's round 1 answer, in full, headed `=== READER A ===`, `=== READER B ===` and, with three readers, `=== READER C ===`, in a random order, with no model names.
+- `{{ROUND1_TABLES}}`: round 2 only. Every reader's round 1 answer, in full, headed `=== READER A ===` and `=== READER B ===`, in a random order, with no model names.
 - `{{CHECKS}}`: round 2 only. Facts checked on the live sites since round 1, one bullet each, or leave the list out when there are none.
 
 If a reader's round 1 failed, leave it out of round 2 and say how many readers there are.
