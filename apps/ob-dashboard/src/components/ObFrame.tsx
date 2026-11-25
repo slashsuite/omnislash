@@ -14,6 +14,7 @@ const PAGES = [
   { label: "Tokens", href: "/tokens" },
   { label: "Models", href: "/models" },
   { label: "Timeline", href: "/timeline" },
+  { label: "Machine", href: "/machine" },
 ] as const;
 
 export function ObFrame({ children }: { children: ReactNode }) {

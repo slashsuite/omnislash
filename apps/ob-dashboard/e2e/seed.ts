@@ -20,6 +20,8 @@ import {
   BUSY_MOVES,
   DB_PATH,
   FOCUS_TITLES,
+  MACHINE_PROJECT,
+  MACHINE_ROWS,
   GROUP_TEAM,
   QUEUE_PROJECT,
   QUEUE_SEED,
@@ -183,12 +185,43 @@ export async function seedGroup(store: Store): Promise<void> {
     .where(eq(store.t.item.id, id));
 }
 
+/**
+ * OS-165: MACHINE_PROJECT's tickets open and their spinoff rows back on their seed states (world.ts MACHINE_ROWS),
+ * written straight to the table: a real dispatch would need a repo and a launcher.
+ */
+export async function seedMachine(store: Store): Promise<void> {
+  await registerProject(store, { name: MACHINE_PROJECT, kind: "side" });
+  const t = store.t;
+  const rows = Object.values(MACHINE_ROWS);
+  await store.q.delete(t.spinoff).where(inArray(t.spinoff.id, rows.map((r) => r.id)));
+  for (const r of rows) {
+    const [got] = (await store.q.select({ id: t.item.id, ref: t.item.ref }).from(t.item).where(eq(t.item.title, r.title)).limit(1)) as { id: string; ref: string | null }[];
+    const id = got?.id ?? (await createItem(store, { type: "task", title: r.title, projectId: MACHINE_PROJECT, priority: 2 }));
+    await resetItem(store, id, null);
+    // createItem in a side project leaves no ref; a builder's ticket always has one, so it gets the next OS ref.
+    const ref = got?.ref ?? (await assignRef(store, id, "OS"));
+    await store.q.insert(t.spinoff).values({
+      id: r.id,
+      ticket_ref: ref,
+      item_id: id,
+      repo: "omnislash",
+      branch: ref.toLowerCase(),
+      worktree: "",
+      mode: "interactive",
+      brief: r.title,
+      status: r.status,
+      request_at: "2026-11-24T08:00:00.000Z",
+    });
+  }
+}
+
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
   await seedCredit(store, "ok");
   await seedHome(store, "full");
   await seedQueue(store);
   await seedTimeline(store);
+  await seedMachine(store);
   await seedGroup(store);
 }
 
