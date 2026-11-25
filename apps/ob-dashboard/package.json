@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@slashsuite/themes": "^0.5.0",
-    "@slashsuite/ui-react": "^0.13.0",
+    "@slashsuite/ui-react": "^0.13.1",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "qrcode": "^1.5.4",
