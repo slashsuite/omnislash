@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import machine from "../../../../docs/role-state-machine.json" with { type: "json" };
 import { SPINOFF_EDGES } from "../../../../platform/state-machine/src/spinoff.ts";
 import { SPINOFF_PHASES } from "../../../../platform/state-machine/src/spinoff-phase.ts";
-import { BASE_PLACEMENT, inFlight, machineStamp, PHASE_STATES, placeRow, type MachineItem } from "./machine.ts";
+import { BASE_PLACEMENT, inFlight, isNeedsHuman, machineStamp, PHASE_STATES, placeRow, type MachineItem } from "./machine.ts";
+import { roleDefinition } from "./role-machine.ts";
 
 // OS-165: the Machine page's placement of in-flight spinoff rows on the role machine, and its live stamp.
 
@@ -55,9 +56,20 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(placeRow({ ...base, status: "failed", spike: true, error: "launch refused" })).toBe("failed");
   });
 
-  it("does not let a stale verdict hold a sent-back row: placement ignores the verdict entirely", () => {
+  it("puts a handed-off row whose verdict is needs-human on the owner's merge call, a human state", () => {
+    const human = new Set(roleDefinition().states.filter((s) => s.kind === "human").map((s) => s.id));
+    for (const verdict of ["State: needs-human - is the wording right?", "needs-human"]) {
+      const state = placeRow({ ...base, status: "ready-for-gate", verdict });
+      expect(state).toBe("owner_merge_call");
+      expect(human.has(state)).toBe(true);
+    }
+    expect(placeRow({ ...base, status: "ready-for-gate", verdict: "State: landable" })).toBe("handed_off");
+    expect(isNeedsHuman("State: needs-humane")).toBe(false);
+  });
+
+  it("does not let a stale verdict hold a sent-back row: a launched row ignores the verdict", () => {
     // A sendback leaves `verdict: needs-human` on the row and moves it back to launched with no phase.
-    expect(placeRow({ ...base, status: "launched", builderStatus: "working" })).toBe("building");
+    expect(placeRow({ ...base, status: "launched", builderStatus: "working", verdict: "State: needs-human - x" })).toBe("building");
   });
 });
 

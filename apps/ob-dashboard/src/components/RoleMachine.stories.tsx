@@ -1,10 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
-import machine from "../../../../docs/role-state-machine.json" with { type: "json" };
 import type { RoleTicket } from "../lib/role-machine.ts";
 import { RoleMachine } from "./RoleMachine.tsx";
 
-// OS-187: the role state machine (docs/role-state-machine.json) with tickets on it. Each look has a light and a
+// OS-187: the role state machine (platform/state-machine, through fromXState) with tickets on it. Each look has a light and a
 // dark story, so both are one click (and one screenshot) away. Replay walks real OmniSlash tickets along the
 // path a landed ticket took, so the dots move between states.
 
@@ -41,13 +40,12 @@ function Replay() {
     return () => clearInterval(t);
   }, []);
   const tickets = REPLAYED.map((r) => ({ ref: r.ref, title: r.title, state: PATH[(r.start + step) % PATH.length] ?? "building" }));
-  return <RoleMachine machine={machine} tickets={tickets} />;
+  return <RoleMachine tickets={tickets} />;
 }
 
 const meta: Meta<typeof RoleMachine> = {
   title: "Machine/RoleMachine",
   component: RoleMachine,
-  args: { machine },
   parameters: { layout: "fullscreen" },
 };
 export default meta;

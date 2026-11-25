@@ -2,12 +2,12 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { Caption, Cluster, PageHeader, Pill, Stack } from "@slashsuite/ui-react";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
-import machine from "../../../../docs/role-state-machine.json" with { type: "json" };
 import { RoleMachine } from "../components/RoleMachine.tsx";
 import { machineStamp } from "../lib/machine.ts";
+import { roleDefinition } from "../lib/role-machine.ts";
 import { getMachine } from "../server/machine.ts";
 
-// OS-165: the role state machine (docs/role-state-machine.json, generated from the code by OS-174) with every in-flight
+// OS-165: the role state machine (platform/state-machine, through roleDefinition) with every in-flight
 // spinoff on its state. Read-only. A push from the live snapshot whose rows, builders or items differ from this read
 // (a handoff, a sendback, a builder stamping needs-human, an `ob close`) re-reads, so a row moves without a reload.
 
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/machine")({
 });
 
 /** The states a person must act on: the machine's human states, and the failed end. */
-const NEEDS_PERSON = new Set<string>([...machine.states.filter((s) => s.human_required).map((s) => s.id), "failed"]);
+const NEEDS_PERSON = new Set<string>(roleDefinition().states.filter((s) => s.kind === "human" || s.kind === "failed").map((s) => s.id));
 
 function Machine() {
   const view = Route.useLoaderData();
@@ -51,7 +51,7 @@ function Machine() {
             </Pill>
           )}
         </Cluster>
-        <RoleMachine machine={machine} tickets={view.rows} />
+        <RoleMachine tickets={view.rows} />
       </Stack>
     </>
   );

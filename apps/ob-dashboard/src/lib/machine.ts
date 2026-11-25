@@ -1,5 +1,5 @@
 // OS-165: the Machine page's pure half. Which in-flight spinoff rows there are, and which state of the role
-// machine (docs/role-state-machine.json, drawn by RoleMachine) each one sits in. Imports only types, so the xstate
+// machine (platform/state-machine, drawn by RoleMachine) each one sits in. Imports only types, so the xstate
 // machine in platform/state-machine stays out of the client bundle. Nothing here reads a file or the store.
 import type { SpinoffState } from "../../../../platform/state-machine/src/spinoff.ts";
 
@@ -65,10 +65,10 @@ const SPIKE_END = "spike:";
  *   launched rows: reviewing, pr_ci, updating_pr).
  * - A launched row with no phase reads its builder's own status: needs-human and blocked stand out, readying is the
  *   gate (reviewing), anything else is building.
+ * - A handed-off row with no phase whose verdict is needs-human waits on the owner's merge call, a human state. The
+ *   verdict is read only for handed-off rows: a sendback moves the row back to launched and leaves the old verdict on
+ *   it, so on a launched row it would place work on a human state it no longer waits on.
  * - Otherwise the stored status places it (BASE_PLACEMENT).
- *
- * The stored verdict is not read here: a sendback leaves it on the row, so it would place a row sent back to building
- * on a human state it no longer waits on. The phase and the builder's status are what move with the work.
  */
 export function placeRow(input: {
   status: string;
@@ -76,8 +76,10 @@ export function placeRow(input: {
   builderStatus: string | null;
   spike: boolean;
   error: string | null;
+  /** The row's verdict, `State: needs-human - …` as rowVerdictState reads it, or null. */
+  verdict?: string | null;
 }): string {
-  const { status, phase, builderStatus, spike, error } = input;
+  const { status, phase, builderStatus, spike, error, verdict } = input;
   if (spike && (status === "pending" || status === "launching" || status === "launched")) return "spike";
   if (spike && status === "failed" && (error ?? "").startsWith(SPIKE_END)) return "spike_closed";
   if ((status === "launched" || status === "ready-for-gate") && phase && PHASE_STATES.includes(phase)) return phase;
@@ -87,7 +89,13 @@ export function placeRow(input: {
     if (builderStatus === "readying") return "reviewing";
     return "building";
   }
+  if (status === "ready-for-gate" && isNeedsHuman(verdict)) return "owner_merge_call";
   return BASE_PLACEMENT[status as SpinoffState] ?? "failed";
+}
+
+/** Whether a verdict (`State: needs-human - …`, or the bare word) is needs-human. Pure. */
+export function isNeedsHuman(verdict: string | null | undefined): boolean {
+  return /^(?:State:\s+)?needs-human(?![\w-])/.test((verdict ?? "").trim());
 }
 
 /** A row's own phase field, when its store has the column. Pure. */
