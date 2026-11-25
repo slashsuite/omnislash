@@ -428,6 +428,9 @@ export const FLAGS = {
   "no-enforce": { type: "boolean" },
   on: { type: "string", multiple: true },
   off: { type: "string", multiple: true },
+  // OS-222: `ob db clone --grant-role <role> | --no-grant` (`--target` is shared with deploy record).
+  "grant-role": { type: "string" },
+  "no-grant": { type: "boolean" },
   // 582: `ob deploy record` fields.
   target: { type: "string" },
   host: { type: "string" },

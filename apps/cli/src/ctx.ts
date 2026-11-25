@@ -286,6 +286,9 @@ export interface Flags {
   off?: string[];
   // ob 582: `ob deploy record` fields.
   target?: string;
+  /** OS-222: `ob db clone`. */
+  "grant-role"?: string;
+  "no-grant"?: boolean;
   host?: string;
   unit?: string;
   sha?: string;

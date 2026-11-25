@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseSnapshotName } from "../commands/db.ts";
+import { dbClone } from "../commands/db-clone.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { expandHome } from "../net.ts";
 import { print, warn } from "../output.ts";
@@ -122,7 +123,9 @@ export async function apiDb(ctx: ApiCtx): Promise<void> {
 	const sub = ctx.args[0];
 	if (sub === "backup") return runKicked(ctx, "db-backup", dryRun(ctx));
 	if (sub === "fetch") return dbFetch(ctx);
-	if (sub !== "snapshot") throw new UsageError(`unknown db subcommand '${sub ?? ""}' (backup, snapshot, fetch)`);
+	// OS-222: not a host job. The container is reached from THIS machine (pct or ssh), or refused by name.
+	if (sub === "clone") return dbClone(ctx);
+	if (sub !== "snapshot") throw new UsageError(`unknown db subcommand '${sub ?? ""}' (backup, snapshot, fetch, clone)`);
 	// --dir names a path ON THE HOST that a snapshot would write to and PRUNE. A caller cannot see that directory,
 	// and rotation deleting from a path typed on another machine is not a thing to allow by accident.
 	if (ctx.flags.dir !== undefined) {

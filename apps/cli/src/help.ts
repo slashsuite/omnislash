@@ -61,6 +61,7 @@ export const GLOBAL_FLAGS: readonly FlagHelp[] = [
 ];
 
 export const ENV_VARS: readonly EnvVarHelp[] = [
+  { name: "OB_DB_CLONE_FILE", description: "db clone profile (default ~/.config/ob/db-clone.json)" },
   { name: "OMNISLASH_API", description: "Base URL of the ob API server (enables HTTPS client mode)" },
   { name: "OMNISLASH_API_URL_FILE", description: "File holding API base URL (default ~/.omnislash_api_url)" },
   { name: "OMNISLASH_API_TOKEN", description: "API bearer token for one call (overrides token file)" },
@@ -1906,9 +1907,31 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
 
   db: {
     section: "Deploy & Ops",
-    summary: "Take rotated Postgres snapshots, fetch them, or run backups",
-    usage: ["db snapshot [flags]", "db fetch <snapshot> [--out <dir>] [--force]", "db backup [--dry-run]"],
+    summary: "Postgres snapshots, backups, and refreshing a personal test copy",
+    usage: [
+      "db snapshot [flags]",
+      "db fetch <snapshot> [--out <dir>] [--force]",
+      "db backup [--dry-run]",
+      "db clone [--target <db>] [--grant-role <role> | --no-grant] [--dry-run]",
+    ],
     subcommands: {
+      clone: {
+        summary: "Refresh a personal test copy of live Postgres from a fresh dump, grants included",
+        usage: ["db clone [--target <db>] [--grant-role <role> | --no-grant] [--dry-run]"],
+        flags: [
+          { flag: "--target <db>", description: "Database to refresh (default: the profile's target)" },
+          { flag: "--grant-role <role>", description: "Login role given read and write on the copy (default: the profile's grantRole)" },
+          { flag: "--no-grant", description: "Grant no role on the copy" },
+          { flag: "--dry-run", description: "Print the commands it would run; run nothing" },
+        ],
+        notes: [
+          "Runs here, never via the ob API: pct on the Proxmox host, else the profile's ssh words.",
+          "Profile: OB_DB_CLONE_FILE, else ~/.config/ob/db-clone.json (keys in the cli README).",
+          "Installs the script when missing or stale, then runs it with OBPG_DB, OBPG_DEV_DB, OBPG_GRANT_ROLE.",
+          "Refuses the live database, any protected name, postgres, template*, and the clone's own scratch names.",
+        ],
+        examples: ["db clone", "db clone --dry-run", "db clone --target scratch_copy --no-grant"],
+      },
       snapshot: {
         summary: "Create or list rotated local pg_dump snapshots",
         usage: ["db snapshot [--dir <path>] [--keep-hourly <n>] [--keep-daily <n>] [--max-bytes <n>] [--list]"],
@@ -1942,7 +1965,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["db backup --dry-run"],
       },
     },
-    examples: ["db snapshot --list", "db backup --dry-run"],
+    examples: ["db snapshot --list", "db backup --dry-run", "db clone"],
   },
 
   backup: {

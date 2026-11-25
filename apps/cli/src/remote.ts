@@ -472,6 +472,10 @@ export function planExecution(input: {
   if (command === "project" && (args[0] === "rules" || args[0] === "wire")) {
     return { mode: "nodb", host, reason: "reads the repo-private files in the OmniSlash checkout; no tracker" };
   }
+  // OS-222: `db clone` reaches the database container from THIS machine (pct or ssh) and opens no tracker.
+  if (command === "db" && args[0] === "clone") {
+    return { mode: "nodb", host, reason: "reaches the database container from this machine; no tracker" };
+  }
   if (command === "vision") {
     return { mode: "nodb", host, reason: "mlx-vlm compare runs on this machine; no tracker" };
   }

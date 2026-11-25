@@ -11,6 +11,7 @@ import {
   statfsSync,
 } from "node:fs";
 import type { Ctx } from "../ctx.ts";
+import { dbClone } from "./db-clone.ts";
 import { UsageError, AppError } from "../errors.ts";
 import { print } from "../output.ts";
 import { ARTIFACT_SUFFIX, capture, describeCapture, restoreHint } from "../db/capture.ts";
@@ -432,7 +433,12 @@ export async function cmdDb(ctx: Ctx): Promise<void> {
     snapshot(ctx);
     return;
   }
-  throw new UsageError(`unknown db subcommand '${sub ?? ""}' (backup, snapshot)`);
+  // OS-222: machine-local, opens no database (planExecution makes it `nodb`).
+  if (sub === "clone") {
+    await dbClone(ctx);
+    return;
+  }
+  throw new UsageError(`unknown db subcommand '${sub ?? ""}' (backup, snapshot, clone)`);
 }
 
 /**
