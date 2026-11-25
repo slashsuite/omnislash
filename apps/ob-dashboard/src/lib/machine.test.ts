@@ -29,9 +29,9 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(placeRow({ ...base, status: "merged" })).toBe("closed");
   });
 
-  it("reads a launched row's builder: needs-human and blocked stand out, readying is the gate, else building", () => {
-    expect(placeRow({ ...base, status: "launched", builderStatus: "needs-human" })).toBe("needs_human");
-    expect(placeRow({ ...base, status: "launched", builderStatus: "blocked" })).toBe("blocked");
+  it("reads a launched row's builder: needs-human and blocked are the owner's call, readying is the gate, else building", () => {
+    expect(placeRow({ ...base, status: "launched", builderStatus: "needs-human" })).toBe("owner_call");
+    expect(placeRow({ ...base, status: "launched", builderStatus: "blocked" })).toBe("owner_call");
     expect(placeRow({ ...base, status: "launched", builderStatus: "readying" })).toBe("reviewing");
     expect(placeRow({ ...base, status: "launched", builderStatus: "working" })).toBe("building");
     expect(placeRow({ ...base, status: "launched" })).toBe("building");
@@ -44,9 +44,9 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(placeRow({ ...base, status: "ready-for-gate", phase: "owner_merge_call" })).toBe("owner_merge_call");
   });
 
-  it("draws a spike's build on the spike state, and a spike that ended on spike_closed", () => {
+  it("draws a spike's build on the spike state, and a spike that ended on closed", () => {
     for (const status of ["pending", "launching", "launched"]) expect(placeRow({ ...base, status, spike: true })).toBe("spike");
-    expect(placeRow({ ...base, status: "failed", spike: true, error: "spike: answered" })).toBe("spike_closed");
+    expect(placeRow({ ...base, status: "failed", spike: true, error: "spike: answered" })).toBe("closed");
     expect(placeRow({ ...base, status: "failed", spike: true, error: "launch refused" })).toBe("failed");
   });
 
@@ -63,8 +63,8 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
 
   it("lets neither the handoff's gating phase nor a launched row's phase hide a person's turn", () => {
     expect(placeRow({ ...base, status: "ready-for-gate", phase: "gating", verdict: "State: needs-human - x" })).toBe("owner_merge_call");
-    expect(placeRow({ ...base, status: "launched", phase: "pr_ci", builderStatus: "needs-human" })).toBe("needs_human");
-    expect(placeRow({ ...base, status: "launched", phase: "updating_pr", builderStatus: "blocked" })).toBe("blocked");
+    expect(placeRow({ ...base, status: "launched", phase: "pr_ci", builderStatus: "needs-human" })).toBe("owner_call");
+    expect(placeRow({ ...base, status: "launched", phase: "updating_pr", builderStatus: "blocked" })).toBe("owner_call");
   });
 
   it("does not let a stale verdict hold a sent-back row: a launched row ignores the verdict", () => {

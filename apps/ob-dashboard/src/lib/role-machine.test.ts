@@ -7,19 +7,19 @@ describe("roleDefinition (fromXState over roleMachine)", () => {
   const byId = new Map(states.map((s) => [s.id, s]));
 
   it("owns each state by its role", () => {
-    expect(byId.get("ticketed")?.owner).toBe("architect");
+    expect(byId.get("drilling")?.owner).toBe("architect");
     expect(byId.get("queued")?.owner).toBe("system");
   });
 
   it("marks human states human and keeps the failed end failed", () => {
-    expect(byId.get("idea")?.kind).toBe("human");
-    expect(byId.get("needs_human")?.kind).toBe("human");
+    expect(byId.get("owner_plan_call")?.kind).toBe("human");
+    expect(byId.get("owner_call")?.kind).toBe("human");
     expect(byId.get("failed")?.kind).toBe("failed");
     expect(byId.get("closed")?.kind).toBe("terminal");
   });
 
   it("names each arrow by its short label", () => {
-    expect(transitions.some((t) => t.from === "spike" && t.to === "spike_closed" && t.event === "spike closed")).toBe(true);
+    expect(transitions.some((t) => t.from === "spike" && t.to === "closed" && t.event === "spike closed")).toBe(true);
   });
 });
 
