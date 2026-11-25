@@ -55,14 +55,14 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 `ob review readers set|rm|range`; both write the server's setting, so every machine reads the same
 set. The ranges cover complexity 1-10 (OS-175; the old simple, medium and complex tiers are 1-3, 4-6 and 7-10).
 `ob review readers --complexity <n> -q` prints the legs a row scored n runs, one per line, and How to run runs exactly
-those. A low score may get one reader and a high one two or more. Unset, every score runs the two below. The free
+those. Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
-The default readers:
+How the readers run:
 
-1. **`antigravity:gemini-4-neon`** (run by `agy --sandbox` through `review-leg.ts`), named `neon`.
-2. **`claude-opus-5-5` at its default effort** (run by `claude -p` through `review-leg.ts`), named `opus` (old name `sonnet`, an alias that a `models.jsonc` `review.sonnet` still feeds). It passes no `--effort`. **Opus never runs a review on `high` or above unless the owner explicitly asks for it.** It replaced Sonnet.
+- **An Opus reader** (`claude-opus-5-5`, run by `claude -p` through `review-leg.ts`; the leg `sonnet` is an old alias of `opus`) passes no `--effort`. **Opus never runs a review on `high` or above unless the owner explicitly asks for it.**
+- **An Antigravity reader** (`antigravity:<model>`, such as `neon`) runs through `agy --sandbox`.
 
 `deepseek` and `luna` are retired (OS-206): they are no longer part of the review setup. A models profile, `review_readers`, or a leg named on the command line that names either (or a model id that does) is refused with a clear message, and no leg runs them.
 
@@ -81,7 +81,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   in one stderr line and uses the models file. A models file that does not parse makes the leg fail by name; report
   that leg as failed.
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
-  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the fallback rule below applies).
+  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (on a range with two legs, a builder on one still gets the other independent reader; with Opus also down, the fallback rule below applies).
 - **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ neon: failed (exit 1: model gemini-4-neon unavailable)`), never a bare `failed`. It is never retried around and
   never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the fallback
   rule below.
@@ -109,7 +109,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
-- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it; by default Opus falls back to `neon`), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
+- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
   `needs-human` for want of a reviewer.
 - **Independence, not consensus.** Each leg gets the **same shared part of the brief** and the **same diff**, and
   from round 2 only its **own** previous findings and answers (How to run), with **no knowledge of the others'
@@ -129,8 +129,8 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
     quick second look, a PR with little time), keep only findings two or more legs raised and say so in the
     report line (`agreed only`). In the trial that gave 94% precision but lost recall, so it is never the default.
 
-  Report Neon and Opus (plus any extra or configured leg), naming the model that
-  actually ran: `skeptical-review: N cut, 0 open (neon: a + opus: b)`. A failed leg reads
+  Report every leg that ran (Opus, plus any configured leg), naming the model that
+  actually ran: `skeptical-review: N cut, 0 open (opus: a)`. A failed leg reads
   `+ neon: failed (exit 1: <reason>)`, copied from its `review-leg: neon failed: ...` line (Failure, above), a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ opencode-go/<model>: skipped (no credits)`,
   and a fallback run `(neon(for opus): a)`.
   A model that keeps returning `ok` should be visible, not averaged away.
@@ -138,8 +138,8 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Escalating:** when a diff is hairy or a finding sounds thin, re-run on the narrowed question (one
   file, one finding) rather than a bigger model on the whole diff.
 - **Never the builder's own model**: independence is the point. The Opus leg is never skipped, and
-  medium and complex builders also run Opus or Neon, so for those builds one reviewer matches the builder
-  while the other stays a different model, and both get a fresh context and brief-only independence.
+  when the configured reader is the builder's own model, its independence is a fresh context and the
+  brief only.
 - **Readers are read-only by permission, not by brief.** Every leg runs through
   `review-leg.ts` (beside this file) under a read-only profile (`ob-reviewer.md` for OpenCode, `--allowedTools`/`--disallowedTools` for Claude, `--sandbox` + `--settings` for Antigravity).
   It denies edits and writes. The shell is cut to a read-only allowlist (`git log/show/diff/status/blame`,
@@ -180,8 +180,8 @@ score reads as 5), and run exactly those:
 R=<skill dir>   # ~/.claude/skills/ob-skeptical-review
 D="${TMPDIR:-$HOME/.cache/tmp}"
 C=<the row's complexity, else 5>
-# an older ob or the API down: fall back to the two defaults rather than run no reader
-legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="neon opus"
+# the readers come from configuration only; if they cannot be read, stop and report it rather than guess
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || { echo "ob review readers failed: report the review as blocked" >&2; exit 1; }
 for leg in $legs; do
   bun "$R/review-leg.ts" "$leg" < "$D/review-<ticket>-$leg.brief.md" > "$D/review-<ticket>-$leg.txt" 2>&1 &
 done; wait
@@ -270,7 +270,7 @@ not change. Fetch first, because readers cannot:
 ```bash
 git fetch origin
 SHA=$(git rev-parse origin/main)
-legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="neon opus"
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || { echo "ob review readers failed: report the review as blocked" >&2; exit 1; }
 for leg in $legs; do
   { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/{/^## Before/d;p;}' "$R/SKILL.md"
     echo "Ref: check every claim against origin/main at $SHA (git show $SHA:<path>)."
@@ -407,4 +407,4 @@ finished builds of the same ticket.
 - **stupid** / **overboard**: cut it or justify in one line (ticket required it / existing pattern). Start a new round (see Scores and rounds) only when a fix or cut changed the diff.
 - **unproven**: check it yourself; fix it if it holds, otherwise drop it with one line on why.
 - An unfixed `wrong`, a `rejected` answer, or an unjustified leftover blocks the PR and `State: landable`.
-- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (neon: a + opus: b)"`, each leg separately, because a model that keeps returning `ok` is information the thread that gates it wants.
+- Report: `ob agent register --id <builder id> --status readying --note "skeptical-review: N cut, 0 open (opus: a)"`, each leg separately, because a model that keeps returning `ok` is information the thread that gates it wants.

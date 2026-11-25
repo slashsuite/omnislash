@@ -76,8 +76,9 @@ describe("OS-175: review readers per complexity range", () => {
 
   test("setting a range carves it out of the ranges it overlaps; removing a range's last reader is refused by range", () => {
     let v = withRange(defaultReviewReaders(), { from: 5, to: 8 }, ["opus"]);
-    expect(v.tiers.map((r) => `${r.from}-${r.to}:${r.legs.join("+")}`)).toEqual(["1-3:neon+opus", "4-4:neon+opus", "5-8:opus", "9-10:neon+opus"]);
-    expect(() => withoutReader(v, "opus")).toThrow("'opus' is the only reader on range 5-8");
+    v = withRange(v, { from: 9, to: 10 }, ["neon", "opus"]);
+    expect(v.tiers.map((r) => `${r.from}-${r.to}:${r.legs.join("+")}`)).toEqual(["1-3:opus", "4-4:opus", "5-8:opus", "9-10:neon+opus"]);
+    expect(() => withoutReader(v, "opus")).toThrow("'opus' is the only reader on range 1-3, 4, 5-8");
     v = withRange(v, { from: 1, to: 10 }, ["neon"]);
     expect(v.tiers).toEqual([{ from: 1, to: 10, legs: ["neon"] }]);
   });
@@ -99,6 +100,7 @@ describe("OS-175: review readers per complexity range", () => {
         const r = Bun.spawnSync(["bun", CLI_ENTRY, ...args], { env, stdout: "pipe", stderr: "pipe", timeout: 60_000 });
         return { code: r.exitCode, out: r.stdout.toString().trim(), err: r.stderr.toString() };
       };
+      expect(run("review", "readers", "range", "8-10", "neon", "opus")).toMatchObject({ code: 0, out: "8-10: neon opus" });
       expect(run("review", "readers", "range", "4-7", "opus")).toMatchObject({ code: 0, out: "4-7: opus" });
       expect(run("review", "readers", "--complexity", "7", "-q").out).toBe("opus");
       expect(run("review", "readers", "--complexity", "8", "-q").out.split("\n")).toEqual(["neon", "opus"]);

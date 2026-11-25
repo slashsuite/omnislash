@@ -240,8 +240,11 @@ export function retiredReviewMessage(leg: string, model?: string): string | null
   return `review reader '${retired}' is retired (OS-206): DeepSeek and Luna are no longer part of the review setup; use neon or opus`;
 }
 
-/** The default skeptical-review leg set when `review_readers` is unset: Neon and Opus. */
-export const DEFAULT_REVIEW_LEGS = ["neon", "opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
+/**
+ * The default skeptical-review leg set when `review_readers` is unset: Opus alone (OS-238, Jacobus 2026-11-25: the
+ * Neon leg spent about 48 Antigravity sessions a day). Neon stays a default reader on no range, as Opus's fallback.
+ */
+export const DEFAULT_REVIEW_LEGS = ["opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
 
 /**
  * Old review-leg names still accepted (OB-2107): `sonnet` is the Claude leg, renamed `opus` when it moved to

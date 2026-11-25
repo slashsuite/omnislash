@@ -15,7 +15,7 @@
 //   3. default: what ob ran before OS-145 (the `spinoff_tier_models` setting over the built-in tiers, Haiku for the
 //               checker, the builder.complex model for role threads, Haiku/Opus for the sweep).
 // The review readers resolve the same way: the profile's `review` here, else the old `review_readers` key (read,
-// never written), else Neon and Opus, with the local file's `review` legs laid over the result.
+// never written), else Opus (Neon its fallback), with the local file's `review` legs laid over the result.
 //
 // This module is PURE apart from the small cache below. It imports only models-file and review-readers, so the
 // dashboard server and standalone scripts can load it cheaply. Reads and writes go through a `ConfigIO` the
