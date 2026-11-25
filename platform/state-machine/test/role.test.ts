@@ -13,13 +13,9 @@ import { SPINOFF_EDGES, type SpinoffState, spinoffMachine } from "../src/spinoff
 const ROOT = join(import.meta.dirname, "../../..");
 const stored = (id: string): Stored => (roleMachine.states[id]!.meta as RoleStateMeta).stored;
 
-// OS-236: one reviewer role with two steps; the blind check and the skeptical review stay separate states.
-test("the brief check and the skeptical review are both the reviewer's, and there is no checker role", () => {
-  const role = (id: string) => (roleMachine.states[id]!.meta as RoleStateMeta).role;
-  expect(ROLES as readonly string[]).not.toContain("checker");
-  expect(role("checking")).toBe("reviewer");
-  expect(role("reviewing")).toBe("reviewer");
-  expect(ROLE_TRANSITIONS.some((t) => (t.actor as string) === "checker")).toBe(false);
+// OS-236: one reviewer role with two steps (checking, reviewing); the generated-docs test pins each state's role.
+test("there is no checker role", () => {
+  expect(ROLES).not.toContain("checker");
 });
 
 describe("the generated files", () => {
