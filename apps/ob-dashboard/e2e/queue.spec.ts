@@ -194,11 +194,12 @@ test("a pointer drag inside a band reorders it", async ({ page }, info) => {
   test.skip(info.project.name === "phone", "the phone is driven by the grip from the keyboard; a touch drag is react-aria's own long press");
   await openPage(page, `/queue?project=${QUEUE_PROJECT}`);
   await expectOrder(page, seeded());
-  // react-aria drags a row with the browser's own drag and drop, which dragTo drives: drop on the top edge of
+  // react-aria drags a row by its grip (ui-react 0.13) with the browser's own drag and drop, which dragTo drives: drop on the top edge of
   // Wire the queue page, so the drop line is before it.
   const saved = page.waitForResponse((r) => r.url().includes("/_serverFn/") && r.request().method() === "POST");
   await page
     .getByRole("row", { name: "Row priority select", exact: true })
+    .locator("[data-sortable-grip]")
     .dragTo(page.getByRole("row", { name: "Wire the queue page", exact: true }), { targetPosition: { x: 40, y: 4 } });
   await saved;
   const want = seeded();

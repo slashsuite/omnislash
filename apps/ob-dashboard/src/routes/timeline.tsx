@@ -26,7 +26,7 @@ import {
   TextLink,
   Timeline,
   TimelineItem,
-} from "@hackcove/ui-react";
+} from "@slashsuite/ui-react";
 import { fmtSpan, type Cursor, type FeedEntry, type FeedKind, type TimelineView } from "../lib/timeline.ts";
 import { getTimeline } from "../server/timeline.ts";
 import { GroupPicker, groupSearch, type GroupSearch } from "../components/GroupPicker.tsx";

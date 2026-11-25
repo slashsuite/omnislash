@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Text, Button, ButtonGroup, Caption, Card, Cluster, ClusterGrow, PageHeader, Stack, Pill } from "@hackcove/ui-react";
+import { Text, Button, ButtonGroup, Caption, Card, Cluster, ClusterGrow, PageHeader, Stack, Pill } from "@slashsuite/ui-react";
 import { getAlerts, ackAlert, snoozeAlert, type Alert } from "../server/alerts.ts";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
 

@@ -20,7 +20,7 @@ import {
   TableRow,
   Text,
   TextLink,
-} from "@hackcove/ui-react";
+} from "@slashsuite/ui-react";
 import { checkedAtText, creditState } from "../lib/credit.ts";
 import { draftsOf, mergeNext, rangesOf, splitAt, type DraftRange } from "../lib/ranges.ts";
 import { getModels, saveModels, type ModelsOp, type ModelsPage, type ModelsView } from "../server/models.ts";
@@ -44,7 +44,12 @@ type Send = (op: ModelsOp) => Promise<string | null>;
 
 /** A save's outcome beside its button: "saved", or the server's refusal. */
 function Outcome({ error, saved }: { error: string | null; saved: boolean }) {
-  if (error) return <Text tone="danger" role="alert">Not saved: {error}</Text>;
+  if (error)
+    return (
+      <div role="alert">
+        <Text tone="danger">Not saved: {error}</Text>
+      </div>
+    );
   return saved ? <Caption as="span" tone="positive">saved</Caption> : null;
 }
 

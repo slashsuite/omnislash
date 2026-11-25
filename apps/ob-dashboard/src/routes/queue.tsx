@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { GroupPicker, groupSearch, type GroupSearch } from "../components/GroupPicker.tsx";
-import { Callout, Caption, Cluster, PageHeader, Pill, Select, SortableItem, SortableList, SortableSection, Stack, type SortableMove } from "@hackcove/ui-react";
+import { Callout, Caption, Cluster, PageHeader, Pill, Select, SortableItem, SortableList, SortableSection, Stack, type SortableMove } from "@slashsuite/ui-react";
 import { ItemDrawer } from "../../../../platform/dashboard-kit/src/components/ItemDrawer.tsx";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
 import type { QueueBand, QueueRow } from "../../../../platform/dashboard-kit/src/server/queue.ts";

@@ -12,7 +12,7 @@ function reseed(...args: string[]): void {
   execFileSync("bun", ["e2e/seed.ts", ...args], { cwd: APP, env: cliEnv() });
 }
 
-const card = (page: Page, title: string) => page.getByRole("region", { name: title, exact: true });
+const card = (page: Page, title: string) => page.getByRole("article", { name: title, exact: true });
 const drawer = (page: Page) => page.getByRole("dialog");
 
 test.beforeEach(() => reseed());

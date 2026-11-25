@@ -1,4 +1,4 @@
-import { Button, Callout } from "@hackcove/ui-react";
+import { Button, Callout } from "@slashsuite/ui-react";
 import { useEffect, useState } from "react";
 import { registerServiceWorker } from "../lib/registerSw.ts";
 

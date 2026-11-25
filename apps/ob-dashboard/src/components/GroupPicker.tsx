@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { Select } from "@hackcove/ui-react";
+import { Select } from "@slashsuite/ui-react";
 import type { GroupProject, ProjectGroup } from "../../../../platform/dashboard-kit/src/server/groups.ts";
 
 // OS-185: the Queue and Timeline pages open on a group (a team, or Other) and drill into one of its projects only

@@ -13,8 +13,8 @@
     "test": "bun test ./test ./src && bun --bun vitest run"
   },
   "dependencies": {
-    "@hackcove/themes": "^0.3.1",
-    "@hackcove/ui-react": "^0.11.2",
+    "@slashsuite/themes": "^0.5.0",
+    "@slashsuite/ui-react": "^0.13.0",
     "@tanstack/react-router": "latest",
     "@tanstack/react-start": "latest",
     "qrcode": "^1.5.4",

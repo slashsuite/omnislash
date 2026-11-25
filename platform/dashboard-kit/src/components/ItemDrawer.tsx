@@ -17,7 +17,7 @@ import {
   Pill,
   Stack,
   TextLink,
-} from "@hackcove/ui-react";
+} from "@slashsuite/ui-react";
 import { fmtDateTime } from "../lib/localTime.ts";
 import type { ItemDetail } from "../lib/types.ts";
 
