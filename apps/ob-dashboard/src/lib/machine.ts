@@ -1,5 +1,7 @@
 // OS-165: the Machine page's pure half. Which in-flight spinoff rows there are, and which state of the role
 // machine (platform/state-machine, drawn by RoleMachine) each one sits in. Nothing here reads a file or the store.
+import { ROW_STATE } from "../../../../platform/state-machine/src/role.ts";
+import { SPINOFF_PHASES } from "../../../../platform/state-machine/src/spinoff-phase.ts";
 import type { SpinoffState } from "../../../../platform/state-machine/src/spinoff.ts";
 
 /** The spinoff row fields this page reads. `phase` is step 8 (OS-183): reviewing, pr_ci, gating, … */
@@ -37,21 +39,11 @@ export interface MachineView {
   stamp: string;
 }
 
-/**
- * Where a row with no phase and no builder signal sits, per stored status. Typed over SpinoffState, so a state added
- * to SPINOFF_EDGES does not compile until it has a place here (the drift guard the page asks for).
- */
-export const BASE_PLACEMENT: Readonly<Record<SpinoffState, string>> = {
-  pending: "queued",
-  launching: "launching",
-  launched: "building",
-  "ready-for-gate": "handed_off",
-  merged: "closed",
-  failed: "failed",
-};
+/** Where a row with no phase and no builder signal sits, per stored status: the role machine's `ROW_STATE` (OS-230). */
+export const BASE_PLACEMENT: Readonly<Record<SpinoffState, string>> = ROW_STATE;
 
 /** The phases (OS-183) that are role states of their own in the machine, so a phase names its state. */
-export const PHASE_STATES: readonly string[] = ["reviewing", "pr_ci", "gating", "updating_pr", "owner_merge_call"];
+export const PHASE_STATES: readonly string[] = SPINOFF_PHASES;
 
 /** The prefix a spike's failed close writes (platform/cli-coord/src/spinoff-spike.ts `spikeEndError`). */
 const SPIKE_END = "spike:";
