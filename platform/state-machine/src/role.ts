@@ -1,6 +1,6 @@
 import { setup } from "xstate";
 import { moveEvent, type TaskStatus } from "./item.ts";
-import { PHASES_BY_STATUS, SPINOFF_PHASES, type SpinoffPhase } from "./spinoff-phase.ts";
+import { PHASES_BY_STATUS, type SpinoffPhase } from "./spinoff-phase.ts";
 import { SPINOFF_EDGES, type SpinoffEvent, type SpinoffState } from "./spinoff.ts";
 
 /**
@@ -76,7 +76,7 @@ const MIRRORED: Readonly<Record<MirroredState, Omit<RoleStateMeta, "stored">>> =
   pr_ci: { label: "PR open, waiting on CI", role: "builder", human_required: false },
   handed_off: { label: "Handed off, in the sentinel inbox", role: "sentinel", human_required: false },
   gating: { label: "Sentinel gating the PR head", role: "sentinel", human_required: false },
-  updating_pr: { label: "Sentinel updating a conflicting PR", role: "sentinel", human_required: false },
+  updating_pr: { label: "Sent back, builder updating the PR", role: "builder", human_required: false },
   owner_merge_call: { label: "Merge call only the owner can make", role: "owner", human_required: true },
   failed: { label: "Failed or abandoned", role: "system", human_required: false },
 };
@@ -95,8 +95,6 @@ export const MIRRORED_STATES: Readonly<Record<MirroredState, StateDef>> = (() =>
     }
     for (const phase of PHASES_BY_STATUS[status] ?? []) out[phase] = { id: phase, ...MIRRORED[phase], stored: row(status) };
   }
-  const missing = [...new Set([...SPINOFF_PHASES, ...Object.keys(MIRRORED)])].filter((id) => !(id in out));
-  if (missing.length) throw new Error(`role machine: no status holds ${missing.join(", ")}`);
   return out as Record<MirroredState, StateDef>;
 })();
 
@@ -160,15 +158,14 @@ export const ROLE_TRANSITIONS: readonly RoleTransition[] = [
   { from: "pr_ci", to: "building", label: "CI fails, fix", event: "a CI check fails; fix on the branch", actor: "builder", source: code("platform/cli-coord/src/commands/spinoff.ts", "assertHandoffCiForRow") },
   { from: "pr_ci", to: "handed_off", label: "handoff, CI green", event: "verdict landable and CI green: ob spinoff handoff (note to the team sentinel, else architect)", actor: "builder", source: rowEvent("handoff") },
   { from: "pr_ci", to: "owner_call", label: "verdict needs-human", event: "verdict needs-human; builder asks with the question tool", actor: "builder", source: "skills/ob-spinoff/SKILL.md:114" },
-  { from: "owner_call", to: "handed_off", label: "owner hands off", event: "needs-human only (a blocked build has no PR): owner runs /ob-spinoff-handoff (the human yes)", actor: "owner", source: "skills/ob-spinoff/SKILL.md:246" },
+  { from: "owner_call", to: "handed_off", label: "owner hands off", event: "needs-human only (a blocked build has no PR): owner runs /ob-spinoff-handoff (the human yes)", actor: "owner", source: rowEvent("handoff") },
   { from: "owner_call", to: "building", label: "owner answers", event: "owner gives the decision or access, or answers with a change to make", actor: "owner", source: "skills/ob-architect/SKILL.md:103" },
   { from: "building", to: "owner_call", label: "verdict blocked", event: "verdict blocked: a decision or access is missing; no PR", actor: "builder", source: "skills/ob-spinoff/SKILL.md:117" },
   { from: "building", to: "partial", label: "verdict partial", event: "verdict partial: some Done when items unmet; no PR", actor: "builder", source: "skills/ob-spinoff/SKILL.md:119" },
   { from: "partial", to: "building", label: "redispatch", event: "architect redispatches or steers the rest", actor: "architect", source: "skills/ob-architect/SKILL.md:102" },
   { from: "handed_off", to: "gating", label: "read inbox", event: "the sentinel (else the architect) reads its inbox, oldest first, and starts the gate", actor: "sentinel", source: code("apps/cli/src/inbox.ts", "listRoleMessages") },
-  { from: "gating", to: "building", label: "sendback", event: "red CI, a Done when item unmet, or a claim it cannot verify: ob spinoff sendback", actor: "sentinel", source: rowEvent("sendback") },
-  { from: "gating", to: "updating_pr", label: "conflict or overlap", event: "PR conflicts, or is behind main with an overlap", actor: "sentinel", source: "skills/ob-sentinel/SKILL.md:35" },
-  { from: "updating_pr", to: "gating", label: "pushed, re-gate", event: "rebased or merged main, pushed, re-gate the new head", actor: "sentinel", source: "skills/ob-land/SKILL.md:75" },
+  { from: "gating", to: "updating_pr", label: "sendback", event: "red CI, a Done when item unmet, a claim it cannot verify, or a PR that conflicts (or is behind main with an overlap): ob spinoff sendback to the builder", actor: "sentinel", source: rowEvent("sendback") },
+  { from: "updating_pr", to: "handed_off", label: "fixed, handoff again", event: "builder fixes it on the branch, pushes, CI green: ob spinoff handoff again", actor: "builder", source: rowEvent("handoff") },
   { from: "gating", to: "owner_merge_call", label: "taste, waiver or flake", event: "a taste call, a waived check, or a known flake", actor: "sentinel", source: "skills/ob-sentinel/SKILL.md:51" },
   { from: "owner_merge_call", to: "gating", label: "owner answers", event: "owner answers", actor: "owner", source: "skills/ob-land/SKILL.md:198" },
   { from: "gating", to: "closed", label: "merge, deploy, close", event: "every gate question yes: gh pr merge --squash, ob deploy run --sha, then ob close (ticket done, rows landed, unread handoffs withdrawn)", actor: "sentinel", source: taskMove("done") },

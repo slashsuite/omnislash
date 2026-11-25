@@ -20,11 +20,11 @@ describe("the generated files", () => {
     }
   });
 
-  test("the JSON keeps the v1 shape: 20 states, 39 transitions, every endpoint a state", () => {
+  test("the JSON keeps the v1 shape: 20 states, 38 transitions, every endpoint a state", () => {
     const json = JSON.parse(renderAll()["docs/role-state-machine.json"]!);
     expect(json.version).toBe(1);
     expect(json.states).toHaveLength(20);
-    expect(json.transitions).toHaveLength(39);
+    expect(json.transitions).toHaveLength(38);
     const ids = new Set(json.states.map((s: { id: string }) => s.id));
     for (const t of json.transitions) {
       expect(Object.keys(t)).toEqual(["from", "to", "label", "event", "actor", "source"]);
@@ -110,15 +110,16 @@ describe("the states that mirror the row and phase machines", () => {
     expect(new Set(STATE_IDS).size).toBe(STATE_IDS.length);
   });
 
-  test("a move between two row-backed states is one the row machine or the phase machine allows", () => {
+  test("a move between two row-backed states is a row event that makes it, or a phase the phase machine allows", () => {
     for (const t of ROLE_TRANSITIONS) {
       const a = stored(t.from);
       const b = stored(t.to);
       if (a?.table !== "spinoff" || b?.table !== "spinoff") continue;
       const at = `${t.from} -> ${t.to}`;
       if (a.status !== b.status) {
-        const events = Object.entries(SPINOFF_EDGES[a.status]).filter(([, to]) => to === b.status);
-        expect(events.length, `${at}: no row event moves ${a.status} to ${b.status}`).toBeGreaterThan(0);
+        const [path, event] = t.source.split("#");
+        expect(path, `${at}: a status change is sourced from the row event that makes it`).toBe("platform/state-machine/src/spinoff.ts");
+        expect(decide(spinoffMachine, a.status, event!), at).toEqual({ ok: true, to: b.status });
       } else if (isSpinoffPhase(t.to)) {
         const from = phaseStateOf(a.status, isSpinoffPhase(t.from) ? t.from : null);
         expect(decide(spinoffPhaseMachine, from, PHASE_EVENT[t.to]), at).toEqual({ ok: true, to: phaseStateOf(a.status, t.to) });

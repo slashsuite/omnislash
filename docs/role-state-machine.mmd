@@ -18,7 +18,7 @@ stateDiagram-v2
     state "Partial (verdict) (builder)" as partial
     state "Handed off, in the sentinel inbox (sentinel)" as handed_off
     state "Sentinel gating the PR head (sentinel)" as gating
-    state "Sentinel updating a conflicting PR (sentinel)" as updating_pr
+    state "Sent back, builder updating the PR (builder)" as updating_pr
     state "Merge call only the owner can make (owner)" as owner_merge_call
     state "Closed (ticket done) (sentinel)" as closed
     state "Failed or abandoned (system)" as failed
@@ -55,9 +55,8 @@ stateDiagram-v2
     building --> partial: verdict partial
     partial --> building: redispatch
     handed_off --> gating: read inbox
-    gating --> building: sendback
-    gating --> updating_pr: conflict or overlap
-    updating_pr --> gating: pushed, re-gate
+    gating --> updating_pr: sendback
+    updating_pr --> handed_off: fixed, handoff again
     gating --> owner_merge_call: taste, waiver or flake
     owner_merge_call --> gating: owner answers
     gating --> closed: merge, deploy, close

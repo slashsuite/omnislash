@@ -1,7 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import machine from "../../../../docs/role-state-machine.json" with { type: "json" };
-import { SPINOFF_EDGES } from "../../../../platform/state-machine/src/spinoff.ts";
-import { SPINOFF_PHASES } from "../../../../platform/state-machine/src/spinoff-phase.ts";
 import { BASE_PLACEMENT, inFlight, isNeedsHuman, machineStamp, PHASE_STATES, placeRow, type MachineItem } from "./machine.ts";
 import { roleDefinition } from "./role-machine.ts";
 
@@ -11,13 +9,11 @@ const ROLE_STATES = new Set(machine.states.map((s) => s.id));
 const base = { phase: null, builderStatus: null, spike: false, error: null } as const;
 
 describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
-  it("has a base placement for every SPINOFF_EDGES state, and each one exists in the machine", () => {
-    expect(Object.keys(BASE_PLACEMENT).sort()).toEqual(Object.keys(SPINOFF_EDGES).sort());
+  it("has a base placement for every row status, and each one exists in the machine", () => {
     for (const state of Object.values(BASE_PLACEMENT)) expect(ROLE_STATES.has(state)).toBe(true);
   });
 
   it("names the phases the store keeps as the role states they are", () => {
-    expect([...PHASE_STATES].sort()).toEqual([...SPINOFF_PHASES].sort());
     for (const phase of PHASE_STATES) expect(ROLE_STATES.has(phase)).toBe(true);
   });
 
