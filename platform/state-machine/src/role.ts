@@ -171,6 +171,7 @@ export const ROLE_TRANSITIONS: readonly RoleTransition[] = [
   { from: "updating_pr", to: "handed_off", label: "fixed, handoff again", event: "builder fixes it on the branch, pushes, CI green: ob spinoff handoff again", actor: "builder", source: rowEvent("handoff") },
   { from: "gating", to: "owner_merge_call", label: "taste, waiver or flake", event: "a taste call, a waived check, or a known flake", actor: "sentinel", source: "skills/ob-sentinel/SKILL.md:51" },
   { from: "owner_merge_call", to: "gating", label: "owner answers", event: "owner answers", actor: "owner", source: "skills/ob-land/SKILL.md:198" },
+  { from: "owner_merge_call", to: "building", label: "owner sends back for more work", event: "owner's yes lands part of the ticket and the builder carries on in the same thread: ob spinoff resume", actor: "owner", source: rowEvent("resume") },
   { from: "gating", to: "closed", label: "merge, deploy, close", event: "every gate question yes: gh pr merge --squash, ob deploy run --sha, then ob close (ticket done, rows landed, unread handoffs withdrawn)", actor: "sentinel", source: taskMove("done") },
   { from: "closed", to: "building", label: "reopen", event: "ob spinoff reopen: an exception for a row that reconcile landed although nothing merged", actor: "architect", source: rowEvent("reopen") },
 ];

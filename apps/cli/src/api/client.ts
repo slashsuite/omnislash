@@ -89,6 +89,8 @@ import {
 	type SendBackSpinoffResponse,
 	type ReopenSpinoffRequest,
 	type ReopenSpinoffResponse,
+	type ResumeSpinoffRequest,
+	type ResumeSpinoffResponse,
 	type SpinoffVerdictRequest,
 	type SpinoffVerdictResponse,
 	type SpinoffPhaseRequest,
@@ -553,6 +555,7 @@ const path = {
 	spinoffReady: "/spinoffs/ready",
 	spinoffSendBack: "/spinoffs/sendback",
 	spinoffReopen: "/spinoffs/reopen",
+	spinoffResume: "/spinoffs/resume",
 	spinoffVerdict: "/spinoffs/verdict",
 	spinoffPhase: "/spinoffs/phase",
 	spinoffNoteError: "/spinoffs/note-error",
@@ -1155,6 +1158,11 @@ export class ApiClient {
 	/** OB-2180: a landed row back to building. */
 	reopenSpinoff(body: ReopenSpinoffRequest): Promise<ReopenSpinoffResponse> {
 		return this.call("POST", path.spinoffReopen, body);
+	}
+
+	/** OS-235: a handed-off row back to building, for more work on the same row. */
+	resumeSpinoff(body: ResumeSpinoffRequest): Promise<ResumeSpinoffResponse> {
+		return this.call("POST", path.spinoffResume, body);
 	}
 
 	recordSpinoffVerdict(body: SpinoffVerdictRequest): Promise<SpinoffVerdictResponse> {

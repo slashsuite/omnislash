@@ -141,6 +141,7 @@ import {
   type SpinoffRow,
   type SpinoffSteps,
   type StampInput,
+  renderResume,
 } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { spinoffStatusWord } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
 import { refuseOverUsage } from "../usage-gate.ts";
@@ -1396,6 +1397,15 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     return;
   }
 
+  if (sub === "resume") {
+    // OS-235: the row moves on the server; nothing here needs this machine's checkout or T3.
+    const ref = ctx.args[1];
+    if (!ref) throw new UsageError("spinoff resume requires a <row|ticket>");
+    const row = pickSpinoffForShow((await ctx.client.spinoffs({})).spinoffs, ref);
+    print(renderResume((await ctx.client.resumeSpinoff({ id: row.id, note: flag(ctx, "note") ?? "" })).row, ctx.mode === "json"));
+    return;
+  }
+
   if (sub === "sendback") {
     // OB-1805: the same sequence the local command runs. The row moves on the server; the note goes to the
     // builder's thread from HERE (T3 is on this machine); a failed note puts the row back.
@@ -1637,7 +1647,7 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
 
   if (!sub) {
     throw new UsageError(
-      "spinoff requires a <ticket-ref> (or 'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
+      "spinoff requires a <ticket-ref> (or 'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'resume'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
     );
   }
   if (sub === "queue") {

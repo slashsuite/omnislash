@@ -8,16 +8,21 @@ import { setup } from "xstate";
  *
  * No self-move rule here: `launched → launched` is a real edge (`stamp`, the 384 session-id re-stamp), and
  * every other self-move is refused.
+ *
+ * OS-235: `ready-for-gate` has two moves back to `launched`. `sendback` is the gate's (fix this PR; the row's
+ * phase becomes `updating_pr`); `resume` is for more work on the same row after the gate, e.g. the owner merged
+ * one PR of a ticket and the builder carries on with the rest in the same thread, so the row leaves the sentinel
+ * inbox and is plain building again (no phase).
  */
 export type SpinoffState = "pending" | "launching" | "launched" | "ready-for-gate" | "merged" | "failed";
-export type SpinoffEvent = "claim" | "stamp" | "retry" | "fail" | "handoff" | "sendback" | "land" | "reopen";
+export type SpinoffEvent = "claim" | "stamp" | "retry" | "fail" | "handoff" | "sendback" | "resume" | "land" | "reopen";
 
 /** Every edge, from → event → target. The explicit map the brief asks for; the machine is built from it. */
 export const SPINOFF_EDGES: Readonly<Record<SpinoffState, Readonly<Partial<Record<SpinoffEvent, SpinoffState>>>>> = {
   pending: { claim: "launching", fail: "failed" },
   launching: { stamp: "launched", retry: "pending", fail: "failed" },
   launched: { stamp: "launched", handoff: "ready-for-gate", land: "merged", retry: "pending", fail: "failed" },
-  "ready-for-gate": { sendback: "launched", land: "merged", fail: "failed" },
+  "ready-for-gate": { sendback: "launched", resume: "launched", land: "merged", fail: "failed" },
   merged: { reopen: "launched" },
   failed: {},
 };

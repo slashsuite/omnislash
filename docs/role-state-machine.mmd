@@ -59,6 +59,7 @@ stateDiagram-v2
     updating_pr --> handed_off: fixed, handoff again
     gating --> owner_merge_call: taste, waiver or flake
     owner_merge_call --> gating: owner answers
+    owner_merge_call --> building: owner sends back for more work
     gating --> closed: merge, deploy, close
     closed --> building: reopen
     closed --> [*]

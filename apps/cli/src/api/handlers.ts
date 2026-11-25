@@ -95,6 +95,7 @@ import {
   markSpinoffReady,
   markSpinoffSentBack,
   markSpinoffReopened,
+  markSpinoffResumed,
   liveBuildAgentsByRepo,
   pendingSpinoffs,
   readSpinoffLaunchConfig,
@@ -184,6 +185,8 @@ import type {
   SendBackSpinoffResponse,
   ReopenSpinoffRequest,
   ReopenSpinoffResponse,
+  ResumeSpinoffRequest,
+  ResumeSpinoffResponse,
   SpinoffVerdictRequest,
   SpinoffVerdictResponse,
   SpinoffPhaseRequest,
@@ -1770,6 +1773,19 @@ export async function spinoffReopen(store: Store, req: ReopenSpinoffRequest): Pr
     if (!row) throw new ApiFault("not_found", 404, `no spinoff #${req.id}`);
     if (!req.note.trim()) throw new ApiFault("invalid_request", 400, "reopen needs a note: why the land is undone");
     return { row: await markSpinoffReopened(store, row, { note: req.note }) };
+  } catch (e) {
+    if (e instanceof ApiFault) throw e;
+    throw new ApiFault("refused", 409, e instanceof AppError ? e.message : String(e));
+  }
+}
+
+/** OS-235: a handed-off row back to building because the work continues on it; refused for anything not handed off. */
+export async function spinoffResume(store: Store, req: ResumeSpinoffRequest): Promise<ResumeSpinoffResponse> {
+  try {
+    const row = (await listSpinoffs(store)).find((r) => r.id === req.id);
+    if (!row) throw new ApiFault("not_found", 404, `no spinoff #${req.id}`);
+    if (!req.note.trim()) throw new ApiFault("invalid_request", 400, "resume needs a note: the work that continues");
+    return { row: await markSpinoffResumed(store, row, { note: req.note }) };
   } catch (e) {
     if (e instanceof ApiFault) throw e;
     throw new ApiFault("refused", 409, e instanceof AppError ? e.message : String(e));

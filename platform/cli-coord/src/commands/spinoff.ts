@@ -500,7 +500,8 @@ export type SpinoffStatus = (typeof SPINOFF_STATUSES)[number];
  *                    reclaim, spawn failure, abandon)
  *   launched       → launched (stamp: 384 session-id re-stamp) · ready-for-gate (handoff) · merged (land) ·
  *                    pending (retry: spawn failure) · failed (fail: spawn failure, spike end, abandon)
- *   ready-for-gate → launched (sendback) · merged (land) · failed (fail: spike end, abandon)
+ *   ready-for-gate → launched (sendback: fix this PR · resume: more work on the same row, OS-235) · merged (land) ·
+ *                    failed (fail: spike end, abandon)
  *   merged         → launched (reopen, OB-2180)
  *
  * `SPINOFF_TRANSITIONS` is the generated target-only view of those edges.
@@ -3795,6 +3796,40 @@ export async function markSpinoffSentBack(db: Database | Store, row: SpinoffRow,
 }
 
 /**
+ * `ob spinoff resume` (OS-235): a handed-off row goes back to plain building because the work continues on the
+ * same row, not because the gate refused it. PS-722: the owner's yes merged only the design doc and the builder
+ * carried on with the rest of the ticket in the same thread, but the row stayed handed-off, so the dashboard kept
+ * it in the sentinel inbox. Unlike a sendback the phase is cleared (no PR is being updated) and no note goes to a
+ * thread: whoever resumes it is already talking to the builder. The builder's agent row goes back to `working`.
+ * A clean repo's recorded verdict is cleared too: it judged the work already gated (PS-722's needs-human was
+ * answered by the merge), and the next handoff must read the builder's new verdict, not that one.
+ */
+export async function markSpinoffResumed(db: Database | Store, row: SpinoffRow, decision: DecisionOpts = {}): Promise<SpinoffRow> {
+  if (row.status !== READY_FOR_GATE) {
+    throw new AppError(`spinoff #${row.id} is ${spinoffStatusWord(row.status)}, not handed-off (nothing to resume)`);
+  }
+  if (!decision.note?.trim()) throw new AppError("spinoff resume needs --note '<the work that continues>': the ticket's trail records it");
+  const s = asStore(db);
+  await retakeFlakeSlot(s, row, "resume"); // OB-2230: the handoff freed it, and the work is building again
+  const moved = await moveSpinoff(s, row.id, "resume", { verdict: null, verdict_reason: null, gate_line: null }, [READY_FOR_GATE]);
+  await recordRowDecision(s, row, spinoffStatusWord(READY_FOR_GATE), spinoffStatusWord("launched"), decision, "resume");
+  const existing = await getAgent(s, builderIdOf(row));
+  if (existing) {
+    await registerAgent(s, { id: existing.id, status: "working", note: `resumed: ${decision.note.trim().slice(0, 200)}`, ttlS: existing.ttl_s });
+  }
+  return moved;
+}
+
+/** What `ob spinoff resume` prints. */
+export function renderResume(row: SpinoffRow, json: boolean): string {
+  if (json) return JSON.stringify({ id: row.id, ticket: row.ticket_ref, status: spinoffStatusWord(row.status) });
+  return [
+    `resumed: ${row.ticket_ref} (row ${row.id}) is building again, out of the sentinel inbox`,
+    `  hand it off again with 'ob spinoff handoff ${row.ticket_ref}' when the rest is done`,
+  ].join("\n");
+}
+
+/**
  * OB-2230: a flake row that goes back to building (a send-back, a reopen) takes `flake:slot` again for its
  * builder, since the handoff or land released it. Refused by name, before the row moves, when another flake
  * fix took the slot in the meantime: two flake builders must never run at once.
@@ -6338,6 +6373,15 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     return;
   }
 
+  if (sub === "resume") {
+    // OS-235: more work on a handed-off row (the owner merged part of the ticket): row -> building, out of the inbox.
+    const ref = ctx.args[1];
+    if (!ref) throw new UsageError("spinoff resume requires a <row|ticket>");
+    const row = pickSpinoffForShow(await listSpinoffs(store), ref, await ticketItemIdFor(store, ref));
+    print(renderResume(await markSpinoffResumed(store, row, { ...decisionOptsOf(ctx), note: flag(ctx, "note") ?? "" }), ctx.mode === "json"));
+    return;
+  }
+
   if (sub === "sendback") {
     // OB-1805: the architect sends a handed-off PR back to its builder: row -> building, note -> the builder's
     // thread, off `gateable` until the builder hands off again.
@@ -6567,7 +6611,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // the way to park a row for a later `spinoff drain`.
   if (!sub || (sub === "queue" && !ctx.args[1])) {
     throw new UsageError(
-      "spinoff requires a <ticket-ref> (or 'queue'/'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'check'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
+      "spinoff requires a <ticket-ref> (or 'queue'/'drain'/'list'/'show'/'mix'/'gateable'/'phase'/'abandon'/'sendback'/'resume'/'reopen'/'reconcile'/'watch'/'handoff'/'brief'/'check'/'cleanup'/'reclaim'/'claim'/'stamp'/'land'; 'ready' is an alias of 'handoff')",
     );
   }
   const queueOnly = sub === "queue";

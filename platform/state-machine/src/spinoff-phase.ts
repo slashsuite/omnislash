@@ -32,6 +32,7 @@ export const PHASES_BY_STATUS: Readonly<Partial<Record<SpinoffState, readonly Sp
 
 /**
  * The phase a status move leaves the row in: `handoff` starts the gate, `sendback` starts the PR update,
+ * `resume` (OS-235: more work on the same row) clears it to plain building,
  * `stamp` (a launched row's session re-stamp) keeps the phase, and every other move clears it.
  * test/spinoff-phase.test.ts checks every edge lands on a phase its target status may hold.
  */
@@ -41,6 +42,7 @@ export const PHASE_ON_MOVE: Readonly<Record<Exclude<SpinoffEvent, "stamp">, Spin
   fail: null,
   handoff: "gating",
   sendback: "updating_pr",
+  resume: null,
   land: null,
   reopen: null,
 };

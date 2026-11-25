@@ -150,6 +150,7 @@ export const SPINOFF_SUBCOMMANDS: ReadonlySet<string> = new Set([
   "gateable",
   "abandon",
   "sendback",
+  "resume",
   "reopen",
   "handoff",
   "ready",

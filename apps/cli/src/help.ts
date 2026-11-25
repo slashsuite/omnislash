@@ -980,6 +980,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         ],
         examples: ['spinoff sendback APP-12 --note "Fix failing lint check"'],
       },
+      resume: {
+        summary: "Move a handed-off spinoff back to building; the work continues on the same row",
+        usage: ['spinoff resume <row|ticket> --note "<the work that continues>"'],
+        flags: [{ flag: "-m, --note <text>", description: "The work that continues, recorded on the ticket trail (required)" }],
+        examples: ['spinoff resume APP-12 --note "design doc merged; building the rest"'],
+        notes: ["Not a send-back: clears the phase and sends no note to the builder.", "The row leaves the sentinel inbox."],
+      },
       reopen: {
         summary: "Move an erroneously landed spinoff row back to building",
         usage: ['spinoff reopen <row|ticket> --note "<why>"'],
