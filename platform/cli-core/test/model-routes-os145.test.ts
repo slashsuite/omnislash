@@ -65,8 +65,9 @@ describe("OS-145: model routes", () => {
     expect(sourceLabel(resolveRoute(inputs, "job.nightly-sweep"))).toBe("default (builder.complex)");
     // a role thread with nothing set opens on the T3 project's default, as before
     expect(await teamRoleModelFrom(memIo(), "architect")).toBeUndefined();
-    // the review readers are the built-in legs
-    expect(Object.keys(resolveReview(inputs).value.readers)).toEqual([...DEFAULT_REVIEW_LEGS]);
+    // the review readers are the built-in legs: opus reads every score, neon is its fallback on no range (OS-238)
+    expect(Object.keys(resolveReview(inputs).value.readers)).toEqual(["neon", "opus"]);
+    expect(resolveReview(inputs).value.tiers.map((r) => r.legs)).toEqual([[...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS]]);
     // spinoff_tier_models still sets the builder default layer
     const tiered = await loadRouteInputs(memIo({ spinoff_tier_models: '{"medium":"claude-opus-5-5"}' }));
     expect(resolveRoute(tiered, "builder.medium")).toMatchObject({ chain: ["claude-opus-5-5"], source: "default" });
@@ -178,7 +179,7 @@ describe("OS-145: model routes", () => {
   test("reader add glm, then reader tier simple glm, changes the review-leg legs; remove refuses a leg still in a tier", async () => {
     await withScratch((dir) => {
       const run = machine(dir, "a", join(dir, "server.sqlite"));
-      expect(run(["review", "readers", "--tier", "simple", "-q"]).out.trim().split("\n")).toEqual(["neon", "opus"]);
+      expect(run(["review", "readers", "--tier", "simple", "-q"]).out.trim().split("\n")).toEqual(["opus"]);
       const add = run(["models", "reader", "add", "glm", "glm-5.3-flash"]);
       expect(add.code).toBe(0);
       const tier = run(["models", "reader", "tier", "simple", "glm"]);

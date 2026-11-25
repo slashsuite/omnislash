@@ -107,14 +107,15 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     });
   });
 
-  test("default review readers list neon and opus only; deepseek and luna are refused when named (OS-206)", async () => {
-    expect([...DEFAULT_REVIEW_LEGS]).toEqual(["neon", "opus"]);
+  test("default review readers run opus alone, neon only as its fallback; deepseek and luna are refused when named (OS-206, OS-238)", async () => {
+    expect([...DEFAULT_REVIEW_LEGS]).toEqual(["opus"]);
     expect(DEFAULT_REVIEW_MODELS.neon).toBe("antigravity:gemini-4-neon");
     expect(DEFAULT_REVIEW_MODELS.opus).toBe("claude-opus-5-5");
 
     const defaults = defaultReviewReaders();
     expect(Object.keys(defaults.readers)).toEqual(["neon", "opus"]);
-    expect(defaults.tiers.map((r) => r.legs)).toEqual([["neon", "opus"], ["neon", "opus"], ["neon", "opus"]]);
+    expect(defaults.tiers.map((r) => r.legs)).toEqual([["opus"], ["opus"], ["opus"]]);
+    expect(defaults.readers.opus!.fallback).toBe("neon");
 
     const emptyIO: ConfigIO = { get: async () => null, set: async () => {} };
     const loaded = await loadReviewReaders(emptyIO);
@@ -139,14 +140,14 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
       };
       const q = Bun.spawnSync(["bun", CLI_ENTRY, "review", "readers", "--tier", "medium", "-q"], { env, stdout: "pipe", stderr: "pipe" });
       expect(q.exitCode).toBe(0);
-      expect(q.stdout.toString().trim().split("\n")).toEqual(["neon", "opus"]);
+      expect(q.stdout.toString().trim().split("\n")).toEqual(["opus"]);
 
       const j = Bun.spawnSync(["bun", CLI_ENTRY, "review", "readers", "--json"], { env, stdout: "pipe", stderr: "pipe" });
       expect(j.exitCode).toBe(0);
       const parsed = JSON.parse(j.stdout.toString()) as { stored: boolean; readers: Record<string, { model: string }>; tiers: Array<{ from: number; to: number; legs: string[] }> };
       expect(parsed.stored).toBe(false);
       expect(Object.keys(parsed.readers)).toEqual(["neon", "opus"]);
-      expect(parsed.tiers.at(-1)).toEqual({ from: 7, to: 10, legs: ["neon", "opus"] });
+      expect(parsed.tiers.at(-1)).toEqual({ from: 7, to: 10, legs: ["opus"] });
     });
   });
 
