@@ -14,6 +14,7 @@ import {
   ModelRoutesError,
   activeProfileOf,
   addReader,
+  setReaderFallback,
   builderBandsIn,
   checkEffort,
   loadServerRoutes,
@@ -88,6 +89,7 @@ export type ModelsOp =
   | { op: "use"; profile: string }
   | { op: "readerAdd"; profile: string; leg: string; model: string }
   | { op: "readerRemove"; profile: string; leg: string }
+  | { op: "readerFallback"; profile: string; leg: string; fallback: string | null }
   | { op: "builderRanges"; profile: string; ranges: Array<{ from: number; to: number; chain: string; effort?: string }> }
   | { op: "readerRanges"; profile: string; ranges: Array<{ from: number; to: number; legs: string[] }> };
 
@@ -163,6 +165,8 @@ function apply(inputs: RouteInputs, op: ModelsOp) {
       return review((v) => addReader(v, op.leg, op.model));
     case "readerRemove":
       return review((v) => removeReader(v, op.leg));
+    case "readerFallback":
+      return review((v) => setReaderFallback(v, op.leg, op.fallback));
     case "builderRanges":
       return withBuilderRanges(
         inputs.server,

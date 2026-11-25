@@ -81,9 +81,9 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   in one stderr line and uses the models file. A models file that does not parse makes the leg fail by name; report
   that leg as failed.
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
-  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the Opus stand-in rule below applies).
+  `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (for two default legs, a builder on one still gets the other independent reader; with Opus also down, the fallback rule below applies).
 - **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ neon: failed (exit 1: model gemini-4-neon unavailable)`), never a bare `failed`. It is never retried around and
-  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the stand-in
+  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the fallback
   rule below.
 - **Profiles first.** `review-leg.ts` already reruns a leg that ends on a credit or quota error on the
   next models profile that gives that leg another (kind, model) (`ob models show`, the `fallback` list), and says so on
@@ -109,7 +109,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
-- **Opus unavailable** → `neon` stands in for Opus, and nothing else does. When `neon` is unavailable too (failed, skipped or out of credits), the Neon leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
+- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it; by default Opus falls back to `neon`), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
   `needs-human` for want of a reviewer.
 - **Independence, not consensus.** Each leg gets the **same shared part of the brief** and the **same diff**, and
   from round 2 only its **own** previous findings and answers (How to run), with **no knowledge of the others'
@@ -132,7 +132,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   Report Neon and Opus (plus any extra or configured leg), naming the model that
   actually ran: `skeptical-review: N cut, 0 open (neon: a + opus: b)`. A failed leg reads
   `+ neon: failed (exit 1: <reason>)`, copied from its `review-leg: neon failed: ...` line (Failure, above), a skipped one `+ neon: skipped (builder)`, an out-of-credits paid one `+ opencode-go/<model>: skipped (no credits)`,
-  and an Opus stand-in `(neon(for opus): a)`.
+  and a fallback run `(neon(for opus): a)`.
   A model that keeps returning `ok` should be visible, not averaged away.
 - **Never `opencode-go/gemini-4-argon-contributor` and never `opencode-go/grok-4.7`** (too expensive). Do not reach for them to make a review "stronger", and do not re-propose them.
 - **Escalating:** when a diff is hairy or a finding sounds thin, re-run on the narrowed question (one

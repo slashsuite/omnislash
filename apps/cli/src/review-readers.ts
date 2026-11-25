@@ -41,7 +41,8 @@ export interface ReviewRange extends ComplexityRange {
 }
 
 export interface ReviewReaders {
-  readers: Record<string, { model: string }>;
+  /** Each reader's model, and the reader that stands in for it when it is unavailable (none when absent). */
+  readers: Record<string, { model: string; fallback?: string }>;
   /** The ranges, sorted, covering 1-10 exactly once. */
   tiers: ReviewRange[];
 }
@@ -49,11 +50,16 @@ export interface ReviewReaders {
 /** A leg name: lowercase letters, digits and dashes. */
 export const LEG_NAME = /^[a-z0-9-]+$/;
 
+/** The fallback an unset setting gives opus: neon stands in when Opus is unavailable (OS-206). Configurable per reader. */
+export const DEFAULT_REVIEW_FALLBACKS: Record<string, string> = { opus: "neon" };
+
 /** The value an unset setting stands for: neon and opus, on every score (as the three old tier bands). */
 export function defaultReviewReaders(): ReviewReaders {
   const legs = [...DEFAULT_REVIEW_LEGS];
   return {
-    readers: Object.fromEntries(legs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg] }])),
+    readers: Object.fromEntries(
+      legs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg], ...(DEFAULT_REVIEW_FALLBACKS[leg] ? { fallback: DEFAULT_REVIEW_FALLBACKS[leg] } : {}) }]),
+    ),
     tiers: REVIEW_TIERS.map((t) => ({ ...TIER_BANDS[t], legs: [...legs] })),
   };
 }
@@ -75,6 +81,13 @@ function checkModel(leg: string, model: unknown): string {
   const m = model.trim();
   if (/\s/.test(m)) throw new ReviewReadersError(`reader '${leg}': model '${m}' has a space in it`);
   return m;
+}
+
+/** A fallback names another reader (not the reader itself); whether that reader exists is checked with the set. */
+function checkFallback(leg: string, fallback: unknown): string {
+  if (typeof fallback !== "string" || !LEG_NAME.test(fallback)) throw new ReviewReadersError(`reader '${leg}': fallback must be a reader name`);
+  if (fallback === leg) throw new ReviewReadersError(`reader '${leg}' cannot fall back to itself`);
+  return fallback;
 }
 
 /** The old `{simple, medium, complex}` object as the ranges 1-3, 4-6 and 7-10 (a missing tier is an empty range). */
@@ -103,7 +116,13 @@ export function validateReviewReaders(v: unknown): ReviewReaders {
     const model = spec && typeof spec === "object" ? (spec as { model?: unknown }).model : undefined;
     const refused = retiredReviewMessage(leg, typeof model === "string" ? model : undefined);
     if (refused) throw new ReviewReadersError(refused);
-    readers[leg] = { model: checkModel(leg, model) };
+    const fallback = spec && typeof spec === "object" ? (spec as { fallback?: unknown }).fallback : undefined;
+    readers[leg] = { model: checkModel(leg, model), ...(fallback === undefined || fallback === null ? {} : { fallback: checkFallback(leg, fallback) }) };
+  }
+  for (const [leg, spec] of Object.entries(readers)) {
+    if (spec.fallback !== undefined && readers[spec.fallback] === undefined) {
+      throw new ReviewReadersError(`reader '${leg}' falls back to '${spec.fallback}', which is not a reader`);
+    }
   }
   const entries = Array.isArray(raw.tiers) ? raw.tiers : rangesOfTierObject(raw.tiers as Record<string, unknown>);
   const tiers: ReviewRange[] = entries.map((e) => {
@@ -160,20 +179,38 @@ export function reviewRangeAt(v: ReviewReaders, c: number): ReviewRange {
 }
 
 /** The readers a row scored `c` runs, with their models, in the range's order. The run-time lookup (OS-175). */
-export function readersForComplexity(v: ReviewReaders, c: number): Array<{ leg: string; model: string }> {
-  return reviewRangeAt(v, c).legs.map((leg) => ({ leg, model: v.readers[leg]!.model }));
+export function readersForComplexity(v: ReviewReaders, c: number): Array<{ leg: string; model: string; fallback: string | null }> {
+  return reviewRangeAt(v, c).legs.map((leg) => ({ leg, model: v.readers[leg]!.model, fallback: fallbackOf(v, leg) }));
 }
 
-/** Add a reader or change its model. A new reader joins no range. */
+/** Add a reader or change its model (its fallback stays). A new reader joins no range. */
 export function withReader(v: ReviewReaders, leg: string, model: string): ReviewReaders {
   if (!LEG_NAME.test(leg)) throw new ReviewReadersError(`reader name '${leg}' must be lowercase letters, digits and dashes`);
-  return validateReviewReaders({ ...v, readers: { ...v.readers, [leg]: { model: checkModel(leg, model) } } });
+  const fallback = v.readers[leg]?.fallback;
+  return validateReviewReaders({ ...v, readers: { ...v.readers, [leg]: { model: checkModel(leg, model), ...(fallback ? { fallback } : {}) } } });
+}
+
+/** Set or clear (null) the reader that stands in for `leg` when it is unavailable. Throws ReviewReadersError. */
+export function withFallback(v: ReviewReaders, leg: string, fallback: string | null): ReviewReaders {
+  if (v.readers[leg] === undefined) throw new ReviewReadersError(`no reader named '${leg}'`);
+  const { fallback: _old, ...rest } = v.readers[leg]!;
+  const next = fallback === null ? rest : { ...rest, fallback: checkFallback(leg, fallback) };
+  return validateReviewReaders({ ...v, readers: { ...v.readers, [leg]: next } });
+}
+
+/** The reader that stands in for `leg`, or null when none is set. Pure. */
+export function fallbackOf(v: ReviewReaders, leg: string): string | null {
+  return v.readers[leg]?.fallback ?? null;
 }
 
 /** Remove a reader and take it off every range; refused, naming the range, when a range would be left with none. */
 export function withoutReader(v: ReviewReaders, leg: string): ReviewReaders {
   if (v.readers[leg] === undefined) throw new ReviewReadersError(`no reader named '${leg}'`);
-  const readers = Object.fromEntries(Object.entries(v.readers).filter(([l]) => l !== leg));
+  const readers = Object.fromEntries(
+    Object.entries(v.readers)
+      .filter(([l]) => l !== leg)
+      .map(([l, r]) => [l, r.fallback === leg ? { model: r.model } : r]),
+  );
   const tiers = v.tiers.map((r) => ({ ...r, legs: r.legs.filter((l) => l !== leg) }));
   const emptied = tiers.filter((r) => r.legs.length === 0).map(rangeText);
   if (emptied.length) throw new ReviewReadersError(`'${leg}' is the only reader on range ${emptied.join(", ")}: add another reader to that range first`);

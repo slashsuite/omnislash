@@ -87,6 +87,8 @@ function shapeOf(d: unknown): ModelsOp {
       return { op: "readerAdd", profile, leg: str(o.leg, "leg"), model: str(o.model, "model") };
     case "readerRemove":
       return { op: "readerRemove", profile, leg: str(o.leg, "leg") };
+    case "readerFallback":
+      return { op: "readerFallback", profile, leg: str(o.leg, "leg"), fallback: o.fallback === null || o.fallback === undefined ? null : str(o.fallback, "fallback") };
     case "builderRanges":
       return {
         op: "builderRanges",

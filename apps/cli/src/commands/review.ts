@@ -1,7 +1,7 @@
 import type { Ctx } from "../ctx.ts";
 import type { Flags } from "../ctx.ts";
 import { editModelRoutes, loadRouteInputs, storeConfigIo } from "../model-routes-io.ts";
-import { ModelRoutesError, resolveReview, serverReview, withProfileReview, writeProfile } from "../model-routes.ts";
+import { ModelRoutesError, resolveReview, serverReview, setReaderFallback, withProfileReview, writeProfile } from "../model-routes.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, type Mode } from "../output.ts";
 import { TIER_BANDS, TIER_COMPLEXITY, isSpinoffTier, parseComplexity, rangeText, type SpinoffTier } from "../models-file.ts";
@@ -31,7 +31,7 @@ import {
 // -----------------------------------------------------------------------------
 
 const USAGE =
-  "review readers [--complexity <1-10>] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers range <from-to> <leg>... (`--tier` and `tier <tier>` are the old spellings)";
+  "review readers [--complexity <1-10>] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers range <from-to> <leg>... | review readers fallback <leg> <other-leg|none> (`--tier` and `tier <tier>` are the old spellings)";
 
 function table(v: ReviewReaders, stored: boolean): string {
   const legs = Object.keys(v.readers);
@@ -40,10 +40,11 @@ function table(v: ReviewReaders, stored: boolean): string {
   const mw = Math.max(5, ...legs.map((l) => v.readers[l]!.model.length));
   // A column is at least as wide as "on", so a one-score range ("4") keeps the columns after it in line.
   const cw = ranges.map((r) => Math.max(2, r.length));
-  const head = `${"reader".padEnd(w)}  ${"model".padEnd(mw)}  ${ranges.map((r, i) => r.padEnd(cw[i]!)).join("  ")}`.trimEnd();
+  const fw = Math.max(8, ...legs.map((l) => (v.readers[l]!.fallback ?? "-").length));
+  const head = `${"reader".padEnd(w)}  ${"model".padEnd(mw)}  ${"fallback".padEnd(fw)}  ${ranges.map((r, i) => r.padEnd(cw[i]!)).join("  ")}`.trimEnd();
   const rows = legs.map(
     (l) =>
-      `${l.padEnd(w)}  ${v.readers[l]!.model.padEnd(mw)}  ${v.tiers.map((r, i) => (r.legs.includes(l) ? "on" : "-").padEnd(cw[i]!)).join("  ")}`.trimEnd(),
+      `${l.padEnd(w)}  ${v.readers[l]!.model.padEnd(mw)}  ${(v.readers[l]!.fallback ?? "-").padEnd(fw)}  ${v.tiers.map((r, i) => (r.legs.includes(l) ? "on" : "-").padEnd(cw[i]!)).join("  ")}`.trimEnd(),
   );
   const note = stored ? [] : ["(no profile sets review readers: these are the defaults)"];
   return [head, ...rows, ...note].join("\n");
@@ -104,6 +105,16 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
       print(mode === "json" ? JSON.stringify(next, null, 2) : `${leg} ${next.readers[leg]!.model}`);
       return;
     }
+    if (sub === "fallback") {
+      // The reader that stands in for <leg> when it is unavailable (OS-206); `none` clears it.
+      const leg = args[2];
+      const other = args[3];
+      if (!leg || !other) throw new UsageError("review readers fallback requires <leg> <other-leg|none>");
+      const fallback = other === "none" ? null : other;
+      const next = await write((v) => setReaderFallback(v, leg, fallback));
+      print(mode === "json" ? JSON.stringify(next, null, 2) : `${leg} falls back to ${next.readers[leg]!.fallback ?? "nothing"}`);
+      return;
+    }
     if (sub === "rm") {
       const leg = args[2];
       if (!leg) throw new UsageError("review readers rm requires <leg>");
@@ -126,7 +137,7 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
     if (e instanceof ReviewReadersError || e instanceof ModelRoutesError) throw new AppError(e.message);
     throw e;
   }
-  throw new UsageError(`unknown review readers subcommand '${sub}' (set|rm|range)`);
+  throw new UsageError(`unknown review readers subcommand '${sub}' (set|rm|range|fallback)`);
 }
 
 export async function cmdReview(ctx: Ctx): Promise<void> {

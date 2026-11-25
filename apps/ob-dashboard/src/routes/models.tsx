@@ -138,12 +138,21 @@ function RouteRow({ row, view, send }: { row: ModelsView["routes"][number]; view
   );
 }
 
-function ReaderRow({ leg, model, profile, send }: { leg: string; model: string; profile: string; send: Send }) {
+function ReaderRow({ leg, model, fallback, others, profile, send }: { leg: string; model: string; fallback: string | null; others: string[]; profile: string; send: Send }) {
   const [value, setValue] = useDraft(model);
   const s = useSend(send);
   return (
     <Card size="sm" title={leg} titleStyle="name">
       <Stack gap="xs">
+        <Cluster gap="xs">
+          <Select
+            aria-label={`Fallback for reader ${leg}`}
+            value={fallback ?? ""}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => s.run({ op: "readerFallback", profile, leg, fallback: e.target.value === "" ? null : e.target.value })}
+            size="sm"
+            items={[{ value: "", label: "no fallback" }, ...others.map((o) => ({ value: o, label: `falls back to ${o}` }))]}
+          />
+        </Cluster>
         <Cluster gap="xs">
           <Input
             aria-label={`Model for reader ${leg}`}
@@ -545,7 +554,15 @@ function Models() {
               {Object.keys(review.local).length > 0 && ` This host's models file overrides ${Object.keys(review.local).join(", ")}.`}
             </Caption>
             {Object.entries(review.value.readers).map(([leg, r]) => (
-              <ReaderRow key={`${view.profile}:${leg}`} leg={leg} model={r.model} profile={view.profile} send={send} />
+              <ReaderRow
+                key={`${view.profile}:${leg}`}
+                leg={leg}
+                model={r.model}
+                fallback={r.fallback ?? null}
+                others={Object.keys(review.value.readers).filter((o) => o !== leg)}
+                profile={view.profile}
+                send={send}
+              />
             ))}
             <AddReader key={`${view.profile}:${Object.keys(review.value.readers).join(",")}`} profile={view.profile} send={send} />
             <ReviewRanges key={view.profile} view={view} send={send} />

@@ -62,6 +62,7 @@ import {
   parseReviewReaders,
   storedReviewReaders,
   validateReviewReaders,
+  withFallback,
   withReader,
   parseReviewRange,
   withRange,
@@ -473,7 +474,7 @@ export function resolveReview(inputs: RouteInputs, profile: string | null = acti
   const readers = { ...base.value.readers };
   for (const [leg, model] of Object.entries(local ?? {})) {
     const canonical = canonicalLeg(leg);
-    if (readers[canonical]) readers[canonical] = { model };
+    if (readers[canonical]) readers[canonical] = { ...readers[canonical], model };
   }
   return { profile, ...base, value: { readers, tiers: base.value.tiers } };
 }
@@ -640,6 +641,16 @@ export function addReader(current: ReviewReaders, leg: string, model: string): R
 }
 
 /** Remove a reader; refused, naming each range, while a range still lists it (take it off the range first). */
+/** Set or clear the reader that stands in for `leg` when it is unavailable. Throws ModelRoutesError. */
+export function setReaderFallback(current: ReviewReaders, leg: string, fallback: string | null): ReviewReaders {
+  try {
+    return withFallback(current, leg, fallback);
+  } catch (e) {
+    if (e instanceof ReviewReadersError) throw new ModelRoutesError(e.message);
+    throw e;
+  }
+}
+
 export function removeReader(current: ReviewReaders, leg: string): ReviewReaders {
   if (current.readers[leg] === undefined) throw new ModelRoutesError(`no reader named '${leg}'`);
   const listed = current.tiers.filter((r) => r.legs.includes(leg)).map(rangeText);
