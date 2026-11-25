@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DECISION_SOURCE, DECISION_TYPE, recordDecision } from "../../../apps/cli/src/decisions.ts";
 import { AppError, UsageError } from "../../../apps/cli/src/errors.ts";
-import { eventsForItemFor, parsePayload } from "../../../apps/cli/src/events.ts";
+import { eventsForItemFor, parsePayload, type EventRow } from "../../../apps/cli/src/events.ts";
+import { and, desc, eq, inArray } from "../../../apps/cli/src/db/orm.ts";
 import { getItem, getLinks, getTags } from "../../../apps/cli/src/items.ts";
 import { asStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { IN_FLIGHT } from "./spinoff-vocab.ts";
@@ -267,6 +268,40 @@ export async function recordSpinoffCheck(
   return result;
 }
 
+/** The recorded checks on a trail, newest first as the trail is read: `--no-check` overrides are not checks. Pure. */
+function checksOf(events: readonly EventRow[]): Array<RecordedCheck & { from?: string }> {
+  return events.map((e) => parsePayload<RecordedCheck & { from?: string }>(e)).filter((p) => p.from === CHECK_FROM && p.to !== NO_CHECK_TO);
+}
+
+/** The newest check on this body: it decides, so a `go` that a later recheck overturned does not stand. Pure. */
+function checkOnBody<C extends { body_sha256?: string }>(checks: readonly C[], body: string | null | undefined): C | undefined {
+  const hash = bodyHash(body);
+  return checks.find((c) => c.body_sha256 === hash);
+}
+
+/**
+ * OS-241: each item's verdict from its newest check on its current body, in one read of their trails. An item with
+ * no check, or only checks on an older body, is absent. The Machine page places an undispatched ticket by it.
+ */
+export async function currentCheckVerdicts(db: Database | Store, items: readonly { id: string; body: string | null }[]): Promise<Map<string, string>> {
+  const store = asStore(db);
+  const out = new Map<string, string>();
+  if (items.length === 0) return out;
+  const t = store.t.event;
+  const events = (await store.q
+    .select()
+    .from(t)
+    .where(and(eq(t.source, DECISION_SOURCE), eq(t.type, DECISION_TYPE), inArray(t.item_id, items.map((i) => i.id))))
+    .orderBy(desc(t.ts), desc(t.id))) as EventRow[];
+  const byItem = new Map<string, EventRow[]>();
+  for (const e of events) if (e.item_id) byItem.set(e.item_id, [...(byItem.get(e.item_id) ?? []), e]);
+  for (const i of items) {
+    const current = checkOnBody(checksOf(byItem.get(i.id) ?? []), i.body);
+    if (current?.to) out.set(i.id, current.to);
+  }
+  return out;
+}
+
 /** What `ob spinoff check` prints. Pure. */
 export function renderCheckResult(r: CheckResult): string[] {
   const lines = [`${r.verdict}: ${r.ticket} · architect ${r.architect_pct} · checker ${r.checker_pct} · gap ${r.gap} · body ${r.body_sha256.slice(0, 8)}`];
@@ -383,13 +418,9 @@ export async function refuseUncheckedDispatch(
     );
   }
 
-  const hash = bodyHash(item.body);
   const events = await eventsForItemFor(store, item.id, TRAIL_LIMIT, { source: DECISION_SOURCE, type: DECISION_TYPE });
-  const checks = events
-    .map((e) => parsePayload<RecordedCheck & { from?: string }>(e))
-    .filter((p) => p.from === CHECK_FROM && p.to !== NO_CHECK_TO);
-  // The newest check on this body decides: a `go` that a later recheck overturned does not stand.
-  const current = checks.find((c) => c.body_sha256 === hash);
+  const checks = checksOf(events);
+  const current = checkOnBody(checks, item.body);
   if (current?.to === "go") return null;
   if (current) {
     const verdict = current.to as CheckVerdict;

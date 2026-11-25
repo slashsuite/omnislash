@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import machine from "../../../../docs/role-state-machine.json" with { type: "json" };
-import { BASE_PLACEMENT, inFlight, isNeedsHuman, machineStamp, PHASE_STATES, placeRow, type MachineItem } from "./machine.ts";
+import { BASE_PLACEMENT, inFlight, isNeedsHuman, landed, machineStamp, PHASE_STATES, placeOpen, placeRow, type MachineItem } from "./machine.ts";
 import { roleDefinition } from "./role-machine.ts";
 
 // OS-165: the Machine page's placement of in-flight spinoff rows on the role machine, and its live stamp.
@@ -106,18 +106,62 @@ describe("inFlight (OS-165)", () => {
     const rows = [row({ id: 1, status: "launched", trial_leg: "a" }), row({ id: 2, status: "launched", trial_leg: "b" })];
     expect(inFlight(rows, items).map((r) => r.row.id)).toEqual([2, 1]);
   });
+
+  it("names a ticket whose newest dispatch merged as landed, so it stays out of planning until it is closed (OS-241)", () => {
+    const rows = [
+      row({ id: 1, status: "launched" }),
+      row({ id: 2, status: "merged" }),
+      row({ id: 3, ticket_ref: "OS-5", item_id: "i5", status: "merged" }),
+      row({ id: 4, ticket_ref: "OS-5", item_id: "i5", status: "failed", error: "abandoned: reopened" }),
+    ];
+    const open = [...items, item({ id: "i5", ref: "OS-5" })];
+    expect([...landed(rows, open)]).toEqual(["i1"]);
+    // A trial is landed when either leg merged.
+    const trial = [row({ id: 1, status: "merged", trial_leg: "a" }), row({ id: 2, status: "failed", error: "abandoned: lost the trial", trial_leg: "b" })];
+    expect([...landed(trial, items)]).toEqual(["i1"]);
+  });
 });
 
 describe("machineStamp (OS-165)", () => {
   const spinoffs = [{ id: 1, status: "pending" }];
   const agents = [{ id: "os-1", status: "working" }];
 
-  it("changes when a row moves, a builder changes status or a ticket changes, and not otherwise", () => {
-    const before = machineStamp(spinoffs, agents, "s1");
-    expect(machineStamp([{ id: 1, status: "launching" }], agents, "s1")).not.toBe(before);
-    expect(machineStamp(spinoffs, [{ id: "os-1", status: "needs-human" }], "s1")).not.toBe(before);
-    expect(machineStamp(spinoffs, agents, "s2")).not.toBe(before);
-    expect(machineStamp([{ id: 1, status: "pending", verdict: "State: needs-human - x" }], agents, "s1")).not.toBe(before);
-    expect(machineStamp(spinoffs, agents, "s1")).toBe(before);
+  it("changes when a row moves, a builder changes status, a ticket changes or a decision is recorded, and not otherwise", () => {
+    const before = machineStamp(spinoffs, agents, "s1", "d1");
+    expect(machineStamp([{ id: 1, status: "launching" }], agents, "s1", "d1")).not.toBe(before);
+    expect(machineStamp(spinoffs, [{ id: "os-1", status: "needs-human" }], "s1", "d1")).not.toBe(before);
+    expect(machineStamp(spinoffs, agents, "s2", "d1")).not.toBe(before);
+    expect(machineStamp([{ id: 1, status: "pending", verdict: "State: needs-human - x" }], agents, "s1", "d1")).not.toBe(before);
+    // OS-241: an `ob spinoff check` touches no item; the decisions stamp is what moves.
+    expect(machineStamp(spinoffs, agents, "s1", "d2")).not.toBe(before);
+    expect(machineStamp(spinoffs, agents, "s1", "d1")).toBe(before);
+  });
+});
+
+describe("placeOpen (OS-241): an open ticket with no row in flight, on its planning state", () => {
+  it("places every planning state it returns on a state of the machine", () => {
+    for (const state of ["drilling", "checking", "owner_plan_call", "parked_idea"]) expect(ROLE_STATES.has(state)).toBe(true);
+  });
+
+  it("puts an unchecked ticket in drilling", () => {
+    expect(placeOpen({ tags: [], check: null })).toBe("drilling");
+  });
+
+  it("puts a ticket whose check on its current body ran and did not say no-go in the blind check", () => {
+    expect(placeOpen({ tags: [], check: "go" })).toBe("checking");
+    expect(placeOpen({ tags: [], check: "investigate" })).toBe("checking");
+  });
+
+  it("sends a no-go ticket back to drilling, as the machine's no-go move does", () => {
+    expect(placeOpen({ tags: [], check: "no-go" })).toBe("drilling");
+  });
+
+  it("puts a ticket tagged needs-jacobus on the owner's planning call, checked or not", () => {
+    expect(placeOpen({ tags: ["needs-jacobus"], check: null })).toBe("owner_plan_call");
+    expect(placeOpen({ tags: ["ui", "needs-jacobus"], check: "go" })).toBe("owner_plan_call");
+  });
+
+  it("parks a ticket tagged idea", () => {
+    expect(placeOpen({ tags: ["idea"], check: null })).toBe("parked_idea");
   });
 });

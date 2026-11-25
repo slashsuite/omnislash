@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { eventsForItemFor, nowIso, parsePayload, recordEventFor } from "./events.ts";
-import type { Store } from "./db/store.ts";
+import { asStore, type Store } from "./db/store.ts";
+import { and, eq, sql } from "./db/orm.ts";
 import type { Ctx } from "./ctx.ts";
 import { priorityName } from "./priority.ts";
 
@@ -51,6 +52,21 @@ export const HUMAN_ACTOR = "human";
 export function cleanNote(note: string | null | undefined): string | null {
   const t = typeof note === "string" ? note.trim() : "";
   return t === "" ? null : t;
+}
+
+/**
+ * OS-241: the decision count and the newest decision's id, as `<count>@<id>`. One aggregate read: the realtime
+ * snapshot carries it so a page placed by a decision (the Machine page reads `ob spinoff check` verdicts, which
+ * touch no item) re-reads when one is recorded.
+ */
+export async function decisionsStamp(db: Database | Store): Promise<string> {
+  const s = asStore(db);
+  const t = s.t.event;
+  const rows = (await s.q
+    .select({ n: sql<number | string>`count(*)`, last: sql<number | string | null>`max(${t.id})` })
+    .from(t)
+    .where(and(eq(t.source, DECISION_SOURCE), eq(t.type, DECISION_TYPE)))) as Array<{ n: number | string; last: number | string | null }>;
+  return `${String(rows[0]?.n ?? 0)}@${String(rows[0]?.last ?? "")}`;
 }
 
 /** Record one transition. A transition with no note is still recorded: from -> to, no text. */

@@ -22,6 +22,7 @@ import {
   BUSY_MOVES,
   DB_PATH,
   FOCUS_TITLES,
+  MACHINE_PLANNING,
   MACHINE_PROJECT,
   MACHINE_ROWS,
   GROUP_TEAM,
@@ -215,6 +216,12 @@ export async function seedMachine(store: Store): Promise<void> {
       status: r.status,
       request_at: "2026-11-24T08:00:00.000Z",
     });
+  }
+  for (const p of Object.values(MACHINE_PLANNING)) {
+    const [got] = (await store.q.select({ id: t.item.id }).from(t.item).where(eq(t.item.title, p.title)).limit(1)) as { id: string }[];
+    const id = got?.id ?? (await createItem(store, { type: "task", title: p.title, projectId: MACHINE_PROJECT, priority: 2 }));
+    await resetItem(store, id, null);
+    if (!got && p.tags.length > 0) await addTags(store, id, [...p.tags]);
   }
 }
 

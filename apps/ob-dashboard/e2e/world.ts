@@ -103,6 +103,12 @@ export const MACHINE_ROWS = {
   failed: { id: 9103, title: "Machine: a failed launch", status: "failed" },
 } as const;
 
+/** OS-241: MACHINE_PROJECT's open tickets with no row: one waiting on the owner's planning call, one still being drilled. */
+export const MACHINE_PLANNING = {
+  owner: { title: "Machine: a planning call for the owner", tags: ["needs-jacobus"] },
+  drilled: { title: "Machine: still being drilled", tags: [] },
+} as const;
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }

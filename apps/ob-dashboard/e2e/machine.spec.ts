@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { openPage } from "./nav.ts";
-import { cliEnv, MACHINE_ROWS } from "./world.ts";
+import { cliEnv, MACHINE_PLANNING, MACHINE_ROWS } from "./world.ts";
 
 const APP = fileURLToPath(new URL("..", import.meta.url));
 
@@ -24,12 +24,12 @@ const dot = (page: Page, title: string, state: string): Locator => page.getByRol
 test("each in-flight row sits in its state, and the one that waits on a person is counted", async ({ page }) => {
   await openPage(page, "/machine");
   await expect(page.getByRole("heading", { name: "Machine" })).toBeVisible();
-  await expect(page.getByText("3 in flight", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^3 in flight · \d+ in planning$/)).toBeVisible();
   await expect(dot(page, MACHINE_ROWS.queued.title, "Spinoff queued")).toHaveCount(1);
   await expect(dot(page, MACHINE_ROWS.handed.title, "Handed off, in the sentinel inbox")).toHaveCount(1);
   await expect(dot(page, MACHINE_ROWS.failed.title, "Failed or abandoned")).toHaveCount(1);
-  // Only the failed end is a state a person must act on, so exactly one row is counted as waiting.
-  await expect(page.getByText("1 need a person", { exact: true })).toBeVisible();
+  // The failed end and the owner's planning call are the states a person must act on.
+  await expect(page.getByText("2 need a person", { exact: true })).toBeVisible();
 });
 
 test("a claim from the CLI moves its dot to launching without a reload", async ({ page }) => {
@@ -51,11 +51,24 @@ test("closing a failed row's ticket from the CLI takes its dot off without a rel
   const name = await failed.evaluate((el) => el.getAttribute("aria-label") ?? el.textContent ?? "");
   const ref = /\bOS-\d+\b/.exec(name)?.[0];
   expect(ref, `ticket ref in "${name}"`).toBeTruthy();
-  await expect(page.getByText("1 need a person", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 need a person", { exact: true })).toBeVisible();
   await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
   ob("close", ref!);
   await expect(failed).toHaveCount(0);
-  await expect(page.getByText("2 in flight", { exact: true })).toBeVisible();
-  await expect(page.getByText("1 need a person", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/^2 in flight · /)).toBeVisible();
+  await expect(page.getByText("1 need a person", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+});
+
+test("an open ticket with no row sits on its planning state, and a box's click lists its tickets", async ({ page }) => {
+  await openPage(page, "/machine");
+  await expect(dot(page, MACHINE_PLANNING.owner.title, "Planning call only the owner can make")).toHaveCount(1);
+  await expect(dot(page, MACHINE_PLANNING.drilled.title, "Drilling (## Drilled, ## Done when)")).toHaveCount(1);
+  const list = page.getByRole("button", { name: /^Planning call only the owner can make/ });
+  await expect(list).toHaveAttribute("aria-expanded", "false");
+  await page.locator('[data-measure="n:owner_plan_call"]').click({ position: { x: 6, y: 6 } });
+  await expect(list).toHaveAttribute("aria-expanded", "true");
+  const row = page.getByRole("button", { name: new RegExp(`${MACHINE_PLANNING.owner.title}$`) });
+  await row.click();
+  await expect(page.getByRole("dialog").getByText(MACHINE_PLANNING.owner.title)).toBeVisible();
 });
