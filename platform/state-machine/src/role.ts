@@ -1,6 +1,7 @@
 import { setup } from "xstate";
 import { moveEvent, type TaskStatus } from "./item.ts";
-import type { SpinoffEvent, SpinoffState } from "./spinoff.ts";
+import { PHASES_BY_STATUS, SPINOFF_PHASES, type SpinoffPhase } from "./spinoff-phase.ts";
+import { SPINOFF_EDGES, type SpinoffEvent, type SpinoffState } from "./spinoff.ts";
 
 /**
  * The role state machine (OS-174, spike OS-167 section 6): what the skills and the code do to a piece of work,
@@ -13,6 +14,11 @@ import type { SpinoffEvent, SpinoffState } from "./spinoff.ts";
  * Several role states share one stored status (parked_idea, drilling and checking are all `item:open`; building,
  * the owner's call, partial and review are all `spinoff:launched`; the sentinel's sub-states are all `spinoff:ready-for-gate`), so
  * stored data cannot tell them apart. Nothing calls `decide` on it yet.
+ *
+ * OS-230: the role states that only mirror a row status or a phase (queued, launching, building, handed_off, failed,
+ * and the five phases) are built from the row and phase machines: `ROW_STATE` names each status's state, and the
+ * status a phase belongs to, and whether the state is final, come from `PHASES_BY_STATUS` and `SPINOFF_EDGES`. Only
+ * what those machines do not say (label, role, human_required) is kept here, in `MIRRORED`.
  *
  * A transition's `meta.source` is where the move is applied. A move code enforces names the symbol that applies
  * it (`<path>#<event or function>`), so it cannot drift with line numbers; a skill-only move keeps its
@@ -45,6 +51,57 @@ const item = (status: TaskStatus): Stored => ({ table: "item", status });
 
 type StateDef = RoleStateMeta & { id: string; terminal?: true };
 
+/**
+ * OS-230: the role state a row sits in per stored status when it has no phase (the dashboard places rows by it).
+ * `merged` sits on `closed`, which is the item's state (`item:done`), so it is not a mirrored state.
+ */
+export const ROW_STATE = {
+  pending: "queued",
+  launching: "launching",
+  launched: "building",
+  "ready-for-gate": "handed_off",
+  merged: "closed",
+  failed: "failed",
+} as const satisfies Record<SpinoffState, string>;
+
+/** The role states that mirror a row status or a phase: every one is a key of `MIRRORED`. */
+export type MirroredState = Exclude<(typeof ROW_STATE)[SpinoffState], "closed"> | SpinoffPhase;
+
+/** What the row and phase machines do not say about the states that mirror them. */
+const MIRRORED: Readonly<Record<MirroredState, Omit<RoleStateMeta, "stored">>> = {
+  queued: { label: "Spinoff queued", role: "system", human_required: false },
+  launching: { label: "Spinoff launching", role: "system", human_required: false },
+  building: { label: "Building", role: "builder", human_required: false },
+  reviewing: { label: "Skeptical review round", role: "reviewer", human_required: false },
+  pr_ci: { label: "PR open, waiting on CI", role: "builder", human_required: false },
+  handed_off: { label: "Handed off, in the sentinel inbox", role: "sentinel", human_required: false },
+  gating: { label: "Sentinel gating the PR head", role: "sentinel", human_required: false },
+  updating_pr: { label: "Sentinel updating a conflicting PR", role: "sentinel", human_required: false },
+  owner_merge_call: { label: "Merge call only the owner can make", role: "owner", human_required: true },
+  failed: { label: "Failed or abandoned", role: "system", human_required: false },
+};
+
+/**
+ * The mirrored states, built from the machines: a status's own state rides on that status and is final when the
+ * row machine has no move out of it; a phase's state rides on the status that holds the phase.
+ */
+export const MIRRORED_STATES: Readonly<Record<MirroredState, StateDef>> = (() => {
+  const out: Partial<Record<MirroredState, StateDef>> = {};
+  for (const status of Object.keys(SPINOFF_EDGES) as SpinoffState[]) {
+    const own = ROW_STATE[status];
+    if (own !== "closed") {
+      const terminal = Object.keys(SPINOFF_EDGES[status]).length === 0;
+      out[own] = { id: own, ...MIRRORED[own], stored: row(status), ...(terminal ? { terminal: true as const } : {}) };
+    }
+    for (const phase of PHASES_BY_STATUS[status] ?? []) out[phase] = { id: phase, ...MIRRORED[phase], stored: row(status) };
+  }
+  const missing = [...new Set([...SPINOFF_PHASES, ...Object.keys(MIRRORED)])].filter((id) => !(id in out));
+  if (missing.length) throw new Error(`role machine: no status holds ${missing.join(", ")}`);
+  return out as Record<MirroredState, StateDef>;
+})();
+
+const mirrored = (id: MirroredState): StateDef => MIRRORED_STATES[id];
+
 /** Every state, in the order the export writes them. `terminal` becomes `type: "final"`. */
 const STATES: readonly StateDef[] = [
   { id: "exploring", label: "Exploring the design", role: "muse", human_required: false, stored: null },
@@ -54,20 +111,23 @@ const STATES: readonly StateDef[] = [
   { id: "checking", label: "Blind check (measure twice)", role: "checker", human_required: false, stored: item("open") },
   { id: "owner_plan_call", label: "Planning call only the owner can make", role: "owner", human_required: true, stored: item("open") },
   { id: "spike", label: "Spike running", role: "builder", human_required: false, stored: row("launched") },
-  { id: "queued", label: "Spinoff queued", role: "system", human_required: false, stored: row("pending") },
-  { id: "launching", label: "Spinoff launching", role: "system", human_required: false, stored: row("launching") },
-  { id: "building", label: "Building", role: "builder", human_required: false, stored: row("launched") },
-  { id: "reviewing", label: "Skeptical review round", role: "reviewer", human_required: false, stored: row("launched") },
-  { id: "pr_ci", label: "PR open, waiting on CI", role: "builder", human_required: false, stored: row("launched") },
+  mirrored("queued"),
+  mirrored("launching"),
+  mirrored("building"),
+  mirrored("reviewing"),
+  mirrored("pr_ci"),
   { id: "owner_call", label: "Owner's call (verdict blocked or needs-human)", role: "owner", human_required: true, stored: row("launched") },
   { id: "partial", label: "Partial (verdict)", role: "builder", human_required: false, stored: row("launched") },
-  { id: "handed_off", label: "Handed off, in the sentinel inbox", role: "sentinel", human_required: false, stored: row("ready-for-gate") },
-  { id: "gating", label: "Sentinel gating the PR head", role: "sentinel", human_required: false, stored: row("ready-for-gate") },
-  { id: "updating_pr", label: "Sentinel updating a conflicting PR", role: "sentinel", human_required: false, stored: row("ready-for-gate") },
-  { id: "owner_merge_call", label: "Merge call only the owner can make", role: "owner", human_required: true, stored: row("ready-for-gate") },
+  mirrored("handed_off"),
+  mirrored("gating"),
+  mirrored("updating_pr"),
+  mirrored("owner_merge_call"),
   { id: "closed", label: "Closed (ticket done)", role: "sentinel", human_required: false, stored: item("done"), terminal: true },
-  { id: "failed", label: "Failed or abandoned", role: "system", human_required: false, stored: row("failed"), terminal: true },
+  mirrored("failed"),
 ];
+
+/** The ids of `STATES`, for the test that every mirrored state is drawn exactly once. */
+export const STATE_IDS: readonly string[] = STATES.map((s) => s.id);
 
 /** One move. `event` is the XState event name, written out as the export's `event`. */
 export type RoleTransition = RoleTransitionMeta & { from: string; to: string; event: string };

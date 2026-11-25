@@ -4,8 +4,9 @@ import { describe, expect, test } from "vitest";
 import { decide } from "../src/decide.ts";
 import { exportStates, exportTransitions, renderAll } from "../src/export.ts";
 import { moveEvent, taskMachine } from "../src/item.ts";
-import { ROLE_TRANSITIONS, type RoleStateMeta, roleMachine, type Stored } from "../src/role.ts";
-import { SPINOFF_EDGES, spinoffMachine } from "../src/spinoff.ts";
+import { MIRRORED_STATES, ROLE_TRANSITIONS, ROW_STATE, type RoleStateMeta, roleMachine, STATE_IDS, type Stored } from "../src/role.ts";
+import { PHASE_EVENT, PHASES_BY_STATUS, SPINOFF_PHASES, isSpinoffPhase, phaseStateOf, spinoffPhaseMachine } from "../src/spinoff-phase.ts";
+import { SPINOFF_EDGES, type SpinoffState, spinoffMachine } from "../src/spinoff.ts";
 
 // OS-174: the role machine and what the export makes of it.
 
@@ -72,6 +73,56 @@ describe("the role machine", () => {
       const b = stored(t.to);
       if (path !== "platform/state-machine/src/spinoff.ts" || a?.table !== "spinoff" || b?.table !== "spinoff") continue;
       expect(decide(spinoffMachine, a.status, event!), `${t.from} -> ${t.to}`).toEqual({ ok: true, to: b.status });
+    }
+  });
+});
+
+// OS-230: the role states that mirror a row status or a phase are built from spinoff.ts and spinoff-phase.ts. These
+// fail when the role machine and the row or phase machine say different things about the same state.
+describe("the states that mirror the row and phase machines", () => {
+  const STATUSES = Object.keys(SPINOFF_EDGES) as SpinoffState[];
+  const node = (id: string) => roleMachine.states[id]!;
+
+  test("every row status has its role state, riding on that status, final exactly when the row cannot move on", () => {
+    for (const status of STATUSES) {
+      const id = ROW_STATE[status];
+      expect(STATE_IDS, status).toContain(id);
+      if (id === "closed") continue; // a merged row's ticket is closed: the item's state, not the row's
+      expect(stored(id), status).toEqual({ table: "spinoff", status });
+      expect(node(id).type === "final", status).toBe(Object.keys(SPINOFF_EDGES[status]).length === 0);
+    }
+  });
+
+  test("every phase is a role state riding on the one status that holds it", () => {
+    for (const phase of SPINOFF_PHASES) {
+      const holders = STATUSES.filter((s) => (PHASES_BY_STATUS[s] ?? []).includes(phase));
+      expect(holders, phase).toHaveLength(1);
+      expect(stored(phase), phase).toEqual({ table: "spinoff", status: holders[0] });
+    }
+  });
+
+  test("each mirrored state is drawn once, with the meta it was built with", () => {
+    for (const [id, def] of Object.entries(MIRRORED_STATES)) {
+      expect(STATE_IDS.filter((s) => s === id), id).toHaveLength(1);
+      const { id: _, terminal: __, ...meta } = def;
+      expect(node(id).meta, id).toEqual(meta);
+    }
+    expect(new Set(STATE_IDS).size).toBe(STATE_IDS.length);
+  });
+
+  test("a move between two row-backed states is one the row machine or the phase machine allows", () => {
+    for (const t of ROLE_TRANSITIONS) {
+      const a = stored(t.from);
+      const b = stored(t.to);
+      if (a?.table !== "spinoff" || b?.table !== "spinoff") continue;
+      const at = `${t.from} -> ${t.to}`;
+      if (a.status !== b.status) {
+        const events = Object.entries(SPINOFF_EDGES[a.status]).filter(([, to]) => to === b.status);
+        expect(events.length, `${at}: no row event moves ${a.status} to ${b.status}`).toBeGreaterThan(0);
+      } else if (isSpinoffPhase(t.to)) {
+        const from = phaseStateOf(a.status, isSpinoffPhase(t.from) ? t.from : null);
+        expect(decide(spinoffPhaseMachine, from, PHASE_EVENT[t.to]), at).toEqual({ ok: true, to: phaseStateOf(a.status, t.to) });
+      }
     }
   });
 });
