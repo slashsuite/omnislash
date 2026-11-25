@@ -98,7 +98,7 @@ export const ENV_VARS: readonly EnvVarHelp[] = [
   { name: "OMNISLASH_DISABLE_FRONTIER", description: "Skip live GitHub issue lookups in wayfinder/next" },
   { name: "OB_T3_CREDENTIAL_FILE", description: "Override T3 Code credential file path" },
   { name: "OB_MODELS_FILE", description: "Path to models.jsonc (default ~/.config/ob/models.jsonc)" },
-  { name: "OB_T3_SETTINGS", description: "T3 Code settings.json that models sync-favorites reads (default ~/.t3/userdata/settings.json)" },
+  { name: "OB_T3_SETTINGS", description: "settings.json models sync-favorites reads (~/.t3/userdata/settings.json)" },
   { name: "OB_REPOS_DIR", description: "Override private repo rules directory" },
   { name: "OB_GITHUB_OWNER", description: "Default GitHub owner for project remote inference" },
   { name: "OB_GITHUB_PR_READ", description: "Set to 'off' to skip live GitHub PR checks in spinoff" },
@@ -1700,7 +1700,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["models reader add glm glm-5.3-flash", "models reader range 1-3 glm"],
       },
       "sync-favorites": {
-        summary: "Store this machine's T3 favourite models on the server (the Models page's dropdown options)",
+        summary: "Store this machine's T3 favourite models on the server",
         usage: ["models sync-favorites [--json]"],
         examples: ["models sync-favorites"],
       },
