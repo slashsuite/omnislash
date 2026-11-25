@@ -180,7 +180,7 @@ score reads as 5), and run exactly those:
 R=<skill dir>   # ~/.claude/skills/ob-skeptical-review
 D="${TMPDIR:-$HOME/.cache/tmp}"
 C=<the row's complexity, else 5>
-# an older ob or the API down: fall back to the two defaults rather than run no reader
+# an older ob or the API down: fall back to the default (opus) rather than run no reader
 legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="opus"
 for leg in $legs; do
   bun "$R/review-leg.ts" "$leg" < "$D/review-<ticket>-$leg.brief.md" > "$D/review-<ticket>-$leg.txt" 2>&1 &
