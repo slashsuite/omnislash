@@ -14,12 +14,15 @@ describe("RoleMachine (OS-187)", () => {
     render(<RoleMachine machine={machine} tickets={[]} />);
     const drawn = screen.getByRole("group", { name: "Role state machine" });
     expect(machine.states.length).toBeGreaterThan(0);
-    for (const s of machine.states) expect(within(drawn).getAllByText(s.label, { exact: false }).length).toBeGreaterThan(0);
+    // Exact and case-sensitive: "Idea" must not pass on "Parked idea (tag idea)", nor "Spike closed" on the
+    // "spike closed" arrow. No arrow label equals a state label, so a match here is the state's own box.
+    for (const s of machine.states) expect(within(drawn).getAllByText(s.label).length).toBeGreaterThan(0);
   });
 
   it("puts a ticket's dot in its state", () => {
     render(<RoleMachine machine={machine} tickets={[{ ref: "OS-170", title: "Empty state", state: "needs_human" }]} />);
-    expect(screen.getAllByText("OS-170").length).toBeGreaterThan(0);
+    // The dot is named after the box it sits in, so a wrong state (or the "Not in any state" box) fails here.
+    expect(screen.getByRole("img", { name: "OS-170 Empty state, in Needs human (verdict)" })).toBeTruthy();
   });
 
   it("maps human states to human, the failed end to failed and the other ends to terminal", () => {

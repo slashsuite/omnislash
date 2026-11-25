@@ -4,8 +4,8 @@
 import type { StateMachineDefinition, StateMachineItem, StateMachineKind } from "@slashsuite/ui-react";
 
 /** One state and one transition as the v1 JSON writes them (platform/state-machine/src/export.ts). */
-export type RoleStateJson = { id: string; label: string; role: string; human_required: boolean; terminal: boolean };
-export type RoleTransitionJson = { from: string; to: string; label: string; event: string; actor: string; source: string };
+type RoleStateJson = { id: string; label: string; role: string; human_required: boolean; terminal: boolean };
+type RoleTransitionJson = { from: string; to: string; label: string; event: string; actor: string; source: string };
 
 /** The parts of the role machine JSON the diagram reads. */
 export type RoleMachineJson = { states: readonly RoleStateJson[]; transitions: readonly RoleTransitionJson[] };

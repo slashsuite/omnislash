@@ -43,7 +43,7 @@ async function save(page: Page, click: () => Promise<void>) {
   await answered;
 }
 
-const row = (page: Page, name: string) => page.getByRole("region", { name, exact: true });
+const row = (page: Page, name: string) => page.getByRole("article", { name, exact: true });
 
 test.beforeEach(() => reseed());
 
@@ -225,11 +225,11 @@ test("switching the active profile switches it for every machine", async ({ page
   await page.getByRole("combobox", { name: "Profile to make active" }).selectOption("alt");
   await save(page, () => page.getByRole("button", { name: "Make active for every machine" }).click());
   await expect(page.getByText(/^Active: alt/)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Routes in alt" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Routes in alt" })).toBeVisible();
   expect(shown().active).toBe("alt");
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
-  await expect(page.getByRole("region", { name: "Routes in alt" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Routes in alt" })).toBeVisible();
 });
 
 test("the OpenCode Go credit shows its status and when it was last checked", async ({ page }) => {
