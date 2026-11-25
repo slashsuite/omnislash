@@ -9,6 +9,8 @@ import { setConfig } from "../../cli/src/config.ts";
 import { recordCredentialCheck } from "../../cli/src/credentials.ts";
 import { clearCredentialCheck } from "../../cli/src/secrets.ts";
 import { MODEL_ROUTES_KEY } from "../../cli/src/model-routes.ts";
+import { saveFavorites } from "../../cli/src/t3-favorites.ts";
+import { configIo } from "../../../platform/dashboard-kit/src/server/config-io.ts";
 import { eq, inArray } from "../../cli/src/db/orm.ts";
 import { DECISION_SOURCE, DECISION_TYPE } from "../../cli/src/decisions.ts";
 import { addTags, createItem } from "../../cli/src/items.ts";
@@ -28,6 +30,7 @@ import {
   REVIEW_NOTE,
   REVIEW_REF,
   REVIEW_TITLE,
+  SEED_FAVOURITES,
   SEED_CREDIT_AT,
   SEED_ROUTES,
   SIBLING_OPENED,
@@ -217,6 +220,7 @@ export async function seedMachine(store: Store): Promise<void> {
 
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
+  await saveFavorites(configIo(store), SEED_FAVOURITES, new Date(SEED_CREDIT_AT));
   await seedCredit(store, "ok");
   await seedHome(store, "full");
   await seedQueue(store);

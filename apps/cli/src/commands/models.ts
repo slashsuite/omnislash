@@ -36,6 +36,7 @@ import {
 } from "../model-routes.ts";
 import { editModelRoutes, loadRouteInputs, machineConfigIo } from "../model-routes-io.ts";
 import { providerOverWeeklyLimit } from "./usage.ts";
+import { T3FavoritesError, readT3Favorites, saveFavorites, t3SettingsPath } from "../t3-favorites.ts";
 
 // -----------------------------------------------------------------------------
 // `ob models` (OB-1969, OS-145): which model runs every use. One server setting, `model_routes`, holds the profiles
@@ -53,6 +54,7 @@ const USAGE = [
   "ob models reader add <leg> <model> [--profile <p>]",
   "ob models reader remove <leg> [--profile <p>]",
   "ob models reader range <from-to> <leg>... [--profile <p>]   (`reader tier <tier>` is the old spelling)",
+  "ob models sync-favorites",
   "ob models list | init | legs [--days <n>]",
 ].join("\n");
 
@@ -337,6 +339,26 @@ function legs(ctx: Ctx): void {
   print(groups.map(formatTrendLine).join("\n"));
 }
 
+/**
+ * `ob models sync-favorites` (OS-240): this machine's T3 favourite models, stored on the server as the Models page's
+ * dropdown options. Run where T3 Code runs; on a client it writes over the API.
+ */
+async function syncFavorites(ctx: Ctx): Promise<void> {
+  const path = t3SettingsPath();
+  let models: string[];
+  try {
+    models = readT3Favorites(path);
+  } catch (e) {
+    if (e instanceof T3FavoritesError) throw new AppError(e.message);
+    throw e;
+  }
+  if (models.length === 0) throw new AppError(`${path} lists no favourite models: favourite one in T3 first (the server's list is left as it was)`);
+  const saved = await saveFavorites(await io(ctx), models);
+  if (ctx.mode === "json") return print(JSON.stringify({ file: path, ...saved }, null, 2));
+  if (ctx.mode === "quiet") return print(saved.models.join("\n"));
+  print([`synced ${saved.models.length} T3 favourite model${saved.models.length === 1 ? "" : "s"} from ${path} to the server:`, ...saved.models.map((m) => `  ${m}`)].join("\n"));
+}
+
 export async function cmdModels(ctx: Ctx): Promise<void> {
   const sub = ctx.args[0] ?? "show";
   if (sub === "show") return show(ctx);
@@ -348,5 +370,6 @@ export async function cmdModels(ctx: Ctx): Promise<void> {
   if (sub === "list") return list(ctx);
   if (sub === "init") return init();
   if (sub === "legs") return legs(ctx);
+  if (sub === "sync-favorites") return syncFavorites(ctx);
   throw new UsageError(`unknown models subcommand '${sub}'\n${USAGE}`);
 }

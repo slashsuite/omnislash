@@ -31,6 +31,9 @@ export const SEED_ROUTES = {
   },
 };
 
+/** OS-240: the T3 favourite models `ob models sync-favorites` stored, the Models page's dropdown options. */
+export const SEED_FAVOURITES = ["claudeAgent:claude-opus-5-5", "claudeAgent:claude-sonnet-5-5", "claudeAgent:claude-haiku-5-5", "opencode:opencode-go/kimi"];
+
 /** OS-23: the last `ob creds check opencode-go` every test starts from: ok, at a fixed time. */
 export const SEED_CREDIT_AT = "2026-11-24T08:30:12.000Z";
 
