@@ -21,14 +21,17 @@ import {
   Text,
   TextLink,
 } from "@slashsuite/ui-react";
+import { ModelChain, ModelSelect } from "../components/ModelChain.tsx";
 import { checkedAtText, creditState } from "../lib/credit.ts";
+import { chainOf } from "../lib/favorites.ts";
 import { draftsOf, mergeNext, rangesOf, splitAt, type DraftRange } from "../lib/ranges.ts";
 import { getModels, saveModels, type ModelsOp, type ModelsPage, type ModelsView } from "../server/models.ts";
 
 // OS-146: the Models page over OS-145's model routing. It edits the server's `model_routes` setting, the one
 // `ob models` prints and changes, so a chain saved here is what every machine launches on (unless that machine's
 // own models file overrides it). Every value is checked on the server by model-routes.ts; the page sends what was
-// typed and shows the refusal word for word. OS-23: the OpenCode Go credit state (from omnibus's retired Reviewers
+// picked and shows the refusal word for word. OS-240: every model is picked from Jacobus's T3 favourites (stored by
+// `ob models sync-favorites`), never typed, so a chain saves as <provider>:<model> ids. OS-23: the OpenCode Go credit state (from omnibus's retired Reviewers
 // page) sits above the review readers, since the paid readers run on that account.
 
 type ModelsSearch = { profile?: string };
@@ -83,7 +86,7 @@ function useDraft(from: string) {
   return [draft, setDraft] as const;
 }
 
-function RouteRow({ row, view, send }: { row: ModelsView["routes"][number]; view: ModelsView; send: Send }) {
+function RouteRow({ row, view, favourites, send }: { row: ModelsView["routes"][number]; view: ModelsView; favourites: string[]; send: Send }) {
   // A local row's editor sets the server value underneath the override, so it starts from that, not the file's.
   const base = row.source === "local" ? row.server : { chain: row.chain, effort: row.effort };
   const [chain, setChain] = useDraft(base?.chain.join(", ") ?? "");
@@ -105,19 +108,17 @@ function RouteRow({ row, view, send }: { row: ModelsView["routes"][number]; view
             machines use.
           </Caption>
         )}
+        <ModelChain
+          name={row.route}
+          chain={chainOf(chain)}
+          favourites={favourites}
+          disabled={s.busy}
+          onChange={(next) => {
+            setChain(next.join(", "));
+            s.clear();
+          }}
+        />
         <Cluster gap="xs">
-          <Input
-            aria-label={`Models for ${row.route}`}
-            value={chain}
-            placeholder="model, fallback model"
-            spellCheck={false}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              setChain(e.target.value);
-              s.clear();
-            }}
-            size="sm"
-            width="fill"
-          />
           <Select
             aria-label={`Effort for ${row.route}`}
             value={effort}
@@ -128,7 +129,7 @@ function RouteRow({ row, view, send }: { row: ModelsView["routes"][number]; view
             size="sm"
             items={[{ value: "", label: "no effort" }, ...view.efforts.map((x) => ({ value: x, label: x }))]}
           />
-          <Button size="sm" disabled={s.busy} onClick={() => s.run({ op: "setRoute", profile, route: row.route, chain, ...(effort ? { effort } : {}) })}>
+          <Button size="sm" disabled={s.busy || chainOf(chain).length === 0} onClick={() => s.run({ op: "setRoute", profile, route: row.route, chain, ...(effort ? { effort } : {}) })}>
             {s.busy ? "Saving…" : `Save ${row.route}`}
           </Button>
           {row.server && (
@@ -143,7 +144,23 @@ function RouteRow({ row, view, send }: { row: ModelsView["routes"][number]; view
   );
 }
 
-function ReaderRow({ leg, model, fallback, others, profile, send }: { leg: string; model: string; fallback: string | null; others: string[]; profile: string; send: Send }) {
+function ReaderRow({
+  leg,
+  model,
+  fallback,
+  others,
+  profile,
+  favourites,
+  send,
+}: {
+  leg: string;
+  model: string;
+  fallback: string | null;
+  others: string[];
+  profile: string;
+  favourites: string[];
+  send: Send;
+}) {
   const [value, setValue] = useDraft(model);
   const s = useSend(send);
   return (
@@ -159,16 +176,15 @@ function ReaderRow({ leg, model, fallback, others, profile, send }: { leg: strin
           />
         </Cluster>
         <Cluster gap="xs">
-          <Input
-            aria-label={`Model for reader ${leg}`}
+          <ModelSelect
+            label={`Model for reader ${leg}`}
             value={value}
-            spellCheck={false}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-              setValue(e.target.value);
+            favourites={favourites}
+            disabled={s.busy}
+            onChange={(m) => {
+              setValue(m);
               s.clear();
             }}
-            size="sm"
-            width="fill"
           />
           <Button size="sm" disabled={s.busy} onClick={() => s.run({ op: "readerAdd", profile, leg, model: value })}>
             {`Save reader ${leg}`}
@@ -183,7 +199,7 @@ function ReaderRow({ leg, model, fallback, others, profile, send }: { leg: strin
   );
 }
 
-function AddReader({ profile, send }: { profile: string; send: Send }) {
+function AddReader({ profile, favourites, send }: { profile: string; favourites: string[]; send: Send }) {
   const [leg, setLeg] = useState("");
   const [model, setModel] = useState("");
   const s = useSend(send);
@@ -191,8 +207,8 @@ function AddReader({ profile, send }: { profile: string; send: Send }) {
     <Stack gap="xs">
       <Cluster gap="xs">
         <Input aria-label="New reader name" placeholder="name" value={leg} spellCheck={false} onChange={(e: ChangeEvent<HTMLInputElement>) => setLeg(e.target.value)} size="sm" width="sm" />
-        <Input aria-label="New reader model" placeholder="model id" value={model} spellCheck={false} onChange={(e: ChangeEvent<HTMLInputElement>) => setModel(e.target.value)} size="sm" width="fill" />
-        <Button size="sm" variant="outline" disabled={s.busy} onClick={() => s.run({ op: "readerAdd", profile, leg, model })}>
+        <ModelSelect label="New reader model" value={model} favourites={favourites} disabled={s.busy} onChange={setModel} />
+        <Button size="sm" variant="outline" disabled={s.busy || !leg.trim() || !model} onClick={() => s.run({ op: "readerAdd", profile, leg, model })}>
           Add reader
         </Button>
       </Cluster>
@@ -313,7 +329,7 @@ function useRangeSend(send: Send) {
 type BuilderValue = { chain: string; effort: string };
 
 /** The profile's builder ranges (OS-177): which model a builder launches on for each complexity score. */
-function BuilderRanges({ view, send }: { view: ModelsView; send: Send }) {
+function BuilderRanges({ view, favourites, send }: { view: ModelsView; favourites: string[]; send: Send }) {
   const bands = view.builder.bands;
   const [rows, setRows] = useRows(draftsOf(bands, (b): BuilderValue => ({ chain: b.chain.join(", "), effort: b.effort ?? "" })));
   const s = useRangeSend(send);
@@ -346,14 +362,12 @@ function BuilderRanges({ view, send }: { view: ModelsView; send: Send }) {
           cells={(row, i, set) => (
             <>
               <TableCell>
-                <Input
-                  aria-label={`Models, builder row ${i + 1}`}
-                  value={row.value.chain}
-                  placeholder="model, fallback model"
-                  spellCheck={false}
+                <ModelChain
+                  name={`builder row ${i + 1}`}
+                  chain={chainOf(row.value.chain)}
+                  favourites={favourites}
                   disabled={s.busy}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => set({ ...row.value, chain: e.target.value })}
-                  width="fill"
+                  onChange={(next) => set({ ...row.value, chain: next.join(", ") })}
                 />
               </TableCell>
               <TableCell>
@@ -500,6 +514,22 @@ function Credit({ credit }: { credit: ModelsPage["credit"] }) {
   );
 }
 
+/** Where the dropdowns' options come from, and how to refresh them: they are synced from the T3 machine, never edited here. */
+function Favourites({ favourites }: { favourites: ModelsPage["favourites"] }) {
+  if (!favourites || favourites.models.length === 0)
+    return (
+      <Callout tone="warn" title="No T3 favourite models synced yet">
+        The model dropdowns offer only what is stored now. Run ob models sync-favorites on the machine T3 Code runs on.
+      </Callout>
+    );
+  return (
+    <Caption tone="muted">
+      Models are picked from your {favourites.models.length} T3 favourites, synced <time dateTime={favourites.synced_at}>{checkedAtText(favourites.synced_at)}</time>. Run ob models
+      sync-favorites on the T3 machine after changing them.
+    </Caption>
+  );
+}
+
 function Models() {
   const loaded = Route.useLoaderData();
   const [page, setPage] = useState<ModelsPage>(loaded);
@@ -523,6 +553,7 @@ function Models() {
   };
 
   const review = view.review;
+  const favourites = page.favourites?.models ?? [];
   return (
     <>
       <PageHeader
@@ -538,12 +569,13 @@ function Models() {
         <Caption tone="muted">
           This host's models file: {view.file.path} {view.file.present ? "(read; shown, never edited here)" : "(none)"}
         </Caption>
+        <Favourites favourites={page.favourites} />
         <Profiles key={`${view.profile}:${view.active.name}:${view.profiles.join(",")}`} view={view} send={send} />
-        <BuilderRanges key={view.profile} view={view} send={send} />
+        <BuilderRanges key={view.profile} view={view} favourites={favourites} send={send} />
         <Card title={`Routes in ${view.profile}`} count={view.routes.length}>
           <Stack gap="sm">
             {view.routes.map((r) => (
-              <RouteRow key={`${view.profile}:${r.route}`} row={r} view={view} send={send} />
+              <RouteRow key={`${view.profile}:${r.route}`} row={r} view={view} favourites={favourites} send={send} />
             ))}
           </Stack>
         </Card>
@@ -566,10 +598,11 @@ function Models() {
                 fallback={r.fallback ?? null}
                 others={Object.keys(review.value.readers).filter((o) => o !== leg)}
                 profile={view.profile}
+                favourites={favourites}
                 send={send}
               />
             ))}
-            <AddReader key={`${view.profile}:${Object.keys(review.value.readers).join(",")}`} profile={view.profile} send={send} />
+            <AddReader key={`${view.profile}:${Object.keys(review.value.readers).join(",")}`} profile={view.profile} favourites={favourites} send={send} />
             <ReviewRanges key={view.profile} view={view} send={send} />
           </Stack>
         </Card>

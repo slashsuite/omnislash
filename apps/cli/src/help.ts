@@ -98,6 +98,7 @@ export const ENV_VARS: readonly EnvVarHelp[] = [
   { name: "OMNISLASH_DISABLE_FRONTIER", description: "Skip live GitHub issue lookups in wayfinder/next" },
   { name: "OB_T3_CREDENTIAL_FILE", description: "Override T3 Code credential file path" },
   { name: "OB_MODELS_FILE", description: "Path to models.jsonc (default ~/.config/ob/models.jsonc)" },
+  { name: "OB_T3_SETTINGS", description: "settings.json models sync-favorites reads (~/.t3/userdata/settings.json)" },
   { name: "OB_REPOS_DIR", description: "Override private repo rules directory" },
   { name: "OB_GITHUB_OWNER", description: "Default GitHub owner for project remote inference" },
   { name: "OB_GITHUB_PR_READ", description: "Set to 'off' to skip live GitHub PR checks in spinoff" },
@@ -1661,7 +1662,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   models: {
     section: "Reviews & Models",
     summary: "Which model runs every use: routes, profiles, chains, review readers",
-    usage: ["models [show|get|set|unset|use|reader|list|init|legs]"],
+    usage: ["models [show|get|set|unset|use|reader|sync-favorites|list|init|legs]"],
     subcommands: {
       show: {
         summary: "Print the active profile and every route, labelled local, server or default",
@@ -1697,6 +1698,11 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         usage: ["models reader add <leg> <model>", "models reader remove <leg>", "models reader range <from-to> <leg>... (old: reader tier <tier>)"],
         flags: [{ flag: "--profile <p>", description: "The profile to write (default: the active one)" }],
         examples: ["models reader add glm glm-5.3-flash", "models reader range 1-3 glm"],
+      },
+      "sync-favorites": {
+        summary: "Store this machine's T3 favourite models on the server",
+        usage: ["models sync-favorites [--json]"],
+        examples: ["models sync-favorites"],
       },
       list: {
         summary: "List this machine's models-file profiles and mark its active one",

@@ -55,7 +55,7 @@ test("the header's Models tab opens every route with where its model comes from"
 
   // The builder routes are the builder ranges (OS-176), not route rows.
   for (const route of [...FIXED_ROUTES.filter((r) => !r.startsWith("builder.")), "job.nightly"]) {
-    await expect(row(page, route).getByRole("textbox", { name: `Models for ${route}` })).toBeVisible();
+    await expect(row(page, route).getByRole("button", { name: `Add a model to ${route}` })).toBeVisible();
   }
   await expect(row(page, "builder.complex")).toHaveCount(0);
   await expect(row(page, "job.nightly").getByText("server", { exact: true })).toBeVisible();
@@ -67,18 +67,27 @@ test("the header's Models tab opens every route with where its model comes from"
   const local = row(page, "sweep.first");
   await expect(local.getByText("local", { exact: true })).toBeVisible();
   await expect(local.getByText(`Overridden on this host by ${MODELS_FILE}`)).toBeVisible();
-  await expect(local.getByRole("textbox", { name: "Models for sweep.first" })).toHaveValue("");
+  await expect(local.getByRole("combobox", { name: "Model 1 for sweep.first" })).toHaveCount(0);
 });
 
-test("a chain saved on the page is the server value the CLI reads", async ({ page }) => {
+// OS-240: every model is picked from the T3 favourites the server holds, so the saved chain is provider-prefixed.
+test("a chain picked from the favourites is the server value the CLI reads", async ({ page }) => {
   await open(page, "/models");
   const r = row(page, "job.nightly");
-  await r.getByRole("textbox", { name: "Models for job.nightly" }).fill("claude-sonnet-5-5, claude-haiku-5-5");
+  const first = r.getByRole("combobox", { name: "Model 1 for job.nightly" });
+  await expect(first).toHaveValue("claude-sonnet-5-5");
+  await expect(first.getByRole("option", { name: "claude-sonnet-5-5 (not a favourite)" })).toBeAttached();
+  await first.selectOption("claudeAgent:claude-sonnet-5-5");
+  await r.getByRole("button", { name: "Add a model to job.nightly" }).click();
+  await r.getByRole("combobox", { name: "Model 2 for job.nightly" }).selectOption("claudeAgent:claude-haiku-5-5");
   await save(page, () => r.getByRole("button", { name: "Save job.nightly" }).click());
-  await expect(r.getByText("claude-sonnet-5-5 → claude-haiku-5-5", { exact: true })).toBeVisible();
+  await expect(r.getByText("claudeAgent:claude-sonnet-5-5 → claudeAgent:claude-haiku-5-5", { exact: true })).toBeVisible();
   await expect(r.getByText("saved", { exact: true })).toBeVisible();
 
-  expect(shown().routes.find((x) => x.route === "job.nightly")).toMatchObject({ chain: ["claude-sonnet-5-5", "claude-haiku-5-5"], source: "server" });
+  expect(shown().routes.find((x) => x.route === "job.nightly")).toMatchObject({
+    chain: ["claudeAgent:claude-sonnet-5-5", "claudeAgent:claude-haiku-5-5"],
+    source: "server",
+  });
 });
 
 const builder = (page: Page) => row(page, "Builder ranges in claude");
@@ -89,7 +98,7 @@ test("the builder ranges show as rows, and moving a boundary is the server value
   const b = builder(page);
   await expect(b.getByRole("textbox", { name: /^From, builder row/ })).toHaveCount(3);
   await expect(b.getByRole("textbox", { name: "From, builder row 3" })).toHaveValue("7");
-  await expect(b.getByRole("textbox", { name: "Models, builder row 3" })).toHaveValue("claude-opus-5-5");
+  await expect(b.getByRole("combobox", { name: "Model 1 for builder row 3" })).toHaveValue("claude-opus-5-5");
   await expect(b.getByRole("combobox", { name: "Effort, builder row 3" })).toHaveValue("high");
 
   await b.getByRole("textbox", { name: "To, builder row 1" }).fill("4");
@@ -130,12 +139,12 @@ test("a range split and merged back round-trips the stored value", async ({ page
     await b.getByRole("button", { name: "Split builder row 3" }).click();
     await expect(b.getByRole("textbox", { name: "To, builder row 3" })).toHaveValue("8");
     await expect(b.getByRole("textbox", { name: "From, builder row 4" })).toHaveValue("9");
-    await b.getByRole("textbox", { name: "Models, builder row 4" }).fill("claude-sonnet-5-5");
+    await b.getByRole("combobox", { name: "Model 1 for builder row 4" }).selectOption("claudeAgent:claude-sonnet-5-5");
     await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
     await expect(b.getByText("saved", { exact: true })).toBeVisible();
     expect(bands().slice(2)).toEqual([
       [7, 8, "claude-opus-5-5", "high", "server"],
-      [9, 10, "claude-sonnet-5-5", "high", "server"],
+      [9, 10, "claudeAgent:claude-sonnet-5-5", "high", "server"],
     ]);
   });
 
@@ -167,15 +176,15 @@ test("a route set with the CLI shows on the page after a reload", async ({ page 
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
   await expect(row(page, "checker").getByText("server", { exact: true })).toBeVisible();
-  await expect(row(page, "checker").getByRole("textbox", { name: "Models for checker" })).toHaveValue("claude-opus-5-5");
+  await expect(row(page, "checker").getByRole("combobox", { name: "Model 1 for checker" })).toHaveValue("claude-opus-5-5");
 });
 
 test("a reader is added", async ({ page }) => {
   await open(page, "/models");
   await page.getByRole("textbox", { name: "New reader name" }).fill("kimi");
-  await page.getByRole("textbox", { name: "New reader model" }).fill("opencode-go/kimi");
+  await page.getByRole("combobox", { name: "New reader model" }).selectOption("opencode:opencode-go/kimi");
   await save(page, () => page.getByRole("button", { name: "Add reader" }).click());
-  await expect(row(page, "kimi").getByRole("textbox", { name: "Model for reader kimi" })).toHaveValue("opencode-go/kimi");
+  await expect(row(page, "kimi").getByRole("combobox", { name: "Model for reader kimi" })).toHaveValue("opencode:opencode-go/kimi");
 });
 
 test("a reader on a range is refused removal until it is taken off its ranges", async ({ page }) => {

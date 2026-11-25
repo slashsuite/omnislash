@@ -11,6 +11,7 @@ import {
   type ModelsOp,
   type ModelsView,
 } from "../../../../platform/dashboard-kit/src/server/model-routes.ts";
+import { loadFavorites, type T3Favorites } from "../../../cli/src/t3-favorites.ts";
 import { providedStore } from "../../provided-store.ts";
 
 // OS-146: the Models page's server functions over OS-145's `model_routes` setting. The store comes from serve.ts
@@ -27,6 +28,8 @@ export interface ModelsPage {
   notes: string[];
   /** The last recorded `ob creds check opencode-go`, or null when it was never checked. */
   credit: CredentialCheckRow | null;
+  /** OS-240: the T3 favourite models `ob models sync-favorites` last stored, the model dropdowns' options; null when never synced. */
+  favourites: T3Favorites | null;
 }
 
 /** This host's models file, or null with the reason it could not be read (shown, not thrown). */
@@ -48,12 +51,13 @@ export const getModels = createServerFn({ method: "GET" })
     const store = await providedStore();
     const io = configIo(store);
     const credit = await lastCredentialCheck(store, "opencode-go");
+    const favourites = await loadFavorites(io);
     try {
-      return { view: await loadModelsView(io, file, { profile: data.profile, filePath: modelsFilePath() }), notes, credit };
+      return { view: await loadModelsView(io, file, { profile: data.profile, filePath: modelsFilePath() }), notes, credit, favourites };
     } catch (e) {
       if (!(e instanceof ModelRoutesError) || data.profile === undefined) throw e;
       notes.push(e.message);
-      return { view: await loadModelsView(io, file, { filePath: modelsFilePath() }), notes, credit };
+      return { view: await loadModelsView(io, file, { filePath: modelsFilePath() }), notes, credit, favourites };
     }
   });
 
