@@ -1,8 +1,9 @@
+import { existsSync } from "node:fs";
 import { createServerFn } from "@tanstack/react-start";
 import { inArray, or } from "../../../cli/src/db/orm.ts";
 import { itemsStamp, tagsForItems } from "../../../cli/src/items.ts";
 import { listAgents } from "../../../../platform/cli-coord/src/agent.ts";
-import { builderIdOf } from "../../../../platform/cli-coord/src/clean-repo.ts";
+import { builderIdOf, rowStateText } from "../../../../platform/cli-coord/src/clean-repo.ts";
 import { listSpinoffs, rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
 import { providedStore } from "../../provided-store.ts";
@@ -11,6 +12,14 @@ import { inFlight, machineStamp, phaseOf, placeRow, type MachineItem, type Machi
 // OS-165: the Machine page's one read. The in-flight spinoff rows, each placed on its role state (lib/machine.ts
 // placeRow, section 7 of the role machine doc), and the stamp the page compares the live snapshot against. Read-only.
 // The verdict (recorded, else the branch's State: line) is read only for handed-off rows (see placeRow).
+
+/**
+ * A handed-off row's verdict: the recorded one, else the branch's State: line, read only when the row's worktree is
+ * on this host. git run against an empty or missing worktree reads the server's own checkout and borrows its verdict.
+ */
+function verdictOf(row: Parameters<typeof rowVerdictState>[0]): string | null {
+  return row.worktree && existsSync(row.worktree) ? rowVerdictState(row) : rowStateText(row);
+}
 
 async function machineView(): Promise<MachineView> {
   const store = await providedStore();
@@ -40,7 +49,7 @@ async function machineView(): Promise<MachineView> {
       builderStatus: statusOf.get(builderIdOf(row)) ?? null,
       spike: item ? isSpikeTagged(tags.get(item.id) ?? []) : false,
       error: row.error ?? null,
-      verdict: row.status === "ready-for-gate" ? rowVerdictState(row) : null,
+      verdict: row.status === "ready-for-gate" ? verdictOf(row) : null,
     }),
   }));
   return { rows, stamp: machineStamp(spinoffs, agents, itemStamp) };
