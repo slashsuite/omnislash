@@ -225,4 +225,6 @@ export interface Snapshot {
   /** OS-25: the item count and latest updated_at. Any item write moves it (an `ob order` stamps the moved item), so the
    *  Queue page re-reads its list when it changes. Optional: an API host older than OS-25 sends none. */
   itemsStamp?: string;
+  /** OS-241: the decision count and newest id; an `ob spinoff check` moves it, so the Machine page re-reads. Optional: an older API host sends none. */
+  decisionsStamp?: string;
 }

@@ -1,5 +1,6 @@
 // OS-165: the Machine page's pure half. Which in-flight spinoff rows there are, and which state of the role
-// machine (platform/state-machine, drawn by RoleMachine) each one sits in. Nothing here reads a file or the store.
+// machine (platform/state-machine, drawn by RoleMachine) each one sits in. OS-241: the open tickets with no row in
+// flight sit in the planning states. Nothing here reads a file or the store.
 import { ROW_STATE } from "../../../../platform/state-machine/src/role.ts";
 import { SPINOFF_PHASES } from "../../../../platform/state-machine/src/spinoff-phase.ts";
 import type { SpinoffState } from "../../../../platform/state-machine/src/spinoff.ts";
@@ -25,9 +26,12 @@ export interface MachineItem {
   closed: boolean;
 }
 
-/** One in-flight row, placed: its ref and title, and the role state id it sits in. */
+/** One ticket, placed: its ref and title, and the role state id it sits in. */
 export interface MachineRow {
-  id: number;
+  /** The spinoff row's id, or null for an open ticket with no row in flight (OS-241). */
+  id: number | null;
+  /** The item, for the drawer that opens it. */
+  itemId: string;
   /** The dot's id: the ticket ref, or `<ref>-b` for leg b of a model trial, so the two legs never share one. */
   ref: string;
   title: string;
@@ -92,6 +96,29 @@ export function phaseOf(row: { phase?: unknown }): string | null {
   return typeof row.phase === "string" && row.phase ? row.phase : null;
 }
 
+/** The tag that puts an undispatched ticket on the owner's planning call (OS-241). */
+export const OWNER_PLAN_TAG = "needs-jacobus";
+/** The tag that parks a raw idea (skills/ob-muse: `ob tag idea`). */
+export const IDEA_TAG = "idea";
+/** The check verdict that sends a checked ticket back to drilling (role machine: checking -> drilling on no-go). */
+const NO_GO = "no-go";
+
+/**
+ * OS-241: the planning state of an open ticket with no row in flight. Pure.
+ *
+ * - Tagged needs-jacobus: the planning call only the owner can make.
+ * - Tagged idea: a parked idea.
+ * - A check on its current body that did not say no-go (go, waiting to be dispatched, or an older verdict still to
+ *   resolve): the blind check.
+ * - Otherwise, no check, a no-go or a check on an older body: drilling.
+ */
+export function placeOpen(input: { tags: readonly string[]; check: string | null }): string {
+  if (input.tags.includes(OWNER_PLAN_TAG)) return "owner_plan_call";
+  if (input.tags.includes(IDEA_TAG)) return "parked_idea";
+  if (input.check && input.check !== NO_GO) return "checking";
+  return "drilling";
+}
+
 /** The terminal state the machine never leaves on its own: a landed row is done, not in flight. */
 const LANDED = "merged";
 
@@ -103,28 +130,12 @@ const ABANDONED = "abandoned:";
  * is one row, or one row per leg for a model trial (legs a and b run at once on the same ticket). Older rows of the
  * same ticket and retired rows are history, as are rows of closed tickets and rows that name no ticket. Pure.
  */
-export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: readonly MachineItem[]): { row: R; item: MachineItem | null }[] {
-  const byId = new Map(items.map((i) => [i.id, i]));
-  const byRef = new Map(items.flatMap((i) => (i.ref ? [[i.ref, i] as const] : [])));
-  const itemOf = (r: R) => (r.item_id && byId.get(r.item_id)) || byRef.get(r.ticket_ref) || null;
-  const tickets = new Map<string, R[]>();
-  for (const r of rows) {
-    const item = itemOf(r);
-    const key = item ? `item:${item.id}` : `ref:${r.ticket_ref}`;
-    tickets.set(key, [...(tickets.get(key) ?? []), r]);
-  }
-  const out: { row: R; item: MachineItem | null }[] = [];
-  for (const group of tickets.values()) {
-    const newest = group.reduce((a, b) => (b.id > a.id ? b : a));
-    // A trial's newest dispatch is the newest row of each leg; anything else is a single row.
-    const legs = new Map<string, R>();
-    if (newest.trial_leg) {
-      for (const r of group) if (r.trial_leg && (!legs.get(r.trial_leg) || r.id > legs.get(r.trial_leg)!.id)) legs.set(r.trial_leg, r);
-    } else legs.set("", newest);
-    for (const r of legs.values()) {
+export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: readonly MachineItem[]): { row: R; item: MachineItem }[] {
+  const out: { row: R; item: MachineItem }[] = [];
+  for (const { item, legs } of newestDispatches(rows, items)) {
+    for (const r of legs) {
       // A retired newest row retires its ticket's dispatch: an older row behind it is history, not back in flight.
       if (r.status === LANDED || (r.status === "failed" && (r.error ?? "").startsWith(ABANDONED))) continue;
-      const item = itemOf(r);
       // No ticket at all: a mis-dispatch whose ref is a CLI verb (`status`, `abandon`) or a scratch id (`9999999`).
       if (!item || item.closed) continue;
       out.push({ row: r, item });
@@ -134,8 +145,43 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
 }
 
 /**
- * What the live snapshot says about the rows this page draws: every row's status and phase, every agent's status and
- * the items stamp (a ticket closed or retitled). The server stamps its read with this and the page re-reads when a
+ * OS-241: the tickets whose newest dispatch (any leg of a trial) has merged. A land does not close its ticket, so until
+ * `ob close` runs it is still open, and it is not back in planning. Pure.
+ */
+export function landed<R extends MachineRowInput>(rows: readonly R[], items: readonly MachineItem[]): Set<string> {
+  const out = new Set<string>();
+  for (const { item, legs } of newestDispatches(rows, items)) if (item && legs.some((r) => r.status === LANDED)) out.add(item.id);
+  return out;
+}
+
+/** Each ticket's newest dispatch: its newest row, or the newest row of each leg for a model trial, with its item. */
+function newestDispatches<R extends MachineRowInput>(rows: readonly R[], items: readonly MachineItem[]): { item: MachineItem | null; legs: R[] }[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const byRef = new Map(items.flatMap((i) => (i.ref ? [[i.ref, i] as const] : [])));
+  const itemOf = (r: R) => (r.item_id && byId.get(r.item_id)) || byRef.get(r.ticket_ref) || null;
+  const tickets = new Map<string, { item: MachineItem | null; rows: R[] }>();
+  for (const r of rows) {
+    const item = itemOf(r);
+    const key = item ? `item:${item.id}` : `ref:${r.ticket_ref}`;
+    const got = tickets.get(key) ?? { item, rows: [] };
+    got.rows.push(r);
+    tickets.set(key, got);
+  }
+  return [...tickets.values()].map(({ item, rows: group }) => {
+    const newest = group.reduce((a, b) => (b.id > a.id ? b : a));
+    // A trial's newest dispatch is the newest row of each leg; anything else is a single row.
+    const legs = new Map<string, R>();
+    if (newest.trial_leg) {
+      for (const r of group) if (r.trial_leg && (!legs.get(r.trial_leg) || r.id > legs.get(r.trial_leg)!.id)) legs.set(r.trial_leg, r);
+    } else legs.set("", newest);
+    return { item, legs: [...legs.values()] };
+  });
+}
+
+/**
+ * What the live snapshot says about the tickets this page draws: every row's status and phase, every agent's status,
+ * the items stamp (a ticket opened, closed, retitled, tagged or reordered) and the decisions stamp (an `ob spinoff
+ * check` recorded, which moves a ticket between drilling and the blind check, OS-241). The server stamps its read with this and the page re-reads when a
  * push's stamp differs, so a handoff, a sendback, a builder stamping needs-human or an `ob close` moves the view
  * without a reload. Pure.
  */
@@ -143,10 +189,11 @@ export function machineStamp(
   spinoffs: readonly { id: number; status: string; phase?: unknown; verdict?: string | null }[],
   agents: readonly { id: string; status?: string | null }[],
   items: string,
+  decisions: string,
 ): string {
   const rows = spinoffs.map((s) => `${s.id}:${s.status}:${phaseOf(s) ?? ""}:${s.verdict ?? ""}`).sort();
   const who = agents.map((a) => `${a.id}:${a.status ?? ""}`).sort();
-  return fnv1a(`${rows.join(",")}|${who.join(",")}|${items}`);
+  return fnv1a(`${rows.join(",")}|${who.join(",")}|${items}|${decisions}`);
 }
 
 /** 32-bit FNV-1a as hex: the stamp is compared, never read, and the full text runs to tens of kilobytes. */
