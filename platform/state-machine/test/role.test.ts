@@ -19,11 +19,11 @@ describe("the generated files", () => {
     }
   });
 
-  test("the JSON keeps the v1 shape: 26 states, 44 transitions, every endpoint a state", () => {
+  test("the JSON keeps the v1 shape: 20 states, 39 transitions, every endpoint a state", () => {
     const json = JSON.parse(renderAll()["docs/role-state-machine.json"]!);
     expect(json.version).toBe(1);
-    expect(json.states).toHaveLength(26);
-    expect(json.transitions).toHaveLength(44);
+    expect(json.states).toHaveLength(20);
+    expect(json.transitions).toHaveLength(39);
     const ids = new Set(json.states.map((s: { id: string }) => s.id));
     for (const t of json.transitions) {
       expect(Object.keys(t)).toEqual(["from", "to", "label", "event", "actor", "source"]);
@@ -35,14 +35,14 @@ describe("the generated files", () => {
 
   test("the export reads every move off the machine, in role.ts order", () => {
     expect(exportTransitions().map((t) => `${t.from}>${t.to}`)).toEqual(ROLE_TRANSITIONS.map((t) => `${t.from}>${t.to}`));
-    expect(exportStates().filter((s) => s.terminal).map((s) => s.id)).toEqual(["closed", "spike_closed", "failed"]);
+    expect(exportStates().filter((s) => s.terminal).map((s) => s.id)).toEqual(["closed", "failed"]);
   });
 });
 
 describe("the role machine", () => {
   test("every move is a move of the machine, through decide", () => {
     for (const t of ROLE_TRANSITIONS) expect(decide(roleMachine, t.from, t.event)).toEqual({ ok: true, to: t.to });
-    expect(decide(roleMachine, "idea", "launch claims the row").ok).toBe(false);
+    expect(decide(roleMachine, "exploring", "launch claims the row").ok).toBe(false);
   });
 
   test("a source is a skill line, or a symbol that exists", () => {
