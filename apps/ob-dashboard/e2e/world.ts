@@ -88,6 +88,18 @@ export const TIMELINE_TITLES = {
 export const TIMELINE_PR = "https://github.com/example/omnislash/pull/42";
 export const BUSY_MOVES = 200;
 
+/**
+ * OS-165: the Machine page's world, in its own project. Three open tickets with one spinoff row each, at fixed ids:
+ * MACHINE_ROWS.queued is `pending` (the spec claims it from the CLI and watches the dot move to launching),
+ * MACHINE_ROWS.handed is handed off, and MACHINE_ROWS.failed is `failed` (the spec closes its ticket from the CLI).
+ */
+export const MACHINE_PROJECT = "machine-lab";
+export const MACHINE_ROWS = {
+  queued: { id: 9101, title: "Machine: a queued ticket", status: "pending" },
+  handed: { id: 9102, title: "Machine: handed to the architect", status: "ready-for-gate" },
+  failed: { id: 9103, title: "Machine: a failed launch", status: "failed" },
+} as const;
+
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */
 export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }

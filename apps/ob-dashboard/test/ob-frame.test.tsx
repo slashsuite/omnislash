@@ -30,7 +30,7 @@ function navLinks(html: string): { href: string; label: string; current: boolean
 }
 
 describe("ObFrame nav (OS-24)", () => {
-  for (const page of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline"]) {
+  for (const page of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline", "/machine"]) {
     test(`on ${page} the nav marks ${page} as the current page`, async () => {
       const links = navLinks(await header(page));
       expect(links.map((l) => [l.href, l.label])).toEqual([
@@ -40,6 +40,7 @@ describe("ObFrame nav (OS-24)", () => {
         ["/tokens", "Tokens"],
         ["/models", "Models"],
         ["/timeline", "Timeline"],
+        ["/machine", "Machine"],
       ]);
       expect(links.filter((l) => l.current).map((l) => l.href)).toEqual([page]);
     });
