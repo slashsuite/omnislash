@@ -55,14 +55,14 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 `ob review readers set|rm|range`; both write the server's setting, so every machine reads the same
 set. The ranges cover complexity 1-10 (OS-175; the old simple, medium and complex tiers are 1-3, 4-6 and 7-10).
 `ob review readers --complexity <n> -q` prints the legs a row scored n runs, one per line, and How to run runs exactly
-those. A low score may get one reader and a high one two or more. Unset, every score runs Opus alone, and Neon reads only when Opus is unavailable (OS-238, Jacobus 2026-11-25: Neon on every review spent about 48 Antigravity sessions a day). The free
+those. Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
-The default readers:
+How the readers run:
 
-1. **`claude-opus-5-5` at its default effort** (run by `claude -p` through `review-leg.ts`), named `opus` (old name `sonnet`, an alias that a `models.jsonc` `review.sonnet` still feeds). It passes no `--effort`. **Opus never runs a review on `high` or above unless the owner explicitly asks for it.** It replaced Sonnet. It is the only reader on any range by default.
-2. **`antigravity:gemini-4-neon`** (run by `agy --sandbox` through `review-leg.ts`), named `neon`: Opus's fallback, on no range, so it runs only when Opus is unavailable.
+- **An Opus reader** (`claude-opus-5-5`, run by `claude -p` through `review-leg.ts`; the leg `sonnet` is an old alias of `opus`) passes no `--effort`. **Opus never runs a review on `high` or above unless the owner explicitly asks for it.**
+- **An Antigravity reader** (`antigravity:<model>`, such as `neon`) runs through `agy --sandbox`.
 
 `deepseek` and `luna` are retired (OS-206): they are no longer part of the review setup. A models profile, `review_readers`, or a leg named on the command line that names either (or a model id that does) is refused with a clear message, and no leg runs them.
 
@@ -109,7 +109,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
-- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it; by default Opus falls back to `neon`), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
+- **A leg unavailable** → it runs its configured fallback, the reader named in its `fallback` (`ob review readers`; the dashboard Models page sets it), and nothing else does. When that fallback is unavailable too (failed, skipped or out of credits), or none is set, the leg is reported `skipped` or `failed` with its reason, and the review stands on the readers that ran; the report says so. The review is never skipped and never stamped
   `needs-human` for want of a reviewer.
 - **Independence, not consensus.** Each leg gets the **same shared part of the brief** and the **same diff**, and
   from round 2 only its **own** previous findings and answers (How to run), with **no knowledge of the others'
@@ -138,8 +138,8 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Escalating:** when a diff is hairy or a finding sounds thin, re-run on the narrowed question (one
   file, one finding) rather than a bigger model on the whole diff.
 - **Never the builder's own model**: independence is the point. The Opus leg is never skipped, and
-  builders run Opus too, so by default (Opus alone, OS-238) the reviewer matches the builder's model and its
-  independence is a fresh context and the brief only.
+  when the configured reader is the builder's own model, its independence is a fresh context and the
+  brief only.
 - **Readers are read-only by permission, not by brief.** Every leg runs through
   `review-leg.ts` (beside this file) under a read-only profile (`ob-reviewer.md` for OpenCode, `--allowedTools`/`--disallowedTools` for Claude, `--sandbox` + `--settings` for Antigravity).
   It denies edits and writes. The shell is cut to a read-only allowlist (`git log/show/diff/status/blame`,
@@ -180,8 +180,8 @@ score reads as 5), and run exactly those:
 R=<skill dir>   # ~/.claude/skills/ob-skeptical-review
 D="${TMPDIR:-$HOME/.cache/tmp}"
 C=<the row's complexity, else 5>
-# an older ob or the API down: fall back to the default (opus) rather than run no reader
-legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="opus"
+# the readers come from configuration only; if they cannot be read, stop and report it rather than guess
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || { echo "ob review readers failed: report the review as blocked" >&2; exit 1; }
 for leg in $legs; do
   bun "$R/review-leg.ts" "$leg" < "$D/review-<ticket>-$leg.brief.md" > "$D/review-<ticket>-$leg.txt" 2>&1 &
 done; wait
@@ -270,7 +270,7 @@ not change. Fetch first, because readers cannot:
 ```bash
 git fetch origin
 SHA=$(git rev-parse origin/main)
-legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || legs="opus"
+legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || { echo "ob review readers failed: report the review as blocked" >&2; exit 1; }
 for leg in $legs; do
   { sed -n '/^## Claims review (spikes)/,/^## Before the readers run/{/^## Before/d;p;}' "$R/SKILL.md"
     echo "Ref: check every claim against origin/main at $SHA (git show $SHA:<path>)."

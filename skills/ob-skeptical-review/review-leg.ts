@@ -145,37 +145,49 @@ function readerModel(readers: ReviewReaders | null, leg: string): string | undef
 }
 
 /** What runs `ob review readers --json`: exit code and stdout. A seam so tests need no ob. */
-export type ReadersRunner = () => { code: number; out: string };
+export type ReadersRunner = () => { code: number; out: string; err?: string };
 
-const OB_ENTRY = join(import.meta.dir, "..", "..", "apps", "cli", "src", "index.ts");
 
-function runObReaders(): { code: number; out: string } {
-  const r = Bun.spawnSync(["bun", OB_ENTRY, "review", "readers", "--json"], { stdout: "pipe", stderr: "pipe", timeout: 30_000 });
-  return { code: r.exitCode ?? 1, out: r.stdout.toString() };
+// OS-238: the `ob` on PATH, never this checkout's CLI source: run bare, the source has none of the store or API
+// settings the `ob` launcher supplies, so the read failed on every run and the leg quietly used built-in models.
+// OB_REVIEW_OB overrides the command (tests).
+function runObReaders(env: Record<string, string | undefined> = process.env): { code: number; out: string; err: string } {
+  const cmd = env.OB_REVIEW_OB ? [env.OB_REVIEW_OB] : ["ob"];
+  const r = Bun.spawnSync([...cmd, "review", "readers", "--json"], { stdout: "pipe", stderr: "pipe", timeout: 30_000 });
+  return { code: r.exitCode ?? 1, out: r.stdout.toString(), err: r.stderr.toString() };
 }
 
+/** The configured readers could not be read: the leg fails by name rather than run a model nobody configured (OS-238). */
+export class ReaderSettingError extends Error {}
+
 /**
- * The stored review_readers setting, read once per leg run through `ob review readers --json`
- * (local store or the API, whichever this machine uses). Null when it is unset (the models file and the
- * built-in table decide, as before) and when it cannot be read: then one stderr line says so and the leg
- * falls back to the models file. OB_REVIEW_READERS_SKIP=1 skips the read (the test preload sets it).
+ * The configured readers, read once per leg run through `ob review readers --json` (the store or the API,
+ * whichever this machine uses). Null when nothing is stored (the built-in table decides). When it cannot be read
+ * it throws ReaderSettingError: the leg fails, it never guesses (OS-238). OB_REVIEW_READERS_SKIP=1 skips the read
+ * (the test preload sets it).
  */
 export function loadReaderSetting(
-  run: ReadersRunner = runObReaders,
-  log: (line: string) => void = (l) => console.error(l),
   env: Record<string, string | undefined> = process.env,
+  run: ReadersRunner = () => runObReaders(env),
 ): ReviewReaders | null {
   // The test preload sets this, so a spawned leg in a test never starts an `ob` of its own.
   if (env.OB_REVIEW_READERS_SKIP === "1") return null;
+  let result: { code: number; out: string; err?: string };
   try {
-    const { code, out } = run();
-    if (code !== 0) throw new Error(`ob review readers exited ${code}`);
-    const parsed = JSON.parse(out) as { stored?: boolean };
-    if (!parsed.stored) return null;
-    return parseReviewReaders(out);
+    result = run();
   } catch (e) {
-    log(`review-leg: could not read review_readers (${e instanceof Error ? e.message : String(e)}); using the models file`);
-    return null;
+    throw new ReaderSettingError(`could not run ob review readers: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (result.code !== 0) {
+    const first = (result.err ?? "").split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("ob: core from"));
+    throw new ReaderSettingError(`ob review readers exited ${result.code}${first ? `: ${first}` : ""}`);
+  }
+  try {
+    const parsed = JSON.parse(result.out) as { stored?: boolean };
+    if (!parsed.stored) return null;
+    return parseReviewReaders(result.out);
+  } catch (e) {
+    throw new ReaderSettingError(`ob review readers gave an unreadable answer: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -710,7 +722,13 @@ if (import.meta.main) {
     process.exit(2);
   }
   // The readers the owner chose (review_readers), read once for this leg.
-  const readers = loadReaderSetting();
+  let readers: ReviewReaders | null;
+  try {
+    readers = loadReaderSetting();
+  } catch (e) {
+    console.error(`review-leg: ${leg} failed: exit 1: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
   const fromSetting = readerModel(readers, leg);
   if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review_readers)`);
   const brief = await Bun.stdin.text();
