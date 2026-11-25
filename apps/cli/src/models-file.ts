@@ -224,6 +224,14 @@ export const DEFAULT_REVIEW_MODELS = {
  */
 const RETIRED_REVIEW_LEGS = ["deepseek", "luna"] as const;
 
+/**
+ * Print the warning for a retired review entry that was dropped (OS-206, Jacobus 2026-11-25: drop with a warning,
+ * never refuse the whole file). `where` says which file and profile or setting it sat in.
+ */
+export function warnRetiredReview(where: string, refused: string): void {
+  console.warn(`ob: warning: ${where}: dropped ${refused}`);
+}
+
 /** The refusal for a retired review leg or model id, or null when the name is fine. Pure. Case-insensitive, as a word. */
 export function retiredReviewMessage(leg: string, model?: string): string | null {
   const named = (text: string, r: string) => new RegExp(`\\b${r}\\b`, "i").test(text);
@@ -431,7 +439,10 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
       if (!isObject(p.review)) throw new ModelsFileError(`${path}: profile '${name}'.review must be an object of leg to model`);
       for (const [leg, model] of Object.entries(p.review)) {
         const refused = retiredReviewMessage(leg, typeof model === "string" ? model : undefined);
-        if (refused) throw new ModelsFileError(`${path}: profile '${name}'.review: ${refused}`);
+        if (refused) {
+          warnRetiredReview(`${path}: profile '${name}'.review`, refused);
+          continue;
+        }
         profile.review[leg] = modelString(path, `profile '${name}'.review.${leg}`, model);
       }
     }

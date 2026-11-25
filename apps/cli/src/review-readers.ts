@@ -26,6 +26,7 @@ import {
   rangeCoverError,
   rangeText,
   retiredReviewMessage,
+  warnRetiredReview,
   type ComplexityRange,
   type SpinoffTier,
 } from "./models-file.ts";
@@ -111,11 +112,17 @@ export function validateReviewReaders(v: unknown): ReviewReaders {
   if (!raw.readers || typeof raw.readers !== "object" || Array.isArray(raw.readers)) throw new ReviewReadersError("review_readers.readers must be an object of leg to {model}");
   if (!raw.tiers || typeof raw.tiers !== "object") throw new ReviewReadersError("review_readers.tiers must be a list of {from, to, legs} ranges covering 1-10");
   const readers: ReviewReaders["readers"] = {};
+  const dropped = new Set<string>();
   for (const [leg, spec] of Object.entries(raw.readers as Record<string, unknown>)) {
     if (!LEG_NAME.test(leg)) throw new ReviewReadersError(`reader name '${leg}' must be lowercase letters, digits and dashes`);
     const model = spec && typeof spec === "object" ? (spec as { model?: unknown }).model : undefined;
     const refused = retiredReviewMessage(leg, typeof model === "string" ? model : undefined);
-    if (refused) throw new ReviewReadersError(refused);
+    if (refused) {
+      // OS-206: a retired reader is dropped with a warning, never refused; its legs come out of every range below.
+      warnRetiredReview("review_readers", refused);
+      dropped.add(leg);
+      continue;
+    }
     const fallback = spec && typeof spec === "object" ? (spec as { fallback?: unknown }).fallback : undefined;
     readers[leg] = { model: checkModel(leg, model), ...(fallback === undefined || fallback === null ? {} : { fallback: checkFallback(leg, fallback) }) };
   }
@@ -133,7 +140,7 @@ export function validateReviewReaders(v: unknown): ReviewReaders {
     }
     const name = rangeText({ from, to });
     if (!Array.isArray(list)) throw new ReviewReadersError(`review range ${name} must list its readers in legs`);
-    const legs = [...new Set(list as unknown[])].map(String);
+    const legs = [...new Set(list as unknown[])].map(String).filter((l) => !dropped.has(l));
     if (legs.length === 0) throw new ReviewReadersError(`review range ${name} has no readers: every range needs at least one`);
     const missing = legs.filter((l) => readers[l] === undefined);
     if (missing.length) throw new ReviewReadersError(`review range ${name} names ${missing.map((m) => `'${m}'`).join(", ")}, which ${missing.length === 1 ? "is not a reader" : "are not readers"}`);
