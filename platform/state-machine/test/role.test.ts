@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { decide } from "../src/decide.ts";
 import { exportStates, exportTransitions, renderAll } from "../src/export.ts";
 import { moveEvent, taskMachine } from "../src/item.ts";
-import { MIRRORED_STATES, ROLE_TRANSITIONS, ROW_STATE, type RoleStateMeta, roleMachine, STATE_IDS, type Stored } from "../src/role.ts";
+import { MIRRORED_STATES, ROLE_TRANSITIONS, ROLES, ROW_STATE, type RoleStateMeta, roleMachine, STATE_IDS, type Stored } from "../src/role.ts";
 import { PHASE_EVENT, PHASES_BY_STATUS, SPINOFF_PHASES, isSpinoffPhase, phaseStateOf, spinoffPhaseMachine } from "../src/spinoff-phase.ts";
 import { SPINOFF_EDGES, type SpinoffState, spinoffMachine } from "../src/spinoff.ts";
 
@@ -12,6 +12,11 @@ import { SPINOFF_EDGES, type SpinoffState, spinoffMachine } from "../src/spinoff
 
 const ROOT = join(import.meta.dirname, "../../..");
 const stored = (id: string): Stored => (roleMachine.states[id]!.meta as RoleStateMeta).stored;
+
+// OS-236: one reviewer role with two steps (checking, reviewing); the generated-docs test pins each state's role.
+test("there is no checker role", () => {
+  expect(ROLES).not.toContain("checker");
+});
 
 describe("the generated files", () => {
   test("the committed docs/role-state-machine.json and .mmd are what role.ts gives", () => {
