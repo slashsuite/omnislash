@@ -1447,6 +1447,10 @@ async function route(
         }),
       );
     }
+    if (second === "resume" && segments.length === 2 && method === "POST") {
+      const body = await readJson(req);
+      return json(await h.spinoffResume(store, { id: reqPositiveInt(body, "id"), note: optString(body, "note") ?? "" }));
+    }
     if (second === "reopen" && segments.length === 2 && method === "POST") {
       const body = await readJson(req);
       return json(await h.spinoffReopen(store, { id: reqPositiveInt(body, "id"), note: optString(body, "note") ?? "" }));

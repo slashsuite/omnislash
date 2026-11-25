@@ -81,7 +81,7 @@ const PINNED_SPINOFF_EDGES: Record<string, Record<string, string>> = {
   pending: { claim: "launching", fail: "failed" },
   launching: { stamp: "launched", retry: "pending", fail: "failed" },
   launched: { stamp: "launched", handoff: "ready-for-gate", land: "merged", retry: "pending", fail: "failed" },
-  "ready-for-gate": { sendback: "launched", land: "merged", fail: "failed" },
+  "ready-for-gate": { sendback: "launched", resume: "launched", land: "merged", fail: "failed" },
   merged: { reopen: "launched" },
   failed: {},
 };
@@ -89,8 +89,8 @@ const PINNED_SPINOFF_EDGES: Record<string, Record<string, string>> = {
 describe("spinoff machine is the one definition (OS-173)", () => {
   const EVENTS = [...new Set(Object.values(PINNED_SPINOFF_EDGES).flatMap((edges) => Object.keys(edges)))];
 
-  test("the same states as the spinoff table's vocabulary, and the eight named events", () => {
-    expect(EVENTS.toSorted()).toEqual(["claim", "stamp", "retry", "fail", "handoff", "sendback", "land", "reopen"].toSorted());
+  test("the same states as the spinoff table's vocabulary, and the nine named events", () => {
+    expect(EVENTS.toSorted()).toEqual(["claim", "stamp", "retry", "fail", "handoff", "sendback", "resume", "land", "reopen"].toSorted());
     expect(Object.keys(spinoffMachine.states).toSorted()).toEqual([...SPINOFF_STATUSES].toSorted());
     expect(SPINOFF_EDGES).toEqual(PINNED_SPINOFF_EDGES);
   });

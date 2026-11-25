@@ -254,6 +254,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/spinoffs/tokens", family: "spinoffs", what: "record the token count a client read for a landed row that has none (OB-1993)", scoped: "write" },
   { method: "POST", path: "/spinoffs/ready", family: "spinoffs", what: "mark a launched row ready-for-gate, printed handed-off (human declared; no merge, no lease release)", scoped: "write" },
   { method: "POST", path: "/spinoffs/sendback", family: "spinoffs", what: "move a handed-off row back to building (architect send-back; the T3 note to the builder is sent by the client)", scoped: "write" },
+  { method: "POST", path: "/spinoffs/resume", family: "spinoffs", what: "move a handed-off row back to building because the work continues on the same row (OS-235), not a send-back", scoped: "write" },
   { method: "POST", path: "/spinoffs/reopen", family: "spinoffs", what: "move a landed row back to building (OB-2180: a wrong land; the client has already checked main for a landing commit)" },
   { method: "POST", path: "/spinoffs/note-error", family: "spinoffs", what: "record or clear why a row's readying note did not reach the architect (OB-2172)", scoped: "write" },
   { method: "POST", path: "/spinoffs/verdict", family: "spinoffs", what: "record a clean repo's verdict on its row (`ob spinoff state`, OB-1992)", scoped: "write" },
@@ -1526,6 +1527,18 @@ export interface ReopenSpinoffRequest {
 }
 
 export interface ReopenSpinoffResponse {
+  row: SpinoffRow;
+}
+
+/** OS-235: `ob spinoff resume`. More work on a handed-off row: back to building, out of the sentinel inbox. */
+export interface ResumeSpinoffRequest {
+  /** Spinoff row id. */
+  id: number;
+  /** The work that continues: recorded on the ticket's decisions trail. */
+  note: string;
+}
+
+export interface ResumeSpinoffResponse {
   row: SpinoffRow;
 }
 

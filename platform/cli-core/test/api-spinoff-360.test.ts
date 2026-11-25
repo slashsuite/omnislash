@@ -311,6 +311,7 @@ describe("the classification, which was the bug (360)", () => {
       "POST /spinoffs/ready",
       "POST /spinoffs/reclaim",
       "POST /spinoffs/reopen",
+      "POST /spinoffs/resume",
       "POST /spinoffs/sendback",
       "POST /spinoffs/serving",
       "POST /spinoffs/stamp",
