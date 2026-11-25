@@ -2,9 +2,9 @@
 // sync-favorites` last stored them (`<provider>:<model>`). A stored model that is not one of them is still offered,
 // marked, so a chain that names it shows what it runs and saves it back unchanged.
 
-export const NOT_A_FAVOURITE = "not a favourite";
+const NOT_A_FAVOURITE = "not a favourite";
 
-export type ModelItem = { value: string; label: string; disabled?: boolean };
+type ModelItem = { value: string; label: string; disabled?: boolean };
 
 /** The dropdown's choices for a picker holding `value`: the favourites, plus `value` marked when it is not one. */
 export function modelItems(favourites: readonly string[], value: string): ModelItem[] {
