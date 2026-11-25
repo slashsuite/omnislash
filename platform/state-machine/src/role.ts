@@ -23,9 +23,12 @@ import { SPINOFF_EDGES, type SpinoffEvent, type SpinoffState } from "./spinoff.t
  * A transition's `meta.source` is where the move is applied. A move code enforces names the symbol that applies
  * it (`<path>#<event or function>`), so it cannot drift with line numbers; a skill-only move keeps its
  * hand-written `skills/<name>/SKILL.md:<line>`, read at `SKILLS_READ_AT`.
+ *
+ * OS-236: there is one reviewer role with two steps, the blind brief check (`checking`) and the skeptical review
+ * round (`reviewing`). They stay separate states; the old `checker` role is gone.
  */
 
-export const ROLES = ["owner", "muse", "architect", "checker", "builder", "reviewer", "sentinel", "system"] as const;
+export const ROLES = ["owner", "muse", "architect", "builder", "reviewer", "sentinel", "system"] as const;
 export type Role = (typeof ROLES)[number];
 
 /** The omnibus commit the `skills/...:<line>` sources were read at (SS-130). */
@@ -106,7 +109,7 @@ const STATES: readonly StateDef[] = [
   { id: "confirm_complete", label: "Is the thought complete?", role: "owner", human_required: true, stored: null },
   { id: "parked_idea", label: "Parked idea (tag idea)", role: "muse", human_required: false, stored: item("open") },
   { id: "drilling", label: "Drilling (## Drilled, ## Done when)", role: "architect", human_required: false, stored: item("open") },
-  { id: "checking", label: "Blind check (measure twice)", role: "checker", human_required: false, stored: item("open") },
+  { id: "checking", label: "Blind check (measure twice)", role: "reviewer", human_required: false, stored: item("open") },
   { id: "owner_plan_call", label: "Planning call only the owner can make", role: "owner", human_required: true, stored: item("open") },
   { id: "spike", label: "Spike running", role: "builder", human_required: false, stored: row("launched") },
   mirrored("queued"),
