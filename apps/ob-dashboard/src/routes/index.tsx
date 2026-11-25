@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { Caption, Card, Cluster, ListRow, PageHeader, Pill, Stack, Text } from "@hackcove/ui-react";
+import { Caption, Card, Cluster, ListRow, PageHeader, Pill, Stack, Text } from "@slashsuite/ui-react";
 import { ItemDrawer } from "../../../../platform/dashboard-kit/src/components/ItemDrawer.tsx";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
 import type { AgentRow } from "../../../../platform/dashboard-kit/src/lib/types.ts";
@@ -16,14 +16,14 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-function ReviewRow({ a, divided, onOpen }: { a: AgentRow; divided: boolean; onOpen: (id: string) => void }) {
+function ReviewRow({ a, onOpen }: { a: AgentRow; onOpen: (id: string) => void }) {
   const label = <Text as="span" lines={1}>{a.note ?? a.branch ?? a.id}</Text>;
   const leading = <Pill tone="warn">{a.ticket ?? a.id}</Pill>;
   // A builder registered without a ticket has nothing to open; its row still shows.
-  if (!a.ticket) return <ListRow size="sm" divided={divided} leading={leading}>{label}</ListRow>;
+  if (!a.ticket) return <ListRow size="sm" leading={leading}>{label}</ListRow>;
   const ticket = a.ticket;
   return (
-    <ListRow size="sm" divided={divided} leading={leading} onClick={() => onOpen(ticket)}>
+    <ListRow size="sm" leading={leading} onClick={() => onOpen(ticket)}>
       {label}
     </ListRow>
   );
@@ -46,7 +46,11 @@ function Home() {
           {s.needs_review.length === 0 ? (
             <Text tone="muted">Nothing to review: no builder is waiting on you.</Text>
           ) : (
-            s.needs_review.map((a, i) => <ReviewRow key={a.id} a={a} divided={i > 0} onOpen={setOpenId} />)
+            <Stack divided>
+              {s.needs_review.map((a) => (
+                <ReviewRow key={a.id} a={a} onOpen={setOpenId} />
+              ))}
+            </Stack>
           )}
         </Card>
 
@@ -54,11 +58,11 @@ function Home() {
           {focus.length === 0 ? (
             <Text tone="muted">No ranked focus: add an item to Today from its drawer.</Text>
           ) : (
-            focus.map((item, i) => (
+            <Stack divided>
+              {focus.map((item) => (
               <ListRow
                 key={item.id}
                 size="sm"
-                divided={i > 0}
                 onClick={() => setOpenId(item.id)}
                 leading={
                   <Caption as="span" tone="muted" mono numeric>
@@ -78,7 +82,8 @@ function Home() {
               >
                 <Text as="span" lines={1}>{item.title}</Text>
               </ListRow>
-            ))
+              ))}
+            </Stack>
           )}
         </Card>
       </Stack>

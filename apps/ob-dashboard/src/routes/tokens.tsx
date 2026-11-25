@@ -11,7 +11,7 @@ import {
   PageHeader,
   Pill,
   Stack,
-} from "@hackcove/ui-react";
+} from "@slashsuite/ui-react";
 import {
   getCredentials,
   getWhatsappQr,

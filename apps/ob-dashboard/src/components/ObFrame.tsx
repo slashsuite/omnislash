@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { AppShell, AppShellBrand, Tabs } from "@hackcove/ui-react";
+import { AppShell, AppShellBrand, Tabs } from "@slashsuite/ui-react";
 import type { ReactNode } from "react";
 import { LiveBadge } from "../../../../platform/dashboard-kit/src/components/LiveBadge.tsx";
 import { AlertBell } from "./AlertBell.tsx";

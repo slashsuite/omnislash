@@ -2,7 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import appCss from "../styles.css?url";
-import { appShellRootClassFor } from "@hackcove/ui-react";
+import { appShellRootClassFor } from "@slashsuite/ui-react";
 import { IosStatusBarBand } from "../../../../platform/dashboard-kit/src/components/IosStatusBarBand.tsx";
 import { PwaRegister } from "../../../../platform/dashboard-kit/src/components/PwaRegister.tsx";
 import { BUILD_COMMIT_META } from "../../../../platform/dashboard-kit/src/lib/buildCommitMeta.ts";

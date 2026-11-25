@@ -1,4 +1,4 @@
-import { Pill } from "@hackcove/ui-react";
+import { Pill } from "@slashsuite/ui-react";
 import { fmtClock } from "../lib/localTime.ts";
 import { useRealtime } from "../lib/useRealtime.ts";
 

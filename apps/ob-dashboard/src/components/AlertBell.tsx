@@ -1,4 +1,4 @@
-import { IconButton } from "@hackcove/ui-react";
+import { IconButton } from "@slashsuite/ui-react";
 import { useRealtime } from "../../../../platform/dashboard-kit/src/lib/useRealtime.ts";
 
 // (#45, moved to the OB dashboard by OB-2207) The header bell. The live un-acked alert count rides the
