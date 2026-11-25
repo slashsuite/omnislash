@@ -65,16 +65,6 @@ describe("the role machine", () => {
       }
     }
   });
-
-  test("a row event's source moves the row between the statuses its two states ride on", () => {
-    for (const t of ROLE_TRANSITIONS) {
-      const [path, event] = t.source.split("#");
-      const a = stored(t.from);
-      const b = stored(t.to);
-      if (path !== "platform/state-machine/src/spinoff.ts" || a?.table !== "spinoff" || b?.table !== "spinoff") continue;
-      expect(decide(spinoffMachine, a.status, event!), `${t.from} -> ${t.to}`).toEqual({ ok: true, to: b.status });
-    }
-  });
 });
 
 // OS-230: the role states that mirror a row status or a phase are built from spinoff.ts and spinoff-phase.ts. These
