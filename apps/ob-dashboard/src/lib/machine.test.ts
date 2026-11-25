@@ -11,12 +11,6 @@ const ROLE_STATES = new Set(machine.states.map((s) => s.id));
 const base = { phase: null, builderStatus: null, spike: false, error: null } as const;
 
 describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
-  it("places every spinoff state on a role state of the generated machine", () => {
-    for (const status of Object.keys(SPINOFF_EDGES)) {
-      expect(ROLE_STATES.has(placeRow({ ...base, status }))).toBe(true);
-    }
-  });
-
   it("has a base placement for every SPINOFF_EDGES state, and each one exists in the machine", () => {
     expect(Object.keys(BASE_PLACEMENT).sort()).toEqual(Object.keys(SPINOFF_EDGES).sort());
     for (const state of Object.values(BASE_PLACEMENT)) expect(ROLE_STATES.has(state)).toBe(true);
@@ -67,6 +61,12 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(isNeedsHuman("State: needs-humane")).toBe(false);
   });
 
+  it("lets neither the handoff's gating phase nor a launched row's phase hide a person's turn", () => {
+    expect(placeRow({ ...base, status: "ready-for-gate", phase: "gating", verdict: "State: needs-human - x" })).toBe("owner_merge_call");
+    expect(placeRow({ ...base, status: "launched", phase: "pr_ci", builderStatus: "needs-human" })).toBe("needs_human");
+    expect(placeRow({ ...base, status: "launched", phase: "updating_pr", builderStatus: "blocked" })).toBe("blocked");
+  });
+
   it("does not let a stale verdict hold a sent-back row: a launched row ignores the verdict", () => {
     // A sendback leaves `verdict: needs-human` on the row and moves it back to launched with no phase.
     expect(placeRow({ ...base, status: "launched", builderStatus: "working", verdict: "State: needs-human - x" })).toBe("building");
@@ -96,6 +96,11 @@ describe("inFlight (OS-165)", () => {
     expect(inFlight(rows, items).map((r) => r.row.id)).toEqual([2]);
   });
 
+  it("does not bring an older row back when the newest one was abandoned", () => {
+    const rows = [row({ id: 1, status: "failed", error: "launch refused" }), row({ id: 2, status: "failed", error: "abandoned: retired" })];
+    expect(inFlight(rows, items)).toEqual([]);
+  });
+
   it("keeps one row per leg of a model trial", () => {
     const rows = [row({ id: 1, status: "launched", trial_leg: "a" }), row({ id: 2, status: "launched", trial_leg: "b" })];
     expect(inFlight(rows, items).map((r) => r.row.id)).toEqual([2, 1]);
@@ -111,6 +116,7 @@ describe("machineStamp (OS-165)", () => {
     expect(machineStamp([{ id: 1, status: "launching" }], agents, "s1")).not.toBe(before);
     expect(machineStamp(spinoffs, [{ id: "os-1", status: "needs-human" }], "s1")).not.toBe(before);
     expect(machineStamp(spinoffs, agents, "s2")).not.toBe(before);
+    expect(machineStamp([{ id: 1, status: "pending", verdict: "State: needs-human - x" }], agents, "s1")).not.toBe(before);
     expect(machineStamp(spinoffs, agents, "s1")).toBe(before);
   });
 });

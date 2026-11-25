@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { inArray, or } from "../../../cli/src/db/orm.ts";
 import { itemsStamp, tagsForItems } from "../../../cli/src/items.ts";
 import { listAgents } from "../../../../platform/cli-coord/src/agent.ts";
-import { builderIdOf, rowStateText } from "../../../../platform/cli-coord/src/clean-repo.ts";
+import { builderIdOf, legRef, rowStateText } from "../../../../platform/cli-coord/src/clean-repo.ts";
 import { listSpinoffs, rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
 import { providedStore } from "../../provided-store.ts";
@@ -41,7 +41,7 @@ async function machineView(): Promise<MachineView> {
   const statusOf = new Map(agents.map((a) => [a.id, a.status ?? null]));
   const rows: MachineRow[] = inFlight(spinoffs, items).map(({ row, item }) => ({
     id: row.id,
-    ref: item?.ref ?? row.ticket_ref,
+    ref: legRef(item?.ref ?? row.ticket_ref, row.trial_leg),
     title: item?.title ?? row.ticket_ref,
     state: placeRow({
       status: row.status,

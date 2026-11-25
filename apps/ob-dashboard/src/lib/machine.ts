@@ -1,6 +1,5 @@
 // OS-165: the Machine page's pure half. Which in-flight spinoff rows there are, and which state of the role
-// machine (platform/state-machine, drawn by RoleMachine) each one sits in. Imports only types, so the xstate
-// machine in platform/state-machine stays out of the client bundle. Nothing here reads a file or the store.
+// machine (platform/state-machine, drawn by RoleMachine) each one sits in. Nothing here reads a file or the store.
 import type { SpinoffState } from "../../../../platform/state-machine/src/spinoff.ts";
 
 /** The spinoff row fields this page reads. `phase` is step 8 (OS-183): reviewing, pr_ci, gating, … */
@@ -27,6 +26,7 @@ export interface MachineItem {
 /** One in-flight row, placed: its ref and title, and the role state id it sits in. */
 export interface MachineRow {
   id: number;
+  /** The dot's id: the ticket ref, or `<ref>-b` for leg b of a model trial, so the two legs never share one. */
   ref: string;
   title: string;
   state: string;
@@ -61,13 +61,14 @@ const SPIKE_END = "spike:";
  *
  * - A spike (tagged `spike`) runs its own row: pending, launching and launched are all the spike's build (it never
  *   reaches ready-for-gate), and a failed one that ended as a spike is spike_closed.
+ * - A launched row whose builder is needs-human or blocked stands out, whatever its phase.
+ * - A handed-off row whose verdict is needs-human waits on the owner's merge call, a human state, even though the
+ *   handoff stamped phase `gating`. The verdict is read only for handed-off rows: a sendback moves the row back to
+ *   launched and leaves the old verdict on it, so on a launched row it would place work on a human state it no longer
+ *   waits on.
  * - A phase, when the row has one the machine knows, names the state (handed-off rows: gating, owner_merge_call;
  *   launched rows: reviewing, pr_ci, updating_pr).
- * - A launched row with no phase reads its builder's own status: needs-human and blocked stand out, readying is the
- *   gate (reviewing), anything else is building.
- * - A handed-off row with no phase whose verdict is needs-human waits on the owner's merge call, a human state. The
- *   verdict is read only for handed-off rows: a sendback moves the row back to launched and leaves the old verdict on
- *   it, so on a launched row it would place work on a human state it no longer waits on.
+ * - A launched row with no phase is the gate (reviewing) while its builder is readying, else building.
  * - Otherwise the stored status places it (BASE_PLACEMENT).
  */
 export function placeRow(input: {
@@ -82,14 +83,11 @@ export function placeRow(input: {
   const { status, phase, builderStatus, spike, error, verdict } = input;
   if (spike && (status === "pending" || status === "launching" || status === "launched")) return "spike";
   if (spike && status === "failed" && (error ?? "").startsWith(SPIKE_END)) return "spike_closed";
-  if ((status === "launched" || status === "ready-for-gate") && phase && PHASE_STATES.includes(phase)) return phase;
-  if (status === "launched") {
-    if (builderStatus === "needs-human") return "needs_human";
-    if (builderStatus === "blocked") return "blocked";
-    if (builderStatus === "readying") return "reviewing";
-    return "building";
-  }
+  if (status === "launched" && builderStatus === "needs-human") return "needs_human";
+  if (status === "launched" && builderStatus === "blocked") return "blocked";
   if (status === "ready-for-gate" && isNeedsHuman(verdict)) return "owner_merge_call";
+  if ((status === "launched" || status === "ready-for-gate") && phase && PHASE_STATES.includes(phase)) return phase;
+  if (status === "launched") return builderStatus === "readying" ? "reviewing" : "building";
   return BASE_PLACEMENT[status as SpinoffState] ?? "failed";
 }
 
@@ -120,7 +118,6 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
   const itemOf = (r: R) => (r.item_id && byId.get(r.item_id)) || byRef.get(r.ticket_ref) || null;
   const tickets = new Map<string, R[]>();
   for (const r of rows) {
-    if (r.status === "failed" && (r.error ?? "").startsWith(ABANDONED)) continue;
     const item = itemOf(r);
     const key = item ? `item:${item.id}` : `ref:${r.ticket_ref}`;
     tickets.set(key, [...(tickets.get(key) ?? []), r]);
@@ -134,7 +131,8 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
       for (const r of group) if (r.trial_leg && (!legs.get(r.trial_leg) || r.id > legs.get(r.trial_leg)!.id)) legs.set(r.trial_leg, r);
     } else legs.set("", newest);
     for (const r of legs.values()) {
-      if (r.status === LANDED) continue;
+      // A retired newest row retires its ticket's dispatch: an older row behind it is history, not back in flight.
+      if (r.status === LANDED || (r.status === "failed" && (r.error ?? "").startsWith(ABANDONED))) continue;
       const item = itemOf(r);
       if (item?.closed) continue;
       out.push({ row: r, item });
@@ -150,11 +148,11 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
  * without a reload. Pure.
  */
 export function machineStamp(
-  spinoffs: readonly { id: number; status: string; phase?: unknown }[],
+  spinoffs: readonly { id: number; status: string; phase?: unknown; verdict?: string | null }[],
   agents: readonly { id: string; status?: string | null }[],
   items: string,
 ): string {
-  const rows = spinoffs.map((s) => `${s.id}:${s.status}:${phaseOf(s) ?? ""}`).sort();
+  const rows = spinoffs.map((s) => `${s.id}:${s.status}:${phaseOf(s) ?? ""}:${s.verdict ?? ""}`).sort();
   const who = agents.map((a) => `${a.id}:${a.status ?? ""}`).sort();
   return fnv1a(`${rows.join(",")}|${who.join(",")}|${items}`);
 }
