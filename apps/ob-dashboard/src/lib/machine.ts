@@ -71,7 +71,7 @@ const SPIKE_END = "spike:";
  * on a human state it no longer waits on. The phase and the builder's status are what move with the work.
  */
 export function placeRow(input: {
-  status: SpinoffState | string;
+  status: string;
   phase: string | null;
   builderStatus: string | null;
   spike: boolean;
