@@ -110,7 +110,7 @@ const ABANDONED = "abandoned:";
 /**
  * The rows in flight: the newest dispatch of each ticket whose item is still open, unless it has landed. A dispatch
  * is one row, or one row per leg for a model trial (legs a and b run at once on the same ticket). Older rows of the
- * same ticket and retired rows are history, as are rows of closed tickets. Pure.
+ * same ticket and retired rows are history, as are rows of closed tickets and rows that name no ticket. Pure.
  */
 export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: readonly MachineItem[]): { row: R; item: MachineItem | null }[] {
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -134,7 +134,8 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
       // A retired newest row retires its ticket's dispatch: an older row behind it is history, not back in flight.
       if (r.status === LANDED || (r.status === "failed" && (r.error ?? "").startsWith(ABANDONED))) continue;
       const item = itemOf(r);
-      if (item?.closed) continue;
+      // No ticket at all: a mis-dispatch whose ref is a CLI verb (`status`, `abandon`) or a scratch id (`9999999`).
+      if (!item || item.closed) continue;
       out.push({ row: r, item });
     }
   }

@@ -96,6 +96,11 @@ describe("inFlight (OS-165)", () => {
     expect(inFlight(rows, items).map((r) => r.row.id)).toEqual([2]);
   });
 
+  it("leaves out a row that names no ticket: a CLI verb or a scratch id in its ref", () => {
+    const rows = ["status", "abandon", "9999999", "1268"].map((ticket_ref, n) => row({ id: 10 + n, ticket_ref, item_id: null, status: "failed", error: "mis-dispatch" }));
+    expect(inFlight(rows, items)).toEqual([]);
+  });
+
   it("does not bring an older row back when the newest one was abandoned", () => {
     const rows = [row({ id: 1, status: "failed", error: "launch refused" }), row({ id: 2, status: "failed", error: "abandoned: retired" })];
     expect(inFlight(rows, items)).toEqual([]);
