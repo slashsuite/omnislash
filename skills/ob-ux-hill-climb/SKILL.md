@@ -12,11 +12,11 @@ A **climb** compares our site against rivals until ours wins every cell. The cal
 - **Cell**: one metric, in one theme, for one site.
 - **Leg**: steps 1 to 6. **A climb is one kit per leg**: a leg captures afresh into its own kit and reads no earlier kit's PNGs.
 - **Kit**: `~/dev/ux-hill-climb/<us>-vs-<rival>-<date>/`, outside any repo, because many repos are public and scores must not reach them. The PNGs sit in `shots/`; briefs, `rounds/` and `report.md` sit beside it.
-- **Stage**: how many readers a leg runs. Stage 1 is `sonnet` alone, round 1 only. Stage 2 adds `deepseek`. Stage 3 adds `luna`. Stages 2 and 3 run round 1 and round 2.
-- **Reader swap.** Older kits may have `opus` as the stage 1 reader. Their comparisons stand until a new first leg re-baselines with `sonnet`.
-- **Comparison**: the latest three-reader result, from stage 3 or from a first leg. **First leg**: a leg while no comparison exists yet (no earlier kit, or only provisional ones). It runs stage 3 outright, and its result is the comparison once all three readers ran.
+- **Stage**: how many readers a leg runs. Stage 1 is `opus` alone (`sonnet` is its old name), round 1 only. Stage 2 adds `neon`, the other default review reader, and runs round 1 and round 2. DeepSeek and Luna are retired (OS-206) and no stage runs them.
+- **Reader swap.** Older kits may have run `deepseek` or `luna` as readers. Their comparisons stand until a new first leg re-baselines with `neon` and `opus`.
+- **Comparison**: the latest two-reader result, from stage 2 or from a first leg. **First leg**: a leg while no comparison exists yet (no earlier kit, or only provisional ones). It runs stage 2 outright, and its result is the comparison once both readers ran.
 - **Bar**: for each theme, the best rival's cell in the comparison. A theme where a rival is `n/a` skips that rival; a theme where our site is `n/a` (or every rival is) is skipped in the bar check and the stop test.
-- **Our score** for a cell: stage 1, the one reader's round 1 score. Stage 2 and 3, the median of the readers' round 2 scores (with two readers, their midpoint). When a reader did not run, the round 1 scores of the readers that did (the median again).
+- **Our score** for a cell: stage 1, the one reader's round 1 score. Stage 2, the median of the readers' round 2 scores (with two readers, their midpoint). When a reader did not run, the round 1 scores of the readers that did (the median again).
 - **`provisional`**: a reader the stage needed did not run. A planned smaller stage is not provisional.
 - **Frozen**: a cell that fell short and showed no gain in two re-scores in a row, at the same stage with the same readers. Gain means our score rose from the previous re-score.
 
@@ -37,7 +37,7 @@ A **climb** compares our site against rivals until ours wins every cell. The cal
 
 Fix our site, at least one rival, and the pages to compare (default: home, pricing, docs, where they exist). Find our site's `ob` project in `ob project list`. If our site has no `ob` project, stop and ask the owner; tickets never go on another project instead. Make the kit directory, with `shots/` and `rounds/` inside. A later leg reads its re-score ticket for the earlier kit paths.
 
-Done when the kit exists (with `shots/` and `rounds/`), the project is known, and you know whether this is a first leg (stage 3) or a re-score (stage 1).
+Done when the kit exists (with `shots/` and `rounds/`), the project is known, and you know whether this is a first leg (stage 2) or a re-score (stage 1).
 
 ### 2. Capture
 
@@ -56,7 +56,7 @@ Done when every site, page and theme the record lists has its tiles in `shots/`,
 
 ### 3. Score: pick the stage, run round 1
 
-Stage: a first leg runs stage 3. A re-score starts at stage 1.
+Stage: a first leg runs stage 2. A re-score starts at stage 1.
 
 Fill the round 1 template in `briefs.md` once per leg into `brief-round1.md` in the kit, and reuse that file for every stage of the leg. The brief is blind: which site is ours is not disclosed, the sites appear in random order, and it carries no earlier score, target, ticket, PR or repo name. Readers run from a copy of `shots/` under a neutral name (`cp -r <kit>/shots $TMPDIR/uxr-$RANDOM`), because the kit path names our site. That keeps the briefs, `rounds/` and the report out of the working directory; the OpenCode readers can still open any path by name, so the brief names no path outside it.
 
@@ -64,7 +64,7 @@ Run each reader the leg has not yet run, independently, on the same brief, in th
 
 ```bash
 K=<kit>; W=$TMPDIR/uxr-$RANDOM; cp -r $K/shots $W; cd $W
-for leg in sonnet deepseek luna; do   # only the readers of this stage that have no round 1 answer yet
+for leg in opus neon; do   # only the readers of this stage that have no round 1 answer yet
   { bun ~/.claude/skills/ob-skeptical-review/review-leg.ts $leg < $K/brief-round1.md > $K/rounds/r1-$leg.txt 2> $K/rounds/r1-$leg.err; echo "$leg exit $?" >> $K/rounds/r1.status; } &
 done; wait; cd; rm -rf $W
 ```
@@ -79,17 +79,17 @@ Round 2 applies only with two or more readers that ran. Fill the round 2 templat
 
 Then, and only then, compare with the bar. Brief stays blind; the comparison happens after the readers have answered.
 
-- **Stage 1 and 2:** if every cell of ours (frozen cells left out) is at or above the bar in the same theme, go back to step 3 and add the next reader, on the same kit and captures. If any cell is below, stop at this stage and go to step 5 with those cells.
-- **Stage 3:** go to step 5 with each cell that is not strictly above the best rival in this same run. This result becomes the comparison (a first leg's own run is its comparison, so its bar columns read the same run).
+- **Stage 1:** if every cell of ours (frozen cells left out) is at or above the bar in the same theme, go back to step 3 and add the next reader, on the same kit and captures. If any cell is below, stop at this stage and go to step 5 with those cells.
+- **Stage 2:** go to step 5 with each cell that is not strictly above the best rival in this same run. This result becomes the comparison (a first leg's own run is its comparison, so its bar columns read the same run).
 - **A reader the stage needs did not run:** stop at this stage, say which reader, and mark the result `provisional`. It cannot pass the bar, end the climb or freeze a cell. An `opencode-go` reader that did not run because the account is out of credits (`ob creds check opencode-go` reports FAILED) also files the owed ticket, in the same step as the report, with the `ob add` line and body of ob-skeptical-review's Out of credits rule. Its title names the kit (not a ticket that may not exist yet), and the body carries this leg's kit path and the stage. Paying it back runs that stage's readers on the same kit (ob-architect, Owed reviews). A planned smaller stage is not provisional and owes nothing.
 
 Done when the stage's cells are scored, the bar check has run, and you know which cells fell short, or that the result is `provisional`.
 
 ### 5. Stop
 
-The climb ends when the result is a stage 3 result with all three readers and every cell of ours is either strictly above the best rival in the same theme and the same run, or frozen. A stage 1 or stage 2 result never ends it, and neither does a `provisional` one.
+The climb ends when the result is a stage 2 result with both readers and every cell of ours is either strictly above the best rival in the same theme and the same run, or frozen. A stage 1 result never ends it, and neither does a `provisional` one.
 
-A **frozen** cell is not looped on and gets no fix ticket. Stages 1 and 2 leave frozen cells out of the bar check, so a leg can reach stage 3. Log frozen cells for the owner with `ob note <re-score ticket>` and in the report.
+A **frozen** cell is not looped on and gets no fix ticket. Stage 1 leaves frozen cells out of the bar check, so a leg can reach stage 2. Log frozen cells for the owner with `ob note <re-score ticket>` and in the report.
 
 Say which test ended it, or that it did not end.
 
@@ -114,8 +114,8 @@ Then write the report to `report.md` in the kit and print it. **The report table
 ```markdown
 ## UX hill climb
 
-Leg: 2 · Stage: 1 of 3 · Readers: 1 of 1 · Ended: not yet, re-score ticket <ref>
-Bar: leg 1, 3 of 3 readers
+Leg: 2 · Stage: 1 of 2 · Readers: 1 of 1 · Ended: not yet, re-score ticket <ref>
+Bar: leg 1, 2 of 2 readers
 Rests on: rival.com light is docs only
 
 | Reader | Round 1 | Round 2 |
@@ -129,7 +129,7 @@ Rests on: rival.com light is docs only
 ```
 
 - The Reader rows show each reader's Overall for our site, round 2 when the stage has one. A reader that did not run reads `failed`, or `skipped (no credits), owed <ref>` when step 4 filed its owed ticket.
-- `Readers: <ran> of <the stage needs>`; fewer reads `provisional` on the `Ended:` line, and names the readers that ran. If DeepSeek answers `CANNOT READ IMAGES`, it counts as not run.
+- `Readers: <ran> of <the stage needs>`; fewer reads `provisional` on the `Ended:` line, and names the readers that ran. If a reader answers `CANNOT READ IMAGES`, it counts as not run.
 - Every metric gets a row. Several rivals add a column per rival theme. Both `Bar` columns are the best rival's cell in the comparison.
 - A first leg fills the `(first leg)` columns with its own scores. A later leg reads the first leg's `report.md` for them only now, when writing the report, never in a reader's brief.
 - A frozen cell is marked `(frozen)` in the table and listed on a line above the tables; the tables stay last.

@@ -107,7 +107,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     });
   });
 
-  test("default review readers list neon and opus only while deepseek and luna stay runnable when named", async () => {
+  test("default review readers list neon and opus only; deepseek and luna are refused when named (OS-206)", async () => {
     expect([...DEFAULT_REVIEW_LEGS]).toEqual(["neon", "opus"]);
     expect(DEFAULT_REVIEW_MODELS.neon).toBe("antigravity:gemini-4-neon");
     expect(DEFAULT_REVIEW_MODELS.opus).toBe("claude-opus-5-5");
@@ -121,14 +121,11 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     expect(loaded.stored).toBe(false);
     expect(Object.keys(loaded.value.readers)).toEqual(["neon", "opus"]);
 
-    // deepseek and luna remain runnable when named directly or via review_readers / models file.
-    const ds = legCommand("deepseek", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
-    expect(ds.argv[0]).toBe("opencode");
-    expect(ds.argv).toContain(DEFAULT_REVIEW_MODELS.deepseek);
-
-    const lu = legCommand("luna", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
-    expect(lu.argv[0]).toBe("opencode");
-    expect(lu.argv).toContain(DEFAULT_REVIEW_MODELS.luna);
+    // deepseek and luna are retired: naming either as a leg, or a model id that names one, is refused with a clear message.
+    expect(() => legCommand("deepseek", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired \(OS-206\)/);
+    expect(() => legCommand("luna", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired \(OS-206\)/);
+    expect(() => legCommand("opencode-go/gpt-6-luna#high", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired/);
+    expect(() => legCommand("opencode-go/deepseek-v4.1-flash#high", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired/);
 
     // End-to-end `ob review readers` CLI with review_readers unset.
     await withScratch((dir) => {

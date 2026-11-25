@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Run ONE skeptical-review leg under a read-only tool profile.
 //
-//   bun review-leg.ts <neon|opus|deepseek|luna|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
+//   bun review-leg.ts <neon|opus|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
 //
 // The brief arrives on stdin; the reader's findings go to stdout. Readers used to be read-only by
 // instruction only: in one review a reader leg shell-executed `ob spinoff cleanup` through an
@@ -20,7 +20,7 @@
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_REVIEW_MODELS, activeProfile, canonicalLeg, reviewModelFor, loadModelsFile, splitTierModel, type ModelsFile } from "../../apps/cli/src/models-file.ts";
+import { DEFAULT_REVIEW_MODELS, activeProfile, canonicalLeg, reviewModelFor, loadModelsFile, retiredReviewMessage, splitTierModel, type ModelsFile } from "../../apps/cli/src/models-file.ts";
 import { creditErrorOf, parseAntigravityJson, profileOrder, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
 import { parseReviewReaders, type ReviewReaders } from "../../apps/cli/src/review-readers.ts";
 import {
@@ -111,8 +111,6 @@ type LegSpec = { kind: LegKind; model: string };
 export const LEGS = {
   neon: { kind: "antigravity", model: DEFAULT_REVIEW_MODELS.neon },
   opus: { kind: "claude", model: DEFAULT_REVIEW_MODELS.opus },
-  deepseek: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.deepseek },
-  luna: { kind: "opencode", model: DEFAULT_REVIEW_MODELS.luna },
 } as const satisfies Record<string, LegSpec>;
 
 export type LegCommand = { argv: string[]; env: Record<string, string> };
@@ -182,7 +180,7 @@ export function loadReaderSetting(
 }
 
 /**
- * The model and runner for `leg`. A named leg (`neon`, `opus`, `deepseek`, `luna`; `sonnet` is read as `opus`) takes its model from
+ * The model and runner for `leg`. A named leg (`neon`, `opus`; `sonnet` is read as `opus`) takes its model from
  * the active profile's `review` map in the machine's models file (`ob models show`), else from LEGS; the kind
  * follows the value, so a profile may move a leg between providers. A raw `antigravity:<model>` or
  * `opencode/<model>` id is its own model. A models file that does not parse throws: no silent fallback to the table.
@@ -194,6 +192,9 @@ export function resolveLeg(
   profile?: string,
   readers: ReviewReaders | null = null,
 ): ResolvedLeg | undefined {
+  // OS-206: a retired reader (deepseek, luna) or a model id naming one is refused, never run.
+  const refused = retiredReviewMessage(leg, leg);
+  if (refused) throw new Error(refused);
   // A reader the owner set in review_readers (the Reviewers page) wins over the machine's file.
   const fromSetting = readerModel(readers, leg);
   if (fromSetting !== undefined) return classifyModel(fromSetting);
@@ -249,7 +250,7 @@ export function legCommand(
   const resolved = resolveLeg(leg, env, profile, readers);
   if (resolved === undefined) {
     throw new Error(
-      `unknown leg '${leg}': use a reader from \`ob review readers\`, neon, opus (or its old name sonnet), deepseek, luna, antigravity:<model> or an opencode/<model>[#variant] id`,
+      `unknown leg '${leg}': use a reader from \`ob review readers\`, neon, opus (or its old name sonnet), antigravity:<model> or an opencode/<model>[#variant] id`,
     );
   }
   if (resolved.kind === "antigravity") {
@@ -705,7 +706,7 @@ export function reviewerConfigDir(): string {
 if (import.meta.main) {
   const leg = process.argv[2];
   if (!leg) {
-    console.error("usage: bun review-leg.ts <neon|opus|deepseek|luna|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md");
+    console.error("usage: bun review-leg.ts <neon|opus|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md");
     process.exit(2);
   }
   // The readers the owner chose (review_readers), read once for this leg.

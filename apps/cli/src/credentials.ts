@@ -125,7 +125,7 @@ export const CREDENTIALS: CredentialSpec[] = [
     refresh: "paste",
     command: "ob secret set opencode-go",
     purpose:
-      "The skeptical-review legs (DeepSeek, Luna) and the headless runs. An expired key or a used-up plan fails them silently (ob 1618).",
+      "The headless runs and the optional OpenCode Go review legs (haiku, qwen). An expired key or a used-up plan fails them silently (ob 1618).",
   },
   {
     name: "opencode-zen",

@@ -25,6 +25,7 @@ import {
   isSpinoffTier,
   rangeCoverError,
   rangeText,
+  retiredReviewMessage,
   type ComplexityRange,
   type SpinoffTier,
 } from "./models-file.ts";
@@ -100,6 +101,8 @@ export function validateReviewReaders(v: unknown): ReviewReaders {
   for (const [leg, spec] of Object.entries(raw.readers as Record<string, unknown>)) {
     if (!LEG_NAME.test(leg)) throw new ReviewReadersError(`reader name '${leg}' must be lowercase letters, digits and dashes`);
     const model = spec && typeof spec === "object" ? (spec as { model?: unknown }).model : undefined;
+    const refused = retiredReviewMessage(leg, typeof model === "string" ? model : undefined);
+    if (refused) throw new ReviewReadersError(refused);
     readers[leg] = { model: checkModel(leg, model) };
   }
   const entries = Array.isArray(raw.tiers) ? raw.tiers : rangesOfTierObject(raw.tiers as Record<string, unknown>);
