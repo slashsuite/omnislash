@@ -1244,6 +1244,10 @@ export function storeConflictSource(db: Database | Store): ConflictSource {
       const id = side.item_id ?? (await ticketItemIdFor(db, side.ref));
       if (id) await appendNote(db, id, text);
     },
+    priority: async (side) => {
+      const id = side.item_id ?? (await ticketItemIdFor(db, side.ref));
+      return id ? ((await getItem(db, id))?.priority ?? null) : null;
+    },
   };
 }
 export const overlapSh: Sh = (cmd, cwd, timeoutMs) => sh(cmd, cwd, timeoutMs);
