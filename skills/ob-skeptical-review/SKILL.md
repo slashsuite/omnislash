@@ -178,8 +178,8 @@ The steps are fixed in the command, so nothing here is yours to decide:
    `complexity N/10`; none reads as 5; `--complexity` overrides). The readers come from `ob review readers` only.
 4. **It escalates to one more Opus reader only when round 1 calls for it**: the leg failed, gave no score,
    raised a `wrong` or an `unproven`, or scored under 8. Review readers are Opus only (OS-238), so escalation never
-   adds neon or any other non-Opus reader, and never the leg's fallback, which stands in only when its reader is
-   unavailable (OS-247). The extra reader is the range's other Opus reader, then any other configured Opus reader,
+   adds neon or any other non-Opus reader (OS-247). `ob review run` never runs a reader's `fallback` either: an
+   unavailable Opus fails its seats and the run exits 1 (then do the pass yourself, below). The extra reader is the range's other Opus reader, then any other configured Opus reader,
    else a second seat of the round-1 Opus reader, `opus-2` (its findings file, its `## opus-2` answers section and its
    tokens are its own). It gets the same brief, not told what round 1 said.
 

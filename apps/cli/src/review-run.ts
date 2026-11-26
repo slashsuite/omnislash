@@ -7,8 +7,8 @@
 //   4. escalate to ONE more reader only when round 1 calls for it: the leg failed, gave no score, raised a
 //      `wrong` or `unproven`, or scored under 8. The extra reader is an Opus reader, never neon or any other
 //      model (OS-247, per OS-238: review readers are Opus only): the range's other Opus reader, then any other
-//      configured Opus reader, else a second seat of the round-1 Opus reader (`opus-2`). A fallback is never an
-//      extra reader; it stands in only when its reader is unavailable (review-leg.ts).
+//      configured Opus reader, else a second seat of the round-1 Opus reader (`opus-2`). This command never runs a
+//      reader's `fallback`: an unavailable Opus fails its seats, and neon does not stand in.
 // `--answers <file>` makes the run the next round, the rebuttal pass: the previous round's legs run again, each
 // with its own previous findings and its own `## <leg>` section of the builder's answers, and nothing else's.
 //

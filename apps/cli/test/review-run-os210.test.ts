@@ -187,35 +187,45 @@ describe("reviewRun", () => {
     expect(readRunRecords(env)).toEqual([]);
   });
 
-  test("--answers runs the rebuttal round: the previous legs again, each with only its own findings and answers", async () => {
-    const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", "opus-2": "stupid: NEON-FINDING\nscore: 7/10", flash: "score: 9/10" });
+  test("--answers runs the rebuttal round on only the legs that returned findings", async () => {
+    // two Opus readers on the range: round 1 is opus, escalation is opus-big (clean), so opus-2 never runs
+    readers = withRange(withReader(readers, "opus-big", "claude-opus-5-5"), { from: 4, to: 6 }, ["opus", "opus-big"]);
+    const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", "opus-big": "score: 9/10" });
+    await reviewRun("OS-1", {}, first.d);
+    // a rebuttal round of that answers opus alone: opus-big returned no finding, so it is not rerun
+    writeFileSync(join(dir, "answers1.md"), "## opus\nfixed: x\n");
+    const solo = deps({ opus: "accepted\nscore: 9/10" });
+    expect((await reviewRun("OS-1", { answers: join(dir, "answers1.md") }, solo.d)).legs.map((l) => l.leg)).toEqual(["opus"]);
+  });
+
+  test("--answers reruns a second Opus seat as its own seat, with only its own findings and answers", async () => {
+    const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", "opus-2": "stupid: SEAT2-FINDING\nscore: 7/10" });
     await reviewRun("OS-1", {}, first.d);
     const answers = join(dir, "answers.md");
-    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## opus-2\nrebutted: NEON-ANSWER\n");
-    const second = deps({ opus: "accepted\nscore: 9/10", "opus-2": "rejected: still\nscore: 7/10", flash: "score: 9/10" });
+    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## opus-2\nrebutted: SEAT2-ANSWER\n");
+    const second = deps({ opus: "accepted\nscore: 9/10", "opus-2": "rejected: still\nscore: 7/10" });
     const r = await reviewRun("OS-1", { answers }, second.d);
     expect(r.round).toBe(2);
     const opus = second.ran.find((x) => x.leg === "opus")!.brief;
     expect(opus).toContain("OPUS-FINDING");
     expect(opus).toContain("OPUS-ANSWER");
-    expect(opus).not.toContain("NEON-FINDING");
-    expect(opus).not.toContain("NEON-ANSWER");
+    expect(opus).not.toContain("SEAT2-FINDING");
+    expect(opus).not.toContain("SEAT2-ANSWER");
     expect(r.legs.map((l) => [l.leg, l.phase, l.verdict.accepted, l.verdict.rejected])).toEqual([
       ["opus", "rebuttal", 1, 0],
       ["opus-2", "rebuttal", 0, 1],
     ]);
-    // flash returned no finding, so it is not rerun and needs no section
     expect(second.ran.map((x) => x.leg)).toEqual(["opus", "opus-2"]);
     // the second seat's rebuttal runs the reader opus again, under its own seat
     expect(second.ran.find((x) => x.leg === "opus-2")!.reader).toBe("opus");
   });
 
   test("--answers answers the most recent round, even after a fresh round 1 restarted the count", async () => {
-    await reviewRun("OS-1", {}, deps({ opus: "wrong: OLD-FINDING\nscore: 5/10", "opus-2": "score: 9/10", flash: "score: 9/10" }).d);
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: OLD-FINDING\nscore: 5/10", "opus-2": "score: 9/10" }).d);
     const answers = join(dir, "answers.md");
     writeFileSync(answers, "## opus\nfixed: x\n");
     await reviewRun("OS-1", { answers }, deps({ opus: "accepted\nscore: 9/10" }).d);
-    const fresh = await reviewRun("OS-1", {}, deps({ opus: "wrong: NEW-FINDING\nscore: 5/10", "opus-2": "score: 9/10", flash: "score: 9/10" }).d);
+    const fresh = await reviewRun("OS-1", {}, deps({ opus: "wrong: NEW-FINDING\nscore: 5/10", "opus-2": "score: 9/10" }).d);
     expect(fresh.round).toBe(1);
     const again = deps({ opus: "accepted\nscore: 9/10" });
     const r = await reviewRun("OS-1", { answers }, again.d);
@@ -228,12 +238,12 @@ describe("reviewRun", () => {
     const answers = join(dir, "answers.md");
     writeFileSync(answers, "## opus\nfixed: x\n");
     await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no recorded review round");
-    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", "opus-2": "stupid: y\nscore: 9/10", flash: "score: 9/10" }).d);
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", "opus-2": "stupid: y\nscore: 9/10" }).d);
     await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no '## <leg>' section for: opus-2");
   });
 
   test("a failed round-1 leg escalates and names its error", async () => {
-    const { d } = deps({ "opus-2": "score: 8/10", flash: "score: 8/10" });
+    const { d } = deps({ "opus-2": "score: 8/10" });
     const r = await reviewRun("OS-1", {}, d);
     expect(r.legs[0]).toMatchObject({ leg: "opus", exit: 1, error: "review-leg: opus failed: exit 1: boom" });
     expect(r.escalated).toBe(true);
