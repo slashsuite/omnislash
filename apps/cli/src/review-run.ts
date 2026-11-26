@@ -4,9 +4,11 @@
 //   1. mark the row `reviewing` (best effort, as the skill always said);
 //   2. run the repo's gate (`ob gate run`, cached by sha); a red gate stops the review before any leg runs;
 //   3. round 1: ONE reader, the first leg `ob review readers --complexity <n>` lists for the row's score;
-//   4. escalate to up to two more readers only when round 1 calls for it: the leg failed, gave no score, raised a
-//      `wrong` or `unproven`, or scored under 8. The extra readers are the leg's fallback, the range's other
-//      legs, then the other configured readers, in that order.
+//   4. escalate to ONE more reader only when round 1 calls for it: the leg failed, gave no score, raised a
+//      `wrong` or `unproven`, or scored under 8. The extra reader is an Opus reader, never neon or any other
+//      model (OS-247, per OS-238: review readers are Opus only): the range's other Opus reader, then any other
+//      configured Opus reader, else a second seat of the round-1 Opus reader (`opus-2`). This command never runs a
+//      reader's `fallback`: an unavailable Opus fails its seats, and neon does not stand in.
 // `--answers <file>` makes the run the next round, the rebuttal pass: the previous round's legs run again, each
 // with its own previous findings and its own `## <leg>` section of the builder's answers, and nothing else's.
 //
@@ -30,8 +32,8 @@ type Env = Record<string, string | undefined>;
 
 /** Round 1 escalates when its score is under this. */
 const ESCALATE_BELOW = 8;
-/** Escalation adds at most this many readers. */
-const ESCALATE_MAX = 2;
+/** An Opus model id, bare or behind a provider prefix (`claudeAgent:claude-opus-5-5`). */
+const OPUS = /claude-opus/i;
 const DEFAULT_COMPLEXITY = 5;
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
@@ -53,7 +55,10 @@ export interface Verdict {
 export type LegPhase = "round1" | "escalation" | "rebuttal";
 
 export interface LegOutcome {
+  /** The seat: the reader's name, or `<reader>-2` for a second seat of the same reader (OS-247). */
   leg: string;
+  /** The reader the seat runs, when it is not `leg` itself (a second seat). */
+  reader?: string;
   model: string | null;
   phase: LegPhase;
   exit: number;
@@ -111,18 +116,30 @@ export function escalation(l: Pick<LegOutcome, "exit" | "verdict">): { escalate:
   return { escalate: false, reason: `round 1 scored ${v.score}/10 with no wrong or unproven` };
 }
 
-/** The leg round 1 runs and the readers escalation may add, in order. Pure. */
-export function planLegs(value: ReviewReaders, complexity: number): { first: { leg: string; model: string }; extra: Array<{ leg: string; model: string }> } {
+/** A planned leg: its seat name, the reader it runs when that differs, and the model. */
+export interface PlannedLeg {
+  leg: string;
+  reader?: string;
+  model: string;
+}
+
+/**
+ * The leg round 1 runs and the reader escalation may add (OS-247): one Opus reader, never neon or any other model.
+ * The range's other Opus reader, then any other configured Opus reader, else a second seat of the round-1 reader
+ * when it is itself Opus; none when no Opus reader is configured. Pure.
+ */
+export function planLegs(value: ReviewReaders, complexity: number): { first: PlannedLeg; extra: PlannedLeg[] } {
   const tier = readersForComplexity(value, complexity);
   const first = tier[0];
   if (!first) throw new AppError(`no review reader covers complexity ${complexity}: set one with \`ob review readers range\``);
-  const order = [first.fallback, ...tier.slice(1).map((r) => r.leg), ...Object.keys(value.readers)];
-  const extra: Array<{ leg: string; model: string }> = [];
-  for (const leg of order) {
-    if (!leg || leg === first.leg || extra.some((e) => e.leg === leg) || !value.readers[leg]) continue;
-    extra.push({ leg, model: value.readers[leg]!.model });
-    if (extra.length === ESCALATE_MAX) break;
-  }
+  const other = [...tier.slice(1).map((r) => r.leg), ...Object.keys(value.readers)].find(
+    (leg) => leg !== first.leg && OPUS.test(value.readers[leg]?.model ?? ""),
+  );
+  const extra: PlannedLeg[] = other
+    ? [{ leg: other, model: value.readers[other]!.model }]
+    : OPUS.test(first.model)
+      ? [{ leg: `${first.leg}-2`, reader: first.leg, model: first.model }]
+      : [];
   return { first: { leg: first.leg, model: first.model }, extra };
 }
 
@@ -175,11 +192,11 @@ export function readRunRecords(env: Env = process.env): ReviewRunRecord[] {
     });
 }
 
-/** Sum the tokens of a run's attempts of one leg; null when no attempt left any. */
+/** Sum the tokens of a run's attempts of one seat; null when no attempt left any. */
 function runTokens(run: string, leg: string, env: Env = process.env): LegTokens | null {
   let sum: LegTokens | null = null;
   for (const r of readLegRecords(env)) {
-    if (r.run !== run || r.leg !== leg || !r.tokens) continue;
+    if (r.run !== run || (r.seat ?? r.leg) !== leg || !r.tokens) continue;
     sum ??= { input: 0, output: 0, reasoning: 0 };
     sum.input += r.tokens.input;
     sum.output += r.tokens.output;
@@ -253,7 +270,7 @@ function lastLine(text: string): string | null {
 async function runLegs(
   d: ReviewRunDeps,
   ctx: { run: string; dir: string },
-  legs: Array<{ leg: string; model: string | null; phase: LegPhase; brief: string }>,
+  legs: Array<{ leg: string; reader?: string; model: string | null; phase: LegPhase; brief: string }>,
 ): Promise<LegOutcome[]> {
   mkdirSync(ctx.dir, { recursive: true });
   return Promise.all(
@@ -261,10 +278,12 @@ async function runLegs(
       const out = join(ctx.dir, `${l.leg}.txt`);
       writeFileSync(join(ctx.dir, `${l.leg}.brief.md`), l.brief);
       d.log(`review: ${l.leg} (${l.phase}) running; findings to ${out}`);
-      const r = await d.leg(l.leg, l.brief, out, { ...d.env, OB_REVIEW_RUN_ID: ctx.run });
+      // OB_REVIEW_SEAT names the seat on the leg record, so a second seat's tokens are not summed with the first's.
+      const r = await d.leg(l.reader ?? l.leg, l.brief, out, { ...d.env, OB_REVIEW_RUN_ID: ctx.run, OB_REVIEW_SEAT: l.leg });
       const text = existsSync(out) ? readFileSync(out, "utf8") : "";
       return {
         leg: l.leg,
+        ...(l.reader ? { reader: l.reader } : {}),
         model: l.model,
         phase: l.phase,
         exit: r.code,
@@ -344,6 +363,7 @@ export async function reviewRun(ticket: string, flags: Flags, d: ReviewRunDeps):
       { run, dir },
       ran.map((l) => ({
         leg: l.leg,
+        ...(l.reader ? { reader: l.reader } : {}),
         model: l.model,
         phase: "rebuttal" as const,
         brief: [
@@ -363,7 +383,7 @@ export async function reviewRun(ticket: string, flags: Flags, d: ReviewRunDeps):
     if (e.escalate && plan.extra.length > 0) {
       escalated = true;
       legs.push(...(await runLegs(d, { run, dir }, plan.extra.map((x) => ({ ...x, phase: "escalation" as const, brief: shared })))));
-    } else if (e.escalate) d.log("review: no other reader is configured to escalate to");
+    } else if (e.escalate) d.log("review: no Opus reader is configured to escalate to (escalation never adds a non-Opus reader)");
   }
 
   const record: ReviewRunRecord = { v: 1, run, ticket, round, start: start.toISOString(), end: d.now().toISOString(), gate: gateRec, complexity: c, escalated, reason, legs };

@@ -1549,8 +1549,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["review run <ticket>", "review run <ticket> --answers answers.md"],
         notes: [
           "Fixed steps: mark the row reviewing, run `ob gate run` (red stops it), then round 1's one reader.",
-          "Escalates on a failed leg, no score, a wrong, an unproven or a score under 8 (at most two more).",
-          "Extra readers: the leg's fallback, the range's other readers, then the other configured ones.",
+          "Escalates on a failed leg, no score, a wrong, an unproven or a score under 8, to one more reader.",
+          "The extra reader is Opus only, never neon or a fallback: another Opus reader, else a second seat (opus-2).",
           "Legs run through review-leg.ts with OB_REVIEW_RUN_ID; tokens are read back from review-legs.jsonl.",
           "Briefs and findings: <git dir>/ob-review/<ticket>/<run id>/. Records: review-runs.jsonl.",
         ],
