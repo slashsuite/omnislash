@@ -271,3 +271,28 @@ test("review-leg.ts stamps each attempt with OB_REVIEW_RUN_ID, so the driver can
   });
   expect(seat[0]).toMatchObject({ leg: "opus", seat: "opus-2", run: "r" });
 });
+
+describe("OB_REVIEW_SEAT stamping (OS-248)", () => {
+  const stamp = async (seatEnv: Record<string, string>) => {
+    const recs: LegRecord[] = [];
+    await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, ...seatEnv }, {
+      record: (r) => recs.push(r),
+      diff: null,
+      readers: defaultReviewReaders(),
+    });
+    return recs;
+  };
+
+  test("a seat that differs from the leg is stamped, trimmed, on every record of the attempt", async () => {
+    const recs = await stamp({ OB_REVIEW_SEAT: "  opus-2 " });
+    expect(recs.length).toBeGreaterThan(0);
+    for (const r of recs) expect(r).toMatchObject({ leg: "opus", seat: "opus-2" });
+  });
+
+  test("a seat equal to the leg, blank or unset stamps nothing", async () => {
+    for (const seatEnv of [{ OB_REVIEW_SEAT: "opus" }, { OB_REVIEW_SEAT: "   " }, {}]) {
+      const recs = await stamp(seatEnv);
+      for (const r of recs) expect(r.seat).toBeUndefined();
+    }
+  });
+});
