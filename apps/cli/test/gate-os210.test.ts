@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gateLine, parseGateFile, runGate, type GateStep } from "../src/commands/gate.ts";
+import { gateEnv, gateLine, parseGateFile, runGate, type GateStep } from "../src/commands/gate.ts";
 import { planExecution } from "../src/remote.ts";
 
 const REPO = join(import.meta.dir, "../../..");
@@ -104,6 +104,18 @@ describe("runGate", () => {
     writeFileSync(join(dir, "gate.json"), JSON.stringify({ steps: [{ name: "env", run: 'test "$X" = 1 && test -f gate.json', env: { X: "1" } }] }));
     git("commit", "-qam", "env");
     expect((await runGate(join(dir), quiet)).result.ok).toBe(true);
+  });
+
+  test("steps run without the caller's OMNISLASH_* pointers, as in CI", async () => {
+    expect(gateEnv({ PATH: "/bin", OMNISLASH_API_URL_FILE: "x", OMNISLASH_STORE: "sqlite" })).toEqual({ PATH: "/bin" });
+    writeFileSync(join(dir, "gate.json"), JSON.stringify({ steps: [{ name: "clean", run: 'test -z "$OMNISLASH_API_URL_FILE"' }] }));
+    git("commit", "-qam", "clean");
+    process.env.OMNISLASH_API_URL_FILE = "/nowhere";
+    try {
+      expect((await runGate(dir, quiet)).result.ok).toBe(true);
+    } finally {
+      delete process.env.OMNISLASH_API_URL_FILE;
+    }
   });
 
   test("a repo with no gate.json is refused by name", async () => {

@@ -85,11 +85,19 @@ export interface RunStep {
   (step: GateStep, root: string): Promise<number>;
 }
 
+/**
+ * The caller's env without its `OMNISLASH_*` store and API pointers. The gate runs as CI does, which has none:
+ * a shell pointed at the live API made 25 store tests fail and cached that red at the commit (OS-210 review).
+ */
+export function gateEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !k.startsWith("OMNISLASH_")));
+}
+
 /** Run one step with `bash -c` from the repo root. Its stdout goes to our stderr, so `--json` stdout stays one JSON document. */
 const runStepLive: RunStep = async (step, root) => {
   const proc = Bun.spawn(["bash", "-c", step.run], {
     cwd: root,
-    env: { ...process.env, ...step.env },
+    env: { ...gateEnv(process.env), ...step.env },
     stdin: "ignore",
     stdout: 2,
     stderr: "inherit",
