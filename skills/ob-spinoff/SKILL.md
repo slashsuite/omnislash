@@ -140,7 +140,7 @@ that a single line in the commit would have made unnecessary.)*
 
 ## 3. Gate via moon (report each)
 This is a moon workspace, run the gate through moon, not raw ad-hoc commands. **CI covers typecheck and test:**
-`ci.yml`'s `gate` job runs `bunx moon run --concurrency 3 :typecheck :test` on your PR head, and a green `gate` on the current head
+`ci.yml`'s `gate` job runs `ob gate run` (the repo's `gate.json`, OS-210) on your PR head; run the same command locally, and a second run at the same commit is a cache hit. A green `gate` on the current head
 SHA is the gate for those two. Run them locally while you build as your own feedback; they are not a second required
 pass before the handoff, and you do not re-run them after the rebase. **You do wait for CI, though:** open the PR, then
 `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` until every check on the PR head is green (PixelSlash is a review, not CI: `ob-babysit-pr`): a pending PixelSlash review is not waited on, it is named as `PixelSlash review owed:`. A failing check is fixed on the branch (push, watch again),

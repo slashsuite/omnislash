@@ -56,6 +56,7 @@ import { cmdTestUser } from "./commands/testuser.ts";
 import { cmdReviewMiss } from "./commands/reviewmiss.ts";
 import { cmdMachine } from "./commands/machine.ts";
 import { cmdReview } from "./commands/review.ts";
+import { cmdGate } from "./commands/gate.ts";
 import { cmdPerson, cmdWhois } from "./commands/person.ts";
 import { cmdTournament } from "./commands/tournament.ts";
 import { cmdCi, cmdGithub } from "./commands/ci.ts";
@@ -506,6 +507,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   "review-miss": cmdReviewMiss,
   machine: cmdMachine,
   review: cmdReview,
+  gate: cmdGate,
   person: cmdPerson,
   whois: cmdWhois,
   tournament: cmdTournament,

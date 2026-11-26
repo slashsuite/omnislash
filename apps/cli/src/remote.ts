@@ -477,6 +477,10 @@ export function planExecution(input: {
   if (command === "db" && args[0] === "clone") {
     return { mode: "nodb", host, reason: "reaches the database container from this machine; no tracker" };
   }
+  // OS-210: `gate` runs this checkout's gate.json and reads no tracker, so CI runs it with no database.
+  if (command === "gate") {
+    return { mode: "nodb", host, reason: "runs in this checkout; no tracker" };
+  }
   if (command === "vision") {
     return { mode: "nodb", host, reason: "mlx-vlm compare runs on this machine; no tracker" };
   }

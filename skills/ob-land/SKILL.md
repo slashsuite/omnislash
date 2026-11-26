@@ -23,7 +23,7 @@ Land one ob ticket onto `main` through a pull request; the architect does the me
 The merge is a GitHub squash of the PR, never a local squash pushed to `main`. Nobody pushes to `main`.
 
 **CI replaces the local typecheck and test re-run.** `.github/workflows/ci.yml` runs the `gate` job on
-every PR: `bunx moon run --concurrency 3 :typecheck :test`. A green `gate` check on the **current PR head SHA** is the gate for
+every PR: `ob gate run`, the repo's `gate.json` (moon `:typecheck :test :lint`, the state-machine check and the workflow check, OS-210). A green `gate` check on the **current PR head SHA** is the gate for
 those two tasks. Do not re-run them locally on either side: not the builder before the
 push, not the architect before the merge. The local-only checks (listed in step 3) stay. A PR with no CI, a red `gate`,
 or a `gate` that is missing or on an older SHA keeps the local gate.
@@ -85,12 +85,12 @@ once undid an earlier one. A rebase is a replay of your commits and cannot do th
 If the rebase brought anything in, the push puts the new tree in front of CI, which runs on that head. Re-run the
 **local-only checks** below on the rebased tree; the typecheck and test targets are CI's.
 
-- **Typecheck and test: CI's, not a local re-run.** `ci.yml` runs `bunx moon run --concurrency 3 :typecheck :test` on the PR head.
+- **Typecheck and test: CI's, not a local re-run.** `ci.yml` runs `ob gate run` (the repo's `gate.json`) on the PR head.
   A green `gate` on the current head SHA is the gate for those two targets (step 4b reads it). Your local run while
   building is your own feedback, not a second required pass. Only when there is no CI, the `gate` is red, or it is
   missing or on an older SHA: run the local gate, `taskslash moon :typecheck :test` where `taskslash status --json` exits 0
   (the TaskSlash daemon admits each task against the machine; the client on PATH is used only when its `status --json` answers),
-  else `bunx moon run --concurrency 3 :typecheck :test` (unchanged tasks are cache hits; `TMPDIR=~/.cache/tmp` for a long run).
+  else `ob gate run` (a commit already gated here is a cache hit; unchanged moon tasks are cache hits; `TMPDIR=~/.cache/tmp` for a long run).
 - **A cache hit IS a gate result, local or remote.** moon keys each task on a hash of its command, args, declared inputs, env, dependencies and toolchain, and replays the recorded result, so a task shown as `cached` means *exactly these inputs already passed here*, and `cached from remote` means *exactly these inputs already passed in main's CI* (only a push to `main` can write the remote cache host; a pull request or a local run cannot). Reach for `--force` only on a *suspected* stale or foreign cache (a moon upgrade, a remote entry you have reason to doubt). What no cache answers stays below: the docs, the migration fingerprint read, the second cli-db run and the visual gates.
 - **Local-only checks, run by hand on every land (CI does not run them):**
   - App change: `bunx moon run <app>:build`.

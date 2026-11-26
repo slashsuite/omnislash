@@ -54,6 +54,8 @@ export interface LegRecord {
    * (best effort, read from the reader's last message). Null otherwise; absent on records written before.
    */
   stop?: "steps" | "max-turns" | null;
+  /** The `ob review run` this attempt belongs to (OS-210, from OB_REVIEW_RUN_ID); absent on a hand-run leg. */
+  run?: string;
 }
 
 /** `review-legs.jsonl` beside the models file and `models-state.json`. */

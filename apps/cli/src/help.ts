@@ -1535,9 +1535,26 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
   // --- Reviews & Models ---
   review: {
     section: "Reviews & Models",
-    summary: "Inspect and configure skeptical-review readers per complexity range",
-    usage: ["review readers [--complexity <1-10>]", "review readers set|rm|range ..."],
+    summary: "Run a ticket's skeptical review; configure its readers per complexity",
+    usage: ["review run <ticket> [--complexity <1-10>] [--answers <file>]", "review readers [--complexity <1-10>]", "review readers set|rm|range ..."],
     subcommands: {
+      run: {
+        summary: "Gate, one reader, two more only if round 1 calls for it; records legs",
+        usage: ["review run <ticket> [--complexity <1-10>] [--json]", "review run <ticket> --answers <file>"],
+        flags: [
+          { flag: "--complexity <n>", description: "The row's score (default: `ob spinoff show`'s, else 5); picks the round-1 reader" },
+          { flag: "--answers <file>", description: "The rebuttal round: '## <leg>' sections of fixed:/rebutted: answers to the previous round" },
+          { flag: "--json", description: "Print the run record" },
+        ],
+        examples: ["review run <ticket>", "review run <ticket> --answers answers.md"],
+        notes: [
+          "Fixed steps: mark the row reviewing, run `ob gate run` (red stops it), then round 1's one reader.",
+          "Escalates on a failed leg, no score, a wrong, an unproven or a score under 8 (at most two more).",
+          "Extra readers: the leg's fallback, the range's other readers, then the other configured ones.",
+          "Legs run through review-leg.ts with OB_REVIEW_RUN_ID; tokens are read back from review-legs.jsonl.",
+          "Briefs and findings: <git dir>/ob-review/<ticket>/<run id>/. Records: review-runs.jsonl.",
+        ],
+      },
       readers: {
         summary: "List or edit skeptical-review readers and the complexity ranges they run on",
         usage: [
@@ -1563,7 +1580,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         ],
       },
     },
-    examples: ["review readers", "review readers --complexity 5 -q"],
+    examples: ["review run <ticket>", "review readers", "review readers --complexity 5 -q"],
   },
 
   machine: {
@@ -2528,6 +2545,30 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       },
     },
     examples: ["creds", "creds check --all"],
+  },
+
+  gate: {
+    section: "System",
+    summary: "Run the repo's gate.json, cached by commit and file hash (CI runs it)",
+    usage: ["gate run [--force] [--json]"],
+    subcommands: {
+      run: {
+        summary: "Run gate.json's steps in order; stop at the first that fails",
+        usage: ["gate run", "gate run --force"],
+        flags: [
+          { flag: "--force", description: "Run even when this sha and gate.json hash have a stored result, and store the new one" },
+          { flag: "--json", description: "Print the result: sha, file_hash, ok, failed, steps with exit and wall time, cached" },
+        ],
+        examples: ["gate run", "gate run --force"],
+      },
+    },
+    notes: [
+      'gate.json at the repo root: {"steps": [{"name", "run", "env"?}]}; each run is a bash command.',
+      "Results are stored in <git common dir>/ob-gate/ by HEAD sha and gate.json hash, red ones too.",
+      "A second run at the same pair prints the stored result and runs nothing.",
+      "A dirty worktree is run and never stored. Exit 1 on red. Needs no tracker.",
+    ],
+    examples: ["gate run"],
   },
 
   skills: {

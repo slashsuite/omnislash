@@ -1,0 +1,11 @@
+{
+  "steps": [
+    {
+      "name": "moon",
+      "run": "bunx moon run --concurrency 3 :typecheck :test :lint ob-dashboard:build-storybook",
+      "env": { "MOON_BASE": "origin/main" }
+    },
+    { "name": "state-machine", "run": "bunx moon run state-machine:export -- --check" },
+    { "name": "workflows", "run": "bun scripts/check-workflows.ts .github/workflows/*.yml" }
+  ]
+}

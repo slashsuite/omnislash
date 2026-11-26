@@ -54,8 +54,8 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 **The owner picks the readers, their models and how many run per complexity range.** The owner sets them on the dashboard's **Models** page (`/models`) or with
 `ob review readers set|rm|range`; both write the server's setting, so every machine reads the same
 set. The ranges cover complexity 1-10 (OS-175; the old simple, medium and complex tiers are 1-3, 4-6 and 7-10).
-`ob review readers --complexity <n> -q` prints the legs a row scored n runs, one per line, and How to run runs exactly
-those. Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
+`ob review readers --complexity <n> -q` prints the legs a row scored n can run, one per line; `ob review run` (How to
+run) starts the first and escalates to the others only when round 1 calls for it. Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
@@ -144,9 +144,9 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   `review-leg.ts` (beside this file) under a read-only profile (`ob-reviewer.md` for OpenCode, `--allowedTools`/`--disallowedTools` for Claude, `--sandbox` + `--settings` for Antigravity).
   It denies edits and writes. The shell is cut to a read-only allowlist (`git log/show/diff/status/blame`,
   `cat`, `grep`, `ls`, `head`, `tail`, `wc`, `ob show`, `ob status`), and backticks, `$(`, `;`, `&`,
-  pipes and redirects are denied on the OpenCode and Claude legs (the Antigravity legs also list them in their deny rules, but that is unverified; see the Antigravity bullet). That ends two past accidents: a reader that shell-executed `ob spinoff cleanup`
+  pipes and redirects are denied on every leg (on the Antigravity legs by an anchored allow list, proven live; see the Antigravity bullet). That ends two past accidents: a reader that shell-executed `ob spinoff cleanup`
   through an unescaped backtick, and one that left edits in six files.
-  - **Antigravity legs (`neon`, or any `antigravity:<model>`)** have no shell-metacharacter denial verified: their read-only guarantee is `--sandbox` plus the `--settings` allow list only. Until a live run shows agy's matcher refuses a compound command, treat them as read-only by instruction and sandbox, not by proof. They run `agy --model <model> --sandbox --output-format json --settings '<read-only permissions>' --add-dir <briefDir> -p '<short prompt>'` (no `--mode plan`, no `--dangerously-skip-permissions`). The brief is written to a temp file under `$TMPDIR` so briefs over 128 KiB never hit E2BIG; `review-leg.ts` prints `response` as plain text and records `usage` tokens in `review-legs.jsonl`.
+  - **Antigravity legs (`neon`, or any `antigravity:<model>`)** run `agy --model <model> --sandbox --output-format json --settings '<read-only permissions>' -p '<short prompt>'` (no `--mode plan`, no `--dangerously-skip-permissions`, no `--add-dir`: with one, agy's shell leaves the checkout). The settings set `agentMode` to `""` (Default mode): a headless `-p` run otherwise defaults to Auto mode, which ran `ls; touch x`, `$(...)`, a pipe into `tee` and a `>` redirect inside `--sandbox` without asking (OS-210, live). In Default mode a command outside the allow list is refused, and the turn ends with an empty `response` and `denied_actions`; `review-leg.ts` fails that leg (`agy refused <n> action(s) ...`), so a refusal is never read as a clean `ok`. The allow list is `read_file(*)` plus one anchored `command(regex:...)` per read-only command whose arguments may not hold `;`, `|`, `&`, `<`, `>`, `$`, a backtick, brackets, a backslash, a newline or (for `git`) quotes, and whose `git` arguments may not start with `--o` or `-o` (so `--output=` cannot write). Deny rules do not override a matching allow rule in agy, so the allow list is the guarantee. Proven live on 2026-11-26 (OS-210): seven attacks (`;`, `$()`, a pipe, `>`, `git diff --output=`, `--out=`, a plain `touch`) were each refused with no file written, and a full leg on a 13-line diff with injected write steps returned findings, wrote nothing and recorded its tokens. The brief is written to a temp file under `$TMPDIR` so briefs over 128 KiB never hit E2BIG, and agy reads it with its file tool; `review-leg.ts` prints `response` as plain text and records `usage` tokens in `review-legs.jsonl`.
   - **OpenCode legs (`opencode/<model>` or `opencode-go/<model>`)** run `opencode run --standalone --agent ob-reviewer -m <model>#high`. `OPENCODE_CONFIG_DIR`
     carries the profile, so it applies in any repo under review. The brief goes on stdin, as it does to the
     Opus leg, never in argv, which avoids the 128 KiB cap on one argv string (a larger one fails with
@@ -162,50 +162,47 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 
 ## How to run
 
-Write the shared part of the brief once: this skill, the diff (`git diff main...HEAD`) and the ticket ACs.
-Give it this scope line, and nothing that invites more (never "read the other checkouts under ~/dev"):
-`Scope: read the diff above first, then only the files it touches and their direct callers, inside this checkout.`
-A reader that wanders burns its turns and time (one DeepSeek leg made 101 calls on a skill-text diff).
-Launch **one background leg per model**, each from its own brief file, none told what the others said. Run
-them from the worktree under review:
-
-On a builder's diff, first mark the row as in review, so the dashboard shows it (OS-183):
-`ob spinoff phase <ticket> reviewing`. A refusal (the row is handed off, or has no row) is not a reason to stop:
-note it and run the review.
-
-Read the readers for the row's complexity first (`ob spinoff show <ticket>` prints `complexity N/10`; a row with no
-score reads as 5), and run exactly those:
+Run the review with one command from the worktree under review (OS-210); it replaces the loop this section used
+to hold, and there is no second way to start the legs:
 
 ```bash
-R=<skill dir>   # ~/.claude/skills/ob-skeptical-review
-D="${TMPDIR:-$HOME/.cache/tmp}"
-C=<the row's complexity, else 5>
-# the readers come from configuration only; if they cannot be read, stop and report it rather than guess
-legs=$(ob review readers --complexity "$C" -q) && [ -n "$legs" ] || { echo "ob review readers failed: report the review as blocked" >&2; exit 1; }
-for leg in $legs; do
-  bun "$R/review-leg.ts" "$leg" < "$D/review-<ticket>-$leg.brief.md" > "$D/review-<ticket>-$leg.txt" 2>&1 &
-done; wait
+ob review run <ticket>                      # round 1
+ob review run <ticket> --answers answers.md # the next round, the rebuttal pass
 ```
 
-Each leg ends on its own, so the loop needs no timeout of its own: an attempt that passes 15 minutes
-(`OB_REVIEW_LEG_TIMEOUT_S` overrides) is killed, keeps the output it printed, prints
-`review-leg: <leg> timed out after <n>s; partial output above` (for an `agy` leg, `no partial output`, since agy prints only when it finishes) and exits 124 (report it as `failed (timeout)`;
-rerunning it is your call), and a reader has 40 turns (`steps: 40` in `ob-reviewer.md`, `--max-turns 40` on the
-claude leg). At the cap an OpenCode reader gives its final answer with tools off; the claude leg exits 1 with
-`Error: Reached max turns (40)` and no findings, which is `failed (max turns)`. Either way the leg's last stderr line is
-`review-leg: <leg> failed: exit <n>: ...`; these two named reasons replace the copied one.
+The steps are fixed in the command, so nothing here is yours to decide:
 
-An optional leg is its full id too: `bun "$R/review-leg.ts" opencode-go/qwen3.8-flash#high`. A leg that exits
-non-zero is `failed`, or, for a required `opencode-go` reader out of credits, `skipped (no credits), owed <ref>`. Drop a skipped
-leg from the loop. Never start a leg any other way: a reader run outside `review-leg.ts` is read-only by
-instruction only. If no leg can launch, do the pass yourself in a fresh turn with **only** that diff. Do not
-skip the gate.
+1. It marks the row `reviewing` (`ob spinoff phase`, so the dashboard shows it); a refusal is noted and the review runs.
+2. It runs the repo's gate (`ob gate run`, from `gate.json`, cached by sha). A red gate stops it; no leg runs.
+3. **Round 1 is one reader**: the first leg of the range covering the row's complexity (`ob spinoff show` prints
+   `complexity N/10`; none reads as 5; `--complexity` overrides). The readers come from `ob review readers` only.
+4. **It escalates to up to two more readers only when round 1 calls for it**: the leg failed, gave no score,
+   raised a `wrong` or an `unproven`, or scored under 8. The extra readers are the leg's fallback, the range's other
+   readers, then the other configured readers. Each gets the same brief, none told what the others said.
 
-**From round 2 the brief is per leg, because the round is the rebuttal pass.** Each leg's brief file
-is the shared part above plus, for that leg only, its own previous findings verbatim and the builder's answer to
-each:
+The brief is this skill's stance and output format, the scope line
+(`Scope: read the diff above first, then only the files it touches and their direct callers, inside this checkout.`),
+`ob show <ticket>` and the diff from the merge base with origin/main to the worktree (commit or stage new files:
+untracked ones are named on stderr and left out). Every leg runs through `review-leg.ts` (the read-only profile)
+with `OB_REVIEW_RUN_ID` set, so each leg record in `review-legs.jsonl` carries the run, and the command reads the
+leg's tokens back from it. It prints one line per leg (phase, score, counts, tokens) and the path of its findings
+file under `<git dir>/ob-review/<ticket>/<run id>/` (scratch, never committed); one record per round, with each
+leg's verdict and tokens, goes to `review-runs.jsonl` beside `review-legs.jsonl`. Exit 1 on a red gate or when
+every leg failed; then do the pass yourself in a fresh turn with **only** that diff.
+
+Each leg ends on its own: an attempt that passes 15 minutes (`OB_REVIEW_LEG_TIMEOUT_S` overrides) is killed,
+keeps the output it printed and exits 124 (report it as `failed (timeout)`), and a reader has 40 turns
+(`steps: 40` in `ob-reviewer.md`, `--max-turns 40` on the claude leg); the claude leg at the cap exits 1 with
+`Error: Reached max turns (40)`, which is `failed (max turns)`. Otherwise a failed leg's line carries its
+`review-leg: <leg> failed: exit <n>: ...` reason; copy that into the review line. A required `opencode-go` reader out
+of credits is `skipped (no credits), owed <ref>` (Out of credits rule).
+
+**From round 2 the round is the rebuttal pass.** Write the answers file with one `## <leg>` section per leg that
+returned findings (a `wrong`, `stupid`, `overboard` or `unproven` line) in the previous round; the rebuttal answers the ticket's most recent round and runs only those legs, each answering that leg's own findings (copy them from its findings file,
+so verbatim is a file copy):
 
 ```
+## opus
 fixed: <file:line>
 rebutted: <what the answer rests on, in the finding's own terms>
 ```
@@ -215,13 +212,10 @@ For a `wrong` that is the input or state the finding needs, the line that handle
 this, an earlier round asked for it), and the reader rejects it by naming the simpler move the answer misses. An
 `unproven` the builder dropped is answered with the one line on why it does not hold.
 
-Copy the findings out of the stdout file the loop writes for that leg (`$D/review-<ticket>-<leg>.txt`, or
-the same under `$TMPDIR` when it is set; scratch, never committed), so verbatim is a file copy and not a retype.
-Never put two legs on one brief file: a shared file either shows every leg the others' findings or leaves all but
-one unable to answer its own. No leg ever sees another leg's findings or answers, in its brief or anywhere else:
-a rebuttal round stays several independent reviews, not one review with several names. This is the same
-`review-leg.ts` call with different stdin, so there is no new mode and no change to `review-leg.ts` or
-`ob-reviewer.md`.
+`ob review run <ticket> --answers <file>` reruns the previous round's legs, each brief carrying the shared part,
+that leg's own previous findings and only its own section of the file: no leg ever sees another leg's findings or
+answers, so a rebuttal round stays several independent reviews, not one review with several names. A section
+missing for a leg is refused by name.
 
 Each subagent returns a short list, nothing else. **On a rebuttal brief it answers the prior findings first**,
 one line each, before any new finding and before the score:
