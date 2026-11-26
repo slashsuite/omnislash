@@ -6,6 +6,7 @@
 // calling machine, since the T3 cache and the worktrees are local. `renderRoleBrief` is pure.
 import { readFileSync } from "node:fs";
 import type { Database } from "bun:sqlite";
+import { eq, like, or } from "drizzle-orm";
 import type { Store } from "./db/store.ts";
 import { complexityLabel, complexityOf } from "./models-file.ts";
 import { asStore } from "./db/store.ts";
@@ -77,6 +78,21 @@ export interface RoleBriefStoreFacts {
   next_total: number;
   /** The newest note no brief has shown yet. */
   note: RoleNote | null;
+  /** OS-213: the open day-focus item, so a run started after 07:00 still has the day's theme. Absent or null: none open. */
+  focus?: DayFocus | null;
+}
+
+/** The day's focus (good morning's `day-focus:<user>` item, or a pre-rename `day-theme` one) and its fitting tickets. */
+export interface DayFocus {
+  ref: string;
+  title: string;
+  body: string | null;
+  /** The tag its tickets carry (`focus:<user>`); null for a `day-theme` item, which has none. */
+  ticket_tag: string | null;
+  /** Open tickets with that tag in the team's projects, in `ob next` order. */
+  tickets: Array<{ ref: string; priority: string; title: string }>;
+  /** Open tickets with that tag in other teams' projects. */
+  elsewhere: number;
 }
 
 export type Pacing =
@@ -98,6 +114,48 @@ export interface RoleBriefFacts extends RoleBriefStoreFacts {
 }
 
 const DONE_STATUSES = new Set(["merged", "failed"]);
+/** Good morning's tag on the day's focus item, `day-focus:<user>`; its tickets carry `focus:<user>`. */
+const DAY_FOCUS_PREFIX = "day-focus:";
+/** The tag before the 2026-11-20 rename to focus; such an item has no ticket tag. */
+const DAY_THEME_TAG = "day-theme";
+/** Body lines of the focus item the brief prints. */
+const FOCUS_BODY_LINES = 20;
+
+/**
+ * The newest open day-focus item and its open tickets, split by whether they are in the team's projects. Null when
+ * no focus item is open.
+ */
+async function dayFocus(s: Store, memberIds: ReadonlySet<string>, focusProject: string | null): Promise<DayFocus | null> {
+  const tags = (await s.q
+    .select({ name: s.t.tag.name })
+    .from(s.t.tag)
+    .where(or(like(s.t.tag.name, `${DAY_FOCUS_PREFIX}%`), eq(s.t.tag.name, DAY_THEME_TAG)))) as Array<{ name: string }>;
+  let best: { item: ItemRow; tag: string } | null = null;
+  for (const { name } of tags) {
+    for (const item of await queryItems(s, { open: true, tag: name })) {
+      if (!best || item.created_at > best.item.created_at) best = { item, tag: name };
+    }
+  }
+  if (!best) return null;
+  const ticketTag = best.tag.startsWith(DAY_FOCUS_PREFIX) ? `focus:${best.tag.slice(DAY_FOCUS_PREFIX.length)}` : null;
+  const tagged = ticketTag ? (await queryItems(s, { open: true, tag: ticketTag })).filter((i) => i.id !== best.item.id) : [];
+  const mine = sortWorklist(
+    tagged.filter((i) => i.project_id !== null && memberIds.has(i.project_id)),
+    focusProject,
+  );
+  return {
+    ref: best.item.ref ?? best.item.id,
+    title: best.item.title,
+    body: best.item.body,
+    ticket_tag: ticketTag,
+    tickets: mine.map((i) => ({
+      ref: i.ref ?? i.id,
+      priority: priorityName(effectivePriority({ priority: i.priority, projectId: i.project_id, focusProject })),
+      title: i.title,
+    })),
+    elsewhere: tagged.length - mine.length,
+  };
+}
 const HANDED_OFF = "ready-for-gate";
 
 /** Buildable: not blocked, and not already a row in flight. Pure. */
@@ -175,6 +233,7 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
     next,
     next_total: buildable.length,
     note,
+    focus: await dayFocus(s, memberIds, focus),
   };
 }
 
@@ -233,7 +292,20 @@ function pacingLine(p: Pacing): string {
   return p.ahead ? `${lead}; ahead` : lead;
 }
 
-/** The brief as text: nine sections in a fixed order. Pure. */
+/** The focus section's lines: the item, its body (cut), then the team's tickets in it. Pure. */
+function focusLines(d: DayFocus): string[] {
+  const out = [`${d.ref}: ${d.title}`];
+  const body = d.body?.trim() ? d.body.trim().split("\n") : [];
+  out.push(...body.slice(0, FOCUS_BODY_LINES));
+  if (body.length > FOCUS_BODY_LINES) out.push(`+${body.length - FOCUS_BODY_LINES} more lines (\`ob show ${d.ref}\`)`);
+  if (!d.ticket_tag) return out;
+  out.push(`Your team's tickets in it (tagged ${d.ticket_tag}):`);
+  out.push(...(d.tickets.length > 0 ? capped(d.tickets, (t) => `${t.ref} ${t.priority}: ${t.title}`) : ["none"]));
+  if (d.elsewhere > 0) out.push(`${d.elsewhere} more in other teams' projects`);
+  return out;
+}
+
+/** The brief as text: nine sections (ten with a day focus) in a fixed order. Pure. */
 export function renderRoleBrief(f: RoleBriefFacts): string {
   const L: string[] = [];
   const section = (title: string, body: string[]) => {
@@ -249,6 +321,7 @@ export function renderRoleBrief(f: RoleBriefFacts): string {
     `Threads: ${threads}`,
     ...capped(f.projects, (p) => `Project ${p.name}: ${p.stage}${p.status && p.status !== "active" ? `, ${p.status}` : ""}`),
   ]);
+  if (f.focus) section("Today's focus", focusLines(f.focus));
   section("Pacing", [pacingLine(f.pacing)]);
   section(
     "Rows in flight",

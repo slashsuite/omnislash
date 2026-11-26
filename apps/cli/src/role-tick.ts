@@ -28,12 +28,12 @@ const TICK_STALE_MS = 60 * 60 * 1000;
 /** Who a tick's messages are from. */
 export const TICK_FROM = "tick";
 
-export type TickKind = "stale-builder" | "flake" | "idle-repo";
+export type TickKind = "stale-builder" | "flake" | "idle-repo" | "builder-context";
 
 /** One thing the architect should look at. `stamp` changes exactly when the finding does. */
 export interface TickFinding {
   kind: TickKind;
-  /** The ticket (stale-builder, flake) or the project id (idle-repo). */
+  /** The ticket (stale-builder, flake, builder-context) or the project id (idle-repo). */
   ref: string;
   stamp: string;
   body: string;
@@ -118,6 +118,45 @@ export async function tickFindings(db: Database | Store, team: string, now: Date
       });
       break;
     }
+  }
+  return out;
+}
+
+/** A builder row as the context check reads it. */
+export interface ContextRow {
+  id: number;
+  ticket_ref: string;
+  status: string;
+  branch: string;
+  worktree: string;
+  launcher?: string | null;
+  t3_thread_id?: string | null;
+}
+
+/**
+ * OS-213: a building T3 builder whose thread has passed `limit` context tokens, as one relaunch prompt for the
+ * architect. The stamp is the thread the row records, so the prompt is written once per recorded thread however long it
+ * stays over. A thread opened by hand is not on the row, so it is not watched (ob has no command to move a launched row
+ * to a new thread), and the prompt says so. A thread whose context cannot be read gives no finding. Pure aside from
+ * `readContext`.
+ */
+export function builderContextFindings(rows: readonly ContextRow[], readContext: (threadId: string) => number | null, limit: number): TickFinding[] {
+  const out: TickFinding[] = [];
+  for (const row of rows) {
+    if (row.status !== "launched" || row.launcher !== T3_LAUNCHER || !row.t3_thread_id) continue;
+    const tokens = readContext(row.t3_thread_id);
+    if (tokens === null || tokens < limit) continue;
+    const ref = row.ticket_ref;
+    out.push({
+      kind: "builder-context",
+      ref,
+      stamp: `context@${row.t3_thread_id}`,
+      body: [
+        `${ref}'s builder thread ${row.t3_thread_id} is at ${Math.round(tokens / 1000)}k context, past ${limit / 1000}k (spinoff row ${row.id}).`,
+        `Relaunch it at its next quiet point: ask it for a handoff (\`ob note ${ref} "<where it is and what is next>"\`), settle the thread, then open a fresh thread on its worktree ${row.worktree} (branch ${row.branch}) seeded with that note and its brief (\`ob spinoff brief ${ref}\`).`,
+        "ob does not relaunch it for you, and it does not watch a thread opened by hand: this prompt is once per recorded thread.",
+      ].join(" "),
+    });
   }
   return out;
 }

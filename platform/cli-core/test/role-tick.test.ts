@@ -23,7 +23,8 @@ import type { ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
 import { PRIORITY_FLAKE } from "../../../apps/cli/src/priority.ts";
-import { tickClientKey, tickFindings } from "../../../apps/cli/src/role-tick.ts";
+import { builderContextFindings, tickClientKey, tickFindings } from "../../../apps/cli/src/role-tick.ts";
+import { Database } from "bun:sqlite";
 import { nightLockedUntil } from "../../../apps/cli/src/role-deliver.ts";
 import { recordSpinoffCheck } from "../../cli-coord/src/spinoff-check.ts";
 
@@ -436,5 +437,72 @@ describe("tickFindings on a fixed clock", () => {
       request_at: NOW.toISOString(),
     });
     expect(await tickFindings(h.store, "t", NOW)).toEqual([]);
+  });
+});
+
+// --- OS-213: a builder thread past 200k context ------------------------------------------------------------------
+
+/** The fake usage source: T3's state db under the case's $HOME, one provider turn per thread with its context. */
+function t3Usage(byThread: Record<string, number>): void {
+  mkdirSync(join(home, ".t3", "userdata"), { recursive: true });
+  const file = join(home, ".t3", "userdata", "statev2.sqlite");
+  rmSync(file, { force: true });
+  const db = new Database(file, { create: true });
+  db.run("create table orchestration_v2_projection_provider_turns (thread_id text, payload_json text)");
+  for (const [thread, used] of Object.entries(byThread)) {
+    db.run("insert into orchestration_v2_projection_provider_turns values (?, ?)", [thread, JSON.stringify({ tokenUsage: { usedTokens: used } })]);
+  }
+  db.close();
+}
+
+describe("OS-213: builder context", () => {
+  const row = (ref: string, thread: string | null, over: Partial<{ status: string; launcher: string | null }> = {}) => ({
+    id: 1,
+    ticket_ref: ref,
+    status: "launched",
+    branch: ref.toLowerCase(),
+    worktree: `/wt/${ref.toLowerCase()}`,
+    launcher: "t3",
+    t3_thread_id: thread,
+    ...over,
+  });
+
+  test("a building t3 thread at the cap is one finding keyed on its thread; under it, unread, handed off or not t3 gives none", () => {
+    const ctx: Record<string, number | null> = { a: 200_000, b: 199_999, c: 250_000, d: null, e: 300_000 };
+    const found = builderContextFindings(
+      [row("TP-1", "a"), row("TP-2", "b"), row("TP-3", "c", { status: "ready-for-gate" }), row("TP-4", "d"), row("TP-5", "e", { launcher: "omnishell" }), row("TP-6", null)],
+      (id) => ctx[id] ?? null,
+      200_000,
+    );
+    expect(found.map((f) => [f.kind, f.ref, f.stamp])).toEqual([["builder-context", "TP-1", "context@a"]]);
+    expect(found[0]!.body).toContain("is at 200k context, past 200k");
+    expect(found[0]!.body).toContain("ob spinoff brief TP-1");
+    expect(found[0]!.body).toContain("ob does not relaunch it for you, and it does not watch a thread opened by hand");
+  });
+
+  test("through `ob role tick`: a thread under 200k gets nothing; past it, the relaunch prompt once", async () => {
+    const h = await local();
+    t3();
+    await building(h.store, "TP-1", ago(5));
+    const { eq } = await import("drizzle-orm");
+    await h.store.q.update(h.store.t.spinoff).set({ t3_thread_id: "builder-1" }).where(eq(h.store.t.spinoff.ticket_ref, "TP-1"));
+
+    t3Usage({ "builder-1": 199_000 });
+    const under = await h.run(["role", "tick"]);
+    expect(under.code).toBe(0);
+    expect(under.out).not.toContain("builder-context");
+    expect(await messages(h.store)).toEqual([]);
+
+    t3Usage({ "builder-1": 231_000 });
+    const over = await h.run(["role", "tick"]);
+    expect(over.code).toBe(0);
+    expect(over.out).toContain("role tick t: wrote #1 builder-context TP-1");
+    const again = await h.run(["role", "tick"]);
+    expect(again.code).toBe(0);
+    expect(again.out).not.toContain("builder-context");
+
+    const rows = await messages(h.store);
+    expect(rows.map((m) => [m.ref, m.client_key])).toEqual([["TP-1", "tick:t:builder-context:TP-1:context@builder-1"]]);
+    expect(rows[0]!.body).toContain("TP-1's builder thread builder-1 is at 231k context, past 200k");
   });
 });

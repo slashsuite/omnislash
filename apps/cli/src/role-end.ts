@@ -22,7 +22,7 @@ import type { TeamRole } from "./team.ts";
 /** A run with nothing for this long, after its last turn completed, ends. */
 const ROLE_IDLE_END_MS = 15 * 60_000;
 /** A run whose context reaches this many tokens ends at its next quiet point. */
-const ROLE_CONTEXT_END_TOKENS = 200_000;
+export const ROLE_CONTEXT_END_TOKENS = 200_000;
 /** How long one pass waits, in total, for the notes it asked for. */
 const ROLE_NOTE_WAIT_MS = 10 * 60_000;
 const ROLE_NOTE_POLL_MS = 5_000;

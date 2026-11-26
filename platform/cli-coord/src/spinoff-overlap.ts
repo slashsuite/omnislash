@@ -31,6 +31,9 @@ export interface OverlapRow {
   branch: string;
   worktree: string;
   status: string;
+  /** OS-213: the launcher and T3 thread, so the tick can read a builder thread's context. */
+  launcher?: string | null;
+  t3_thread_id?: string | null;
 }
 
 /** One live row that shares files with the ticket. `declaredOnly`: its branch and worktree could not be read. */
