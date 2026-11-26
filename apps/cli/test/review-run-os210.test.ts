@@ -264,10 +264,21 @@ test("review-leg.ts stamps each attempt with OB_REVIEW_RUN_ID, so the driver can
   expect(bare[0]!.seat).toBeUndefined();
   // OS-247: a second seat stamps its seat, so its tokens are read back apart from the first seat's
   const seat: LegRecord[] = [];
-  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_RUN_ID: "r", OB_REVIEW_SEAT: "opus-2" }, {
+  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_RUN_ID: "r", OB_REVIEW_SEAT: "  opus-2 " }, {
     record: (r) => seat.push(r),
     diff: null,
     readers: defaultReviewReaders(),
   });
   expect(seat[0]).toMatchObject({ leg: "opus", seat: "opus-2", run: "r" });
+  // OS-248: a seat equal to the leg, or blank, stamps nothing
+  for (const s of ["opus", "   "]) {
+    const same: LegRecord[] = [];
+    await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_SEAT: s }, {
+      record: (r) => same.push(r),
+      diff: null,
+      readers: defaultReviewReaders(),
+    });
+    expect(same).toHaveLength(1);
+    expect(same[0]!.seat).toBeUndefined();
+  }
 });
