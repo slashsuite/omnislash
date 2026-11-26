@@ -12,7 +12,7 @@ import { setTodayRank } from "../../../apps/cli/src/workflow.ts";
 import { decisionsForItem } from "../../../apps/cli/src/decisions.ts";
 import { nextWorklist } from "../../../apps/cli/src/worklist.ts";
 import { addTeam } from "../../../apps/cli/src/team.ts";
-import { DEFAULT_GROUP, OTHER_GROUP, projectGroups } from "../src/server/groups.ts";
+import { DEFAULT_GROUP, OTHER_GROUP, projectGroups, resolveScope } from "../src/server/groups.ts";
 import { queueView } from "../src/server/queue.ts";
 import { setPriority, setQueueOrder } from "../src/server/writes.ts";
 
@@ -181,5 +181,15 @@ describe("queue by group", () => {
     expect((await queueView(store)).group.id).toBe("personal");
     // A team with no projects is not a group, so asking for it falls back too.
     expect((await queueView(store, { team: "empty" })).group.id).toBe("personal");
+  });
+});
+
+// OS-214: a fresh SQLite tracker has no projects. The Queue and Timeline pages read the scope first, and that used
+// to throw "no projects yet", which the built app served as a 500.
+describe("a store with no projects", () => {
+  test("is an empty scope, not a refusal; a named project is still refused", async () => {
+    const store = sqliteStoreFor(freshDb());
+    expect((await resolveScope(store, {})).projectIds).toEqual([]);
+    expect(await resolveScope(store, { project: "nope" }).catch((e: Error) => e.message)).toBe("no project 'nope'");
   });
 });

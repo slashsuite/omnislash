@@ -255,15 +255,14 @@ export interface Flags {
   path?: string;
   "issued-on"?: string;
   bind?: string;
-  // ob 220: TLS for `ob web` (both listeners) and the certificate `ob cert` maintains.
+  // ob 220: TLS for `ob web` and the certificate `ob cert` maintains.
   "tls-cert"?: string;
   "tls-key"?: string;
   // OB-2160: `ob web --prebuilt`, serve without building.
   prebuilt?: boolean;
-  // OB-2199 step 1: `ob web --app <name>` serves apps/<name>; `--port` sets its port; `--no-sidecar-port` opens no :5051 listener.
+  // OB-2199 step 1: `ob web --app <name>` serves apps/<name> (default ob-dashboard, OS-214); `--port` sets its port.
   app?: string;
   port?: string;
-  "no-sidecar-port"?: boolean;
   staging?: boolean;
   // ob 323: `ob pg-export`, the SQLite -> Postgres data move.
   "to-file"?: string;

@@ -1876,14 +1876,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
 
   web: {
     section: "Deploy & Ops",
-    summary: "Build and serve the dashboard (or another app) with optional TLS",
+    summary: "Build and serve the OB dashboard (or another app) with optional TLS",
     usage: ["web [--bind <addr>] [--port <n>] [--prebuilt] [--app <name>] [--tls-cert <p> --tls-key <p>]"],
     flags: [
       { flag: "--bind <addr>", description: "Bind address (default 127.0.0.1; OMNISLASH_WEB_BIND)" },
       { flag: "--port <n>", description: "HTTP/HTTPS listener port (default 5050)" },
       { flag: "--prebuilt", description: "Serve existing dist/ without running a build" },
-      { flag: "--app <name>", description: "Serve apps/<name> instead of the default dashboard" },
-      { flag: "--no-sidecar-port", description: "Do not open the standalone :5051 realtime listener" },
+      { flag: "--app <name>", description: "Serve apps/<name> instead of apps/ob-dashboard" },
       { flag: "--tls-cert <pem>", description: "TLS PEM certificate chain (requires --tls-key)" },
       { flag: "--tls-key <pem>", description: "TLS PEM private key (requires --tls-cert)" },
     ],

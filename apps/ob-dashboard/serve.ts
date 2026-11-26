@@ -39,7 +39,7 @@ await startSentry("web", store);
 const handler = createObHandler({
   clientDir: CLIENT_DIR,
   ssr,
-  sidecar: createSidecar({ store, upgradeOnRoot: false }),
+  sidecar: createSidecar({ store }),
   swSource,
 });
 

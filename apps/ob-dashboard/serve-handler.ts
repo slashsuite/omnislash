@@ -2,8 +2,8 @@
 // own sidecar and a temp store. serve.ts opens the store, starts Sentry and calls Bun.serve; this file
 // opens nothing.
 //
-// The order is apps/dashboard/serve.ts's, with less in it: no consent pages and no ob API (those stay on
-// the personal dashboard), and of the sidecar's three paths only the realtime socket. `/api/whatsapp/*`
+// The order is apps/dashboard/serve.ts's, with less in it: no consent pages and no ob API (the API is its
+// own server, createObApi), and of the sidecar's three paths only the realtime socket. `/api/whatsapp/*`
 // is never handed to the sidecar here, so they fall through to SSR's 404.
 import type { Server } from "bun";
 import { existsSync, statSync } from "node:fs";

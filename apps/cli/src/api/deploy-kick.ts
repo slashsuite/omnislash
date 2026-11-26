@@ -16,7 +16,7 @@ import { DEPLOY_SHA_RE, LIVE_DEPLOY_TARGET, listDeploys, recordDeploy, recordLiv
 import { ApiFault } from "./fault.ts";
 import type { DeployRunRequest, DeployRunResponse } from "./contract.ts";
 
-/** Set only by omnislash-web.service. The dev instance and a laptop's `ob web` serve this API too, and must not restart production. */
+/** Set only by the live API unit. The dev instance serves this API too, and must not restart production. */
 export const DEPLOY_ENABLED_ENV = "OMNISLASH_API_DEPLOY_ENABLED";
 /** Must match REQUEST_FILE in the server's deploy script, which honours the same override. */
 export const DEPLOY_REQUEST_FILE_ENV = "OMNISLASH_DEPLOY_REQUEST_FILE";

@@ -10,7 +10,6 @@ import {
   WEB_TLS_CERT_ENV,
   WEB_TLS_KEY_ENV,
   loadWebTls,
-  realtimeUrlFor,
   resolveWebTlsPaths,
   webScheme,
   webTlsEnv,
@@ -213,18 +212,16 @@ describe("precedence: the flag, then the env pair, then the config rows", () => 
   });
 });
 
-describe("one scheme across both listeners", () => {
-  // The page derives its socket URL from its own origin (apps/dashboard/src/lib/realtimeUrl.ts), so a
-  // dashboard on https that dials a sidecar still on ws is a page that loads and never live-updates.
-  test("http pairs with ws and https pairs with wss", () => {
+describe("one scheme on the one listener", () => {
+  // The page derives its socket URL from its own origin (realtimeUrl.ts), so the socket the app mounts
+  // speaks wss exactly when the page is on https.
+  test("http and https name the scheme on the wire", () => {
     expect(webScheme(false)).toBe("http");
     expect(webScheme(true)).toBe("https");
     expect(webUrl(true, "example.test", 5050)).toBe("https://example.test:5050");
-    expect(realtimeUrlFor(true, "example.test", 5051)).toBe("wss://example.test:5051");
-    expect(realtimeUrlFor(false, "127.0.0.1", 5051)).toBe("ws://127.0.0.1:5051");
   });
 
-  test("both listeners are given the SAME paths, or neither is", () => {
+  test("the app server is given both paths, or neither", () => {
     const dir = tmpDir();
     const paths = pemPair(dir);
     expect(webTlsEnv(paths)).toEqual({

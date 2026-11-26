@@ -22,7 +22,6 @@ import { getStore, type Store } from "./db/store.ts";
 import { computeAlerts, filterSnoozed } from "./commands/alerts.ts";
 import { getFocusProject } from "./config.ts";
 import { settingNumFor } from "./settings.ts";
-import { WEB_BIND_DEFAULT } from "./web-bind.ts";
 
 /** The stored standup doc (086) + its effective text, for the editable surface (088). */
 export type StandupDoc = StandupRow & { effective_md: string | null };
@@ -37,9 +36,9 @@ export type WhatsappFeedItem = WhatsappChatItem;
 
 const WHATSAPP_FEED_LIMIT = 50;
 
-// Realtime layer (083). A standalone Bun.serve WebSocket sidecar (second port) — deliberately NOT
-// wired into the TanStack/Vite server (avoids its bleeding-edge build coupling; pure Bun). Push
-// granularity = whole snapshot.
+// Realtime layer (083). A Bun WebSocket sidecar the app's own Bun server mounts at REALTIME_WS_PATH
+// (358), deliberately NOT wired into the TanStack/Vite server (avoids its bleeding-edge build coupling;
+// pure Bun). OS-214 retired the standalone second-port listener. Push granularity = whole snapshot.
 //
 // CHANGE DETECTION, and why it changed (337). It used to be fs.watch on the database FILE: the DB is
 // written out-of-process (CLI + daemon), and watching the file caught every writer with zero
@@ -52,8 +51,6 @@ const WHATSAPP_FEED_LIMIT = 50;
 // read per interval and only while a client is connected, and it is engine-independent by construction
 // rather than by having a second branch that could rot. LISTEN/NOTIFY would be tighter and is the
 // obvious later refinement; it is not what an unattended cutover should depend on.
-
-export const REALTIME_PORT = 5051;
 
 export interface Snapshot {
   at: string;
@@ -257,17 +254,6 @@ export async function handleWhatsappRequest(
   }
 }
 
-export interface RealtimeHandle {
-  port: number;
-  hostname: string;
-  /** 220: whether this listener is serving wss:// rather than ws://. */
-  tls: boolean;
-  clientCount: () => number;
-  /** Re-read the snapshot NOW and push it if it differs; resolves to whether it pushed (337). */
-  poll: () => Promise<boolean>;
-  stop: () => void;
-}
-
 /**
  * How often the sidecar re-reads while a client is connected (337).
  *
@@ -279,16 +265,9 @@ export interface RealtimeHandle {
  */
 export const REALTIME_POLL_MS = 2000;
 
-/** PEM material for the sidecar's listener (220). Resolved by web-tls.ts; this module only serves it. */
-export interface RealtimeTls {
-  cert: string;
-  key: string;
-}
-
 /**
  * Where the realtime WebSocket lives when the sidecar is mounted under the dashboard's OWN origin
- * (358). The standalone listener upgrades on `GET /` and keeps doing so; a mounted one cannot, because
- * `/` on that origin is the dashboard page itself, so the socket needs a path of its own.
+ * (358). `/` on that origin is the dashboard page itself, so the socket needs a path of its own.
  *
  * This is a PATH and not a port on purpose. The page used to dial `<its own hostname>:5051`, which is
  * right on the LAN and unreachable through the Cloudflare tunnel (354) -- Cloudflare's proxy carries a
@@ -326,10 +305,8 @@ export interface SidecarMount {
 }
 
 /**
- * The sidecar's behaviour, with no listener of its own (358). `startRealtimeServer` wraps this in a
- * `Bun.serve` on 5051; `apps/dashboard/serve.ts` mounts the same object into the dashboard's server so
- * the browser reaches these routes on the page's own origin. One implementation either way -- the two
- * mountings differ only in where the socket upgrades.
+ * The sidecar's behaviour, with no listener of its own (358). `apps/ob-dashboard/serve.ts` mounts it
+ * into the app's own server, so the browser reaches these routes on the page's own origin.
  */
 export function createSidecar(
   opts: {
@@ -343,14 +320,11 @@ export function createSidecar(
     debounceMs?: number | undefined;
     /** How often the snapshot is re-read while a client is connected (337). */
     pollMs?: number | undefined;
-    /** Whether `GET /` upgrades to a socket. True for the standalone listener, false when mounted. */
-    upgradeOnRoot?: boolean | undefined;
   } = {},
 ): SidecarMount {
   const storeFor = async (): Promise<Store> =>
     typeof opts.store === "function" ? opts.store() : (opts.store ?? (await getStore()));
   const pollMs = opts.pollMs ?? opts.debounceMs ?? REALTIME_POLL_MS;
-  const upgradeOnRoot = opts.upgradeOnRoot ?? true;
   const clients = new Set<ServerWebSocket<unknown>>();
   // The last snapshot a BROADCAST pushed, so an unchanged database costs one read and no traffic. It is
   // the shared baseline every connected client is assumed to have caught up to, so only a broadcast
@@ -412,9 +386,8 @@ export function createSidecar(
   return {
     async fetch(req, upgrade) {
       const path = new URL(req.url).pathname;
-      // The socket first: it is matched by path, so a mounted sidecar upgrades on REALTIME_WS_PATH and
-      // the standalone one still upgrades on `/` for anything already dialling 5051 directly.
-      if (path === REALTIME_WS_PATH || (upgradeOnRoot && path === "/")) {
+      // The socket first, matched by path.
+      if (path === REALTIME_WS_PATH) {
         if (upgrade(req)) return undefined; // 101 switching protocols
         return new Response("omnislash realtime\n");
       }
@@ -440,67 +413,6 @@ export function createSidecar(
     poll: () => broadcast(),
     stop() {
       clearInterval(timer);
-    },
-  };
-}
-
-/**
- * Start the WS sidecar on its own port: pushes the current snapshot on connect, then re-reads on an
- * interval and re-pushes only when the payload actually differs (337 -- see the change-detection note).
- *
- * `hostname` is the bind address (192). Bun.serve with no hostname listens on every interface, so the
- * default here is loopback and a wider bind is always the caller passing one.
- *
- * `tls` (220) is the SAME material the dashboard serves. The page derives its socket URL from its own
- * origin (realtimeUrl.ts), so an https page dials wss and a sidecar still on ws is a page that loads
- * and then never live-updates. One deployment, one scheme.
- *
- * 358: this listener is NO LONGER what the dashboard page talks to -- the page reaches the same routes
- * on its own origin under `/api/whatsapp/` and REALTIME_WS_PATH. It stays for clients that dial the
- * sidecar's own port directly.
- */
-export function startRealtimeServer(
-  opts: {
-    port?: number;
-    hostname?: string;
-    store?: Store;
-    debounceMs?: number;
-    pollMs?: number;
-    tls?: RealtimeTls | null;
-  } = {},
-): RealtimeHandle {
-  const port = opts.port ?? REALTIME_PORT;
-  const hostname = opts.hostname?.trim() || WEB_BIND_DEFAULT;
-  const tls = opts.tls ?? null;
-  const sidecar = createSidecar({
-    store: opts.store,
-    debounceMs: opts.debounceMs,
-    pollMs: opts.pollMs,
-    upgradeOnRoot: true,
-  });
-
-  const server = Bun.serve({
-    port,
-    hostname,
-    ...(tls ? { tls: { cert: tls.cert, key: tls.key } } : {}),
-    async fetch(req, srv) {
-      const res = await sidecar.fetch(req, (r) => srv.upgrade(r, { data: undefined }));
-      if (res !== null) return res;
-      return new Response("omnislash realtime\n");
-    },
-    websocket: sidecar.websocket,
-  });
-
-  return {
-    port: server.port ?? port,
-    hostname,
-    tls: tls !== null,
-    clientCount: sidecar.clientCount,
-    poll: sidecar.poll,
-    stop() {
-      sidecar.stop();
-      // Bun.serve.stop returns a Promise; this handle is sync (signal-handler callers cannot await).
-      void server.stop(true);
     },
   };
 }

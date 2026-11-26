@@ -41,7 +41,7 @@ beforeAll(async () => {
   }
   // The server functions in the built bundle read this, never the live store (serve.ts provides the real one).
   provideStore(async () => store);
-  const real = createSidecar({ store, pollMs: 60_000, upgradeOnRoot: false });
+  const real = createSidecar({ store, pollMs: 60_000 });
   // Record every path the handler hands the sidecar, so a test can say which paths never reach it.
   sidecar = {
     ...real,
@@ -198,6 +198,18 @@ describe("Alerts on the OB dashboard (OB-2207)", () => {
     expect(html).not.toContain("waiting on the snooze");
     expect(html).toContain("All clear");
   });
+});
+
+// OS-214: this store has items but no projects, as a fresh SQLite tracker does. Every page must render; /queue and
+// /timeline used to answer 500 because the group scope refused a store with no projects.
+describe("every ob page renders on a store with no projects (OS-214)", () => {
+  for (const path of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline", "/machine"]) {
+    test(`GET ${path} is 200`, async () => {
+      const res = await fetch(`${base}${path}`);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("<title>OmniSlash</title>");
+    });
+  }
 });
 
 describe("the OB dashboard opens no store of its own (OB-2205)", () => {

@@ -8,8 +8,8 @@ import type { Ctx } from "../../../apps/cli/src/ctx.ts";
 import { cmdWeb, type WebDeps } from "../../../apps/cli/src/commands/web.ts";
 
 // OB-2160: `ob web --prebuilt` serves the dist on disk and never builds, so a deploy's restart is down for the
-// process start, not the vite build. A missing dist is a refusal, never a quiet build. A fake spawn and a fake
-// realtime server: no port is bound and nothing is built.
+// process start, not the vite build. A missing dist is a refusal, never a quiet build. A fake spawn: no port is
+// bound and nothing is built.
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -32,9 +32,8 @@ function ctxFor(prebuilt: boolean): Ctx {
   return { db, store: sqliteStoreFor(db), dbPath: ":memory:", mode: "text", flags: prebuilt ? { prebuilt: true } : {}, args: [] } as unknown as Ctx;
 }
 
-function fakeDeps(dir: string): { deps: WebDeps; calls: string[][]; realtime: { started: number } } {
+function fakeDeps(dir: string): { deps: WebDeps; calls: string[][] } {
   const calls: string[][] = [];
-  const realtime = { started: 0 };
   const deps: WebDeps = {
     webDir: dir,
     spawn: (cmd) => {
@@ -42,13 +41,9 @@ function fakeDeps(dir: string): { deps: WebDeps; calls: string[][]; realtime: { 
       // Every child exits 0 at once: the serve child's clean exit ends cmdWeb.
       return { exited: Promise.resolve(0), kill() {} };
     },
-    startRealtime: () => {
-      realtime.started += 1;
-      return { stop() {} };
-    },
     onSignal: { on() {}, off() {} },
   };
-  return { deps, calls, realtime };
+  return { deps, calls };
 }
 
 async function capture(fn: () => Promise<void>): Promise<string> {
@@ -71,22 +66,21 @@ describe("ob web --prebuilt (OB-2160)", () => {
     const { deps, calls } = fakeDeps(dir);
     const out = await capture(() => cmdWeb(ctxFor(true), deps));
     expect(calls).toEqual([["bun", "run", "serve"]]);
-    expect(out).toContain(`serving the prebuilt dashboard in ${join(dir, "dist")} (no build)`);
-    expect(out).toContain("serving OmniSlash dashboard (built)");
-    expect(out).not.toContain("building OmniSlash dashboard");
+    expect(out).toContain(`serving the prebuilt ob-dashboard in ${join(dir, "dist")} (no build)`);
+    expect(out).toContain("serving OmniSlash ob-dashboard (built)");
+    expect(out).not.toContain("building OmniSlash ob-dashboard");
   });
 
-  test("refuses to start, naming apps/dashboard/dist, when the dist is missing", async () => {
+  test("refuses to start, naming apps/ob-dashboard/dist, when the dist is missing", async () => {
     const dir = webDir("none");
-    const { deps, calls, realtime } = fakeDeps(dir);
+    const { deps, calls } = fakeDeps(dir);
     const err = await cmdWeb(ctxFor(true), deps).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toContain(`no built dashboard at ${join(dir, "dist")}`);
+    expect((err as Error).message).toContain(`no built ob-dashboard at ${join(dir, "dist")}`);
     expect((err as Error).message).toContain(join(dir, "dist", "server", "server.js"));
-    expect((err as Error).message).toContain("moon run dashboard:build");
-    // Nothing was built, nothing served, and neither listener was opened.
+    expect((err as Error).message).toContain("moon run ob-dashboard:build");
+    // Nothing was built and nothing served.
     expect(calls).toEqual([]);
-    expect(realtime.started).toBe(0);
   });
 
   test("refuses half a dist (the SSR handler but no client statics)", async () => {

@@ -255,9 +255,9 @@ export const POSTGRES_SERVABLE_COMMANDS: ReadonlySet<string> = new Set([
 	// Every path was walked, and `ob web` has two halves that must BOTH be ported or the page is built
 	// out of two databases:
 	//   the CLI half -- cmdWeb reads `web_bind` (webBindFor) and the two `web_tls_*` rows
-	//                   (webTlsPathsFor, ported here) through the store, then starts the realtime sidecar
-	//                   IN THIS PROCESS and hands it `ctx.store`. Everything else it does is spawning the
-	//                   dashboard's build and its server, which are facts about this machine.
+	//                   (webTlsPathsFor, ported here) through the store. Everything else it does is
+	//                   spawning the app's build and its server, which are facts about this machine.
+	//                   The app's own server mounts the realtime sidecar (OS-214).
 	//   the SIDECAR  -- snapshotFrom (buildStatus, latestStandup, latestPerChat, computeAlerts +
 	//                   filterSnoozed, lastStandupAt, listSpinoffs, branch_age_days) and the /api/whatsapp routes (media, avatar, thread, transcribe -- ported with
 	//                   `whatsapp` in branch G). Change detection is a POLL rather than fs.watch on the

@@ -12,7 +12,6 @@ import {
   webBindFor,
   webServeEnv,
 } from "../../../apps/cli/src/web-bind.ts";
-import { startRealtimeServer } from "../../../apps/cli/src/realtime.ts";
 
 // 192: `ob web` binds an address instead of whatever Bun picks. Every test here stays on loopback:
 // nothing binds a public interface and nothing reaches the network.
@@ -79,27 +78,5 @@ describe("a configured bind is honoured (192)", () => {
   test("the dashboard child server is handed the same bind through its env", () => {
     expect(webServeEnv("10.0.0.30")).toEqual({ HOST: "10.0.0.30", PORT: "5050" });
     expect(webServeEnv(WEB_BIND_DEFAULT)).toEqual({ HOST: "127.0.0.1", PORT: "5050" });
-  });
-});
-
-describe("the realtime sidecar takes the same treatment (192)", () => {
-  test("it binds loopback by default", () => {
-    const rt = startRealtimeServer({ port: 0, store: sqliteStoreFor(freshDb()) });
-    try {
-      expect(rt.hostname).toBe("127.0.0.1");
-    } finally {
-      rt.stop();
-    }
-  });
-
-  test("it binds the hostname it is given, and serves there", async () => {
-    const rt = startRealtimeServer({ port: 0, hostname: "localhost", store: sqliteStoreFor(freshDb()) });
-    try {
-      expect(rt.hostname).toBe("localhost");
-      const res = await fetch(`http://localhost:${rt.port}/`);
-      expect(res.status).toBe(200);
-    } finally {
-      rt.stop();
-    }
   });
 });

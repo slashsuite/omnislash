@@ -11,8 +11,8 @@ import type { Store } from "./db/store.ts";
 // so anything typed into a page crosses the house network in cleartext. ob 219 wants a page you can
 // paste a token into, and a pasted token is exactly the thing that must not travel that way.
 //
-// WHAT THIS MODULE IS: the resolution and the loading, kept away from both listeners so the same
-// answer serves the dashboard (:5050) and the realtime sidecar (:5051). It reads files and it decides;
+// WHAT THIS MODULE IS: the resolution and the loading, kept away from the listener so the same
+// answer serves the app and the realtime socket it mounts. It reads files and it decides;
 // it never issues, renews or writes anything (`ob cert` does that).
 //
 // TWO OUTCOMES, and never a third (ob 1383, the owner's call: a configured TLS install never serves
@@ -248,12 +248,7 @@ export function webUrl(tls: boolean, host: string, port: number): string {
   return `${webScheme(tls)}://${host}:${port}`;
 }
 
-/** The socket URL to print, matched to the page's scheme the way the browser derives it (realtimeUrl.ts). */
-export function realtimeUrlFor(tls: boolean, host: string, port: number): string {
-  return `${tls ? "wss" : "ws"}://${host}:${port}`;
-}
-
-/** The env the dashboard's own Bun server (apps/dashboard/serve.ts) reads for its TLS material. */
+/** The env the served app's own Bun server (apps/<app>/serve.ts) reads for its TLS material. */
 export function webTlsEnv(paths: WebTlsPaths | null): Record<string, string> {
   return paths ? { [WEB_TLS_CERT_ENV]: paths.certPath, [WEB_TLS_KEY_ENV]: paths.keyPath } : {};
 }
