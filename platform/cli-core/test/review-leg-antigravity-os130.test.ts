@@ -190,11 +190,12 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
         modelsPath,
         JSON.stringify({
           active: "p1",
-          fallback: ["p2", "p3"],
+          fallback: ["p2", "p3", "p4"],
           profiles: {
             p1: { review: { opus: "claude-opus-5-5" } },
             p2: { review: { opus: "antigravity:gemini-4-neon" } },
             p3: { review: { opus: "claudeAgent:claude-opus-5-5-other" } },
+            p4: { review: { opus: "claude-sonnet-5-5" } },
           },
         }),
         "utf8",
