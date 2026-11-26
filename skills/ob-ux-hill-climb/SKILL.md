@@ -12,7 +12,7 @@ A **climb** compares our site against rivals until ours wins every cell. The cal
 - **Cell**: one metric, in one theme, for one site.
 - **Leg**: steps 1 to 6. **A climb is one kit per leg**: a leg captures afresh into its own kit and reads no earlier kit's PNGs.
 - **Kit**: `~/dev/ux-hill-climb/<us>-vs-<rival>-<date>/`, outside any repo, because many repos are public and scores must not reach them. The PNGs sit in `shots/`; briefs, `rounds/` and `report.md` sit beside it.
-- **Stage**: how many readers a leg runs. Stage 1 is `opus` alone (`sonnet` is its old name), round 1 only. Stage 2 adds `neon`, Opus's default fallback reader, and runs round 1 and round 2. DeepSeek and Luna are retired (OS-206) and no stage runs them.
+- **Stage**: how many readers a leg runs. Stage 1 is `opus` alone (`sonnet` is its old name), round 1 only. Stage 2 adds `neon` and runs round 1 and round 2. DeepSeek and Luna are retired (OS-206) and no stage runs them.
 - **Reader swap.** Older kits may have run `deepseek` or `luna` as readers. Their comparisons stand until a new first leg re-baselines with `neon` and `opus`.
 - **Comparison**: the latest two-reader result, from stage 2 or from a first leg. **First leg**: a leg while no comparison exists yet (no earlier kit, or only provisional ones). It runs stage 2 outright, and its result is the comparison once both readers ran.
 - **Bar**: for each theme, the best rival's cell in the comparison. A theme where a rival is `n/a` skips that rival; a theme where our site is `n/a` (or every rival is) is skipped in the bar check and the stop test.

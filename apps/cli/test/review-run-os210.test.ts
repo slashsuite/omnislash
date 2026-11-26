@@ -115,8 +115,8 @@ describe("verdicts", () => {
     expect(escalation({ exit: 0, verdict: v("stupid: x\nscore: 8/10") }).escalate).toBe(false);
   });
 
-  test("OS-247: escalation adds one Opus reader, never neon (opus's fallback) or any non-Opus reader", () => {
-    // the default: opus alone, neon its fallback; escalation is a second Opus seat
+  test("OS-247: escalation adds one Opus reader, never neon or any non-Opus reader", () => {
+    // the default: opus alone, no fallback; escalation is a second Opus seat
     expect(planLegs(readers, 5)).toEqual({
       first: { leg: "opus", model: "claude-opus-5-5" },
       extra: [{ leg: "opus-2", reader: "opus", model: "claude-opus-5-5" }],

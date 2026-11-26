@@ -115,7 +115,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     });
   });
 
-  test("default review readers run opus alone, neon only as its fallback; deepseek and luna are refused when named (OS-206, OS-238)", async () => {
+  test("default review readers run opus alone with no fallback (OS-256); deepseek and luna are refused when named (OS-206, OS-238)", async () => {
     expect([...DEFAULT_REVIEW_LEGS]).toEqual(["opus"]);
     expect(DEFAULT_REVIEW_MODELS.neon).toBe("antigravity:gemini-4-neon");
     expect(DEFAULT_REVIEW_MODELS.opus).toBe("claude-opus-5-5");
@@ -123,7 +123,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     const defaults = defaultReviewReaders();
     expect(Object.keys(defaults.readers)).toEqual(["neon", "opus"]);
     expect(defaults.tiers.map((r) => r.legs)).toEqual([["opus"], ["opus"], ["opus"]]);
-    expect(defaults.readers.opus!.fallback).toBe("neon");
+    expect(defaults.readers.opus!.fallback).toBeUndefined();
 
     const emptyIO: ConfigIO = { get: async () => null, set: async () => {} };
     const loaded = await loadReviewReaders(emptyIO);
@@ -180,6 +180,28 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
         "utf8",
       );
       expect(legProfiles("neon", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3", "p4"]);
+    });
+  });
+
+  test("OS-256: the opus leg never moves to a profile that maps opus to a non-Claude model", async () => {
+    await withScratch((dir) => {
+      const modelsPath = join(dir, "models.jsonc");
+      writeFileSync(
+        modelsPath,
+        JSON.stringify({
+          active: "p1",
+          fallback: ["p2", "p3", "p4"],
+          profiles: {
+            p1: { review: { opus: "claude-opus-5-5" } },
+            p2: { review: { opus: "antigravity:gemini-4-neon" } },
+            p3: { review: { opus: "claudeAgent:claude-opus-5-5-other" } },
+            p4: { review: { opus: "claude-sonnet-5-5" } },
+          },
+        }),
+        "utf8",
+      );
+      expect(legProfiles("opus", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
+      expect(legProfiles("sonnet", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
     });
   });
 
