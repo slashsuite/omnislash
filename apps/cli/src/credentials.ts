@@ -438,16 +438,16 @@ export interface CheckResult {
 
 export interface CheckDeps {
   /** The HTTP seam. Tests inject; nothing else in this module reaches the network. */
-  http?: typeof fetch;
-  probes?: Probes;
-  masterKey?: MasterKey;
-  now?: string;
+  http?: typeof fetch | undefined;
+  probes?: Probes | undefined;
+  masterKey?: MasterKey | undefined;
+  now?: string | undefined;
   /**
    * Seams for the WhatsApp bridge read (274). `bridgeStatus` reads a pidfile, shells `lsof`, tails a log
    * and opens the bridge's own SQLite stores, so the `http` seam alone is not enough to keep a test off
    * this machine. Left undefined in production, where the real probes are what is wanted.
    */
-  bridgeDeps?: BridgeDeps;
+  bridgeDeps?: BridgeDeps | undefined;
 }
 
 /**
@@ -513,7 +513,7 @@ interface ResolvedDeps {
   http: typeof fetch;
   probes: Probes;
   masterKey: MasterKey;
-  now?: string;
+  now?: string | undefined;
   bridgeDeps: BridgeDeps;
 }
 

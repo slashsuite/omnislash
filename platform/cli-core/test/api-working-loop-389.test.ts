@@ -202,7 +202,7 @@ describe("API client: issue landed / drift / reconcile (389)", () => {
     const r = await runCli(freshDbPath(), ["issue", "drift"], api(s));
     expect(r.code).toBe(0);
     expect(r.err).not.toContain("run it on the API host");
-    expect(s.calls.map((c) => c.url.slice((BASE + OB_API_PREFIX).length).split("?")[0]).sort()).toEqual([
+    expect(s.calls.map((c) => c.url.slice((BASE + OB_API_PREFIX).length).split("?")[0] ?? "").sort()).toEqual([
       "/issues/github",
       "/issues/pairing",
     ]);

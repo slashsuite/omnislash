@@ -15,7 +15,7 @@
 // Plus the value-shape helpers, which are where the two engines disagree about what a row contains.
 // No live database and no network: this reads source files and pure functions.
 import { describe, expect, it } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getTableColumns, is } from "drizzle-orm";

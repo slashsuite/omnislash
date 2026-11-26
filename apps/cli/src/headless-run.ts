@@ -18,9 +18,9 @@ function resolveModel(model?: string): string {
 }
 
 export function headlessRunArgv(opts: {
-  model?: string;
-  prompt?: string;
-  files?: string[];
+  model?: string | undefined;
+  prompt?: string | undefined;
+  files?: string[] | undefined;
 }): string[] {
   const argv = ["opencode", "run", "-m", resolveModel(opts.model), "--auto"];
   for (const f of opts.files ?? []) argv.push("--file", f);
@@ -37,7 +37,7 @@ export async function runHeadless(opts: HeadlessRunOpts): Promise<string> {
     stdin: new Blob([opts.prompt]),
     stdout: "pipe",
     stderr: "pipe",
-    timeout: opts.timeout,
+    ...(opts.timeout !== undefined && { timeout: opts.timeout }),
   });
   const out = (await new Response(proc.stdout).text()).trim();
   await proc.exited;

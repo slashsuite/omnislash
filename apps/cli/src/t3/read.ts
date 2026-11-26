@@ -30,7 +30,7 @@
 import { defineSeam } from "../test-seams.ts";
 import type { Database } from "bun:sqlite";
 import { listAgents, type AgentRow } from "../../../../platform/cli-coord/src/agent.ts";
-import { listSpinoffs, type SpinoffRow } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { listSpinoffs } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { teamRoleOf, type TeamRole } from "../team.ts";
 import type { Store } from "../db/store.ts";
 import { T3_LAUNCHER, readThreadHeader, t3Seam, type T3Seam } from "./dispatch.ts";

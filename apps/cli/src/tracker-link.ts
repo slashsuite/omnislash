@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { isObRepo } from "../../../platform/cli-coord/src/clean-repo.ts";
 import { eq, isNotNull } from "drizzle-orm";
 import { orm } from "./db/orm.ts";
-import { item, linearRef, spinoff, taskDetail } from "./db/schema.ts";
+import { item, linearRef } from "./db/schema.ts";
 import { attachLinear } from "./items.ts";
 import { nowIso } from "./db.ts";
 import { asStore, type Store } from "./db/store.ts";
@@ -165,7 +165,7 @@ export async function clearRef(db: Database | Store, itemId: string): Promise<Cl
 export interface LinkedItem {
   item_id: string;
   /** The item's type; absent from an older server's pairing response, which reads as a task. */
-  type?: string;
+  type?: string | undefined;
   status: string;
   title: string;
   ref: IssueRef;
@@ -341,7 +341,7 @@ export type Sh = (cmd: string[], cwd?: string) => ShResult;
 
 const realSh: Sh = (cmd, cwd) => {
   try {
-    const p = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawnSync(cmd, { ...(cwd !== undefined && { cwd }), stdout: "pipe", stderr: "pipe" });
     return {
       ok: p.exitCode === 0,
       err: new TextDecoder().decode(p.stderr).trim(),

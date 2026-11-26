@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { countSpawns, freshDb, spawnBudget } from "../../../apps/cli/test/helpers.ts";
+import { countSpawns, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 

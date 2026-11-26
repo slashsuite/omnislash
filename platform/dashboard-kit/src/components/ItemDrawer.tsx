@@ -28,7 +28,7 @@ import type { ItemDetail } from "../lib/types.ts";
 
 // One button per status in the server's valid_next (OB-1939), labelled by this map; a status with no
 // label shows its raw name, so a status added later is never hidden. `open` is special-cased below.
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> & { blocked: string } = {
   in_progress: "Start",
   ready: "Ready",
   merged: "Merged",

@@ -23,7 +23,7 @@
 //   - json columns are text. No json column is read here.
 // Plus a fourth that is specific to this file: IFNULL is SQLite-only, so nextId uses COALESCE.
 import type { Database } from "bun:sqlite";
-import { and, asc, desc, eq, gte, inArray, ne, not, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, ne, not, sql } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { StatusRaced } from "./errors.ts";
 import { defaultStatus, NON_QUEUE_TYPES } from "./status.ts";
@@ -32,16 +32,10 @@ import { asStore, readNumber, type Store } from "./db/store.ts";
 import { assignRef, keyForProject, rerefAfterMove, resolveItemId } from "./refs.ts";
 import { recordPriorityChange, type DecisionOpts } from "./decisions.ts";
 import {
-  decisionDetail,
   item,
-  itemLink,
   itemTag,
-  learningDetail,
-  linearRef,
   project,
-  roadmapDetail,
   tag,
-  taskDetail,
 } from "./db/schema.ts";
 
 export interface ItemRow {
@@ -155,17 +149,17 @@ export interface LearningDetailInput {
 export interface CreateItemInput {
   type: string;
   title: string;
-  body?: string | null;
-  status?: string;
-  projectId?: string | null;
-  priority?: number | null;
-  tags?: string[];
-  linkUrl?: string | null;
-  triage?: boolean;
-  originRepo?: string | null;
-  roadmap?: RoadmapDetailInput;
-  decision?: DecisionDetailInput;
-  learning?: LearningDetailInput;
+  body?: string | null | undefined;
+  status?: string | undefined;
+  projectId?: string | null | undefined;
+  priority?: number | null | undefined;
+  tags?: string[] | undefined;
+  linkUrl?: string | null | undefined;
+  triage?: boolean | undefined;
+  originRepo?: string | null | undefined;
+  roadmap?: RoadmapDetailInput | undefined;
+  decision?: DecisionDetailInput | undefined;
+  learning?: LearningDetailInput | undefined;
 }
 
 export async function createItem(db: Database | Store, input: CreateItemInput): Promise<string> {
@@ -348,10 +342,10 @@ export async function clearBlock(db: Database | Store, id: string, from: string,
 }
 
 export interface EditFields {
-  title?: string;
-  body?: string;
-  priority?: number | null;
-  projectId?: string | null;
+  title?: string | undefined;
+  body?: string | undefined;
+  priority?: number | null | undefined;
+  projectId?: string | null | undefined;
 }
 
 /**
@@ -667,13 +661,13 @@ export async function getTaskDetail(db: Database | Store, id: string): Promise<R
 }
 
 export interface ListFilters {
-  open?: boolean;
-  status?: string;
-  type?: string;
-  projectId?: string;
-  tag?: string;
-  since?: string;
-  updatedAfter?: string;
+  open?: boolean | undefined;
+  status?: string | undefined;
+  type?: string | undefined;
+  projectId?: string | undefined;
+  tag?: string | undefined;
+  since?: string | undefined;
+  updatedAfter?: string | undefined;
 }
 
 export async function queryItems(db: Database | Store, filters: ListFilters): Promise<ItemRow[]> {

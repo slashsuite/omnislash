@@ -34,7 +34,7 @@ function profile(): CloneProfile {
 }
 
 interface Fake extends CloneDeps {
-  captured: { argv: string[]; stdin?: string }[];
+  captured: { argv: string[]; stdin?: string | undefined }[];
   streamed: { argv: string[]; toStderr: boolean }[];
   logs: string[];
 }

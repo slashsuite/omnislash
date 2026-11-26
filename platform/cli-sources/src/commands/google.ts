@@ -230,9 +230,9 @@ function defaultOpenUrl(url: string): void {
 }
 
 export interface CallbackResult {
-  code?: string;
-  error?: string;
-  state?: string;
+  code?: string | undefined;
+  error?: string | undefined;
+  state?: string | undefined;
 }
 
 /** Parse a loopback callback request URL into its OAuth result (pure — no I/O). */

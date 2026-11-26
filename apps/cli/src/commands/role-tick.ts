@@ -39,7 +39,7 @@ export interface TickBackend {
 interface TickCtx {
   mode: Mode;
   flags: Flags;
-  exit?: number;
+  exit?: number | undefined;
 }
 
 /** What one team's pass did. */

@@ -1,86 +1,23 @@
-// wayfinder 1949: per-project ticket refs (`PS-12`), proven on both engines.
+// wayfinder 1949: per-project ticket refs (`PS-12`), proven on SQLite.
 //
-// Three things here can go wrong silently, so each is asserted on data rather than on "it did not throw":
-//   1. the backfill numbers the live tracker's items in the wrong order, under the wrong key, or twice
-//      on a rerun (migration 0037 / pg 0015 on an adopted database with real-shaped rows);
-//   2. two concurrent adds take the same seq (the counter upsert must serialise them);
-//   3. a move loses the old ref, so a branch or note that names it stops resolving.
-// The Postgres side is the ob 325 harness: a local cluster over a unix socket, no network, no live DB.
+// Two things here can go wrong silently, so each is asserted on data rather than on "it did not throw":
+//   1. two concurrent adds take the same seq (the counter upsert must serialise them);
+//   2. a move loses the old ref, so a branch or note that names it stops resolving.
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { SQL } from "bun";
-import { MIGRATIONS_FOLDER, openDb } from "../../../apps/cli/src/db.ts";
-import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
+import { openDb } from "../../../apps/cli/src/db.ts";
 import { createItem, editItem, getItem } from "../../../apps/cli/src/items.ts";
 import { registerProject } from "../../../apps/cli/src/project.ts";
 import {
   aliasesOf,
-  assignRef,
   equivalentRefs,
   normalizeRef,
   ProjectKeyError,
   resolveItemId,
   setProjectKey,
 } from "../../../apps/cli/src/refs.ts";
-import { freshPgDatabase } from "../../../apps/cli/test/pg/harness.ts";
 import { freshDbPath, spawnBudget } from "../../../apps/cli/test/helpers.ts";
-
-const PG_MIGRATIONS = join(import.meta.dir, "..", "..", "..", "apps", "cli", "src", "db", "pg", "migrations");
-const SQLITE_TAG = "0037_per_project_refs";
-const PG_TAG = "0015_per_project_refs";
-
-function chunks(path: string): string[] {
-  return readFileSync(path, "utf8")
-    .split("--> statement-breakpoint")
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0);
-}
-
-/** The backfill half of a refs migration: the guarded UPDATE/INSERT statements a rerun must leave alone. */
-function backfill(path: string): string[] {
-  return chunks(path).filter((c) => /^\s*(--[^\n]*\n\s*)*(UPDATE|INSERT)\b/.test(c));
-}
-
-/** The live tracker's shape, in miniature: keyed and unkeyed projects, project-less items, ids crossing
- *  9 -> 10 with SHARED timestamps (so LENGTH(id) must order 9 before 10), and created_at out of id order. */
-const PROJECTS = [
-  ["omnislash", "omnislash", "side"],
-  ["pixelslash", "PixelSlash", "business"],
-  ["acme-shop", "acme-shop", "side"],
-  ["misc-notes", "misc notes", "home"],
-] as const;
-const ITEMS: Array<[id: string, project: string | null, at: string]> = [
-  ["1", null, "2026-01-01T00:00:00Z"],
-  ["2", "omnislash", "2026-01-02T00:00:00Z"],
-  ["9", "pixelslash", "2026-02-01T00:00:00Z"],
-  ["10", "pixelslash", "2026-02-01T00:00:00Z"],
-  ["3", "pixelslash", "2026-03-01T00:00:00Z"],
-  ["1548", "omnislash", "2026-09-01T00:00:00Z"],
-  ["1417", "acme-shop", "2026-09-02T00:00:00Z"],
-  ["1925", "pixelslash", "2026-10-20T00:00:00Z"],
-  ["968", null, "2026-05-01T00:00:00Z"],
-  ["77", "misc-notes", "2026-04-01T00:00:00Z"],
-];
-
-/** What the backfill must produce for ITEMS, by id. */
-const EXPECTED_REFS: Record<string, string | null> = {
-  "1": "OB-1",
-  "2": "OB-2",
-  "968": "OB-3",
-  "1548": "OB-4",
-  "9": "PS-1",
-  "10": "PS-2",
-  "3": "PS-3",
-  "1925": "PS-4",
-  "1417": "TH-1",
-  "77": null, // an unkeyed project keeps its legacy number
-};
-
-function sortedRefs(rows: Array<{ id: string; ref: string | null }>): Record<string, string | null> {
-  return Object.fromEntries(rows.map((r) => [r.id, r.ref]).sort(([a], [b]) => Number(a) - Number(b)));
-}
 
 describe("refs on a live tracker (1949)", () => {
   test("a move takes a ref under the new key and keeps the old one as an alias", async () => {

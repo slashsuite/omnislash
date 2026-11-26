@@ -67,7 +67,6 @@ import { parseProjectLabel, parseProjectPatch, projectRepoPrivate, renderProject
 import { PROJECT_STATUS_ALIASES } from "../project-status.ts";
 import { briefQuiet, renderBrief, type AnyBrief } from "../commands/brief.ts";
 import { isJournalType, JOURNAL_TYPES, renderJournalCapture, renderJournalList } from "../commands/log.ts";
-import { renderJobs } from "../commands/jobs.ts";
 import { MACHINE_USAGE, machineAuditOptions, printMachineAudit } from "../commands/machine.ts";
 import {
 	DEPLOY_RESULTS,
@@ -91,8 +90,7 @@ import {
 	renderPersonList,
 	renderPersonShow,
 } from "../commands/person.ts";
-import { readFileSync, writeFileSync } from "node:fs";
-import { expandHome } from "../net.ts";
+import { readFileSync } from "node:fs";
 import { CREDENTIAL_NAMES } from "../credentials.ts";
 import { inferProjectSpec, originRepo } from "../project.ts";
 import {
@@ -161,15 +159,15 @@ export interface ApiCtx {
 	/** The cwd every machine-fact is read relative to. Injected so a test never depends on where it ran. */
 	cwd: string;
 	/** git branch/worktree for `ob agent register`. Injected for the same reason. */
-	git: (cwd: string) => { branch?: string; worktree?: string };
+	git: (cwd: string) => { branch?: string | undefined; worktree?: string | undefined };
 	/** 420: google-auth seams (loopback / exchange / openUrl). Tests inject; production uses the real ones. */
-	googleAuth?: GoogleAuthDeps;
+	googleAuth?: GoogleAuthDeps | undefined;
 	/** ob 636: ssh seam for `ob deploy run`. Tests inject; production omits. */
-	deploySsh?: (argv: readonly string[]) => { code: number };
+	deploySsh?: ((argv: readonly string[]) => { code: number }) | undefined;
 	/** ob 1756: the fetch `ob cloudflare` uses. Tests inject; production omits (global fetch). */
-	cloudflareFetch?: typeof fetch;
+	cloudflareFetch?: typeof fetch | undefined;
 	/** OB-1808: how a client waits on a host job. Tests inject; production uses the real clock. */
-	hostJobWait?: HostJobWait;
+	hostJobWait?: HostJobWait | undefined;
 }
 
 function str(flags: Flags, key: string): string | undefined {
@@ -741,7 +739,7 @@ async function apiT3(ctx: ApiCtx): Promise<void> {
 	} finally {
 		restore();
 	}
-	ctx.exit = local.exit;
+	if (local.exit !== undefined) ctx.exit = local.exit;
 }
 
 /** The role backend over the API: the runs, the team and the inbox cross the wire; T3 stays the caller's. */
@@ -1352,7 +1350,7 @@ function factsFromPairing(pairing: {
 }
 
 function linksFromPairing(pairing: {
-	issues: Array<{ id: string; type?: string; status: string; title: string; issue: number; repo: string }>;
+	issues: Array<{ id: string; type?: string | undefined; status: string; title: string; issue: number; repo: string }>;
 }): LinkedItem[] {
 	return pairing.issues.map((l) => ({
 		item_id: l.id,

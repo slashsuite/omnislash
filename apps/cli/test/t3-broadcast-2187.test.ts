@@ -33,7 +33,7 @@ interface World {
   /** Messages T3 actually delivered (deduped on clientRequestId, as T3 does). */
   delivered: T3SendInput[];
   sends: T3SendInput[];
-  lists: Array<{ projectId?: string; cursor?: number }>;
+  lists: Array<{ projectId?: string | undefined; cursor?: number | undefined }>;
   failSendFor: Set<string>;
   unreachable: boolean;
   /** read throws a timeout for these threads. */

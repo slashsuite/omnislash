@@ -69,9 +69,9 @@ export interface LegoOptions {
   /** true once lego already holds material for this domain: `renew` rather than `run`. */
   haveCert: boolean;
   /** Force a renewal even when the certificate is not near expiry. */
-  force?: boolean;
+  force?: boolean | undefined;
   /** Use Let's Encrypt's staging CA: untrusted material, real rate limits avoided. For rehearsals. */
-  staging?: boolean;
+  staging?: boolean | undefined;
 }
 
 const STAGING_CA = "https://acme-staging-v02.api.letsencrypt.org/directory";

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { Database } from "bun:sqlite";
 import { freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { sqliteStoreFor, type Store } from "../../../apps/cli/src/db/store.ts";
 import { computeAlerts, filterSnoozed, snoozeAlert } from "../../../apps/cli/src/commands/alerts.ts";

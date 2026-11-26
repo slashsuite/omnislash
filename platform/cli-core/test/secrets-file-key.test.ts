@@ -3,7 +3,6 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 

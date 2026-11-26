@@ -1,0 +1,10 @@
+{
+  // OS-209: the repo-level scripts (scripts/), typechecked under the strict base. Every other directory has
+  // its own tsconfig.json.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["bun-types"]
+  },
+  "include": ["scripts"]
+}

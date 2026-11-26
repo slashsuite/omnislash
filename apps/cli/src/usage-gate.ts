@@ -86,7 +86,7 @@ export function resetUsageUnknownWarning(): void {
  * below the line costs no item read.
  */
 export async function refuseOverUsage(
-  opts: { ref: string; critical: () => Promise<boolean>; overUsage?: string | null; verb: "dispatched" | "sent back"; now?: Date },
+  opts: { ref: string; critical: () => Promise<boolean>; overUsage?: string | null | undefined; verb: "dispatched" | "sent back"; now?: Date | undefined },
 ): Promise<string | null> {
   const why = opts.overUsage ?? null;
   // A bad override is refused first: an empty reason, or a run from an agent thread. It is Jacobus's, from his own terminal.

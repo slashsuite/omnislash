@@ -104,7 +104,7 @@ describe("sendGmailDraft (1757)", () => {
 
 describe("HttpGoogleClient drafts over a fake fetch (1757)", () => {
   test("create POSTs /drafts with {message:{raw,threadId}}; send POSTs /drafts/send with {id}", async () => {
-    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const calls: Array<{ url: string; method?: string | undefined; body?: unknown }> = [];
     const fetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
       calls.push({ url: String(input), method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       return new Response(JSON.stringify({ id: "x1" }), { status: 200 });

@@ -18,7 +18,6 @@ import {
 const FIX = join(import.meta.dir, "fixtures/usage-2278");
 const ROOT = join(FIX, "projects");
 const DAY = { since: new Date("2026-11-17T00:00:00Z"), until: new Date("2026-11-18T00:00:00Z") };
-const PREV = { since: new Date("2026-11-16T00:00:00Z"), until: new Date("2026-11-17T00:00:00Z") };
 
 // By hand, dollars per million input-equivalent tokens times the class weights:
 const A = 3.36e-6 * (10 + 5 * 100 + 0.1 * 1000 + 2 * 200); // opus, split over two records, 1h write

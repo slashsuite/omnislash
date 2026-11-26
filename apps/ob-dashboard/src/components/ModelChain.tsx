@@ -17,7 +17,7 @@ export function ModelSelect({
   value: string;
   favourites: readonly string[];
   onChange: (model: string) => void;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
 }) {
   return (
     <Select

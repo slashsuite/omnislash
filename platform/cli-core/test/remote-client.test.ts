@@ -456,7 +456,7 @@ describe("remote client: a refresh never lands under an open reader (308)", () =
     // two holds were reached for -- the gate first, then the replica -- and not just the replica
     expect(seen.length).toBe(2);
     // and the gate is handed back on the way out, so a deferral does not lock this machine's readers out
-    expect(ops).toContainEqual([seen[0], 8]);
+    expect(ops).toContainEqual([seen[0]!, 8]);
   });
 
   test("a swap that CAN get the hold still replaces the replica: the lock is not a permanent refusal", async () => {

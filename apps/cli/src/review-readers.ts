@@ -21,7 +21,6 @@ import {
   DEFAULT_REVIEW_LEGS,
   DEFAULT_REVIEW_MODELS,
   TIER_BANDS,
-  TIER_COMPLEXITY,
   isComplexity,
   isSpinoffTier,
   rangeCoverError,

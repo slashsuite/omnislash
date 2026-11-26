@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
@@ -32,7 +31,7 @@ const PG_BUDGET = spawnBudget(2);
 function recordSpawn(...procs: ProcLike[]): { spawn: SpawnProc; calls: Array<{ cmd: string[]; opts?: Record<string, unknown> }> } {
   const calls: Array<{ cmd: string[]; opts?: Record<string, unknown> }> = [];
   const spawn: SpawnProc = (cmd, opts) => {
-    calls.push({ cmd, opts });
+    calls.push({ cmd, ...(opts !== undefined ? { opts } : {}) });
     return procs[Math.min(calls.length, procs.length) - 1] ?? exitProc(0, "");
   };
   return { spawn, calls };

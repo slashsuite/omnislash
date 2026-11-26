@@ -4,19 +4,19 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@slashsuite/ui-react": "^0.13.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "@slashsuite/ui-react": "catalog:",
+    "react": "catalog:react",
+    "react-dom": "catalog:react"
   },
   "devDependencies": {
-    "@testing-library/dom": "^10.4.2",
-    "@testing-library/react": "^16.3.3",
-    "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.3.0",
-    "happy-dom": "^21.0.4",
-    "typescript": "^5.7.0",
-    "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
+    "@vitejs/plugin-react": "catalog:",
+    "happy-dom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

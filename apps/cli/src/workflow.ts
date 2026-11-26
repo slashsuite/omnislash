@@ -11,7 +11,6 @@ import { DECISION_SOURCE, DECISION_TYPE, recordDecision, type DecisionOpts } fro
 import { nowIso } from "./db.ts";
 import { parsePayload, type EventRow } from "./events.ts";
 import { asStore, readNumber, type Store } from "./db/store.ts";
-import { item } from "./db/schema.ts";
 import { isClosedStatus, isValidStatus, statusVocab, type Kind } from "./status.ts";
 import { defineSeam } from "./test-seams.ts";
 
@@ -357,7 +356,7 @@ export async function clearTodayRank(db: Database | Store, id?: string): Promise
 
 /** Where `setQueueOrder` puts an item. `top` may name the band to put it first in; `before` / `after` take it from the target. */
 export type QueueMove =
-  | { top: true; priority?: number }
+  | { top: true; priority?: number | undefined }
   | { before: string }
   | { after: string };
 

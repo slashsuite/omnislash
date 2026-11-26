@@ -280,7 +280,7 @@ async function candidateKeys(s: Store, id: number): Promise<Set<string>> {
 
 export async function addTournament(
   s: Store,
-  input: { subject: string; repo: string; criteria: string | readonly string[]; ref?: string | null },
+  input: { subject: string; repo: string; criteria: string | readonly string[]; ref?: string | null | undefined },
 ): Promise<Tournament> {
   const subject = input.subject?.trim();
   if (!subject) throw new UsageError("--subject <text> is required");
@@ -296,9 +296,9 @@ export async function addTournament(
 
 export interface CandidateInput {
   key: string;
-  label?: string | null;
-  images?: readonly string[] | null;
-  revises?: string | null;
+  label?: string | null | undefined;
+  images?: readonly string[] | null | undefined;
+  revises?: string | null | undefined;
 }
 
 /** Register a candidate, or update the fields given on one already registered. */
@@ -394,7 +394,7 @@ export async function pickTournament(s: Store, id: number, candidate: string, no
   return toTournament(rows[0]!);
 }
 
-export async function listTournaments(s: Store, opts: { repo?: string } = {}): Promise<TournamentListRow[]> {
+export async function listTournaments(s: Store, opts: { repo?: string | undefined } = {}): Promise<TournamentListRow[]> {
   const t = s.t.tournament;
   const repo = opts.repo === undefined ? undefined : parseRepoSlug(opts.repo);
   const rows = (await (repo ? s.q.select().from(t).where(eq(t.repo, repo)) : s.q.select().from(t)).orderBy(asc(t.id))) as TournamentRow[];

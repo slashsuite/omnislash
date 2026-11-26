@@ -71,9 +71,9 @@ describe("draftHash (OB-1910)", () => {
     const variants: Fields[] = [
       { ...base, to: "eve@example.com" },
       { ...base, cc: "d@x.com" },
-      { ...base, cc: undefined },
+      { bcc: "z@x.com", files: [["a.pdf", 10]] },
       { ...base, bcc: "eve@x.com" },
-      { ...base, bcc: undefined },
+      { cc: "c@x.com", files: [["a.pdf", 10]] },
       { ...base, subject: "Invoice v2" },
       { ...base, body: "Hi Bob, attached!" },
       { ...base, files: [["b.pdf", 10]] },

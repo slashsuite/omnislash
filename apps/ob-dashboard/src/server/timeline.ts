@@ -14,8 +14,8 @@ import { buildTimeline, rangeBounds, type Cursor, type TimelineEvent, type Timel
 const TICKET_TYPES = ["task", "decision", "roadmap"];
 
 interface TimelineInput {
-  team?: string;
-  project?: string;
+  team?: string | undefined;
+  project?: string | undefined;
   from: string;
   to: string;
   builds?: boolean;

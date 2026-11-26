@@ -81,7 +81,7 @@ export function abandonRefusal(row: SpinoffRow, commits: number | null, force: b
 export async function abandonSpinoff(
   row: SpinoffRow,
   deps: AbandonDeps,
-  opts: { note?: string | null; force?: boolean } = {},
+  opts: { note?: string | null | undefined; force?: boolean } = {},
 ): Promise<AbandonResult> {
   const force = opts.force === true;
   const commits = row.status === "pending" ? null : deps.commitsAhead(row);

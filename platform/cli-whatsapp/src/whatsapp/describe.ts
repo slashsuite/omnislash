@@ -1,9 +1,6 @@
-import type { Database } from "bun:sqlite";
 import type { Store } from "../../../../apps/cli/src/db/store.ts";
 import { dirname } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { orm } from "../../../../apps/cli/src/db/orm.ts";
-import { whatsappMessage } from "../../../../apps/cli/src/db/schema.ts";
 import { AppError } from "../../../../apps/cli/src/errors.ts";
 import { headlessRunArgv, OPENCODE_HEADLESS_VISION_MODEL } from "../../../../apps/cli/src/headless-run.ts";
 import { fetchWhatsappMedia, isImageMedia, mediaRow, type FetchMediaOpts } from "./media.ts";

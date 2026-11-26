@@ -177,13 +177,13 @@ export interface StartTrialInput {
   target: number;
   a: LegSpec;
   b: LegSpec;
-  tier?: string;
+  tier?: string | undefined;
   /** OS-177: `<from>-<to>`, the complexity range the trial pairs; `--tier` is its old alias (the tier's band). */
-  range?: string;
-  name?: string;
+  range?: string | undefined;
+  name?: string | undefined;
   /** `in,out,cw,cr`, USD per million tokens. */
-  aPrice?: string | null;
-  bPrice?: string | null;
+  aPrice?: string | null | undefined;
+  bPrice?: string | null | undefined;
 }
 
 /**
@@ -1177,7 +1177,7 @@ export function renderTrialReport(r: TrialReport, json: boolean): string {
 /** How the caller reads one leg's measures; each returns null when it cannot tell. */
 export interface MeasureDeps {
   tokens(leg: BlindLeg): { usage: TokenUsage; cost: number | null } | null;
-  thread?(leg: BlindLeg): Promise<{ steers: number | null; active_ms: number | null } | null>;
+  thread?: ((leg: BlindLeg) => Promise<{ steers: number | null; active_ms: number | null } | null>) | undefined;
   gateFirstTime?(leg: BlindLeg): boolean | null;
 }
 

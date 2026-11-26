@@ -318,22 +318,22 @@ export async function foldLidChats(
 
 export interface WhatsappSyncOpts {
   /** Bridge handle override (tests inject a fixture DB; runtime opens whatsapp_db_path read-only). */
-  bridge?: Database;
+  bridge?: Database | undefined;
   /** Ignore the cursor and pull from the start (still bounded by --max). */
-  backfill?: boolean;
+  backfill?: boolean | undefined;
   /** Lower bound from a `--since` instant (ISO / YYYY-MM-DD / "-Nd"). Overrides the cursor. */
-  since?: string;
+  since?: string | undefined;
   /** Lower bound as "the last N days". Overrides the cursor. */
-  days?: number;
+  days?: number | undefined;
   /** Hard cap on messages ingested this run (default DEFAULT_MAX_MESSAGES). */
-  max?: number;
+  max?: number | undefined;
   /**
    * Contacts DB override (the bridge's whatsapp.db) for the lid↔pn map used to canonicalize `@lid`
    * senders before person-enrichment (164). Tests inject a fixture; at runtime (no injected bridge) the
    * configured whatsapp.db is read. When a fixture bridge is injected without this, canonicalization is
    * skipped (empty map) so ingest tests stay hermetic and never touch a real DB.
    */
-  contacts?: Database;
+  contacts?: Database | undefined;
 }
 
 /** Resolve the effective lower bound (bridge timestamp compare): --since > --days > cursor (unless backfill). */
@@ -549,13 +549,13 @@ export interface JustSentOpts {
   /** The exact body that was sent — matched against the bridge row's content. */
   content: string;
   /** ob 1683: the `media_type` the bridge stores for a sent attachment (`image` | `document`); narrows the match. */
-  mediaType?: string;
+  mediaType?: string | undefined;
   /** `Date.now()` captured around the send; the centre of the match window. */
   sentAt: number;
   /** Bridge handle override (tests inject a fixture; runtime opens whatsapp_db_path read-only). */
-  bridge?: Database;
+  bridge?: Database | undefined;
   /** Contacts DB override (tests inject a fixture; runtime derives whatsapp_contacts_db_path). */
-  contacts?: Database;
+  contacts?: Database | undefined;
 }
 
 /**
@@ -931,7 +931,7 @@ export async function threadForChat(
 /** Most-recent ingested WhatsApp messages (optionally within a [since, until] window). */
 export async function recentWhatsapp(
   store: Store,
-  opts: { since?: string; until?: string; limit?: number } = {},
+  opts: { since?: string | undefined; until?: string | undefined; limit?: number | undefined } = {},
 ): Promise<WhatsappHit[]> {
   const conds = [];
   if (opts.since) conds.push(gte(store.t.whatsappMessage.ts, opts.since));
@@ -1200,11 +1200,11 @@ export interface WhatsappChatItem {
 
 export interface LatestPerChatOpts {
   /** Max chats returned (newest-active first). */
-  limit?: number;
+  limit?: number | undefined;
   /** Contacts DB override (tests inject a fixture; runtime derives whatsapp_contacts_db_path). */
-  contacts?: Database;
+  contacts?: Database | undefined;
   /** Include chats marked hidden (169). Default false — hidden chats are excluded from the feed. */
-  includeHidden?: boolean;
+  includeHidden?: boolean | undefined;
 }
 
 /**

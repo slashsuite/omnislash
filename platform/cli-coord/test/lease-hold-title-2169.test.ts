@@ -162,7 +162,7 @@ describe("titleWithLeaseMarker (OB-2169)", () => {
   for (const order of [
     ["cpu:browser", "port:5101"],
     ["port:5101", "cpu:browser"],
-  ]) {
+  ] as const) {
     test(`several leases keep their own markers (clearing ${order.join(" then ")})`, () => {
       let t = set(T, "cpu:browser", "holding");
       expect(t).toBe(`🔒🌐 · ${T}`);

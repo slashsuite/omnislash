@@ -1,5 +1,4 @@
 import type { ItemRow } from "./items.ts";
-import type { Ctx } from "./ctx.ts";
 import { effectivePriority, priorityName } from "./priority.ts";
 
 export type Mode = "human" | "json" | "table" | "quiet";

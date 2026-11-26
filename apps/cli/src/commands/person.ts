@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { Ctx } from "../ctx.ts";
 import { UsageError, AppError } from "../errors.ts";
 import { print } from "../output.ts";

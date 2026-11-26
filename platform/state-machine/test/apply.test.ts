@@ -11,7 +11,7 @@ function row(initial: string | null, opts: { moveUnder?: string; extraRefuses?: 
     status: () => status,
     spec: (event: string, from?: readonly string[]) => ({
       event,
-      from,
+      ...(from !== undefined ? { from } : {}),
       read: async () => status,
       write: async (f: string, t: string) => {
         writes.push([f, t]);

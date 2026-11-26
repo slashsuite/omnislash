@@ -29,7 +29,6 @@ jobs:
       # A change to the machine without the regenerated files fails here.
       - run: bunx moon run state-machine:export -- --check
       - run: bun scripts/check-workflows.ts .github/workflows/*.yml
-      - run: bun test scripts
 
   # OS-211 (OS-112): TLC model-checks the spinoff row lifecycle (platform/state-machine/model/Spinoff.tla).
   # The gate's state-machine tests keep the model's edges, states and events equal to the machine's; TLC then

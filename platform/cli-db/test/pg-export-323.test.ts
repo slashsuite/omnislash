@@ -14,7 +14,6 @@ import {
 	coerceRow,
 	describeSource,
 	expectedSkip,
-	hashTarget,
 	loadOrder,
 	readSequences,
 	renderReport,

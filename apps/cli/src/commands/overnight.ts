@@ -28,9 +28,9 @@ import {
 export interface OvernightBackend {
   start(input: { project: string; date: string }): Promise<{ run: OvernightRun; created: boolean }>;
   decide(input: DecideInput): Promise<OvernightDecision>;
-  summary(input: { project: string; date?: string; section: string; line: string }): Promise<OvernightRun>;
-  show(input: { project: string; date?: string }): Promise<OvernightNight>;
-  list(input: { project?: string; since?: string }): Promise<OvernightRunRow[]>;
+  summary(input: { project: string; date?: string | undefined; section: string; line: string }): Promise<OvernightRun>;
+  show(input: { project: string; date?: string | undefined }): Promise<OvernightNight>;
+  list(input: { project?: string | undefined; since?: string | undefined }): Promise<OvernightRunRow[]>;
 }
 
 interface OvernightCtx {

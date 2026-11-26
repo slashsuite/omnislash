@@ -1,0 +1,24 @@
+$schema: '../.moon/cache/schemas/project.json'
+
+# OS-209: the TypeScript under skills/ (the new-project template, the ob-ui-testing eval fixtures, the skill
+# scripts), typechecked under the strict base. skills/ob-skeptical-review/review-leg.ts imports apps/cli/src.
+dependsOn: ['cli']
+
+tasks:
+  # The template's routes only typecheck against a generated route tree, as in a project made from it.
+  # skills/ob-new-project/tsr.config.json writes it to the gitignored skills/ob-new-project/routeTree.gen.ts,
+  # outside template/, so the template copy never picks it up. Never cached, like ob-dashboard's.
+  generate-routes:
+    # tsr reads tsr.config.json from the working directory.
+    script: 'cd ob-new-project && bunx tsr generate'
+    options:
+      cache: false
+  typecheck:
+    command: 'bunx tsc --noEmit'
+    deps: ['generate-routes']
+    inputs:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - 'tsconfig.json'
+      - 'package.json'
+      - '/apps/cli/src/**/*'

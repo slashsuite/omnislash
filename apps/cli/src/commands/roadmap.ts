@@ -3,9 +3,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { type Ctx, emitItem, requireItem } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { addLink, getRoadmapDetail, queryItems } from "../items.ts";
-import { emitId, print } from "../output.ts";
+import { print } from "../output.ts";
 import { asStore, type Store } from "../db/store.ts";
-import { item, itemLink } from "../db/schema.ts";
 
 /** Item statuses that count a member as "done" for roadmap progress. */
 const DONE_STATUSES = new Set(["done", "archived", "merged"]);

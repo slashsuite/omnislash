@@ -34,7 +34,7 @@ import { asStore, type Store } from "./db/store.ts";
  * anything it does not recognise as a term, so an unparseable query returns no rows rather than an
  * error. That is a small, deliberate improvement rather than a divergence worth undoing.
  */
-export async function searchItemIds(db: Database | Store, query: string, opts: { allowedProjects?: ReadonlySet<string> } = {}): Promise<string[]> {
+export async function searchItemIds(db: Database | Store, query: string, opts: { allowedProjects?: ReadonlySet<string> | undefined } = {}): Promise<string[]> {
   const ids = await searchAll(db, query);
   const allowed = opts.allowedProjects;
   if (!allowed) return ids;

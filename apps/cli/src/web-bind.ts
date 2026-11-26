@@ -12,9 +12,9 @@ export const WEB_BIND_ENV = "OMNISLASH_WEB_BIND";
 export const WEB_PORT = 5050;
 
 export interface WebBindSources {
-  flag?: string | null;
-  env?: string | null;
-  configured?: string | null;
+  flag?: string | null | undefined;
+  env?: string | null | undefined;
+  configured?: string | null | undefined;
 }
 
 const clean = (v: string | null | undefined): string | null => {

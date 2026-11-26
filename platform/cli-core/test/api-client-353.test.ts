@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { INFER_PROJECT_ERROR } from "../../../apps/cli/src/commands/capture.ts";
-import { freshDbPath, psSh, runCli } from "../../../apps/cli/test/helpers.ts";
+import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { __setSh } from "../../cli-coord/src/commands/spinoff.ts";
 import {
 	API_BASE_ENV,

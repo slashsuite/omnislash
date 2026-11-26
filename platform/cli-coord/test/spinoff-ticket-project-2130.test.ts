@@ -239,7 +239,7 @@ describe("the resolution helpers (OB-2130)", () => {
     const fromProject = await ticketProjectRepoFor(db, w.ssRef, w.omnislash);
     expect(fromProject?.repo).toBe(w.slashslash);
     const argv = ["spinoff", "queue", w.ssRef];
-    const rewritten = rewriteSpinoffRepoArgv({ argv, command: "spinoff", args: ["queue", w.ssRef], flags: {}, db, cwd: w.omnislash, ticketRepo: fromProject?.repo });
+    const rewritten = rewriteSpinoffRepoArgv({ argv, command: "spinoff", args: ["queue", w.ssRef], flags: {}, db, cwd: w.omnislash, ticketRepo: fromProject?.repo ?? null });
     expect(rewritten.error).toBeNull();
     expect(rewritten.argv).toEqual([...argv, "--repo", "slashslash"]);
     // an OB ticket from the omnislash cwd: nothing from the project, so the cwd's slug as before

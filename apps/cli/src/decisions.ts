@@ -22,15 +22,15 @@ export const PRIORITY_CHANGE_TYPE = "priority_change";
 /** What a caller passes to a transition to say who moved it and why. Every field is optional. */
 export interface DecisionOpts {
   /** Why. Optional everywhere; a blank string is the same as none. */
-  note?: string | null;
+  note?: string | null | undefined;
   /** `--holder`, an agent id, or omitted for a human at the keyboard. */
-  actor?: string | null;
+  actor?: string | null | undefined;
   /** The spinoff row id when the transition is a spinoff row's, so the trail links back to it. */
-  spinoffRow?: number | null;
+  spinoffRow?: number | null | undefined;
   /** OS-173: the lifecycle machine's event that made the move (`handoff`, `land`, ...), when a machine made it. */
-  event?: string | null;
+  event?: string | null | undefined;
   /** Facts merged into the event payload (OB-1825's verdict inputs). `from`, `to` and `note` always win. */
-  extra?: Record<string, unknown>;
+  extra?: Record<string, unknown> | undefined;
 }
 
 export interface Decision {

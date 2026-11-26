@@ -23,7 +23,6 @@ import { planExecution } from "../../../apps/cli/src/remote.ts";
 import { LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import { OB_API_LOCAL_ONLY } from "../../../apps/cli/src/api/contract.ts";
 import { HANDLERS } from "../../../apps/cli/src/cli.ts";
-import { readFileSync } from "node:fs";
 
 const FIX = join(import.meta.dir, "../../../apps/cli/test/fixtures", "vision");
 const LEFT = join(FIX, "left.png");
@@ -36,7 +35,7 @@ function recordSpawn(...procs: ProcLike[]): {
 } {
   const calls: Array<{ cmd: string[]; opts?: Record<string, unknown> }> = [];
   const spawn: SpawnProc = (cmd, opts) => {
-    calls.push({ cmd, opts });
+    calls.push({ cmd, ...(opts !== undefined ? { opts } : {}) });
     return procs[calls.length - 1] ?? fakeProc("NONE");
   };
   return { spawn, calls };

@@ -102,7 +102,7 @@ class Cf {
           authorization: `Bearer ${token}`,
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: body === undefined ? null : JSON.stringify(body),
       });
     } catch (e) {
       // The message of a failed fetch never carries the header, but say nothing beyond the cause anyway.

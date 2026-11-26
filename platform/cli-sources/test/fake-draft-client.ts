@@ -14,7 +14,7 @@ export class FakeDraftClient implements GmailDraftClient {
   attachments = new Map<string, GmailAttachmentBody>();
   attachmentFetches: string[] = [];
   /** OB-1961: the account's Send-as list; `sendAsCalls` counts lookups so a test can assert there was none. */
-  sendAs: GmailSendAs[] = [{ sendAsEmail: "me@example.com", isPrimary: true, isDefault: true, verificationStatus: undefined }];
+  sendAs: GmailSendAs[] = [{ sendAsEmail: "me@example.com", isPrimary: true, isDefault: true }];
   sendAsCalls = 0;
   /** Set to make the lookup fail the way Gmail does (e.g. a 403 for a token without the scope). */
   sendAsError?: Error;
@@ -49,7 +49,7 @@ export class FakeDraftClient implements GmailDraftClient {
     // is set, though `gmailGetDraft` still returns it. A fake that lists everything hid this for a release.
     const visible = [...this.drafts.values()].reverse().filter((d) => opts.includeSpamTrash || !d.message?.labelIds?.includes("TRASH"));
     const all = visible.slice(0, opts.maxResults ?? 100);
-    return Promise.resolve({ drafts: all.map((d) => ({ id: d.id, message: d.message && { id: d.message.id } })) });
+    return Promise.resolve({ drafts: all.map((d) => ({ id: d.id, ...(d.message ? { message: { id: d.message.id } } : {}) })) });
   }
   gmailUpdateDraft(id: string, req: { raw: string; threadId?: string }): Promise<GmailDraft> {
     if (!this.drafts.has(id)) return Promise.reject(new Error(`no draft ${id}`));

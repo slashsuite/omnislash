@@ -37,7 +37,7 @@ export function isJournalType(s: string): s is JournalType {
  */
 export async function logEntry(
   db: Database | Store,
-  entry: { type: JournalType; text: string; about?: string | null; itemId?: string | null; ts?: string },
+  entry: { type: JournalType; text: string; about?: string | null | undefined; itemId?: string | null | undefined; ts?: string | undefined },
 ): Promise<JournalEntry> {
   const ts = entry.ts ?? nowIso();
   await recordEventFor(db, {
@@ -63,7 +63,7 @@ function shapeJournal(rows: EventRow[], type?: JournalType): JournalEntry[] {
 
 export async function listJournal(
   db: Database | Store,
-  opts: { since?: string; until?: string; type?: JournalType } = {},
+  opts: { since?: string | undefined; until?: string | undefined; type?: JournalType | undefined } = {},
 ): Promise<JournalEntry[]> {
   const rows = await eventsBetweenFor(db, { source: JOURNAL_SOURCE, since: opts.since, until: opts.until });
   return shapeJournal(rows, opts.type);

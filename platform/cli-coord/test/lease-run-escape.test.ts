@@ -60,7 +60,6 @@ const userManager = !!Bun.which("systemd-run") && sh(["systemd-run", "--user", "
  * itself with prlimit (lowering needs no privilege), for the bare run and for `ob lease run` alike (OS-208).
  */
 const ZERO_RTTIME = ["prlimit", "--rttime=0:0", "--"];
-const SKIP_NO_MANAGER = "no systemd user manager here (systemd-run --user failed or is missing)";
 
 function ob(db: string, args: string[], extra: Record<string, string> = {}) {
   const r = Bun.spawnSync(["bun", "run", INDEX, ...args], { env: envFor(db, extra), stdout: "pipe", stderr: "pipe" });

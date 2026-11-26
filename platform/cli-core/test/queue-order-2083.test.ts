@@ -159,7 +159,7 @@ describe("setQueueOrder (OB-2083)", () => {
   test("--top --priority into an EMPTY band: the item takes that priority explicitly and is first in the band", async () => {
     const { store, mk } = await world();
     const m = await mk("m", "alpha", MEDIUM);
-    const low = await mk("low", "alpha", 4);
+    await mk("low", "alpha", 4);
     await mk("m2", "alpha", MEDIUM);
     // Nothing is urgent, so that band is empty.
     const URGENT = 1;

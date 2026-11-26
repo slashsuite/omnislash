@@ -172,7 +172,7 @@ interface Live {
   open_by_priority: Record<string, number>;
   last_closed: Array<{ ref: string; title: string; closed_at: string | null }>;
   /** OB-2007: the incident log of the area named like this project, when it has entries. */
-  incidents?: { entries: number; latest: { date: string; title: string } | null } | null;
+  incidents?: { entries: number; latest: { date: string; title: string } | null } | null | undefined;
 }
 
 /**

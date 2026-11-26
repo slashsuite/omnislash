@@ -346,15 +346,15 @@ export interface ApiClientOptions {
 	 * OS-76: the server the team role routes go to. Undefined reads it from `OMNISLASH_ROLE_API` or the role file
 	 * (config.ts); null sends every route to `base`, which is what a test uses to prove nothing moved.
 	 */
-	roleBase?: string | null;
+	roleBase?: string | null | undefined;
 	token: string;
-	transport?: ApiTransport;
+	transport?: ApiTransport | undefined;
 	/** Per-call deadline in ms (1616). Default `OB_API_TIMEOUT_MS`, else API_CLIENT_TIMEOUT_MS. */
-	timeoutMs?: number;
+	timeoutMs?: number | undefined;
 	/** OB-1808: the byte-stream seam for file downloads. Default fetch. */
-	download?: ApiDownload;
+	download?: ApiDownload | undefined;
 	/** OB-2160: the short-outage retry. Defaults: `OB_API_RETRY_MS` (else 30s), a real sleep, Date.now, stderr. */
-	retry?: Partial<ApiRetry>;
+	retry?: Partial<ApiRetry> | undefined;
 }
 
 /**
@@ -414,8 +414,8 @@ function fetchTransport(): ApiTransport {
 		const res = await fetch(req.url, {
 			method: req.method,
 			headers: req.headers,
-			body: req.body,
-			signal: req.signal,
+			body: req.body ?? null,
+			signal: req.signal ?? null,
 		});
 		return { status: res.status, body: await res.text() };
 	};
@@ -595,7 +595,7 @@ export class ApiClient {
 		this.roleOption = options.roleBase;
 		this.token = options.token;
 		this.transport = options.transport ?? fetchTransport();
-		this.downloader = options.download ?? ((req) => fetch(req.url, { method: req.method, headers: req.headers, signal: req.signal }));
+		this.downloader = options.download ?? ((req) => fetch(req.url, { method: req.method, headers: req.headers, signal: req.signal ?? null }));
 		this.timeoutMs = options.timeoutMs ?? timeoutFromEnv("OB_API_TIMEOUT_MS", API_CLIENT_TIMEOUT_MS);
 		this.retry = {
 			totalMs: options.retry?.totalMs ?? retryMsFromEnv(),
@@ -1008,7 +1008,7 @@ export class ApiClient {
     return this.call("GET", `${path.whatsappSearch}${queryString({ q, limit })}`);
   }
 
-  whatsappRecent(query: { limit?: number; since?: string } = {}): Promise<WhatsappRecentResponse> {
+  whatsappRecent(query: { limit?: number | undefined; since?: string | undefined } = {}): Promise<WhatsappRecentResponse> {
     return this.call("GET", `${path.whatsappRecent}${queryString({ limit: query.limit, since: query.since })}`);
   }
 
@@ -1034,7 +1034,7 @@ export class ApiClient {
     return this.call("GET", `${path.gmailSearch}${queryString({ q, limit })}`);
   }
 
-  gmailList(query: { limit?: number; since?: string } = {}): Promise<GmailListResponse> {
+  gmailList(query: { limit?: number | undefined; since?: string | undefined } = {}): Promise<GmailListResponse> {
     return this.call("GET", `${path.gmailList}${queryString({ limit: query.limit, since: query.since })}`);
   }
 
@@ -1309,7 +1309,7 @@ export class ApiClient {
 		return this.call("GET", `${path.brief}${queryString({ q: query.q, in_flight: query.in_flight === true ? "true" : undefined })}`);
 	}
 
-	logList(query: { type?: string; since?: string } = {}): Promise<LogListResponse> {
+	logList(query: { type?: string | undefined; since?: string | undefined } = {}): Promise<LogListResponse> {
 		return this.call("GET", `${path.log}${queryString({ type: query.type, since: query.since })}`);
 	}
 
@@ -1444,7 +1444,7 @@ export class ApiClient {
 		return this.call("GET", `${path.whois}${queryString({ handle })}`);
 	}
 	// --- OB-2276: CI on main and the GitHub hooks ---
-	ciMain(query: { project?: string } = {}): Promise<CiMainResponse> {
+	ciMain(query: { project?: string | undefined } = {}): Promise<CiMainResponse> {
 		return this.call("GET", `${path.ciMain}${queryString({ project: query.project })}`);
 	}
 	ciMainNotify(body: { project?: string | null }): Promise<CiMainNotifyResponse> {
@@ -1454,7 +1454,7 @@ export class ApiClient {
 		return apply ? this.call("POST", path.githubHooks, {}) : this.call("GET", path.githubHooks);
 	}
 	// --- OB-2271: persona tournaments ---
-	tournamentList(query: { repo?: string } = {}): Promise<TournamentListResponse> {
+	tournamentList(query: { repo?: string | undefined } = {}): Promise<TournamentListResponse> {
 		return this.call("GET", `${path.tournaments}${queryString({ repo: query.repo })}`);
 	}
 	tournamentAdd(body: TournamentAddRequest): Promise<TournamentResponse> {
@@ -1484,17 +1484,17 @@ export class ApiClient {
 	overnightShow(body: OvernightShowRequest): Promise<OvernightNightResponse> {
 		return this.call("POST", path.overnightShow, body);
 	}
-	overnightRuns(query: { project?: string; since?: string } = {}): Promise<OvernightRunsResponse> {
+	overnightRuns(query: { project?: string | undefined; since?: string | undefined } = {}): Promise<OvernightRunsResponse> {
 		return this.call("GET", `${path.overnightRuns}${queryString({ project: query.project, since: query.since })}`);
 	}
 	reviewMissAdd(body: ReviewMissAddRequest): Promise<ReviewMissAddResponse> {
 		return this.call("POST", path.reviewMisses, body);
 	}
 	/** OS-170: `ob machine audit`. */
-	machineAudit(query: { since?: string; stale_days?: number } = {}): Promise<MachineAuditResponse> {
+	machineAudit(query: { since?: string | undefined; stale_days?: number | undefined } = {}): Promise<MachineAuditResponse> {
 		return this.call("GET", `${path.machineAudit}${queryString(query)}`);
 	}
-	reviewMissTop(query: { scope?: string; limit?: number } = {}): Promise<ReviewMissTopResponse> {
+	reviewMissTop(query: { scope?: string | undefined; limit?: number | undefined } = {}): Promise<ReviewMissTopResponse> {
 		return this.call("GET", `${path.reviewMissesTop}${queryString(query)}`);
 	}
 	cursorGet(skill: string, key: string): Promise<CursorGetResponse> {
@@ -1503,7 +1503,7 @@ export class ApiClient {
 	cursorSet(body: CursorSetRequest): Promise<CursorSetResponse> {
 		return this.call("POST", path.cursors, body);
 	}
-	testUsers(query: { role?: string; env?: string } = {}): Promise<TestUsersResponse> {
+	testUsers(query: { role?: string | undefined; env?: string | undefined } = {}): Promise<TestUsersResponse> {
 		return this.call("GET", `${path.testUsers}${queryString(query)}`);
 	}
 	testUserCreate(body: TestUserCreateRequest): Promise<TestUserCreateResponse> {

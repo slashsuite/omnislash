@@ -146,7 +146,7 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
  * Everything the Models page shows, resolved in `profile` (default: the profile a write lands on, the active one).
  * `filePath` is where the host's models file would be when `file` is null.
  */
-export async function loadModelsView(io: ConfigIO, file: ModelsFile | null, opts: { profile?: string; filePath: string }): Promise<ModelsView> {
+export async function loadModelsView(io: ConfigIO, file: ModelsFile | null, opts: { profile?: string | undefined; filePath: string }): Promise<ModelsView> {
   return viewOf(await loadInputs(io, file), { path: file?.path ?? opts.filePath, present: file !== null }, opts.profile);
 }
 

@@ -34,18 +34,18 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export interface GmailDraftRequest {
   to: string;
-  subject?: string;
+  subject?: string | undefined;
   body: string;
-  cc?: string;
+  cc?: string | undefined;
   /**
    * OB-1961: send the draft as this Send-as address. Checked against Gmail's Send-as list (`resolveSendAs`);
    * absent → no lookup and no From header (Gmail uses the primary address).
    */
-  from?: string;
+  from?: string | undefined;
   /** Gmail message id to reply to: threads the draft and sets In-Reply-To/References. */
-  reply_to?: string;
+  reply_to?: string | undefined;
   /** 1680: files to carry; a draft with any is multipart/mixed. */
-  attachments?: GmailDraftAttachmentInput[];
+  attachments?: GmailDraftAttachmentInput[] | undefined;
 }
 
 /** What a draft is (or is about to be sent as): enough for a human to recognise it. */
@@ -173,7 +173,7 @@ export function buildRawMessage(m: {
   /** OB-1961: a ready header value (`addr` or `"Name" <addr>`); written as the first header. */
   from?: string | null;
   to: string;
-  cc?: string;
+  cc?: string | undefined;
   subject: string;
   body: string;
   inReplyTo?: string | null;

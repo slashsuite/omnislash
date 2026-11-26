@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { getConfig, setConfig } from "../../../apps/cli/src/config.ts";
@@ -19,20 +17,20 @@ describe("opencode spinoff cmd (815)", () => {
 
     const db = freshDb();
     const cmd = await agentCmdFor(db, "opencode");
-    expect(cmd).toBe(DEFAULTS.opencode_spinoff_agent_cmd);
+    expect(cmd).toBe(DEFAULTS.opencode_spinoff_agent_cmd!);
   });
 
   test("old stored opencode --auto is upgraded; a custom cmd is left alone", async () => {
-    expect(effectiveOpencodeSpinoffAgentCmd(null)).toBe(DEFAULTS.opencode_spinoff_agent_cmd);
+    expect(effectiveOpencodeSpinoffAgentCmd(null)).toBe(DEFAULTS.opencode_spinoff_agent_cmd!);
     expect(effectiveOpencodeSpinoffAgentCmd(LEGACY_OPENCODE_SPINOFF_AGENT_CMD)).toBe(
-      DEFAULTS.opencode_spinoff_agent_cmd,
+      DEFAULTS.opencode_spinoff_agent_cmd!,
     );
     expect(effectiveOpencodeSpinoffAgentCmd("opencode --auto --foo")).toBe("opencode --auto --foo");
 
     const db = freshDb();
     await setConfig(db, "opencode_spinoff_agent_cmd", LEGACY_OPENCODE_SPINOFF_AGENT_CMD);
-    expect(await agentCmdFor(db, "opencode")).toBe(DEFAULTS.opencode_spinoff_agent_cmd);
-    expect(await getConfig(db, "opencode_spinoff_agent_cmd")).toBe(DEFAULTS.opencode_spinoff_agent_cmd);
+    expect(await agentCmdFor(db, "opencode")).toBe(DEFAULTS.opencode_spinoff_agent_cmd!);
+    expect(await getConfig(db, "opencode_spinoff_agent_cmd")).toBe(DEFAULTS.opencode_spinoff_agent_cmd!);
 
     await setConfig(db, "opencode_spinoff_agent_cmd", "opencode --auto --foo");
     expect(await agentCmdFor(db, "opencode")).toBe("opencode --auto --foo");

@@ -194,8 +194,8 @@ describe("HttpGoogleClient token handling (OB-1916)", () => {
     });
     const c = new HttpGoogleClient(noExpiry, undefined, { fetch: f.fetchImpl });
     await c.gmailGetMessage("a");
-    expect(f.calls[0].url).toBe(TOKEN_URI);
-    expect(f.calls[1].auth).toBe("Bearer fresh");
+    expect(f.calls[0]?.url).toBe(TOKEN_URI);
+    expect(f.calls[1]?.auth).toBe("Bearer fresh");
     await c.gmailGetMessage("b");
     expect(f.tokenPosts()).toBe(1);
   });
@@ -208,7 +208,7 @@ describe("HttpGoogleClient token handling (OB-1916)", () => {
     });
     const c = new HttpGoogleClient(noExpiry, undefined, { fetch: f.fetchImpl });
     expect(await c.gmailGetMessage("a")).toEqual({ id: "a" });
-    expect(f.apiCalls()[0].auth).toBe("Bearer old");
+    expect(f.apiCalls()[0]?.auth).toBe("Bearer old");
     await c.gmailGetMessage("b");
     expect(f.tokenPosts()).toBe(1);
   });
@@ -306,8 +306,8 @@ describe("HttpGoogleClient token handling (OB-1916)", () => {
     const posts = f.apiCalls();
     expect(posts).toHaveLength(2);
     expect(posts.map((p) => p.method)).toEqual(["POST", "POST"]);
-    expect(posts[1].body).toBe(posts[0].body);
-    expect(posts[1].auth).toBe("Bearer fresh");
+    expect(posts[1]!.body).toBe(posts[0]!.body);
+    expect(posts[1]!.auth).toBe("Bearer fresh");
   });
 
   test("rotation: a refresh carrying a new refresh token persists the new one; one without keeps the old", async () => {
@@ -320,8 +320,8 @@ describe("HttpGoogleClient token handling (OB-1916)", () => {
       const c = new HttpGoogleClient(EXPIRED, (t) => void persisted.push(t), { fetch: f.fetchImpl });
       await c.gmailGetMessage("m");
       expect(persisted).toHaveLength(1);
-      expect(persisted[0].refresh_token).toBe(want);
-      expect(persisted[0].access_token).toBe("fresh");
+      expect(persisted[0]!.refresh_token).toBe(want);
+      expect(persisted[0]!.access_token).toBe("fresh");
     }
   });
 });
@@ -356,8 +356,8 @@ describe("HttpGoogleClient invalid_grant (OB-1950)", () => {
     expect(noToken(msg)).toBe(true);
     expect(s.marks()).toBe(1);
     expect(s.persisted).toHaveLength(1);
-    expect(s.persisted[0].refresh_invalid_at).toBeString();
-    expect(s.persisted[0].refresh_token).toBe("rt");
+    expect(s.persisted[0]!.refresh_invalid_at).toBeString();
+    expect(s.persisted[0]!.refresh_token).toBe("rt");
     expect(f.apiCalls()).toHaveLength(0);
   });
 
@@ -408,8 +408,8 @@ describe("HttpGoogleClient invalid_grant (OB-1950)", () => {
     expect(await c.gmailGetMessage("a")).toEqual({ id: "a" });
     expect(s.marks()).toBe(1);
     expect(s.persisted).toHaveLength(1);
-    expect(s.persisted[0].refresh_invalid_at).toBeString();
-    expect(f.apiCalls()[0].auth).toBe("Bearer old");
+    expect(s.persisted[0]!.refresh_invalid_at).toBeString();
+    expect(f.apiCalls()[0]?.auth).toBe("Bearer old");
   });
 
   test("a marked token with an expired access token: no token POST, hook called, AppError", async () => {
@@ -429,7 +429,7 @@ describe("HttpGoogleClient invalid_grant (OB-1950)", () => {
     const marked = { ...REFRESHABLE, refresh_invalid_at: "2026-11-01T00:00:00Z" };
     const c = new HttpGoogleClient(marked, s.persist, { fetch: f.fetchImpl, onInvalidGrant: s.onInvalidGrant });
     expect(await c.gmailGetMessage("m")).toEqual({ id: "m" });
-    expect(f.apiCalls()[0].auth).toBe("Bearer old");
+    expect(f.apiCalls()[0]?.auth).toBe("Bearer old");
     expect(s.marks()).toBe(0);
   });
 

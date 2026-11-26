@@ -1,9 +1,8 @@
 import { describe, expect, test, spyOn } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 
@@ -25,7 +24,6 @@ import {
   type SttEngine,
 } from "../src/whatsapp/transcribe.ts";
 import { handleWhatsappRequest } from "../../../apps/cli/src/realtime.ts";
-import type { Database } from "bun:sqlite";
 
 // Ticket 158 + 162 — WhatsApp media proxy + voice-note transcription. NO live bridge, network, or
 // whisper: the bridge download is a mock fetch, the bridge-saved file is a real temp file, and the STT
@@ -633,7 +631,7 @@ describe("whatsapp voice-note transcription — whisper.cpp engine (201)", () =>
 
     test("whisper-cli succeeds but produces no .txt → ok:false", async () => {
       const { lease, db, ffmpegPath } = await cppDb();
-      const spy = spyOn(Bun, "spawn").mockImplementation((cmd: any) => {
+      const spy = spyOn(Bun, "spawn").mockImplementation((_cmd: any) => {
         // both exit 0, but nothing writes the output file
         void ffmpegPath;
         return fakeProc(0) as any;

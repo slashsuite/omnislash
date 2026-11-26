@@ -1,0 +1,12 @@
+{
+  // OS-209: typechecks every TypeScript file under skills/: the new-project template, the ob-ui-testing eval
+  // fixtures and the skill scripts. The template keeps its own tsconfig.json for the project it is copied into.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"],
+    "types": ["bun-types", "node", "vite/client"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}

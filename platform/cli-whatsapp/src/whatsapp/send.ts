@@ -159,7 +159,7 @@ const SEND_UNKNOWN_WINDOW_MS = 24 * 60 * 60 * 1000;
  * OB-1909: what makes two sends "the same send": recipient, text and the file's name and size (not its
  * content, accepted). The first 16 hex chars of a sha256, stored on the `sent` and `send_unknown` events.
  */
-export function sendKey(opts: { to: string; body: string; file?: { name: string; size: number } }): string {
+export function sendKey(opts: { to: string; body: string; file?: { name: string; size: number } | undefined }): string {
   const json = JSON.stringify({ to: opts.to, body: opts.body, file: opts.file ? [opts.file.name, opts.file.size] : null });
   return createHash("sha256").update(json).digest("hex").slice(0, 16);
 }
@@ -191,7 +191,7 @@ async function lastAttemptFor(store: Store, key: string): Promise<{ type: string
  */
 async function assertNotMaybeAlreadyGone(
   store: Store,
-  opts: { to: string; body: string; file?: { name: string; size: number }; resend?: boolean },
+  opts: { to: string; body: string; file?: { name: string; size: number } | undefined; resend?: boolean | undefined },
 ): Promise<void> {
   if (opts.resend === true) return;
   const last = await lastAttemptFor(store, sendKey(opts));
@@ -212,7 +212,7 @@ async function assertNotMaybeAlreadyGone(
  */
 export function partialSendMessage(opts: {
   to: string;
-  body?: string;
+  body?: string | undefined;
   files: string[];
   sent: number;
   failedUnknown: boolean;

@@ -18,7 +18,7 @@ import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { freshDbPath, psTable, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -1155,7 +1155,7 @@ describe("reconcile and cleanup: this machine's git, the API's rows (360)", () =
       expect(r.code).toBe(0);
       expect(r.out).toContain("marked landed: OB-2187");
       expect(r.out).not.toContain("OB-2188");
-      const landedIds = s.bodies.filter((b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
+      const landedIds = s.bodies.filter((_b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
       expect(landedIds).toEqual([2022]);
     } finally {
       restoreSh();
@@ -1192,7 +1192,7 @@ describe("reconcile and cleanup: this machine's git, the API's rows (360)", () =
       expect(r.code).toBe(0);
       expect(r.out).toContain("marked landed: 915");
       expect(r.out).not.toContain("916");
-      const landedIds = s.bodies.filter((b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
+      const landedIds = s.bodies.filter((_b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
       expect(landedIds).toEqual([915]);
     } finally {
       restoreSh();
@@ -1218,7 +1218,7 @@ describe("reconcile and cleanup: this machine's git, the API's rows (360)", () =
       expect(r.code).toBe(0);
       expect(r.out).toContain("marked landed: 1591");
       expect(r.out).not.toContain("1417");
-      const landedIds = s.bodies.filter((b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
+      const landedIds = s.bodies.filter((_b, i) => s.calls[i]?.url.endsWith("/spinoffs/land")).map((b) => b.id);
       expect(landedIds).toEqual([71]);
     } finally {
       restoreSh();

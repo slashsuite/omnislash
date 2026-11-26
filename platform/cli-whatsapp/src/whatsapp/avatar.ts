@@ -1,4 +1,3 @@
-import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

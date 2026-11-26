@@ -140,8 +140,6 @@ const DEFAULT_ACTIVE_WITHIN_MIN = 20;
 
 /** Bodies above this are refused unread. An `ob` request is a few hundred bytes; a note is the outlier. */
 const MAX_BODY_BYTES = 1_000_000;
-/** OB-1763: a till-slip upload, base64 of a ~5MB file (MAX_ATTACHMENT_BASE64_LEN) plus the JSON around it. */
-const MAX_ATTACHMENT_BODY_BYTES = 7_000_000;
 /** 1680: a draft's files ride in the body as base64: 18 MiB of files is 24 MiB, plus the text. */
 const MAX_DRAFT_BODY_BYTES = 16_000_000;
 
@@ -304,7 +302,8 @@ function optAttachments(o: Record<string, unknown>): GmailDraftAttachmentInput[]
     const data = a.data_base64;
     if (typeof filename !== "string" || filename.trim().length === 0) bad(`'${where}.filename' must be a non-empty string`);
     if (typeof data !== "string") bad(`'${where}.data_base64' must be a base64 string`);
-    return { filename: filename as string, mime: optString(a, "mime"), data_base64: data as string };
+    const mime = optString(a, "mime");
+    return { filename: filename as string, ...(mime !== undefined && { mime }), data_base64: data as string };
   });
 }
 
@@ -426,13 +425,6 @@ function queryBool(params: URLSearchParams, key: string): boolean | undefined {
   bad(`'${key}' must be true or false`);
 }
 
-/** A positive integer path segment (`/transactions/12/splits`). Anything else is a 400, never a coerced guess. */
-function pathPositiveInt(segment: string | undefined, key: string): number {
-  const n = Number(segment);
-  if (segment === undefined || !/^\d+$/.test(segment) || !Number.isSafeInteger(n) || n <= 0) bad(`'${key}' must be a positive integer`);
-  return n;
-}
-
 /** An integer that may be null (clears a nullable column) or absent (leaves it alone). Returns undefined when absent. */
 function optNullableInt(o: Record<string, unknown>, key: string): number | null | undefined {
   const v = o[key];
@@ -448,13 +440,6 @@ function optNullableString(o: Record<string, unknown>, key: string): string | nu
   if (v === null) return null;
   if (typeof v !== "string") bad(`'${key}' must be a string or null`);
   return v as string;
-}
-
-function optInt(o: Record<string, unknown>, key: string): number | undefined {
-  const v = o[key];
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "number" || !Number.isInteger(v)) bad(`'${key}' must be an integer`);
-  return v as number;
 }
 
 function itemQueryFrom(params: URLSearchParams): ItemQuery {
@@ -1046,17 +1031,23 @@ async function route(
     }
     if (second === "drafts" && segments.length === 4 && segments[3] === "edit" && method === "POST") {
       const body = await readJson(req, MAX_DRAFT_BODY_BYTES);
+      const to = optString(body, "to");
+      const from = optString(body, "from");
+      const cc = optString(body, "cc");
+      const subject = optString(body, "subject");
+      const text = optString(body, "body");
+      const attachments = optAttachments(body);
       return json(
         await h.gmailDraftEdit(
           store,
           segments[2]!,
           {
-            to: optString(body, "to"),
-            from: optString(body, "from"),
-            cc: optString(body, "cc"),
-            subject: optString(body, "subject"),
-            body: optString(body, "body"),
-            attachments: optAttachments(body),
+            ...(to !== undefined && { to }),
+            ...(from !== undefined && { from }),
+            ...(cc !== undefined && { cc }),
+            ...(subject !== undefined && { subject }),
+            ...(text !== undefined && { body: text }),
+            ...(attachments !== undefined && { attachments }),
           },
           deps.gmailDrafts,
         ),

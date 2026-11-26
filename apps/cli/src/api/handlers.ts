@@ -415,7 +415,7 @@ async function refuseAmbiguousBareNumber(store: Store, id: string, scope?: Proje
  * `trusted`: `id` is an internal id this handler already resolved (an earlier `requireItem`, or a row it just created), not typed input.
  * `scope` (OS-178): a scoped token's projects. An item outside them is the same 404 as a missing one, so its existence does not leak.
  */
-export async function requireItem(store: Store, id: string, opts: { trusted?: boolean; scope?: ProjectScope } = {}) {
+export async function requireItem(store: Store, id: string, opts: { trusted?: boolean | undefined; scope?: ProjectScope | undefined } = {}) {
   const lookup = opts.trusted ? id : await refuseAmbiguousBareNumber(store, id, opts.scope);
   const item = await getItem(store, lookup);
   if (!item || !inScope(opts.scope, item.project_id)) throw new ApiFault("not_found", 404, `no item '${id}'`);
@@ -564,7 +564,7 @@ export async function itemLink(store: Store, from: string, req: ItemLinkRequest)
 export async function edit(
   store: Store,
   id: string,
-  req: EditItemRequest & { priorityValue?: number | null },
+  req: EditItemRequest & { priorityValue?: number | null | undefined },
 ): Promise<EditItemResponse> {
   id = (await requireItem(store, id)).id;
   const fields: Parameters<typeof editItem>[2] = {};
@@ -829,11 +829,11 @@ export interface GoogleHostedDeps {
   /** The one-time state store shared by the mint routes and the callback. */
   states: GoogleStateStore;
   /** Token exchanger — production is the real Google call; tests inject a fixture. */
-  exchange?: TokenExchanger;
+  exchange?: TokenExchanger | undefined;
   /** Clock seam for tests. */
-  now?: () => number;
+  now?: (() => number) | undefined;
   /** Master key for reading secret `google` and writing the refreshed one. */
-  secrets?: SecretDeps;
+  secrets?: SecretDeps | undefined;
 }
 
 /** Client creds from the existing secret `google` — the same fields a prior auth stored (424). */
@@ -1880,7 +1880,7 @@ import {
   orderJournal,
   JOURNAL_TYPES,
 } from "../commands/log.ts";
-import { getCursorFor, setCursorFor } from "../settings.ts";
+import { getCursorFor } from "../settings.ts";
 import { jobHealth } from "../jobs.ts";
 import { canonicalDeployAt, DEPLOY_RESULTS, listDeploys, recordDeploy } from "../commands/deploy.ts";
 import { computeAlerts, filterSnoozed, snoozeAlert } from "../commands/alerts.ts";
@@ -1900,7 +1900,7 @@ import {
   today as standupToday,
 } from "../commands/standup.ts";
 import { recentSlackMessages } from "../commands/slack.ts";
-import { and, count, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export async function projects(store: Store, scope?: ProjectScope): Promise<ProjectsResponse> {
   const all = await listProjects(store);
@@ -2377,9 +2377,7 @@ export async function slackUnread(store: Store, query: SlackUnreadQuery): Promis
 
 import {
   addPersonFor,
-  getPersonFor,
   listPersonsFor,
-  personDisplay,
   redactPerson,
   resolvePersonArgFor,
   resolvePersonFor,
@@ -2412,10 +2410,8 @@ import {
   listFavoriteChats,
   listHiddenChats,
 } from "../../../../platform/cli-whatsapp/src/whatsapp/prefs.ts";
-import type { ClaudeRunner } from "../../../../platform/cli-whatsapp/src/whatsapp/suggest.ts";
 import { recordEventFor, eventsBetweenFor } from "../events.ts";
 import { nowIso } from "../db.ts";
-import { readNumber } from "../db/store.ts";
 import {
   WHATSAPP_CHATS_CAP,
   WHATSAPP_CHATS_DEFAULT,
@@ -2518,7 +2514,7 @@ export async function whoisLookup(store: Store, handle: string): Promise<WhoisRe
 // Thin: every rule (the match file contract, the refusals, the finalists) lives in tournament.ts, so a refusal
 // reads the same over HTTP as it does locally.
 
-export async function tournamentList(store: Store, query: { repo?: string }): Promise<TournamentListResponse> {
+export async function tournamentList(store: Store, query: { repo?: string | undefined }): Promise<TournamentListResponse> {
   return { tournaments: await listTournaments(store, query) };
 }
 
@@ -2561,7 +2557,7 @@ export async function overnightShow(store: Store, req: OvernightShowRequest): Pr
   return { night: await showNight(store, req) };
 }
 
-export async function overnightRuns(store: Store, query: { project?: string; since?: string }): Promise<OvernightRunsResponse> {
+export async function overnightRuns(store: Store, query: { project?: string | undefined; since?: string | undefined }): Promise<OvernightRunsResponse> {
   return { runs: await listRuns(store, query) };
 }
 
@@ -2576,7 +2572,7 @@ export async function reviewMissAdd(store: Store, req: ReviewMissAddRequest): Pr
   return { class: req.class, scope, pr: req.pr };
 }
 
-export async function reviewMissTop(store: Store, query: { scope?: string; limit?: number }): Promise<ReviewMissTopResponse> {
+export async function reviewMissTop(store: Store, query: { scope?: string | undefined; limit?: number | undefined }): Promise<ReviewMissTopResponse> {
   const limit = query.limit ?? 10;
   const rows = await eventsBetweenFor(store, { type: "review_miss" });
   const events = rows
@@ -2594,7 +2590,7 @@ export async function reviewMissTop(store: Store, query: { scope?: string; limit
 }
 
 /** OS-170: the read-only machine audit. */
-export async function machineAuditRead(store: Store, query: { since?: string; staleDays?: number }): Promise<MachineAuditResponse> {
+export async function machineAuditRead(store: Store, query: { since?: string | undefined; staleDays?: number | undefined }): Promise<MachineAuditResponse> {
   return machineAudit(store, query);
 }
 
@@ -2607,7 +2603,7 @@ export async function cursorSet(store: Store, req: CursorSetRequest): Promise<Cu
   return { value: req.value };
 }
 
-export async function testUsersList(store: Store, filter: { role?: string; env?: string }): Promise<TestUsersResponse> {
+export async function testUsersList(store: Store, filter: { role?: string | undefined; env?: string | undefined }): Promise<TestUsersResponse> {
   const rows = await listTestUsersFor(store, filter);
   const users = await Promise.all(
     rows.map(async (r) => ({ ...r, secret_present: await testUserSecretPresent(store, store, r.label) })),
@@ -2698,7 +2694,7 @@ export async function whatsappSend(store: Store, req: WhatsappSendRequest, deps:
       writeFileSync(path, Buffer.from(data_base64, "base64"), { mode: 0o600 });
       file = describeAttachment(path);
     }
-    return await sendWhatsapp(store, { to: req.to, body: req.body, file, confirm: true, resend: req.resend === true, fetch: deps.fetch });
+    return await sendWhatsapp(store, { to: req.to, body: req.body, ...(file !== undefined && { file }), confirm: true, resend: req.resend === true, ...(deps.fetch !== undefined && { fetch: deps.fetch }) });
   } catch (e) {
     if (e instanceof SendMaybeAlreadyGone) throw new ApiFault("refused", 409, e.message); // OB-1909: check the chat, or --resend
     if (e instanceof BridgeOutcomeUnknown) throw new ApiFault("internal", 502, e.message); // the client says it may have gone

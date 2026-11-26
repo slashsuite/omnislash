@@ -44,7 +44,7 @@ async function queue(db: ReturnType<typeof freshDb>, repo: string, ref: string, 
   const worktree = `${repo}.${branch}`;
   mkdirSync(worktree, { recursive: true });
   cleanup.push(() => rmSync(worktree, { recursive: true, force: true }));
-  return enqueueSpinoff(db, { ticketRef: ref, repo, branch, worktree, mode: "interactive", brief: "do it", launcher: "t3", tier, complexity });
+  return enqueueSpinoff(db, { ticketRef: ref, repo, branch, worktree, mode: "interactive", brief: "do it", launcher: "t3", ...(tier !== undefined ? { tier } : {}), ...(complexity !== undefined ? { complexity } : {}) });
 }
 
 describe("an urgent ticket builds on complex (OB-2075)", () => {

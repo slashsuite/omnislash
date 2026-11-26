@@ -22,20 +22,20 @@ export type ItemSort = "priority" | "created" | "updated";
 
 /** The `ob list` query, as values. `project` is an id OR a name; the name map is resolved here. */
 export interface ItemQuery {
-  open?: boolean;
-  status?: string;
-  type?: string;
-  project?: string;
+  open?: boolean | undefined;
+  status?: string | undefined;
+  type?: string | undefined;
+  project?: string | undefined;
   /** OB-2255: only items in the team's member projects; an unknown team throws `UnknownTeamError`. */
-  team?: string;
-  tag?: string;
-  kind?: string;
+  team?: string | undefined;
+  tag?: string | undefined;
+  kind?: string | undefined;
   /** An already-parsed priority integer (0-6, where 5 is `flake` and 6 is `critical`). Parsing the NAME belongs to the caller's validator. */
-  priority?: number;
-  since?: string;
-  updatedAfter?: string;
-  by?: ItemSort;
-  limit?: number;
+  priority?: number | undefined;
+  since?: string | undefined;
+  updatedAfter?: string | undefined;
+  by?: ItemSort | undefined;
+  limit?: number | undefined;
 }
 
 export interface WorklistResult {
@@ -119,7 +119,7 @@ export function sortItems(items: ItemRow[], focusProject: string | null, by: Ite
  * empty queue for a typo would read as "nothing to do". With no `project`, a paused or archived project's
  * items are left out (OS-134).
  */
-export async function nextWorklist(db: Database | Store, opts: { project?: string; allowedProjects?: ReadonlySet<string> } = {}): Promise<NextResult> {
+export async function nextWorklist(db: Database | Store, opts: { project?: string | undefined; allowedProjects?: ReadonlySet<string> | undefined } = {}): Promise<NextResult> {
   const focusProject = await getFocusProject(db);
   let projectId: string | undefined;
   // `!== undefined`, not truthiness: `--project "$SLUG"` with an empty variable must error, not print every project's queue.
@@ -145,7 +145,7 @@ export async function nextWorklist(db: Database | Store, opts: { project?: strin
 }
 
 /** The `ob list` read: filter, resolve the project name, sort, cap. */
-export async function listWorklist(db: Database | Store, query: ItemQuery, opts: { allowedProjects?: ReadonlySet<string> } = {}): Promise<WorklistResult> {
+export async function listWorklist(db: Database | Store, query: ItemQuery, opts: { allowedProjects?: ReadonlySet<string> | undefined } = {}): Promise<WorklistResult> {
   let projectId: string | undefined;
   if (query.project) {
     const p = await getProject(db, query.project);

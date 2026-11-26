@@ -1,11 +1,9 @@
 import type { Database } from "bun:sqlite";
-import { sqliteStoreFor } from "./db/store.ts";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { githubGql, readGithubToken } from "./net.ts";
 import { settingFor } from "./settings.ts";
 import { asStore, type Store } from "./db/store.ts";
-import { AppError } from "./errors.ts";
 
 // Surface the wayfinder "frontier" (takeable tickets) in `ob status` (060/221). Tickets now live as
 // GitHub issues labelled `wayfinder:task`/`wayfinder:epic` (decision #27) — the maps stay markdown in

@@ -1,5 +1,4 @@
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
 import { type FsInfo, MIN_SHM_FREE_BYTES, SHM_DIR, TMPFS_MAGIC, shmInfo } from "../scratch-root.ts";
@@ -31,17 +30,6 @@ import { type FsInfo, MIN_SHM_FREE_BYTES, SHM_DIR, TMPFS_MAGIC, shmInfo } from "
 
 /** Where a cluster's socket, data dir and pid file live: one directory per run under a shared parent. */
 const CLUSTER_DIR_PREFIX = "ob-pg-";
-
-/**
- * The shared temp directory as it was BEFORE `preload.ts` redirected `TMPDIR` to the run's own scratch.
- *
- * ES module imports are evaluated before the importing module's body, so this runs while `TMPDIR` is still
- * the machine's. That is deliberate: a cluster must NOT live inside the per-run scratch. The scratch is
- * removed by a plain `rmSync`, which deletes an orphaned postmaster's data directory while leaving the
- * postmaster itself running forever -- a leaked Postgres per killed run, which is precisely the failure
- * this file is supposed to prevent. Outside it, the sweep below can find that orphan and kill it first.
- */
-const SHARED_TMP = tmpdir();
 
 /**
  * A unix socket's path cannot exceed 103 bytes, and macOS's `$TMPDIR` alone spends about half of that

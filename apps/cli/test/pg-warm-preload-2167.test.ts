@@ -31,7 +31,8 @@ describe("the pg warm preload (OB-2167)", () => {
     let leasing = 0;
     for (const [name, root] of Object.entries(workspace.projects)) {
       const dir = join(REPO, root);
-      const files = testFiles(dir).filter((f) => LEASES_PG.test(readFileSync(f, "utf8")));
+      // The repo-root project (OS-209) holds every other project; its own test task runs only `bun test scripts`.
+      const files = testFiles(root === "." ? join(dir, "scripts") : dir).filter((f) => LEASES_PG.test(readFileSync(f, "utf8")));
       if (files.length === 0) continue;
       leasing++;
       const bunfig = join(dir, "bunfig.toml");

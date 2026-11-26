@@ -406,7 +406,7 @@ function transcriptLines(turns: AgentTurn[]): string[] {
  */
 export function buildConversePrompt(
   ctx: SuggestContext,
-  opts: { message: string; turns?: AgentTurn[]; draft?: string; web?: boolean },
+  opts: { message: string; turns?: AgentTurn[] | undefined; draft?: string | undefined; web?: boolean },
 ): string {
   const blocks = suggestPromptBlocks(ctx);
   const draft = (opts.draft ?? "").trim();
@@ -538,7 +538,7 @@ export async function converseWhatsappAgent(
         const text = await runHeadless({
           prompt: p,
           model: await settingFor(store, "opencode_headless_model"),
-          cwd: ctx.web.dir ?? undefined,
+          ...(ctx.web.dir != null ? { cwd: ctx.web.dir } : {}),
           timeout: CONVERSE_TIMEOUT_MS,
         });
         return { text, lookups: [] as WebLookup[] };

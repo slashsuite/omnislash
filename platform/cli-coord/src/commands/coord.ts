@@ -22,7 +22,6 @@ import {
   lostLeasesOf,
   sweepExpiredLeases,
   heartbeatLeasesByHolder,
-  holderRemedy,
   leaseHolderId,
   leaseStatus,
   liveHold,
@@ -92,7 +91,7 @@ export function formatAgentDone(id: string, removed: boolean, released: string[]
 }
 
 /** Best-effort branch + worktree root from the cwd git repo (undefined off-repo). */
-function gitInfo(cwd: string): { branch?: string; worktree?: string } {
+function gitInfo(cwd: string): { branch?: string | undefined; worktree?: string | undefined } {
   const run = (args: string[]): string | undefined => {
     try {
       const p = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "ignore" });
@@ -765,7 +764,7 @@ function runLaunchd(ctx: DaemonCtx, io: ReturnType<typeof resolvedIo>): void {
       io.mkdirSync(logDir, { recursive: true });
       io.mkdirSync(agentsDir, { recursive: true });
     }
-    const summary: Array<{ job: string; plist: string; loaded: boolean; note?: string }> = [];
+    const summary: Array<{ job: string; plist: string; loaded: boolean; note?: string | undefined }> = [];
     for (const j of jobs) {
       const path = plistPath(home, j.label);
       io.writeFileSync(path, renderPlist(j.label, j.args, j.opts));
@@ -878,7 +877,7 @@ function runSystemdUser(ctx: DaemonCtx, io: ReturnType<typeof resolvedIo>): void
       service: string;
       timer: string;
       loaded: boolean;
-      note?: string;
+      note?: string | undefined;
     }> = [];
     for (const j of jobs) {
       const unit = systemdUserUnit(j.job);

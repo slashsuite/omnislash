@@ -2,8 +2,7 @@ import { defineSeam } from "../../../../apps/cli/src/test-seams.ts";
 import type { Database } from "bun:sqlite";
 import { homedir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, writeSync, closeSync, statSync, realpathSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, readFileSync, statSync, realpathSync, watch, type FSWatcher } from "node:fs";
 import { and, asc, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
@@ -31,7 +30,7 @@ import { compareFiles, filesLine, type FilesComparison } from "../spinoff-files.
 import { overlapFor, printOverlap, warnDispatchOverlap } from "../spinoff-overlap.ts";
 import { findBranchConflicts, renderConflictCheck, type ConflictSource } from "../spinoff-conflicts.ts";
 import { stateDisplayLines } from "../spinoff-state-reason.ts";
-import { BRANCH_SLUG_MAX, branchSlug, builderIdOf, cleanRepoLaunchLine, isObRepo, legRef, obLeaks, parseRecordableVerdict, refKey, renderLeaks, rowStateText, uniqueBranch, verdictStateFor, type Leak, type RowVerdict } from "../clean-repo.ts";
+import { BRANCH_SLUG_MAX, branchSlug, builderIdOf, cleanRepoLaunchLine, isObRepo, legRef, obLeaks, parseRecordableVerdict, refKey, renderLeaks, rowStateText, uniqueBranch, verdictStateFor, type RowVerdict } from "../clean-repo.ts";
 import { IN_FLIGHT, STATE_VERDICT_TOKENS, spinoffStatusWord, toStoredSpinoffStatus, withStatusWord } from "../spinoff-vocab.ts";
 import {
   acquireLeases,
@@ -74,7 +73,7 @@ import {
   type Commit,
 } from "../../../../apps/cli/src/tracker-link.ts";
 import { launchAcrossProfiles, relaunchOnCreditFailure, routeInputsOrRefuse, routeTierModels, withRouteEffort, type RouteMoveRecorder } from "../spinoff-credit.ts";
-import { readSpinoffTokens, readOpencodeSpinoffTokens, readRowTokens, tokensForRow, type TokenReader, formatTokens, rootOpencodeSessionId, tokenSourceFor, type TokenUsage } from "../spinoff-tokens.ts";
+import { readRowTokens, tokensForRow, type TokenReader, formatTokens, rootOpencodeSessionId, type TokenUsage } from "../spinoff-tokens.ts";
 import { parseSince, reportMix } from "../spinoff-mix.ts";
 import { abandonSpinoff, renderAbandon, type AbandonDeps } from "../spinoff-abandon.ts";
 import { assertSpikeDocsOnly, formatSpikeReport, isSpikeTagged, spikeClaimsReviewMissing, spikeEndError } from "../spinoff-spike.ts";
@@ -83,7 +82,6 @@ import { renderReopen, reopenSpinoff, type ReopenDeps } from "../spinoff-reopen.
 import { isLandable, noteErrorLine, reportGateable, type GateableFacts, type GateableSource, type PlannedFiles } from "../spinoff-gateable.ts";
 import { DEFAULT_COMPLEXITY, TIER_COMPLEXITY, URGENT_COMPLEXITY, complexityLabel, complexityOf, tierOfComplexity, type RangeModel } from "../../../../apps/cli/src/models-file.ts";
 import {
-  DEFAULT_SPINOFF_TIER,
   T3_LAUNCHER,
   dispatchComplexityFlags,
   rowComplexity,
@@ -304,28 +302,28 @@ async function itemBriefSourceFor(
  */
 export interface SpinoffAskInput {
   /** A caller-supplied `--brief` (or its stdin form): wins outright, exactly as it did before 1162. */
-  brief?: string | null;
+  brief?: string | null | undefined;
   /** A `#<n>` ref's own head, composed from the fetched GitHub issue (221). */
-  issueHead?: string | null;
+  issueHead?: string | null | undefined;
   /**
    * The ob item behind the ref, read over the API by a caller with no store (1190). Consulted ONLY when
    * there is no ticket file, and never in place of `db`: the file is the work order, the item is the
    * fallback. A read that fails is a fallthrough, not a failed dispatch.
    */
-  readItem?: () => Promise<{ title?: string | null; body?: string | null } | null>;
+  readItem?: (() => Promise<{ title?: string | null; body?: string | null } | null>) | undefined;
   /** The repo whose private rules ride on the message (1803): a slug, or a checkout/worktree path reduced to its repo. Defaults to `repoPath`. */
-  project?: string;
+  project?: string | undefined;
   /**
    * OB-2103: the project's stored stage (null = not set) for a caller with no store, read over the API. With
    * a store the stage is read from it. A read that fails leaves the stage line off and says so.
    */
-  readStage?: (slug: string) => Promise<string | null>;
+  readStage?: ((slug: string) => Promise<string | null>) | undefined;
   /**
    * OB-2230: is `flake-box` on the machine that will launch the builder? Defaults to this machine. `spinoff queue`
    * passes null (unknown): it may run on the server, which launches nothing, so the paragraph tells the builder to
    * check, and the launching client checks and warns.
    */
-  flakeBox?: boolean | null;
+  flakeBox?: boolean | null | undefined;
 }
 
 /**
@@ -547,7 +545,7 @@ export async function moveSpinoff(
   const s = asStore(db);
   const moved = await applyMove<SpinoffRow>(spinoffMachine, {
     event,
-    from,
+    ...(from !== undefined && { from }),
     read: async () => (await getSpinoffRow(s, id))?.status ?? null,
     write: async (stored, to) => {
       const rows = (await s.q
@@ -714,14 +712,14 @@ export interface EnqueueInput {
   branch: string;
   mode: SpinoffMode;
   brief: string;
-  worktree?: string; // explicit --worktree override; takes precedence over the derived <repo>.<branch> path
-  launcher?: LauncherName | null; // explicit --launcher override (#135), recorded at QUEUE time so the drain honours it
-  tier?: SpinoffTier | null; // --tier (1480): an old client's label, read as its alias score when no complexity is named
-  complexity?: number | null; // --complexity (OS-177); absent = the tier's alias score, else 5, recorded on the row either way
-  effort?: SpinoffEffort | null; // --effort (OB-1815); absent = no level named: the model's own default, nothing recorded at queue
-  decision?: DecisionOpts; // --note/-m (1515): why this was dispatched at this tier; recorded on the item's trail
-  trialLeg?: "a" | "b" | null; // OB-1991: a trial leg; b's worktree and builder id carry `-b`
-  trialModel?: string | null; // OB-1991: the model the trial launches this leg on, over the tier's model
+  worktree?: string | undefined; // explicit --worktree override; takes precedence over the derived <repo>.<branch> path
+  launcher?: LauncherName | null | undefined; // explicit --launcher override (#135), recorded at QUEUE time so the drain honours it
+  tier?: SpinoffTier | null | undefined; // --tier (1480): an old client's label, read as its alias score when no complexity is named
+  complexity?: number | null | undefined; // --complexity (OS-177); absent = the tier's alias score, else 5, recorded on the row either way
+  effort?: SpinoffEffort | null | undefined; // --effort (OB-1815); absent = no level named: the model's own default, nothing recorded at queue
+  decision?: DecisionOpts | undefined; // --note/-m (1515): why this was dispatched at this tier; recorded on the item's trail
+  trialLeg?: "a" | "b" | null | undefined; // OB-1991: a trial leg; b's worktree and builder id carry `-b`
+  trialModel?: string | null | undefined; // OB-1991: the model the trial launches this leg on, over the tier's model
 }
 
 /**
@@ -764,7 +762,7 @@ export function worktreePath(repo: string, branch: string): string {
  * What a row's worktree is named after (OB-1992): the branch in OmniSlash, where the branch is the ref, and the ref
  * in a clean repo, whose branch is a title slug. The worktree is local and never shown, so it keeps the ref. Pure.
  */
-export function worktreeKeyOf(row: { repo: string; branch: string; ticket_ref: string; trial_leg?: string | null }): string {
+export function worktreeKeyOf(row: { repo: string; branch: string; ticket_ref: string; trial_leg?: string | null | undefined }): string {
   return isObRepo(row.repo) ? row.branch : refKey(legRef(row.ticket_ref, row.trial_leg));
 }
 
@@ -889,7 +887,7 @@ export async function recordOverUsage(
   db: Database | Store,
   ticketRef: string,
   why: string,
-  opts: { actor?: string | null; spinoffRow?: number | null; itemId?: string | null } = {},
+  opts: { actor?: string | null | undefined; spinoffRow?: number | null; itemId?: string | null } = {},
 ): Promise<void> {
   const itemId = opts.itemId ?? (await ticketItemIdFor(db, ticketRef));
   if (!itemId) return;
@@ -929,7 +927,7 @@ export async function urgentLaunchRow(
 }
 
 /** OS-177: the row raised to the urgent floor, `max(score, 7)`, its tier label following the score. Pure. */
-export function urgentRaised<R extends { complexity?: number | null; tier?: string | null }>(row: R): R {
+export function urgentRaised<R extends { complexity?: number | null; tier?: string | null }>(row: R): R & { complexity: number; tier: SpinoffTier } {
   const c = Math.max(rowComplexity(row), URGENT_COMPLEXITY);
   return { ...row, complexity: c, tier: tierOfComplexity(c) };
 }
@@ -1199,10 +1197,10 @@ export type Sh = (cmd: string[], cwd?: string, timeoutMs?: number) => ShResult;
 const realSh: Sh = (cmd, cwd, timeoutMs) => {
   try {
     const p = Bun.spawnSync(cmd, {
-      cwd,
+      ...(cwd !== undefined && { cwd }),
       stdout: "pipe",
       stderr: "pipe",
-      timeout: timeoutMs,
+      ...(timeoutMs !== undefined && { timeout: timeoutMs }),
       // a fetch that wants a credential must fail, not sit on a prompt nobody is watching
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
@@ -2022,25 +2020,25 @@ export interface ClaimOutcome {
 export interface StampInput {
   id: number;
   outcome: "launched" | "failed";
-  worktree?: string | null;
-  base_sha?: string | null;
-  launcher?: string | null;
-  session_id?: string | null;
-  engine?: string | null;
+  worktree?: string | null | undefined;
+  base_sha?: string | null | undefined;
+  launcher?: string | null | undefined;
+  session_id?: string | null | undefined;
+  engine?: string | null | undefined;
   /** 1120: the T3 thread (and run) a `t3` launch opened, or ADOPTED from a previous attempt. */
-  t3_thread_id?: string | null;
-  t3_run_id?: string | null;
+  t3_thread_id?: string | null | undefined;
+  t3_run_id?: string | null | undefined;
   /** 1480: the model that T3 launch ran on (the tier's, or an adopted thread's own). */
-  model?: string | null;
+  model?: string | null | undefined;
   /** OB-1815: the effort text the launch ran at (`high`, `default (high)`, `default (none listed)`). */
-  effort?: string | null;
+  effort?: string | null | undefined;
   /** OB-2075: the launch ran an urgent item on complex (not an adopted thread), so the host records the row as complex. */
-  raised?: boolean;
-  error?: string | null;
+  raised?: boolean | undefined;
+  error?: string | null | undefined;
   /** 1515: why this stamp (a `--note` from the caller), recorded on the row's item. */
-  decision?: DecisionOpts;
+  decision?: DecisionOpts | undefined;
   /** OS-145: a client launch's moves along its route, written on the item's Decisions trail by the host. */
-  route_moves?: ReadonlyArray<{ from: string; to: string; note: string }>;
+  route_moves?: ReadonlyArray<{ from: string; to: string; note: string }> | undefined;
 }
 
 /** A row `reclaim` took back from a machine that claimed it and never came back. */
@@ -2717,7 +2715,7 @@ export function drainScopeLabel(scope: DrainScope): string {
  */
 export function resolveDrainScope(
   cfg: Pick<SpinoffLaunchConfig, "repoCheckouts">,
-  opts: { all?: boolean; repo?: string; cwd: string; home?: string },
+  opts: { all?: boolean; repo?: string | undefined; cwd: string; home?: string },
 ): DrainScope {
   const home = opts.home ?? homedir();
   if (opts.all && opts.repo !== undefined) throw new UsageError("spinoff drain takes --all or --repo <slug|path>, not both");
@@ -2787,8 +2785,8 @@ export type RowLaunch =
   | { kind: "not-ready"; reason: string; dbFailure?: undefined }
   | { kind: "raced"; dbFailure?: undefined }
   | { kind: "remote-error"; error: string; dbFailure?: undefined }
-  | { kind: "launched"; row: SpinoffRow; effect: LaunchEffect; dbFailure?: DbHalfFailure }
-  | { kind: "failed"; row: SpinoffRow; error: string; dbFailure?: DbHalfFailure };
+  | { kind: "launched"; row: SpinoffRow; effect: LaunchEffect; dbFailure?: DbHalfFailure | undefined }
+  | { kind: "failed"; row: SpinoffRow; error: string; dbFailure?: DbHalfFailure | undefined };
 
 /**
  * Take one pending row through the launch: the foreign-hold check, the claim, the launch and the stamp. The
@@ -3261,7 +3259,7 @@ export async function landedTicketRefsVia(
         commitsByRepo.set(repo, []);
       }
     }
-    if (workHasLanded(row.ticket_ref, { status, commits: commitsByRepo.get(repo) ?? [], baseSha: row.base_sha })) {
+    if (workHasLanded(row.ticket_ref, { status, commits: commitsByRepo.get(repo) ?? [], baseSha: row.base_sha ?? null })) {
       landed.add(row.id);
     }
   }
@@ -3621,7 +3619,7 @@ export function ownLegFirst<R extends { worktree: string; branch: string }>(rows
 export function pickSpinoffForReady(
   all: SpinoffRow[],
   opts: {
-    ref?: string;
+    ref?: string | undefined;
     cwd?: string;
     branch?: string | null;
     landedShaFor?: (row: SpinoffRow) => string | null;
@@ -3674,7 +3672,7 @@ export function pickSpinoffForReady(
  */
 export async function findSpinoffForReady(
   db: Database | Store,
-  opts: { ref?: string; cwd?: string; landedShaFor?: (row: SpinoffRow) => string | null } = {},
+  opts: { ref?: string | undefined; cwd?: string; landedShaFor?: (row: SpinoffRow) => string | null } = {},
 ): Promise<SpinoffRow> {
   const itemId = opts.ref ? await ticketItemIdFor(db, opts.ref) : null;
   return pickSpinoffForReady(await listSpinoffs(db), { ...opts, itemId });
@@ -4009,7 +4007,7 @@ export function rowVerdictState(row: { worktree: string; branch: string } & RowV
 export async function recordSpinoffVerdict(
   db: Database | Store,
   row: SpinoffRow,
-  input: { verdict: string; reason?: string | null; gate?: string | null },
+  input: { verdict: string; reason?: string | null | undefined; gate?: string | null | undefined },
 ): Promise<SpinoffRow> {
   let verdict: string;
   try {
@@ -4407,7 +4405,7 @@ export function formatReadyReport(row: SpinoffRow, state: string | null, already
 
 export function readyResultJson(
   // The local result, or the wire response (1552's `tierFit` is absent from a host that predates it).
-  result: { row: SpinoffRow; already: boolean; leasesReleased: boolean; tierFit?: string | null },
+  result: { row: SpinoffRow; already: boolean; leasesReleased: boolean; tierFit?: string | null | undefined },
   state: string | null,
 ): Record<string, unknown> {
   return {
@@ -4893,10 +4891,10 @@ async function liveRowSkip(data: CleanupData, branch: string | null, path: strin
 export interface CleanupEntry {
   kind: "worktree" | "branch";
   branch: string | null;
-  path?: string;
+  path?: string | undefined;
   action: "removed" | "skipped";
-  reason?: string;
-  agent_done?: boolean; // an agent-registry row was (or would be) cleared for this branch
+  reason?: string | undefined;
+  agent_done?: boolean | undefined; // an agent-registry row was (or would be) cleared for this branch
 }
 export interface CleanupSummary {
   dry_run: boolean;
@@ -5620,7 +5618,7 @@ export function rewriteSpinoffRepoArgv(input: {
   cwd?: string;
   home?: string;
   /** OB-2130: the ticket's project checkout (`ticketProjectRepoFor`), used in place of the cwd when no --repo is given. */
-  ticketRepo?: string | null;
+  ticketRepo?: string | null | undefined;
 }): DispatchRewrite {
   const { argv, command, args, flags, db } = input;
   const cwd = input.cwd ?? process.cwd();
@@ -6105,7 +6103,7 @@ function spinoffSkillDirective(repo?: string): string {
  * agent id the drain registers. Retired from the stored brief by 563 (unused by the enqueue paths); kept
  * because the report-each-gate text is still the record of what the wrapper said.
  */
-export function operatingProcedure(ticketRef: string, branch: string, repo?: string): string {
+export function operatingProcedure(_ticketRef: string, branch: string, repo?: string): string {
   return [
     ``,
     `--- Operating procedure (REQUIRED) ---`,
@@ -6874,7 +6872,7 @@ async function enqueueAndLaunchSplit(
   ctx: Ctx,
   remote: RemoteWriter,
   rawRef: string,
-  opts: { launcher?: string; complexity?: number; effort?: SpinoffEffort; brief?: string; under: string },
+  opts: { launcher?: string | undefined; complexity?: number | undefined; effort?: SpinoffEffort | undefined; brief?: string | undefined; under: string },
 ): Promise<void> {
   const argv = ["spinoff", "queue", rawRef];
   const repoFlag = flag(ctx, "repo");

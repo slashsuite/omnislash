@@ -70,11 +70,11 @@ export interface StatusPage {
 }
 
 export interface StatusReadOpts {
-  contacts?: Database;
-  now?: Date;
-  limit?: number;
-  before?: string;
-  senderJid?: string;
+  contacts?: Database | undefined;
+  now?: Date | undefined;
+  limit?: number | undefined;
+  before?: string | undefined;
+  senderJid?: string | undefined;
 }
 
 interface StatusRow {

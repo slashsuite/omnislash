@@ -210,16 +210,16 @@ export async function setAgentRun(db: Database | Store, id: string, run: string)
 
 export interface RegisterAgentInput {
   id: string;
-  ticket?: string | null;
-  worktree?: string | null;
-  branch?: string | null;
+  ticket?: string | null | undefined;
+  worktree?: string | null | undefined;
+  branch?: string | null | undefined;
   /** ob's workflow word. Omitted/null preserves the stored one (a bare re-register is a heartbeat). */
-  status?: string | null;
+  status?: string | null | undefined;
   /** T3's run word (1189). Omitted/null preserves the stored one. The mirror writes through `setAgentRun` (OB-1923). */
-  run?: string | null;
-  note?: string | null;
-  launcher?: string | null;
-  sessionId?: string | null; // the Claude Code session id this agent was launched with (#126)
+  run?: string | null | undefined;
+  note?: string | null | undefined;
+  launcher?: string | null | undefined;
+  sessionId?: string | null | undefined; // the Claude Code session id this agent was launched with (#126)
   ttlS: number;
 }
 

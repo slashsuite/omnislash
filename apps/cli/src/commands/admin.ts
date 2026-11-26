@@ -69,13 +69,13 @@ export function parseProjectLabel(flag: "icon" | "display-name", value: string):
 
 /** `project edit`'s flags -> a patch; no flag at all is a usage error, and so is an unknown kind. */
 export function parseProjectPatch(flags: {
-  remote?: string;
-  kind?: string;
-  key?: string;
-  icon?: string;
-  displayName?: string;
-  stage?: string;
-  status?: string;
+  remote?: string | undefined;
+  kind?: string | undefined;
+  key?: string | undefined;
+  icon?: string | undefined;
+  displayName?: string | undefined;
+  stage?: string | undefined;
+  status?: string | undefined;
 }): ProjectPatch {
   const { remote, kind, key, icon, displayName, stage, status } = flags;
   if (

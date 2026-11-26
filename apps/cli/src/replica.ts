@@ -452,11 +452,11 @@ export function refreshReplica(input: {
   dbPath: string;
   host: string;
   exec: RemoteExec;
-  force?: boolean;
+  force?: boolean | undefined;
   /** 308: how the swap takes its exclusive hold. Tests drive the contended and unavailable cases here. */
-  lock?: AcquireOptions;
+  lock?: AcquireOptions | undefined;
   /** The clock, for the meta timestamps and the skew backoff. Tests pass one rather than sleeping. */
-  now?: () => number;
+  now?: (() => number) | undefined;
 }): RefreshOutcome {
   const { dbPath, host, exec, force } = input;
   const now = input.now ?? Date.now;

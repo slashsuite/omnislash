@@ -159,7 +159,7 @@ import { flakeBoxPresent, noFlakeBoxWarning } from "../../../../platform/cli-coo
 import type { ApiCtx } from "./client-handlers.ts";
 import type { EnqueueSpinoffRequest, SpinoffConfig } from "./contract.ts";
 import { DEFAULT_COMPLEXITY, URGENT_COMPLEXITY, tierOfComplexity } from "../models-file.ts";
-import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type SpinoffTier, type ReadyNoteOutcome } from "../t3/dispatch.ts";
+import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type ReadyNoteOutcome } from "../t3/dispatch.ts";
 
 // --- the refusals: they name THIS machine, never the API host ----------------
 //
@@ -822,7 +822,7 @@ async function launchEntryOverApi(
   entry: Awaited<ReturnType<ApiClient["spinoffLaunchable"]>>["rows"][number],
   holder: string,
   dbFailures: DbHalfFailure[],
-): Promise<{ status: "launched" | "failed" | "raced" | "unreachable"; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean; error: string | null }> {
+): Promise<{ status: "launched" | "failed" | "raced" | "unreachable"; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean | undefined; error: string | null }> {
   const pending = entry.row;
   let claim: Awaited<ReturnType<ApiClient["claimSpinoff"]>>;
   try {
@@ -1196,7 +1196,7 @@ async function refuseForeignHoldOverApi(client: ApiClient, ticketRef: string, br
  */
 async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: SpinoffRow, deduped: boolean, tierNamed: boolean, under: string, urgent: UrgentTierNote | null = null): Promise<boolean> {
   const caller = leaseHolderId();
-  let outcome: { status: string; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean; error: string | null };
+  let outcome: { status: string; row: SpinoffRow; threadId: string | null; model: string | null; effort?: string | null; adopted?: boolean | undefined; error: string | null };
   const dbFailures: DbHalfFailure[] = [];
   if (queued.status !== "pending") {
     outcome = { status: spinoffStatusWord(queued.status), row: queued, threadId: queued.t3_thread_id ?? null, model: null, error: null };

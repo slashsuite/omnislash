@@ -833,7 +833,7 @@ export function stripReplyPreamble(text: string): string {
   // 1. Unwrap a surrounding ```-fence, else a matched pair of wrapping quotes/backticks.
   const fence = s.match(/^```[^\n]*\n([\s\S]*?)\n?```$/);
   if (fence) {
-    const inner = fence[1].trim();
+    const inner = (fence[1] ?? "").trim();
     if (inner) s = inner;
   } else if (s.length >= 2) {
     const first = s[0];

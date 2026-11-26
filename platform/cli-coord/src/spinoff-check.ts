@@ -211,7 +211,7 @@ export async function recordSpinoffCheck(
   db: Database | Store,
   ref: string,
   inputs: { architect: unknown; checker: unknown; resolutions?: unknown },
-  opts: { actor?: string | null } = {},
+  opts: { actor?: string | null | undefined } = {},
 ): Promise<CheckResult> {
   const store = asStore(db);
   const architect = asCheckSide("architect", inputs.architect);
@@ -364,7 +364,7 @@ interface RecordedCheck {
 export async function refuseUncheckedDispatch(
   db: Database | Store,
   ref: string,
-  opts: { noCheck?: string | null; actor?: string | null } = {},
+  opts: { noCheck?: string | null | undefined; actor?: string | null | undefined } = {},
 ): Promise<string | null> {
   const store = asStore(db);
   refuseEmptyNoCheck(opts.noCheck);

@@ -86,11 +86,11 @@ const realSecurity: SecurityRunner = (args) => {
 
 interface KeychainOpts {
   /** Mint and store a fresh key when the item is missing. Only a write into an EMPTY store passes true. */
-  mintIfMissing?: boolean;
+  mintIfMissing?: boolean | undefined;
   /** Defaults to process.platform, read at `.get()` time. */
-  platform?: string;
+  platform?: string | undefined;
   /** Test seam replacing the real `security` binary; when given, the test-run refusal is skipped. */
-  security?: SecurityRunner;
+  security?: SecurityRunner | undefined;
 }
 
 /**
@@ -218,7 +218,7 @@ export function fileMasterKey(path: string): MasterKey {
 export function defaultMasterKey(
   env: Record<string, string | undefined> = process.env,
   platform: string = process.platform,
-  opts: { mintIfMissing?: boolean; security?: SecurityRunner } = {},
+  opts: { mintIfMissing?: boolean | undefined; security?: SecurityRunner | undefined } = {},
 ): MasterKey {
   return {
     get(): Buffer {

@@ -42,7 +42,7 @@ function recordSpawn(...procs: ProcLike[]): {
 } {
   const calls: Array<{ cmd: string[]; opts?: Record<string, unknown> }> = [];
   const spawn: SpawnProc = (cmd, opts) => {
-    calls.push({ cmd, opts });
+    calls.push({ cmd, ...(opts !== undefined ? { opts } : {}) });
     return procs[calls.length - 1] ?? fakeProc("NONE");
   };
   return { spawn, calls };

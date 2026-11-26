@@ -130,12 +130,14 @@ function emitArray(arr: unknown[], indent: number): string[] {
   for (const item of arr) {
     if (isPlainObject(item) && Object.keys(item).length > 0) {
       const block = emitMap(item, indent + 1);
-      lines.push(`${pad}- ${block[0].slice((indent + 1) * 2)}`);
-      for (let i = 1; i < block.length; i++) lines.push(block[i]);
+      const [first = "", ...rest] = block;
+      lines.push(`${pad}- ${first.slice((indent + 1) * 2)}`);
+      lines.push(...rest);
     } else if (Array.isArray(item) && item.length > 0) {
       const block = emitArray(item, indent + 1);
-      lines.push(`${pad}- ${block[0].slice((indent + 1) * 2)}`);
-      for (let i = 1; i < block.length; i++) lines.push(block[i]);
+      const [first = "", ...rest] = block;
+      lines.push(`${pad}- ${first.slice((indent + 1) * 2)}`);
+      lines.push(...rest);
     } else {
       lines.push(`${pad}- ${scalarInline(item)}`);
     }
