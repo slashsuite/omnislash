@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import soul, { createSoulHooks } from "../../../apps/cli/opencode/plugins/ob-soul.ts";
+import { createSoulHooks } from "../../../apps/cli/opencode/plugins/ob-soul.ts";
 
 const MODEL = { id: "m" } as never;
 

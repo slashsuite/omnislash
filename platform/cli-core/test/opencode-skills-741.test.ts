@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import skills, { createSkillHooks } from "../../../apps/cli/opencode/plugins/ob-skills.ts";
+import { createSkillHooks } from "../../../apps/cli/opencode/plugins/ob-skills.ts";
 
 const MODEL = { id: "m" } as never;
 

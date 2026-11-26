@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import heartbeat, { createHeartbeatHooks } from "../../../apps/cli/opencode/plugins/ob-heartbeat.ts";
+import { createHeartbeatHooks } from "../../../apps/cli/opencode/plugins/ob-heartbeat.ts";
 
 const WT = "/wt/80";
 

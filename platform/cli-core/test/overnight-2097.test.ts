@@ -5,8 +5,6 @@
 // through `createObApi` on a real Postgres store (the ob 325 harness: a local cluster, no network, no live
 // database), and the SAME script must print the same lines with the same exit codes both ways.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";

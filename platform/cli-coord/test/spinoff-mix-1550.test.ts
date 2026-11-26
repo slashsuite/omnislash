@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";

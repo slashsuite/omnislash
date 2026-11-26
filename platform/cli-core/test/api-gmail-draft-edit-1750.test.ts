@@ -2,7 +2,7 @@
 // transport (no network); the server half on a real store via the ob 325 harness with a fake Gmail drafts
 // client injected, so nothing real is edited, deleted or sent.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../../apps/cli/src/db/store.ts";

@@ -63,6 +63,11 @@ function toolArgs(input: unknown): Record<string, unknown> {
     : {};
 }
 
+/** Leaves a key out rather than setting it to undefined (exactOptionalPropertyTypes). */
+function defined<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]?: V });
+}
+
 function toolTitle(event: V2ToolAfter): string | undefined {
   const title = event.result?.metadata?.title;
   return typeof title === "string" ? title : undefined;
@@ -77,7 +82,7 @@ export async function bindV2Hooks(ctx: V2SetupCtx, hooks: FactoryHooks): Promise
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
           await onEvent({
-            event: { type: event.type, properties: { sessionID: sessionIDOf(event) } },
+            event: { ...defined("type", event.type), properties: defined("sessionID", sessionIDOf(event)) },
           });
         }
       } catch {
@@ -97,11 +102,11 @@ export async function bindV2Hooks(ctx: V2SetupCtx, hooks: FactoryHooks): Promise
       onAfter(
         {
           tool: event.tool,
-          sessionID: event.sessionID,
-          callID: event.id,
+          ...defined("sessionID", event.sessionID),
+          ...defined("callID", event.id),
           args: toolArgs(event.input),
         },
-        { title: toolTitle(event) },
+        defined("title", toolTitle(event)),
       ),
     );
   }
@@ -110,7 +115,7 @@ export async function bindV2Hooks(ctx: V2SetupCtx, hooks: FactoryHooks): Promise
     const onTransform = hooks["experimental.chat.system.transform"];
     await ctx.session.hook("context", async (event) => {
       const output = { system: [] as string[] };
-      await onTransform({ sessionID: event.sessionID, model: event.model }, output);
+      await onTransform({ ...defined("sessionID", event.sessionID), model: event.model }, output);
       for (let i = output.system.length - 1; i >= 0; i--) {
         event.system.unshift({ type: "text", text: output.system[i]! });
       }

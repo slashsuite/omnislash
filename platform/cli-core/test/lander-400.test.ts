@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { HELP, HANDLERS } from "../../../apps/cli/src/cli.ts";
 import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
-
-const ROOT = join(import.meta.dir, "../../..");
 
 describe("444: lander retired", () => {
   test("ob lander is an unknown command", async () => {

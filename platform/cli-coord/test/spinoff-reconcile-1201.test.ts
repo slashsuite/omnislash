@@ -9,8 +9,6 @@
 // the dispatch cannot be its land). The two unambiguous signals — the branch is merged into main, the
 // ticket is `done` — are untouched.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";

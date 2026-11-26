@@ -2,8 +2,6 @@
 //
 // CLIENT half: stubbed transport, no network, no token file, no database, no live Google.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { HANDLERS } from "../../../apps/cli/src/cli.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import {

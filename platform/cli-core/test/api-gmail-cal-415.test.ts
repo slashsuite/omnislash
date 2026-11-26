@@ -6,8 +6,6 @@
 // cluster on a unix socket, no network and no live database. Sync injects a fake GoogleClient so it
 // never hits Google.
 import { describe, expect, setSystemTime, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { saDayBounds } from "../../cli-sources/src/sa-time.ts";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";

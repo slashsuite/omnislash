@@ -1,8 +1,6 @@
 // OB-2256: "planner" is "architect" everywhere ob speaks, with no alias. These assert the surface: the check flag,
 // the handoff, gateable, sendback and spike text, the T3 labels, the clean-repo guard, the help and the skills.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { COMMAND_HELP, HELP, renderCommandHelp, renderEnvHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import type { T3Project } from "../../../apps/cli/src/t3/client.ts";
@@ -15,7 +13,6 @@ import { sendBackSpinoff } from "../src/spinoff-sendback.ts";
 import { formatSpikeReport } from "../src/spinoff-spike.ts";
 import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const ROOT = join(import.meta.dir, "../../..");
 const PLANNER = /planner/i;
 
 const row = {

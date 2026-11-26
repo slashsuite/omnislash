@@ -3,7 +3,7 @@
 // shell: no network, no live store, no real box. That the box itself enforces its cpuset and memory is not ob's
 // code and was checked live by the architect.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeRepoDir, freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";

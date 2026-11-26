@@ -10,8 +10,6 @@
 // Re-adding that row left the whole `cli-core` suite green -- no neighbouring pin reads this list for a row
 // being ADDED -- so this file exists for that one assertion plus the doc claim the acceptance asks for.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { OB_API_LOCAL_ONLY } from "../../../apps/cli/src/api/contract.ts";
 import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";

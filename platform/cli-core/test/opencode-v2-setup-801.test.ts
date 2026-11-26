@@ -99,7 +99,7 @@ describe("V2 setup adapter maps factory hooks (801)", () => {
   });
 
   test("tool.execute.after maps input to args and metadata.title", async () => {
-    const seen: Array<{ args?: Record<string, unknown>; title?: string; sessionID?: string }> = [];
+    const seen: Array<{ args?: Record<string, unknown> | undefined; title?: string | undefined; sessionID?: string | undefined }> = [];
     const hooks: FactoryHooks = {
       "tool.execute.after": async (input, output) => {
         seen.push({ args: input.args, title: output.title, sessionID: input.sessionID });

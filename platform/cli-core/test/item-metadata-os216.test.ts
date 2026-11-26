@@ -6,8 +6,6 @@
 // The local half runs on a throwaway SQLite store through `runCli`; the API half sends the CLI's own requests through
 // `createObApi` on a leased local Postgres (no network, no live database) and must print the same lines.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";

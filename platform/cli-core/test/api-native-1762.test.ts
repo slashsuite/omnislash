@@ -2,8 +2,6 @@
 // screen need: snapshot, item transition / rank, alert ack + snooze, agenda. Real Postgres via the 325
 // harness, no network (GitHub sync is skipped with `github: false`), no live DB.
 import { describe, expect, setSystemTime, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { saDayBounds } from "../../cli-sources/src/sa-time.ts";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";

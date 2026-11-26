@@ -5,8 +5,6 @@
 // api-client-353's seam. The SERVER half runs against a REAL store through the ob 325 harness -- a local
 // cluster on a unix socket, no network and no live database.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";

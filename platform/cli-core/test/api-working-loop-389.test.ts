@@ -3,8 +3,6 @@
 // CLIENT half: stubbed transport, no network, no token file, no database (api-client-353's seam).
 // SERVER half: real Postgres via the 325 harness; GitHub client stubbed (no live network).
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";

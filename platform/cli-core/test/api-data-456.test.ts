@@ -2,8 +2,6 @@
 //
 // CLIENT half: stubbed transport, no network, no token file, no database.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import { OB_API_LOCAL_ONLY, OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";

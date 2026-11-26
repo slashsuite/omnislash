@@ -1,8 +1,6 @@
 // OB-1765 (OB-1760 phase 0d) -- the ob API reads the native WhatsApp screen needs: the Status tray + history
 // page and the chat list. Read-only: no send is reachable. Real Postgres via the 325 harness, no network.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";

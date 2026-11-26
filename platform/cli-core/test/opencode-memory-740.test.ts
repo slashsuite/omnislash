@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderCommandHelp } from "../../../apps/cli/src/cli.ts";
 import { MEMORY_CAP_CHARS, MEMORY_PATH_ENV } from "../../../apps/cli/src/memory.ts";
-import memory, { createMemoryHooks } from "../../../apps/cli/opencode/plugins/ob-memory.ts";
+import { createMemoryHooks } from "../../../apps/cli/opencode/plugins/ob-memory.ts";
 
 const MODEL = { id: "m" } as never;
 

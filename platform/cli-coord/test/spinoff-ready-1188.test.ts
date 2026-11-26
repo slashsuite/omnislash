@@ -12,7 +12,7 @@
 // and the API client, which share `pickSpinoffForReady` / `assertWorktreeGateable`.
 import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli, omnislashTeamFor } from "../../../apps/cli/test/helpers.ts";
