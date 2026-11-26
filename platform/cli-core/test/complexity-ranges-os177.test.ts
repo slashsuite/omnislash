@@ -76,12 +76,12 @@ describe("OS-177: `ob models set builder.<from>-<to>` on the server", () => {
   const empty = emptyRouteInputs({ tierModels: tm }).server;
 
   test("a partial range on a profile with no builder set of its own is refused, so no default band lands on the server", () => {
-    expect(refusal(() => withRoute(empty, "default", "builder.4-4", ["s"], undefined, tm))).toContain("profile 'default' has no full builder set on the server");
+    expect(refusal(() => withRoute(empty, "default", "builder.4-4", ["claudeAgent:s"], undefined, tm))).toContain("profile 'default' has no full builder set on the server");
   });
 
   test("builder.1-10 first, then a carve, keeps every band the user's and role.* on the user's 8", () => {
     const whole = withRoute(empty, "default", "builder.1-10", ["claudeAgent:o"], undefined, tm);
-    const carved = withRoute(whole, "default", "builder.4-4", ["s"], undefined, tm);
+    const carved = withRoute(whole, "default", "builder.4-4", ["claudeAgent:s"], undefined, tm);
     expect(Object.keys(carved.profiles.default!.routes).sort()).toEqual(["builder.1-3", "builder.4-4", "builder.5-10"]);
     expect(resolveRoute({ ...emptyRouteInputs({ tierModels: tm }), server: carved }, "role.architect").chain).toEqual(["claudeAgent:o"]);
   });

@@ -36,6 +36,7 @@ import {
   type ActiveProfile,
   type RouteInputs,
   type RouteSource,
+  withProvider,
 } from "../../../../apps/cli/src/model-routes.ts";
 import { ReviewReadersError, type ConfigIO, type ReviewReaders } from "../../../../apps/cli/src/review-readers.ts";
 import { configIo } from "./config-io.ts";
@@ -122,7 +123,10 @@ function viewOf(inputs: RouteInputs, file: { path: string; present: boolean }, n
     };
   });
   const review = serverReview(inputs, profile);
-  const bands = builderBandsIn(shown, profile, { local: false }).map((b): ModelsBuilderBand => ({ from: b.from, to: b.to, chain: [...b.chain], effort: b.effort ?? null, source: b.source }));
+  // OS-239: a band still on the defaults shows a claude-* id with its provider, so saving the set as shown is not refused. Any
+  // other bare default (from spinoff_tier_models) stays bare, so the save names it rather than sending it to Claude.
+  const qualify = (m: string) => (m.startsWith("claude-") ? withProvider(m) : m);
+  const bands = builderBandsIn(shown, profile, { local: false }).map((b): ModelsBuilderBand => ({ from: b.from, to: b.to, chain: b.source === "default" ? [...new Set(b.chain.map(qualify))] : [...b.chain], effort: b.effort ?? null, source: b.source }));
   const fileProfile = inputs.file?.profiles[profile];
   const local = fileProfile !== undefined && (Object.keys(fileProfile.routes).some((r) => r.startsWith("builder.")) || Object.keys(fileProfile.builder ?? {}).length > 0);
   return {

@@ -343,8 +343,8 @@ export const DEFAULT_ROUTE_MODELS: Readonly<Record<string, string>> = {
 /** A role thread's model when nothing names builder.complex: Opus, provider named (a role run never leans on a project default). */
 export const DEFAULT_ROLE_MODEL = `claudeAgent:${DEFAULT_TIER_MODELS.complex}`;
 
-/** A role thread names its provider: a bare id runs on Claude. Pure. */
-function withProvider(model: string): string {
+/** A role thread, and a builder band still on the defaults, names its provider: a bare id runs on Claude. Pure. */
+export function withProvider(model: string): string {
   return splitTierModel(model)?.providerInstanceId ? model : `claudeAgent:${model}`;
 }
 
@@ -507,6 +507,28 @@ export function parseChain(text: string): string[] {
   return [...new Set(parts)];
 }
 
+/**
+ * OS-239: a builder or role route must name its provider. A bare id runs on each T3 project's own default
+ * provider, so on 2026-11-26 a bare `claude-opus-5-5` sent one project's builders to Gemini and made projects with
+ * no default refuse every launch. Other routes (`checker`, `sweep.*`, `job.*`) keep taking a bare id.
+ */
+export function needsProvider(route: string): boolean {
+  return route.startsWith("builder.") || route.startsWith("role.");
+}
+
+/** The bare ids in a builder or role route's chain; empty for any other route. Pure. */
+export function bareModelsOf(route: string, chain: readonly string[]): string[] {
+  return needsProvider(route) ? chain.filter((m) => splitTierModel(m)?.providerInstanceId === null) : [];
+}
+
+/** The refusal for a bare id on a builder or role route, or null. Pure. */
+export function bareModelRefusal(route: string, chain: readonly string[]): string | null {
+  const bare = bareModelsOf(route, chain);
+  if (bare.length === 0) return null;
+  const first = bare[0]!;
+  return `${route}: model ${bare.map((m) => `'${m}'`).join(", ")} has no provider: a builder or role route without one runs on each T3 project's own default model. Give it as <provider>:<model>, such as claudeAgent:${first}`;
+}
+
 /** Check an effort level by name. Pure. */
 export function checkEffort(level: string): RouteEffort {
   if (!isRouteEffort(level)) throw new ModelRoutesError(`effort '${level}' is not an effort level (use ${EFFORT_LEVELS.join(", ")})`);
@@ -539,6 +561,8 @@ function withoutBuilder(routes: Record<string, RouteSpec>): Record<string, Route
  */
 export function withRoute(v: ModelRoutes, profile: string, route: string, chain: string[], effort?: RouteEffort, tierModels: Readonly<Record<SpinoffTier, string>> = DEFAULT_TIER_MODELS): ModelRoutes {
   if (!isRouteName(route)) throw new ModelRoutesError(routeNameRejection(route));
+  const bare = bareModelRefusal(route, chain);
+  if (bare) throw new ModelRoutesError(bare);
   const s: RouteSpec = { chain, ...(effort ? { effort } : {}) };
   const own = v.profiles[profile]?.routes ?? {};
   const range = builderRangeOf(route);
@@ -583,6 +607,10 @@ export function withBuilderRanges(v: ModelRoutes, profile: string, ranges: reado
   }
   const cover = rangeCoverError(ranges);
   if (cover) throw new ModelRoutesError(`model_routes profile '${profile}': ${cover}`);
+  for (const r of ranges) {
+    const bare = bareModelRefusal(rangeRoute(r), r.chain);
+    if (bare) throw new ModelRoutesError(`model_routes profile '${profile}': ${bare}`);
+  }
   const set = Object.fromEntries(ranges.map((r) => [rangeRoute(r), { chain: [...r.chain], ...(r.effort ? { effort: r.effort } : {}) }]));
   return withProfile(v, profile, (p) => ({ ...p, routes: { ...withoutBuilder(p.routes), ...set } }));
 }

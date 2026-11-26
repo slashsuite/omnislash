@@ -1734,6 +1734,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       "The dashboard's Models page edits, splits and merges the builder and review ranges as rows.",
       "Routes: builder.*, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
       "Precedence: the local models file, then the server's model_routes, then the default.",
+      "builder.* and role.* routes need <provider>:<model>: set refuses a bare id, show flags one stored.",
       "A launch moves along a route's chain only on a credit or quota error.",
       "On a client, reads and writes go to the API server; OB_MODELS_FILE moves the local file.",
     ],

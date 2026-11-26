@@ -28,7 +28,7 @@ async function seeded() {
 const post = (url: string, headers: Record<string, string> = { "sec-fetch-site": "same-origin" }) =>
   new Request(url, { method: "POST", headers });
 
-const SET: ModelsOp = { op: "setRoute", profile: "claude", route: "builder.medium", chain: "sonnet, haiku" };
+const SET: ModelsOp = { op: "setRoute", profile: "claude", route: "builder.medium", chain: "c:sonnet, c:haiku" };
 
 describe("editModels gate", () => {
   test("a cleartext request from the LAN is refused and model_routes is unchanged", async () => {
@@ -45,8 +45,8 @@ describe("editModels gate", () => {
       const r = await editModels({ request: post(url), store: async () => w.store }, SET, null, "/nowhere");
       expect(r.ok).toBe(true);
       const band = r.ok ? r.view.builder.bands.find((b) => b.from === 4 && b.to === 6) : undefined;
-      expect(band).toMatchObject({ chain: ["sonnet", "haiku"], source: "server" });
-      expect(JSON.parse((await w.stored()) ?? "{}").profiles.claude.routes["builder.medium"].chain).toEqual(["sonnet", "haiku"]);
+      expect(band).toMatchObject({ chain: ["c:sonnet", "c:haiku"], source: "server" });
+      expect(JSON.parse((await w.stored()) ?? "{}").profiles.claude.routes["builder.medium"].chain).toEqual(["c:sonnet", "c:haiku"]);
     });
   }
 
@@ -106,12 +106,44 @@ describe("editModels range sets", () => {
 
   test("a whole builder set is stored in the range form, replacing the old tier keys", async () => {
     const w = await seeded();
-    const r = await editModels(ctx(w), builder([{ from: 1, to: 4, chain: "haiku" }, { from: 5, to: 10, chain: "opus", effort: "high" }]), null, "/nowhere");
+    const r = await editModels(ctx(w), builder([{ from: 1, to: 4, chain: "c:haiku" }, { from: 5, to: 10, chain: "c:opus", effort: "high" }]), null, "/nowhere");
     expect(r.ok).toBe(true);
     expect(JSON.parse((await w.stored()) ?? "{}").profiles.claude.routes).toEqual({
-      "builder.1-4": { chain: ["haiku"] },
-      "builder.5-10": { chain: ["opus"], effort: "high" },
+      "builder.1-4": { chain: ["c:haiku"] },
+      "builder.5-10": { chain: ["c:opus"], effort: "high" },
     });
+  });
+
+  test("OS-239: a bare id in a builder band or on a role route is refused, naming <provider>:<model>, and nothing is stored", async () => {
+    const w = await seeded();
+    const r = await editModels(ctx(w), builder([{ from: 1, to: 4, chain: "c:haiku" }, { from: 5, to: 10, chain: "opus" }]), null, "/nowhere");
+    expect(r).toEqual({ ok: false, error: expect.stringContaining("builder.5-10: model 'opus' has no provider") });
+    if (!r.ok) expect(r.error).toContain("<provider>:<model>");
+    const role = await editModels(ctx(w), { op: "setRoute", profile: "claude", route: "role.architect", chain: "opus" }, null, "/nowhere");
+    expect(role).toEqual({ ok: false, error: expect.stringContaining("role.architect: model 'opus' has no provider") });
+    expect(await w.stored()).toBe(SEED);
+  });
+
+  test("OS-239: the range set of a profile on the default bands saves as shown, each band naming its provider", async () => {
+    const w = world();
+    await setConfig(w.store, MODEL_ROUTES_KEY, JSON.stringify({ active: "claude", profiles: { claude: { routes: {} } } }));
+    const v = await editModels(ctx(w), { op: "use", profile: "claude" }, null, "/nowhere");
+    if (!v.ok) throw new Error(v.error);
+    expect(v.view.builder.bands.every((b) => b.source === "default" && b.chain.every((m) => m.startsWith("claudeAgent:")))).toBe(true);
+    const r = await editModels(ctx(w), builder(v.view.builder.bands.map((b) => ({ from: b.from, to: b.to, chain: b.chain.join(",") }))), null, "/nowhere");
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.view.builder.bands.map((b) => b.source)).toEqual(["server", "server", "server"]);
+  });
+
+  test("OS-239: a non-Claude bare default band stays bare, so saving the set names it rather than sending it to Claude", async () => {
+    const w = world();
+    await setConfig(w.store, MODEL_ROUTES_KEY, JSON.stringify({ active: "claude", profiles: { claude: { routes: {} } } }));
+    await setConfig(w.store, "spinoff_tier_models", JSON.stringify({ medium: "gemini-4-neon" }));
+    const v = await editModels(ctx(w), { op: "use", profile: "claude" }, null, "/nowhere");
+    if (!v.ok) throw new Error(v.error);
+    expect(v.view.builder.bands.map((b) => b.chain)).toEqual([["claudeAgent:claude-haiku-5-5"], ["gemini-4-neon"], ["claudeAgent:claude-opus-5-5"]]);
+    const r = await editModels(ctx(w), builder(v.view.builder.bands.map((b) => ({ from: b.from, to: b.to, chain: b.chain.join(",") }))), null, "/nowhere");
+    expect(r).toEqual({ ok: false, error: expect.stringContaining("builder.4-6: model 'gemini-4-neon' has no provider") });
   });
 
   test("a gap is refused with the CLI's message and nothing is stored", async () => {

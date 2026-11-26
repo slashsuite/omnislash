@@ -19,7 +19,7 @@ export const SEED_ROUTES = {
   profiles: {
     claude: {
       routes: {
-        "builder.complex": { chain: ["claude-opus-5-5"], effort: "high" },
+        "builder.complex": { chain: ["claudeAgent:claude-opus-5-5"], effort: "high" },
         "job.nightly": { chain: ["claude-sonnet-5-5"] },
       },
       review: {
@@ -27,7 +27,7 @@ export const SEED_ROUTES = {
         tiers: { simple: ["opus"], medium: ["neon", "opus"], complex: ["neon", "opus"] },
       },
     },
-    alt: { routes: { "builder.simple": { chain: ["claude-haiku-5-5"] } } },
+    alt: { routes: { "builder.simple": { chain: ["claudeAgent:claude-haiku-5-5"] } } },
   },
 };
 
