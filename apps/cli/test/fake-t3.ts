@@ -22,6 +22,8 @@ export interface FakeT3Install {
   threads: T3Thread[];
   /** Every send, in order (OS-56: a delivery into a role's run). */
   sends: T3SendInput[];
+  /** Every thread id `interrupt` was called with (OS-259: a conflict's loser is stopped before it is told to wait). */
+  interrupts: string[];
   restore: () => void;
 }
 
@@ -46,6 +48,7 @@ export function installFakeT3(
   const autoSettleOff: string[] = [];
   const threads: T3Thread[] = [];
   const sends: T3SendInput[] = [];
+  const interrupts: string[] = [];
   const projects = repoPaths.map((workspaceRoot, i) => ({
     id: `proj-${i}`,
     title: `repo-${i}`,
@@ -54,7 +57,9 @@ export function installFakeT3(
     deletedAt: null,
   }));
   const seam: T3Seam = {
-    interrupt: async () => {},
+    interrupt: async (threadId) => {
+      interrupts.push(threadId);
+    },
     projects: async () => projects,
     capabilities: async () => ({
       runtimeMode: "full-access",
@@ -145,5 +150,5 @@ export function installFakeT3(
     queueCancel: async () => {},
   };
   const restore = __setT3Seam(seam);
-  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, sends, restore };
+  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, sends, interrupts, restore };
 }

@@ -4,6 +4,7 @@
 // Then (OS-57) it ends the team's role runs that are idle or over the context cap, each leaving its note (../role-end.ts).
 // OS-213: a building builder whose thread is past the same cap is one architect message asking for its relaunch.
 // OS-48: before delivering, it test-merges the team's running branches here; each conflicting pair goes to the sentinel.
+// OS-259: the pair's loser is paused, and told to go on once its winner has landed.
 //
 // One procedure serves the store and the API client: each passes a `TickBackend` for the data. T3 is the caller's.
 import { homedir } from "node:os";
@@ -14,7 +15,24 @@ import { deliverToRole, nightLockedUntil, renderDelivery, type DeliverOutcome } 
 import { contextTokens, endPass, renderEndResult, ROLE_CONTEXT_END_TOKENS, type EndPassDeps, type EndPassResult } from "../role-end.ts";
 import { builderContextFindings, TICK_FROM, tickClientKey, type TickFinding } from "../role-tick.ts";
 import { resolveRepoWith } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
-import { conflictKey, conflictMessage, conflictNote, findBranchConflicts, renderConflict, type ConflictSource } from "../../../../platform/cli-coord/src/spinoff-conflicts.ts";
+import {
+  conflictKey,
+  conflictMessage,
+  conflictNote,
+  conflictPairKey,
+  findBranchConflicts,
+  openYields,
+  pickLoser,
+  renderConflict,
+  resumeKey,
+  resumeMessage,
+  resumeNotice,
+  rowThread,
+  yieldMessage,
+  type ConflictSource,
+  type PauseOutcome,
+} from "../../../../platform/cli-coord/src/spinoff-conflicts.ts";
+import { IN_FLIGHT } from "../../../../platform/cli-coord/src/spinoff-vocab.ts";
 import type { OverlapRow } from "../../../../platform/cli-coord/src/spinoff-overlap.ts";
 import { worktreeRepoOf, type T3Seam } from "../t3/dispatch.ts";
 import type { TeamView } from "../team.ts";
@@ -51,6 +69,8 @@ interface TickTeamResult {
   written: Array<{ id: number; kind: string; ref: string }>;
   /** OS-48: the conflicting pairs whose sentinel message this pass wrote, and the git failures it only warned about. */
   conflicts: Array<{ id: number; line: string }>;
+  /** OS-259: the paused rows this pass told to go on, each with its resume notice. */
+  resumed: Array<{ id: number; line: string }>;
   conflict_warnings: string[];
   unread: number;
   night_lock_until: string | null;
@@ -92,31 +112,99 @@ function oneLine(err: unknown): string {
 
 /**
  * OS-48: test-merge the team's running branches in this machine's checkouts and write one sentinel message per
- * conflicting pair, keyed by its rows and heads, so unchanged heads write nothing. A new message also notes both
- * tickets. Git failures are warnings on the result, never a failed tick.
+ * conflicting pair, keyed by its rows, so a pair is reported once however its heads move. A new message also notes
+ * both tickets. Git failures are warnings on the result, never a failed tick.
+ *
+ * OS-259: first, every paused row whose winners have all landed or stopped is told to rebase and go on (one resume
+ * notice each). Then for each new pair the loser (pickLoser) is stopped and told to wait, unless an earlier pair
+ * already paused it, and the message says who won and who pauses.
  */
-async function tickConflicts(backend: TickBackend, result: TickTeamResult, source: ConflictSource, rows: OverlapRow[]): Promise<void> {
+async function tickConflicts(backend: TickBackend, result: TickTeamResult, source: ConflictSource, rows: OverlapRow[], seam: () => Promise<T3Seam>): Promise<void> {
   const team = result.team;
   const check = await findBranchConflicts(rows, source);
   result.conflict_warnings.push(...check.warnings);
+  const sentinel = await backend.inbox.list(team, CONFLICT_ROLE, true);
+  const keys = sentinel.map((m) => m.client_key ?? "");
+  const open = openYields(sentinel);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const warnOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+  // A winner is gone once its row stopped running, or its branch landed on origin/main or left origin (deleted on merge).
+  const stillRunning = (id: number): boolean => {
+    const r = byId.get(id);
+    return !!r && IN_FLIGHT.has(r.status) && !check.landed.some((l) => l.row === id) && !check.unpushed.some((u) => u.row === id);
+  };
+  for (const [loser, winners] of open) {
+    const row = byId.get(loser);
+    if (!row || !IN_FLIGHT.has(row.status) || winners.some(stillRunning)) continue;
+    const refs = winners.map((w) => byId.get(w)?.ticket_ref ?? `row ${w}`);
+    const key = resumeKey(loser, winners);
+    if (keys.includes(key)) {
+      open.delete(loser);
+      continue;
+    }
+    const thread = rowThread(row);
+    let told = false;
+    if (thread) {
+      try {
+        // The request id names the thread: T3 dedups ids across every thread, and row ids restart in each store (OS-212).
+        await (await seam()).send({ threadId: thread, message: resumeMessage(row.ticket_ref, refs), mode: "queue", clientRequestId: `ob-resume-${thread}-${loser}-${[...winners].sort((x, y) => x - y).join("-")}` });
+        told = true;
+      } catch (e) {
+        // The notice says to resume it by hand, so a thread that never takes the message is not retried forever.
+        result.conflict_warnings.push(`conflicts: resume of ${row.ticket_ref} failed: ${warnOf(e)}`);
+      }
+    }
+    const { message, created } = await backend.inbox.send({ team, role: CONFLICT_ROLE, from: TICK_FROM, kind: "message", ref: row.ticket_ref, body: resumeNotice(row.ticket_ref, loser, refs, told), clientKey: key });
+    open.delete(loser);
+    if (created) result.resumed.push({ id: message.id, line: `resume: ${row.ticket_ref} after ${refs.join(", ")}` });
+  }
   for (const c of check.conflicts) {
+    const pair = `${conflictPairKey(c)}:`;
+    if (keys.some((k) => k.startsWith(pair))) continue;
+    // A priority that cannot be read decides nothing: the pair waits for the next tick rather than rank it as none.
+    let pa: number | null, pb: number | null;
+    try {
+      [pa, pb] = await Promise.all([source.priority(c.a), source.priority(c.b)]);
+    } catch (e) {
+      result.conflict_warnings.push(`conflicts: priority of ${c.a.ref} or ${c.b.ref} failed: ${warnOf(e)}; the pair waits`);
+      continue;
+    }
+    const { winner, loser } = pickLoser(c, pa, pb);
+    const [pw, pl] = winner === c.a ? [pa, pb] : [pb, pa];
+    let pause: PauseOutcome = "by-hand";
+    if (open.has(loser.row)) pause = "already";
+    else if (loser.thread) {
+      try {
+        const s = await seam();
+        // Stop the turn it is in, best effort: an idle thread has nothing to stop. The message is what pauses it.
+        await s.interrupt(loser.thread).catch(() => {});
+        await s.send({ threadId: loser.thread, message: yieldMessage(c, winner, loser, pw, pl), mode: "queue", clientRequestId: `ob-yield-${loser.thread}-${loser.row}-${winner.row}` });
+        pause = "paused";
+      } catch (e) {
+        // The pair is still posted, saying the pause did not reach the thread, so someone is told to pause it by hand.
+        result.conflict_warnings.push(`conflicts: pause of ${loser.ref} failed: ${warnOf(e)}`);
+        pause = "unreached";
+      }
+    }
     const { message, created } = await backend.inbox.send({
       team,
       role: CONFLICT_ROLE,
       from: TICK_FROM,
       kind: "message",
       ref: c.a.ref,
-      body: conflictMessage(c),
-      clientKey: conflictKey(c),
+      body: conflictMessage(c, winner, loser, pw, pl, pause),
+      clientKey: conflictKey(c, loser.row),
     });
     if (!created) continue;
-    result.conflicts.push({ id: message.id, line: renderConflict(c) });
+    keys.push(conflictKey(c, loser.row));
+    open.set(loser.row, [...(open.get(loser.row) ?? []), winner.row]);
+    result.conflicts.push({ id: message.id, line: `${renderConflict(c)}; ${loser.ref} gives way to ${winner.ref}` });
     // The message is the record; a note that cannot be written (no such item) is a warning, never a lost second note.
     for (const side of ["a", "b"] as const) {
       try {
-        await source.note(c[side], conflictNote(c, side));
+        await source.note(c[side], conflictNote(c, side, loser));
       } catch (e) {
-        result.conflict_warnings.push(`conflicts: note on ${c[side].ref} failed: ${e instanceof Error ? e.message : String(e)}`);
+        result.conflict_warnings.push(`conflicts: note on ${c[side].ref} failed: ${warnOf(e)}`);
       }
     }
   }
@@ -149,7 +237,18 @@ async function tickTeam(
   } catch (e) {
     result.conflict_warnings.push(`builder context: ${e instanceof Error ? e.message : String(e)}`);
   }
-  for (const f of [...(await backend.findings(team)), ...contextFindings]) {
+  // OS-259: a builder paused for a conflict is quiet by design, so it is not reported stale while it waits.
+  let paused = new Set<string>();
+  try {
+    if (source) {
+      const open = openYields(await backend.inbox.list(team, CONFLICT_ROLE, true));
+      paused = new Set(rows.filter((r) => open.has(r.id)).map((r) => r.ticket_ref));
+    }
+  } catch (e) {
+    result.conflict_warnings.push(`conflicts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const findings = (await backend.findings(team)).filter((f) => !(f.kind === "stale-builder" && paused.has(f.ref)));
+  for (const f of [...findings, ...contextFindings]) {
     const { message, created } = await backend.inbox.send({
       team,
       role: TICK_ROLE,
@@ -162,9 +261,9 @@ async function tickTeam(
     if (created) result.written.push({ id: message.id, kind: f.kind, ref: f.ref });
   }
   // The conflict check is best-effort: whatever fails in it (git, the rows, the inbox) warns and never keeps the
-  // architect's findings from being delivered.
+  // architect's findings from being delivered. Under the night lock it writes, pauses and resumes nothing (OS-259).
   try {
-    if (source) await tickConflicts(backend, result, source, rows);
+    if (source && !nightLockedUntil()) await tickConflicts(backend, result, source, rows, seam);
   } catch (e) {
     result.conflict_warnings.push(`conflicts: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -183,7 +282,7 @@ async function tickTeam(
 function renderTeam(r: TickTeamResult): string[] {
   if (r.skipped) return [`skip ${r.team}: ${r.skipped}`];
   const lines = r.written.map((w) => `role tick ${r.team}: wrote #${w.id} ${w.kind} ${w.ref}`);
-  for (const c of r.conflicts) lines.push(`role tick ${r.team}: wrote #${c.id} ${c.line}`);
+  for (const c of [...r.conflicts, ...r.resumed]) lines.push(`role tick ${r.team}: wrote #${c.id} ${c.line}`);
   if (r.error) return [...lines, ...r.ended.flatMap((e) => renderEndResult(r.team, e))];
   const unread = r.unread + r.sentinel_unread;
   if (unread === 0) lines.push(`role tick ${r.team}: nothing new`);
@@ -212,6 +311,7 @@ export async function runRoleTick(
       skipped: null,
       written: [],
       conflicts: [],
+      resumed: [],
       conflict_warnings: [],
       unread: 0,
       night_lock_until: null,

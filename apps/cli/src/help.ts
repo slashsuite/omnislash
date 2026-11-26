@@ -1106,13 +1106,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         usage: ["spinoff conflicts [--repo <p|slug>] [--json]"],
         flags: [
           { flag: "--repo <p>", description: "Check one repo only (default: every repo with two or more running rows)" },
-          { flag: "--json", description: "Script output: conflicts (with key and line), unpushed and warnings" },
+          { flag: "--json", description: "Script output: conflicts (with pair key and line), unpushed, landed and warnings" },
         ],
         examples: ["spinoff conflicts", "spinoff conflicts --repo omnislash --json"],
         notes: [
           "Runs git merge-tree on each pair of fetched origin/<branch> heads in this machine's checkout.",
-          "Lockfile-only conflicts and unpushed branches are skipped; a git failure warns.",
-          "Records nothing and exits 0; role tick posts each pair to the team's sentinel.",
+          "Skips lockfile-only conflicts, unpushed branches and branches already on origin/main; git failures warn.",
+          "Records nothing and exits 0; role tick posts each pair once to the team's sentinel and pauses its loser.",
         ],
       },
       brief: {
@@ -1533,6 +1533,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         usage: ["role tick [--team <t>[,<t>...]]"],
         flags: [{ flag: "--team <csv>", description: "Limit tick pass to named team(s)" }],
         examples: ["role tick", "role tick --team core"],
+        notes: [
+          "A conflicting pair's loser (lower priority; at equal priority the later row) is stopped and told to wait.",
+          "Once every ticket it yields to has landed or stopped, it is told to rebase onto origin/main and go on.",
+        ],
       },
     },
     examples: ["role status core", "role brief core architect --peek", "role tick"],

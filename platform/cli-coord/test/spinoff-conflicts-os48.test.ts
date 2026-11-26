@@ -1,13 +1,15 @@
 // OS-48: running builders' pushed branches are test-merged against each other with `git merge-tree`, and only a
-// real merge conflict counts. `ob spinoff conflicts` prints the pairs; `role tick` posts each pair once per pair of
-// heads to the team's sentinel and notes both tickets.
+// real merge conflict counts. `ob spinoff conflicts` prints the pairs; `role tick` posts each pair once to the team's
+// sentinel and notes both tickets. OS-259: the tick pauses the pair's loser and resumes it after the winner lands.
 //
 // Real git on a throwaway fixture: a bare `origin` and its clone in a temp directory, so no network and no live repo.
 // The store is a fresh SQLite file and T3 is the fake seam.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { eq } from "drizzle-orm";
+import { nightLockPath } from "../../../apps/cli/src/role-deliver.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
@@ -18,7 +20,7 @@ import type { RoleMessage } from "../../../apps/cli/src/inbox.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { overlapSh } from "../src/commands/spinoff.ts";
-import { conflictedPaths, conflictKey, findBranchConflicts, isResolvedAtLand } from "../src/spinoff-conflicts.ts";
+import { conflictedPaths, conflictKey, conflictPairKey, findBranchConflicts, isResolvedAtLand, openYields, pickLoser, type ConflictSide } from "../src/spinoff-conflicts.ts";
 import type { OverlapRow } from "../src/spinoff-overlap.ts";
 
 const scratch = (): string => process.env.TMPDIR || tmpdir();
@@ -105,16 +107,18 @@ describe("findBranchConflicts on a fixture repo (OS-48)", () => {
     push(clone, "a", { "f.txt": fWith(1, "a was here") });
     push(clone, "b", { "f.txt": fWith(9, "b was here") });
     const clean = await findBranchConflicts([row(1, "OS-1", "a", clone), row(2, "OS-2", "b", clone)], deps);
-    expect(clean).toEqual({ conflicts: [], warnings: [], unpushed: [] });
+    expect(clean).toEqual({ conflicts: [], warnings: [], unpushed: [], landed: [] });
 
     const headC = push(clone, "c", { "f.txt": fWith(1, "c disagrees") });
     const headA = git(clone, "rev-parse", "origin/a");
     const hit = await findBranchConflicts([row(3, "OS-3", "c", clone), row(1, "OS-1", "a", clone)], deps);
     expect(hit.warnings).toEqual([]);
     expect(hit.conflicts).toEqual([
-      { repo: clone, a: { row: 1, ref: "OS-1", item_id: null, branch: "a", head: headA }, b: { row: 3, ref: "OS-3", item_id: null, branch: "c", head: headC }, files: ["f.txt"] },
+      { repo: clone, a: { row: 1, ref: "OS-1", item_id: null, branch: "a", head: headA, thread: null }, b: { row: 3, ref: "OS-3", item_id: null, branch: "c", head: headC, thread: null }, files: ["f.txt"] },
     ]);
-    expect(conflictKey(hit.conflicts[0]!)).toBe(`conflict:1:${headA}:3:${headC}`);
+    // OS-259: the key is the pair of rows, never their heads.
+    expect(conflictPairKey(hit.conflicts[0]!)).toBe("conflict:1:3");
+    expect(conflictKey(hit.conflicts[0]!, 3)).toBe("conflict:1:3:loser:3");
   }, spawnBudget(12));
 
   test("a lockfile-only conflict, an unpushed branch, a landed row and one ticket's two legs report nothing", async () => {
@@ -129,12 +133,32 @@ describe("findBranchConflicts on a fixture repo (OS-48)", () => {
       deps,
     );
     // OS-4's two legs conflict with each other only, and the landed row is not running.
-    expect(check).toEqual({ conflicts: [], warnings: [], unpushed: [{ row: 3, ref: "OS-3", branch: "never-pushed" }] });
+    expect(check).toEqual({ conflicts: [], warnings: [], unpushed: [{ row: 3, ref: "OS-3", branch: "never-pushed" }], landed: [] });
+  }, spawnBudget(16));
+
+  // OS-259: a merged or squash-landed branch is no longer running, whatever its row says.
+  test("a branch already on origin/main (squashed or merged) is landed and left out of the pairs", async () => {
+    const { clone } = fixture();
+    push(clone, "a", { "f.txt": fWith(1, "a") });
+    push(clone, "b", { "f.txt": fWith(1, "b") });
+    // Squash a onto main by hand: main gains a's change in a new commit, so a's head is no ancestor of it.
+    writeFileSync(join(clone, "f.txt"), fWith(1, "a"));
+    git(clone, "commit", "-q", "-am", "squash a");
+    git(clone, "push", "-q", "origin", "main");
+    const squashed = await findBranchConflicts([row(1, "OS-1", "a", clone), row(2, "OS-2", "b", clone, "ready-for-gate")], deps);
+    expect(squashed).toEqual({ conflicts: [], warnings: [], unpushed: [], landed: [{ row: 1, ref: "OS-1", branch: "a" }] });
+
+    // A fast-forward merge: the head is an ancestor of main.
+    const headC = push(clone, "c", { "f.txt": fWith(5, "c") });
+    git(clone, "push", "-q", "origin", `${headC}:refs/heads/main`);
+    push(clone, "d", { "f.txt": fWith(5, "d") }, headC);
+    const merged = await findBranchConflicts([row(3, "OS-3", "c", clone), row(4, "OS-4", "d", clone)], deps);
+    expect(merged).toEqual({ conflicts: [], warnings: [], unpushed: [], landed: [{ row: 3, ref: "OS-3", branch: "c" }] });
   }, spawnBudget(16));
 
   test("a repo with no checkout on this machine is skipped without a warning", async () => {
     const check = await findBranchConflicts([row(1, "OS-1", "a", "elsewhere"), row(2, "OS-2", "b", "elsewhere")], deps);
-    expect(check).toEqual({ conflicts: [], warnings: [], unpushed: [] });
+    expect(check).toEqual({ conflicts: [], warnings: [], unpushed: [], landed: [] });
   });
 
   // OS-188: FACTS.md's "Checked against" line is bumped by every PR and resolved at land, so it is not a conflict.
@@ -148,7 +172,7 @@ describe("findBranchConflicts on a fixture repo (OS-48)", () => {
     push(clone, "a", { "FACTS.md": "# Facts\n\nChecked against: 1111111\n" });
     push(clone, "b", { "FACTS.md": "# Facts\n\nChecked against: 2222222\n" });
     const clean = await findBranchConflicts([row(1, "OS-1", "a", clone), row(2, "OS-2", "b", clone)], deps);
-    expect(clean).toEqual({ conflicts: [], warnings: [], unpushed: [] });
+    expect(clean).toEqual({ conflicts: [], warnings: [], unpushed: [], landed: [] });
 
     push(clone, "c", { "FACTS.md": "# Facts\n\nChecked against: 3333333\n", "f.txt": fWith(1, "c") });
     push(clone, "d", { "FACTS.md": "# Facts\n\nChecked against: 4444444\n", "f.txt": fWith(1, "d") });
@@ -172,6 +196,33 @@ test("resolvedAtLand: lockfiles and FACTS.md are; other files are not (OS-188), 
   expect(isResolvedAtLand("apps/cli/src/cli.ts")).toBe(false);
 });
 
+describe("pickLoser and openYields (OS-259), pure", () => {
+  const side = (row: number): ConflictSide => ({ row, ref: `OS-${row}`, item_id: null, branch: `b${row}`, head: "h", thread: null });
+  const pair = { a: side(1), b: side(2) };
+  test("the better priority wins; at equal priority the lower row (queued first) wins", () => {
+    // urgent 1, high 2, flake 5, critical 6, none 0
+    expect(pickLoser(pair, 2, 1).loser.row).toBe(1);
+    expect(pickLoser(pair, 1, 2).loser.row).toBe(2);
+    expect(pickLoser(pair, 1, 6).loser.row).toBe(1); // critical beats urgent
+    expect(pickLoser(pair, 2, 5).loser.row).toBe(1); // flake beats high
+    expect(pickLoser(pair, null, 4).loser.row).toBe(1); // low beats none
+    expect(pickLoser(pair, 3, 3)).toEqual({ winner: pair.a, loser: pair.b });
+    expect(pickLoser(pair, null, 0)).toEqual({ winner: pair.a, loser: pair.b });
+  });
+  test("a pause stays open until a resume notice for its loser comes after it", () => {
+    const m = (id: number, client_key: string | null) => ({ id, client_key });
+    expect(openYields([m(1, "conflict:1:2:loser:2"), m(2, "conflict:2:5:loser:2"), m(3, "conflict:3:4:loser:3"), m(4, null), m(5, "tick:x")])).toEqual(
+      new Map([
+        [2, [1, 5]],
+        [3, [4]],
+      ]),
+    );
+    expect(openYields([m(1, "conflict:1:2:loser:2"), m(2, "resume:2:1")])).toEqual(new Map());
+    // A later pause after a resume is open again; an old head-keyed key (OS-48) is not a pause.
+    expect(openYields([m(1, "conflict:1:2:loser:2"), m(2, "resume:2:1"), m(3, "conflict:2:7:loser:2"), m(4, "conflict:1:abc:2:def")])).toEqual(new Map([[2, [7]]]));
+  });
+});
+
 // --- the command and the tick against a store ---------------------------------------------------------------------
 
 async function messages(store: Store): Promise<RoleMessage[]> {
@@ -180,7 +231,7 @@ async function messages(store: Store): Promise<RoleMessage[]> {
 }
 
 /** Team `t` with project `cfp` checked out at the fixture clone, and two running rows on branches `a` and `b`. */
-async function world() {
+async function world(opts: { priorities?: [number | null, number | null]; threads?: boolean } = {}) {
   const fx = fixture();
   const dbPath = freshDbPath();
   const store = sqliteStoreFor(openDb(dbPath, { create: true }));
@@ -188,11 +239,11 @@ async function world() {
   expect((await runCli(dbPath, ["t3", "team", "add", "t", "--projects", "cfp"])).code).toBe(0);
   await setConfig(store, "repo_checkouts", JSON.stringify({ cfp: fx.clone }));
   const ids: string[] = [];
-  for (const [ref, branch] of [["CF-1", "a"], ["CF-2", "b"]] as const) {
-    const id = await createItem(store, { type: "task", title: ref, body: "b", projectId: "cfp" });
+  for (const [i, [ref, branch]] of ([["CF-1", "a"], ["CF-2", "b"]] as const).entries()) {
+    const id = await createItem(store, { type: "task", title: ref, body: "b", projectId: "cfp", priority: opts.priorities?.[i] ?? null });
     ids.push(id);
     // No launcher: the stale-builder finding reads t3 rows only, so the architect has nothing and only the conflict shows.
-    await store.q.insert(store.t.spinoff).values({ ticket_ref: ref, item_id: id, repo: "cfp", branch, worktree: `/wt/${branch}`, mode: "interactive", brief: "b", status: "launched", launcher: null, request_at: new Date().toISOString() });
+    await store.q.insert(store.t.spinoff).values({ ticket_ref: ref, item_id: id, repo: "cfp", branch, worktree: `/wt/${branch}`, mode: "interactive", brief: "b", status: "launched", launcher: opts.threads ? "t3" : null, t3_thread_id: opts.threads ? `bt-${i + 1}` : null, request_at: new Date().toISOString() });
   }
   return { ...fx, dbPath, store, ids };
 }
@@ -247,7 +298,7 @@ describe("ob spinoff conflicts (OS-48)", () => {
 });
 
 describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
-  test("one sentinel message and one note per ticket; same heads post nothing; a new conflicting head posts once more", async () => {
+  test("one sentinel message and one note per ticket; a pair is posted once, however its heads move", async () => {
     const w = await world();
     const f = installFakeT3([w.clone]);
     cleanup.push(() => f.restore());
@@ -257,34 +308,130 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     const first = await runCli(w.dbPath, ["role", "tick"]);
     expect(first.err).toBe("");
     expect(first.code).toBe(0);
-    expect(first.out).toContain(`role tick t: wrote #1 conflict: CF-1 (${headA.slice(0, 7)}) and CF-2 (${headB.slice(0, 7)}): f.txt`);
+    // No priority on either: row 1 was queued first and wins.
+    expect(first.out).toContain(`role tick t: wrote #1 conflict: CF-1 (${headA.slice(0, 7)}) and CF-2 (${headB.slice(0, 7)}): f.txt; CF-2 gives way to CF-1`);
     expect(first.out).toContain("role tick t sentinel: run 1 opened");
-    let rows = await messages(w.store);
+    const rows = await messages(w.store);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ role: "sentinel", from_actor: "tick", ref: "CF-1", client_key: `conflict:1:${headA}:2:${headB}` });
+    expect(rows[0]).toMatchObject({ role: "sentinel", from_actor: "tick", ref: "CF-1", client_key: "conflict:1:2:loser:2" });
+    // Neither row has a T3 thread: the message says to pause it by hand, and nothing is interrupted.
+    expect(rows[0]!.body).toContain("CF-1 (none) wins over CF-2 (none, equal priority and row 1 queued first); CF-2 (row 2) has no builder thread ob could tell: pause it by hand");
+    expect(f.interrupts).toEqual([]);
     expect(f.launches).toHaveLength(1);
     expect(f.launches[0]!.message).toContain("conflict: CF-1");
     expect(await noteLines(w.store, w.ids[0]!)).toHaveLength(1);
-    expect((await noteLines(w.store, w.ids[0]!))[0]).toContain(`conflict: CF-2 at ${headA.slice(0, 7)}/${headB.slice(0, 7)}: f.txt`);
-    expect((await noteLines(w.store, w.ids[1]!))[0]).toContain(`conflict: CF-1 at ${headA.slice(0, 7)}/${headB.slice(0, 7)}: f.txt`);
+    expect((await noteLines(w.store, w.ids[0]!))[0]).toContain(`conflict: CF-2 at ${headA.slice(0, 7)}/${headB.slice(0, 7)}: f.txt; CF-2 gives way`);
+    expect((await noteLines(w.store, w.ids[1]!))[0]).toContain(`conflict: CF-1 at ${headA.slice(0, 7)}/${headB.slice(0, 7)}: f.txt; CF-2 gives way`);
 
     const second = await runCli(w.dbPath, ["role", "tick"]);
     expect(second.code).toBe(0);
     expect(second.out).not.toContain("wrote #");
     expect(await messages(w.store)).toHaveLength(1);
-    expect(await noteLines(w.store, w.ids[0]!)).toHaveLength(1);
-    expect(f.launches).toHaveLength(1);
 
+    // OS-259: new heads on the same pair are the same pair, still being handled: nothing more is posted.
     headB = push(w.clone, "b", { "f.txt": fWith(1, "b again") }, "b");
     const third = await runCli(w.dbPath, ["role", "tick"]);
     expect(third.code).toBe(0);
-    rows = await messages(w.store);
-    expect(rows).toHaveLength(2);
-    expect(third.out).toContain(`role tick t: wrote #${rows[1]!.id} conflict: CF-1 (${headA.slice(0, 7)}) and CF-2 (${headB.slice(0, 7)}): f.txt`);
-    expect(rows[1]!.client_key).toBe(`conflict:1:${headA}:2:${headB}`);
-    expect(await noteLines(w.store, w.ids[0]!)).toHaveLength(2);
-    expect(await noteLines(w.store, w.ids[1]!)).toHaveLength(2);
+    expect(third.out).not.toContain("wrote #");
+    expect(await messages(w.store)).toHaveLength(1);
+    expect(await noteLines(w.store, w.ids[0]!)).toHaveLength(1);
+    expect(await noteLines(w.store, w.ids[1]!)).toHaveLength(1);
+    expect(f.launches).toHaveLength(1);
   }, spawnBudget(30));
+
+  // OS-259: the live miss. Urgent beats high, the loser's thread is stopped and told to wait, and once the winner
+  // squash-lands on main the loser is told to rebase and go on, once.
+  test("the loser is paused on its thread, and resumed after the winner lands on main", async () => {
+    // CF-1 (row 1) high, CF-2 (row 2) urgent: CF-2 wins although it was queued second.
+    const w = await world({ priorities: [2, 1], threads: true });
+    const f = installFakeT3([w.clone]);
+    cleanup.push(() => f.restore());
+    push(w.clone, "a", { "f.txt": fWith(1, "a") });
+    push(w.clone, "b", { "f.txt": fWith(1, "b") });
+    const toLoser = () => f.sends.filter((s) => s.threadId === "bt-1");
+
+    const first = await runCli(w.dbPath, ["role", "tick"]);
+    expect(first.code).toBe(0);
+    expect(first.out).toContain("CF-1 gives way to CF-2");
+    expect(f.interrupts).toEqual(["bt-1"]);
+    expect(toLoser()).toHaveLength(1);
+    expect(toLoser()[0]).toMatchObject({ mode: "queue", clientRequestId: "ob-yield-bt-1-1-2" });
+    expect(toLoser()[0]!.message).toContain('--status blocked --note "yielding to CF-2"');
+    expect(toLoser()[0]!.message).toContain("CF-2 (urgent) wins over CF-1 (high)");
+    expect(f.sends.some((s) => s.threadId === "bt-2")).toBe(false);
+    let rows = await messages(w.store);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.client_key).toBe("conflict:1:2:loser:1");
+    expect(rows[0]!.body).toContain("CF-2 (urgent) wins over CF-1 (high); CF-1 (row 1) is paused and resumes by itself after CF-2 lands.");
+
+    // The winner moves on: the pair is not posted again and the loser is not told twice.
+    push(w.clone, "b", { "f.txt": fWith(1, "b final") }, "b");
+    const second = await runCli(w.dbPath, ["role", "tick"]);
+    expect(second.code).toBe(0);
+    expect(second.out).not.toContain("wrote #");
+    expect(f.interrupts).toEqual(["bt-1"]);
+    expect(toLoser()).toHaveLength(1);
+
+    // The winner squash-lands on main; its row still reads handed-off, its branch is still on origin.
+    git(w.clone, "checkout", "-q", "main");
+    git(w.clone, "merge", "-q", "--squash", "origin/b");
+    git(w.clone, "-c", "user.name=t", "commit", "-q", "-m", "CF-2 (#1)");
+    git(w.clone, "push", "-q", "origin", "main");
+    await w.store.q.update(w.store.t.spinoff).set({ status: "ready-for-gate" }).where(eq(w.store.t.spinoff.ticket_ref, "CF-2"));
+    const third = await runCli(w.dbPath, ["role", "tick"]);
+    expect(third.err).toBe("");
+    expect(third.code).toBe(0);
+    rows = await messages(w.store);
+    const resume = rows.find((m) => m.client_key === "resume:1:2");
+    expect(resume).toBeDefined();
+    expect(third.out).toContain(`role tick t: wrote #${resume!.id} resume: CF-1 after CF-2`);
+    expect(resume!.body).toContain("resume: CF-1 (row 1) goes on; CF-2 no longer running");
+    expect(toLoser()).toHaveLength(2);
+    expect(toLoser()[1]).toMatchObject({ mode: "queue", clientRequestId: "ob-resume-bt-1-1-2" });
+    expect(toLoser()[1]!.message).toContain("git fetch origin && git rebase origin/main");
+    expect(toLoser()[1]!.message).toContain("needs-human");
+    expect(f.interrupts).toEqual(["bt-1"]);
+    // The landed row is dropped from the scan: CF-1 still conflicts with main's f.txt, but no new pair is posted.
+    expect(rows.filter((m) => m.client_key?.startsWith("conflict:"))).toHaveLength(1);
+
+    const fourth = await runCli(w.dbPath, ["role", "tick"]);
+    expect(fourth.code).toBe(0);
+    expect(fourth.out).not.toContain("wrote #");
+    expect(toLoser()).toHaveLength(2);
+  }, spawnBudget(40));
+
+  test("at equal priority the row queued first wins; the loser resumes once the winner's row is landed", async () => {
+    const w = await world({ priorities: [3, 3], threads: true });
+    const f = installFakeT3([w.clone]);
+    cleanup.push(() => f.restore());
+    push(w.clone, "a", { "f.txt": fWith(1, "a") });
+    push(w.clone, "b", { "f.txt": fWith(1, "b") });
+    expect((await runCli(w.dbPath, ["role", "tick"])).code).toBe(0);
+    expect(f.interrupts).toEqual(["bt-2"]);
+    expect((await messages(w.store))[0]!.client_key).toBe("conflict:1:2:loser:2");
+
+    await w.store.q.update(w.store.t.spinoff).set({ status: "merged" }).where(eq(w.store.t.spinoff.ticket_ref, "CF-1"));
+    const r = await runCli(w.dbPath, ["role", "tick"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("resume: CF-2 after CF-1");
+    expect(f.sends.filter((s) => s.threadId === "bt-2").map((s) => s.clientRequestId)).toEqual(["ob-yield-bt-2-2-1", "ob-resume-bt-2-2-1"]);
+  }, spawnBudget(30));
+
+  test("under the night lock the tick posts, pauses and resumes nothing", async () => {
+    const w = await world({ threads: true });
+    const f = installFakeT3([w.clone]);
+    cleanup.push(() => f.restore());
+    push(w.clone, "a", { "f.txt": fWith(1, "a") });
+    push(w.clone, "b", { "f.txt": fWith(1, "b") });
+    const lock = nightLockPath(process.env.HOME!);
+    mkdirSync(dirname(lock), { recursive: true });
+    writeFileSync(lock, new Date(Date.now() + 3_600_000).toISOString());
+    const r = await runCli(w.dbPath, ["role", "tick"]);
+    expect(r.code).toBe(0);
+    expect(await messages(w.store)).toEqual([]);
+    expect(f.interrupts).toEqual([]);
+    expect(f.sends).toEqual([]);
+  }, spawnBudget(16));
 
   test("a git failure warns and the tick still succeeds", async () => {
     const w = await world();

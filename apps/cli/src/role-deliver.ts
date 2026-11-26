@@ -107,7 +107,7 @@ export function renderDelivery(d: DeliverOutcome): string {
 }
 
 /** The good-night lock file under a home directory (skills/ob-good-night): one ISO timestamp, the lock's end. Pure. */
-function nightLockPath(home: string): string {
+export function nightLockPath(home: string): string {
   return join(home, ".cache", "ob-good-night");
 }
 
