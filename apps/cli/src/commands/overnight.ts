@@ -8,16 +8,19 @@ import { print, type Mode } from "../output.ts";
 import { inferProjectSpec } from "../project.ts";
 import {
   addSummaryLine,
+  backfillImportedDates,
   decide,
   listRuns,
   localToday,
   parseDate,
   parseSection,
+  renderBackfill,
   renderDecision,
   renderNight,
   renderRunList,
   showNight,
   startRun,
+  type BackfillRow,
   type DecideInput,
   type OvernightDecision,
   type OvernightNight,
@@ -31,6 +34,7 @@ export interface OvernightBackend {
   summary(input: { project: string; date?: string | undefined; section: string; line: string }): Promise<OvernightRun>;
   show(input: { project: string; date?: string | undefined }): Promise<OvernightNight>;
   list(input: { project?: string | undefined; since?: string | undefined }): Promise<OvernightRunRow[]>;
+  backfill(input: { project?: string | undefined; dryRun: boolean }): Promise<BackfillRow[]>;
 }
 
 interface OvernightCtx {
@@ -40,7 +44,7 @@ interface OvernightCtx {
   exit?: number;
 }
 
-const SUBCOMMANDS = "start|decide|summary|show|list";
+const SUBCOMMANDS = "start|decide|summary|show|list|backfill";
 
 function flag(ctx: OvernightCtx, name: string): string | undefined {
   const v = ctx.flags[name];
@@ -89,6 +93,7 @@ export async function runOvernight(ctx: OvernightCtx, be: OvernightBackend): Pro
       context: flag(ctx, "context") ?? null,
       project: project(ctx),
       night: night === undefined ? null : parseDate(night, "--night"),
+      at: flag(ctx, "at") ?? null,
     });
     if (ctx.mode === "json") print(JSON.stringify(d, null, 2));
     else if (ctx.mode === "quiet") print(d.ref ?? d.id);
@@ -133,6 +138,15 @@ export async function runOvernight(ctx: OvernightCtx, be: OvernightBackend): Pro
     return;
   }
 
+  if (sub === "backfill") {
+    const dryRun = ctx.flags["dry-run"] === true;
+    const rows = await be.backfill({ project: flag(ctx, "project") ?? flag(ctx, "repo"), dryRun });
+    if (ctx.mode === "json") print(JSON.stringify(rows, null, 2));
+    else if (ctx.mode === "quiet") print(rows.map((r) => r.ref ?? r.id).join("\n"));
+    else print(renderBackfill(rows, dryRun));
+    return;
+  }
+
   throw new UsageError(`unknown overnight subcommand '${sub}' (${SUBCOMMANDS})`);
 }
 
@@ -144,6 +158,7 @@ function storeOvernightBackend(store: NonNullable<Ctx["store"]> | Ctx["db"]): Ov
     summary: (input) => addSummaryLine(store, input),
     show: (input) => showNight(store, input),
     list: (input) => listRuns(store, input),
+    backfill: (input) => backfillImportedDates(store, input),
   };
 }
 

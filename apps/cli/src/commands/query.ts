@@ -8,6 +8,7 @@ import {
   getLinearRef,
   getLinks,
   getTags,
+  tagsForItems,
   getTaskDetail,
   type ItemRow,
 } from "../items.ts";
@@ -15,7 +16,8 @@ import { triageBanner } from "./triage.ts";
 import { parseGithubIssueUrl } from "../tracker-link.ts";
 import { parsePriority, PRIORITY_OPTIONS } from "../priority.ts";
 import { criticalOnlyNext } from "../usage-gate.ts";
-import { itemView, print, renderItems } from "../output.ts";
+import { itemView, priorityLabel, print, renderItems } from "../output.ts";
+import { dependencyRaises } from "../dep-priority.ts";
 import { searchItemIds } from "../search.ts";
 import { aliasesOf } from "../refs.ts";
 import { listWorklist, nextWorklist, type ItemSort } from "../worklist.ts";
@@ -40,7 +42,7 @@ export async function cmdList(ctx: Ctx): Promise<void> {
   }
   // 352: the filtering, the project-name resolution, the ordering and the cap all live in worklist.ts
   // now, so `ob list` and `GET /api/ob/items` cannot answer the same question two ways.
-  const { items, focusProject } = await listWorklist(ctx.store ?? db, {
+  const { items, focusProject, raises } = await listWorklist(ctx.store ?? db, {
     open: flags.open,
     status: flags.status,
     type: flags.type,
@@ -55,16 +57,18 @@ export async function cmdList(ctx: Ctx): Promise<void> {
     by: flags.by as ItemSort | undefined,
     limit,
   });
-  print(renderItems(items.map((i) => itemView(i, focusProject)), ctx.mode));
+  // OS-216: each item's tags ride along (shown by --json).
+  const tags = await tagsForItems(ctx.store ?? db, items.map((i) => i.id));
+  print(renderItems(items.map((i) => ({ ...itemView(i, focusProject, raises), tags: tags.get(i.id) ?? [] })), ctx.mode));
 }
 
 export async function cmdNext(ctx: Ctx): Promise<void> {
   // OB-2083: `--project` (or its alias `--repo`) shows one project's queue, the dispatch order for that repo.
-  const { items, focusProject, triageCount: triage } = await nextWorklist(ctx.store ?? ctx.db, {
+  const { items, focusProject, raises, triageCount: triage } = await nextWorklist(ctx.store ?? ctx.db, {
     project: ctx.flags.repo ?? ctx.flags.project,
   });
   // OS-108: at the critical-only line, only critical items, after the one line that says why.
-  const views = criticalOnlyNext(items.map((i) => itemView(i, focusProject)), ctx.mode);
+  const views = criticalOnlyNext(items.map((i) => itemView(i, focusProject, raises)), ctx.mode);
   // Triage-inbox banner near the top (human/table only; json/quiet stay machine-clean).
   if (ctx.mode === "human" || ctx.mode === "table") {
     const banner = triageBanner(triage);
@@ -79,8 +83,8 @@ export async function cmdShow(ctx: Ctx): Promise<void> {
   const item = await requireItem(ctx, id);
   id = item.id;
   const focusProject = await focus(ctx);
-  const view = itemView(item, focusProject);
   const store = ctx.store ?? ctx.db;
+  const view = itemView(item, focusProject, await dependencyRaises(store, focusProject));
   const tags = await getTags(store, id);
   const links = await getLinks(store, id);
   const linear = await getLinearRef(store, id);
@@ -122,7 +126,7 @@ export async function cmdShow(ctx: Ctx): Promise<void> {
   if (aliases.length > 0) lines.push(`  was:       ${aliases.join(", ")}`);
   lines.push(`  type:      ${item.type}`);
   lines.push(`  status:    ${item.status}`);
-  lines.push(`  priority:  ${view.effective_priority}${view.priority ? " (explicit)" : " (derived)"}`);
+  lines.push(`  priority:  ${priorityLabel(view)}`);
   lines.push(`  project:   ${item.project_id ?? "-"}${item.project_kind ? ` (${item.project_kind})` : ""}`);
   if (item.today_rank !== null) lines.push(`  today:     rank ${item.today_rank}`);
   if (item.queue_rank !== null) lines.push(`  queue:     rank ${item.queue_rank}`);
@@ -177,5 +181,6 @@ export async function cmdSearch(ctx: Ctx): Promise<void> {
     const it = await getItem(ctx.store ?? ctx.db, id);
     if (it) items.push(it);
   }
-  print(renderItems(items.map((i) => itemView(i, focusProject)), ctx.mode));
+  const raises = await dependencyRaises(ctx.store ?? ctx.db, focusProject);
+  print(renderItems(items.map((i) => itemView(i, focusProject, raises)), ctx.mode));
 }

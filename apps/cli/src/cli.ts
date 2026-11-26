@@ -61,6 +61,7 @@ import { cmdPerson, cmdWhois } from "./commands/person.ts";
 import { cmdTournament } from "./commands/tournament.ts";
 import { cmdCi, cmdGithub } from "./commands/ci.ts";
 import { cmdOvernight } from "./commands/overnight.ts";
+import { cmdTags } from "./commands/tags.ts";
 import { cmdModels } from "./commands/models.ts";
 import { cmdApiToken } from "./commands/api-token.ts";
 import { cmdUsage } from "./commands/usage.ts";
@@ -457,6 +458,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   note: cmdNote,
   tag: cmdTag,
   untag: cmdUntag,
+  tags: cmdTags,
   link: cmdLink,
   issue: cmdIssue,
   rm: cmdRm,

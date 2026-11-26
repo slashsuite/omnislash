@@ -26,10 +26,13 @@ import {
   getItem,
   getTags,
   removeTags,
+  tagCounts,
+  tagsForItems,
   triageInbox as triageInboxRows,
 } from "../items.ts";
 import { triageSnippet } from "../commands/triage.ts";
 import { itemView } from "../output.ts";
+import { dependencyRaises, NO_RAISES } from "../dep-priority.ts";
 import { itemDetail } from "../detail.ts";
 import { snapshotFrom, WHATSAPP_STATUS_CAP, WHATSAPP_STATUS_DEFAULT } from "../realtime.ts";
 import { listWorklist, nextWorklist, type ItemQuery } from "../worklist.ts";
@@ -248,6 +251,7 @@ import type {
   RemoveSecretRequest,
   RemoveSecretResponse,
   SearchResponse,
+  TagCountsResponse,
   SecretsResponse,
   SetSecretRequest,
   SetSecretResponse,
@@ -952,9 +956,9 @@ export async function googleCallback(
 
 export async function next(store: Store, project?: string, scope?: ProjectScope): Promise<NextResponse> {
   await requireScopedProject(store, scope, project);
-  const { items, focusProject, triageCount } = await nextWorklist(store, { project, allowedProjects: scope?.ids });
+  const { items, focusProject, raises, triageCount } = await nextWorklist(store, { project, allowedProjects: scope?.ids });
   return {
-    items: items.map((i) => itemView(i, focusProject)),
+    items: items.map((i) => itemView(i, focusProject, raises)),
     triage_count: triageCount,
     focus_project: focusInScope(scope, focusProject),
   };
@@ -964,11 +968,13 @@ export async function items(store: Store, query: ItemQuery, scope?: ProjectScope
   await requireScopedProject(store, scope, query.project);
   // OS-179: a team outside the scope reads exactly like an unknown one.
   if (scope && query.team !== undefined && !(await teamInScope(store, scope, query.team))) throw new ApiFault("not_found", 404, new UnknownTeamError(query.team).message);
-  const { items: rows, focusProject } = await listWorklist(store, query, { allowedProjects: scope?.ids }).catch((e) => {
+  const { items: rows, focusProject, raises } = await listWorklist(store, query, { allowedProjects: scope?.ids }).catch((e) => {
     if (e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     throw e;
   });
-  return { items: rows.map((i) => itemView(i, focusProject)), focus_project: focusInScope(scope, focusProject) };
+  // OS-216: each item's tags ride along, as `ob list --json` prints them locally.
+  const tags = await tagsForItems(store, rows.map((i) => i.id));
+  return { items: rows.map((i) => ({ ...itemView(i, focusProject, raises), tags: tags.get(i.id) ?? [] })), focus_project: focusInScope(scope, focusProject) };
 }
 
 export async function create(
@@ -1012,12 +1018,12 @@ export async function create(
   });
   const row = await requireItem(store, id, { trusted: true });
   id = row.id;
-  return { id, item: itemView(row, await getFocusProject(store)), issue: created };
+  return { id, item: itemView(row, await getFocusProject(store), NO_RAISES), issue: created };
 }
 
 export async function item(store: Store, id: string, scope?: ProjectScope): Promise<ItemResponse> {
   id = (await requireItem(store, id, { scope })).id; // so a missing item is a 404 rather than itemDetail's own throw
-  const detail = await itemDetail(store, id);
+  const detail = await itemDetail(store, id, { allowedProjects: scope?.ids });
   if (scope) {
     // OS-178: links (parents and children among them) to an item outside the scope are dropped, not named.
     const kept = [];
@@ -1199,6 +1205,17 @@ export async function tags(store: Store, id: string, req: TagsRequest): Promise<
   return { id, ref: await refOf(store, id), tags: await getTags(store, id) };
 }
 
+/** OS-216: `ob tags`. A `project` a scoped token does not hold is the unknown-project 404, as for /items. */
+export async function tagCountsFor(store: Store, project: string | undefined, scope?: ProjectScope): Promise<TagCountsResponse> {
+  await requireScopedProject(store, scope, project);
+  if (project !== undefined) {
+    const p = await getProject(store, project);
+    if (!p) throw new ApiFault("not_found", 404, `no project '${project}'`);
+    return { tags: await tagCounts(store, { projectIds: [p.id] }) };
+  }
+  return { tags: await tagCounts(store, scope ? { projectIds: [...scope.ids] } : {}) };
+}
+
 export async function search(store: Store, q: string, scope?: ProjectScope): Promise<SearchResponse> {
   let ids: string[];
   try {
@@ -1208,10 +1225,11 @@ export async function search(store: Store, q: string, scope?: ProjectScope): Pro
     throw new ApiFault("invalid_request", 400, `invalid search query: ${q}`);
   }
   const focusProject = await getFocusProject(store);
+  const raises = await dependencyRaises(store, focusProject, scope?.ids);
   const views = [];
   for (const id of ids) {
     const row = await getItem(store, id);
-    if (row) views.push(itemView(row, focusProject));
+    if (row) views.push(itemView(row, focusProject, raises));
   }
   return { query: q, items: views, focus_project: focusInScope(scope, focusProject) };
 }
@@ -2387,7 +2405,7 @@ import {
 // OB-2271: the tournament store's core. The API calls it, never a second implementation.
 import { addTournament, listTournaments, pickTournament, recordMatch, setCandidate, showTournament } from "../tournament.ts";
 // OB-2097: the overnight log's core. The API calls it, never a second implementation.
-import { addSummaryLine, decide, listRuns, showNight, startRun } from "../overnight.ts";
+import { addSummaryLine, backfillImportedDates, decide, listRuns, showNight, startRun } from "../overnight.ts";
 import { syncGithub } from "../ingest/github.ts";
 import { rankClasses, scopeFromPr } from "../commands/reviewmiss.ts";
 import { machineAudit } from "../machine-audit.ts";
@@ -2438,6 +2456,8 @@ import type {
   OvernightNightResponse,
   OvernightRunResponse,
   OvernightRunsResponse,
+  OvernightBackfillRequest,
+  OvernightBackfillResponse,
   OvernightShowRequest,
   OvernightStartRequest,
   OvernightStartResponse,
@@ -2559,6 +2579,10 @@ export async function overnightShow(store: Store, req: OvernightShowRequest): Pr
 
 export async function overnightRuns(store: Store, query: { project?: string | undefined; since?: string | undefined }): Promise<OvernightRunsResponse> {
   return { runs: await listRuns(store, query) };
+}
+
+export async function overnightBackfill(store: Store, req: OvernightBackfillRequest): Promise<OvernightBackfillResponse> {
+  return { rows: await backfillImportedDates(store, { project: req.project, dryRun: req.dry_run }) };
 }
 
 export async function reviewMissAdd(store: Store, req: ReviewMissAddRequest): Promise<ReviewMissAddResponse> {

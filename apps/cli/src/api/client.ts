@@ -221,6 +221,8 @@ type SpinoffsQuery,
   type OvernightNightResponse,
   type OvernightRunResponse,
   type OvernightRunsResponse,
+  type OvernightBackfillRequest,
+  type OvernightBackfillResponse,
   type OvernightShowRequest,
   type OvernightStartRequest,
   type OvernightStartResponse,
@@ -245,6 +247,7 @@ type SpinoffsQuery,
 	type StatusResponse,
 	type TagsRequest,
 	type TagsResponse,
+	type TagCountsResponse,
 	type TrackerMoveRequest,
 	type TrackerMoveResponse,
 } from "./contract.ts";
@@ -448,6 +451,7 @@ const path = {
 	today: "/today",
 	focus: "/focus",
 	search: "/search",
+	tagCounts: "/tags",
 	status: "/status",
 	agents: "/agents",
 	agentsReset: "/agents/reset",
@@ -531,6 +535,7 @@ const path = {
 	overnightSummary: "/overnight/summary",
 	overnightShow: "/overnight/show",
 	overnightRuns: "/overnight/runs",
+	overnightBackfill: "/overnight/backfill",
 	reviewMisses: "/review-misses",
 	reviewMissesTop: "/review-misses/top",
 	machineAudit: "/machine/audit",
@@ -846,6 +851,10 @@ export class ApiClient {
 
 	tags(id: string, body: TagsRequest): Promise<TagsResponse> {
 		return this.call("POST", path.tags(id), body);
+	}
+
+	tagCounts(project?: string): Promise<TagCountsResponse> {
+		return this.call("GET", `${path.tagCounts}${queryString({ project })}`);
 	}
 
 	search(q: string): Promise<SearchResponse> {
@@ -1486,6 +1495,9 @@ export class ApiClient {
 	}
 	overnightRuns(query: { project?: string | undefined; since?: string | undefined } = {}): Promise<OvernightRunsResponse> {
 		return this.call("GET", `${path.overnightRuns}${queryString({ project: query.project, since: query.since })}`);
+	}
+	overnightBackfill(body: OvernightBackfillRequest): Promise<OvernightBackfillResponse> {
+		return this.call("POST", path.overnightBackfill, body);
 	}
 	reviewMissAdd(body: ReviewMissAddRequest): Promise<ReviewMissAddResponse> {
 		return this.call("POST", path.reviewMisses, body);

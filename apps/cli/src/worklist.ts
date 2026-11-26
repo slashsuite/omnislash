@@ -17,6 +17,7 @@ import { getProject, listProjects } from "./project.ts";
 import { isProjectHeld } from "./project-status.ts";
 import { teamMembersIn, listTeams } from "./team.ts";
 import { effectivePriority, kindRank, prioritySortRank } from "./priority.ts";
+import { dependencyRaises, type Raises } from "./dep-priority.ts";
 
 export type ItemSort = "priority" | "created" | "updated";
 
@@ -43,14 +44,17 @@ export interface WorklistResult {
   /** The focus project the effective priorities were computed against -- returned so a caller renders
    *  the same numbers this sort used, instead of reading the config a second time and possibly later. */
   focusProject: string | null;
+  /** OS-216: the dependency raises the sort used, so a caller renders the same effective priorities. */
+  raises: Raises;
 }
 
 export interface NextResult extends WorklistResult {
   triageCount: number;
 }
 
-function effOf(item: ItemRow, focusProject: string | null): number {
-  return effectivePriority({ priority: item.priority, projectId: item.project_id, focusProject });
+
+function effOf(item: ItemRow, focusProject: string | null, raises: Raises): number {
+  return effectivePriority({ priority: item.priority, projectId: item.project_id, focusProject, raised: raises.get(item.id)?.priority });
 }
 
 /** OB-2083: ranked items first, ascending; unranked ones after, so a rank pins an item above "recently touched". */
@@ -81,22 +85,22 @@ export function compareWithinBand(a: ItemRow, b: ItemRow): number {
  * queue rank (OB-2083, ranked before unranked), then recency. Every comparison is total and every tie is broken, so two calls a millisecond apart return the
  * same order -- an unstable worklist is a worklist nobody can act down.
  */
-export function sortWorklist(items: ItemRow[], focusProject: string | null): ItemRow[] {
+export function sortWorklist(items: ItemRow[], focusProject: string | null, raises: Raises): ItemRow[] {
   return [...items].sort((a, b) => {
     const ar = a.today_rank ?? Number.POSITIVE_INFINITY;
     const br = b.today_rank ?? Number.POSITIVE_INFINITY;
     if (ar !== br) return ar - br;
-    const pr = prioritySortRank(effOf(a, focusProject)) - prioritySortRank(effOf(b, focusProject));
+    const pr = prioritySortRank(effOf(a, focusProject, raises)) - prioritySortRank(effOf(b, focusProject, raises));
     if (pr !== 0) return pr;
     return compareWithinBand(a, b);
   });
 }
 
 /** The `ob list` order. Same tie-breaking rule and the same reason. */
-export function sortItems(items: ItemRow[], focusProject: string | null, by: ItemSort): ItemRow[] {
+export function sortItems(items: ItemRow[], focusProject: string | null, by: ItemSort, raises: Raises): ItemRow[] {
   return [...items].sort((a, b) => {
     if (by === "priority") {
-      const r = prioritySortRank(effOf(a, focusProject)) - prioritySortRank(effOf(b, focusProject));
+      const r = prioritySortRank(effOf(a, focusProject, raises)) - prioritySortRank(effOf(b, focusProject, raises));
       if (r !== 0) return r;
       const ur = b.updated_at.localeCompare(a.updated_at);
       if (ur !== 0) return ur;
@@ -137,9 +141,11 @@ export async function nextWorklist(db: Database | Store, opts: { project?: strin
   // OS-178: a scoped API token sees only its projects, its triage count included.
   const allowed = opts.allowedProjects;
   if (allowed) items = items.filter((i) => i.project_id !== null && allowed.has(i.project_id));
+  const raises = await dependencyRaises(db, focusProject, opts.allowedProjects);
   return {
-    items: sortWorklist(items, focusProject),
+    items: sortWorklist(items, focusProject, raises),
     focusProject,
+    raises,
     triageCount: allowed ? await triageCountIn(db, allowed) : await triageCount(db),
   };
 }
@@ -171,10 +177,11 @@ export async function listWorklist(db: Database | Store, query: ItemQuery, opts:
     items = items.filter((i) => i.project_id !== null && members.has(i.project_id));
   }
   const focusProject = await getFocusProject(db);
+  const raises = await dependencyRaises(db, focusProject, opts.allowedProjects);
   if (query.priority !== undefined) {
-    items = items.filter((i) => effOf(i, focusProject) === query.priority);
+    items = items.filter((i) => effOf(i, focusProject, raises) === query.priority);
   }
-  items = sortItems(items, focusProject, query.by ?? "updated");
+  items = sortItems(items, focusProject, query.by ?? "updated", raises);
   if (query.limit !== undefined) items = items.slice(0, query.limit);
-  return { items, focusProject };
+  return { items, focusProject, raises };
 }

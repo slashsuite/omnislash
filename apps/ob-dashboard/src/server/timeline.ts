@@ -3,7 +3,7 @@ import { and, eq, gte, inArray, lte } from "../../../cli/src/db/orm.ts";
 import { DECISION_SOURCE, DECISION_TYPE, PRIORITY_CHANGE_TYPE } from "../../../cli/src/decisions.ts";
 import { resolveScope } from "../../../../platform/dashboard-kit/src/server/groups.ts";
 import { providedStore } from "../../provided-store.ts";
-import { buildTimeline, rangeBounds, type Cursor, type TimelineEvent, type TimelineItem, type TimelineView } from "../lib/timeline.ts";
+import { buildTimeline, placeDecisions, rangeBounds, type Cursor, type TimelineEvent, type TimelineRow, type TimelineView } from "../lib/timeline.ts";
 
 // OS-27: one project's timeline (OS-185: a group's projects together, or one project's) over a range of whole UTC days, read-only. Two reads through the store's orm
 // builder: the project's ticket items, and one ranged read of the trail (`event`,
@@ -29,7 +29,7 @@ async function timelineView(input: TimelineInput): Promise<TimelineView> {
   const { since, until } = rangeBounds(from, to);
 
   const t = store.t;
-  const items = (await store.q
+  const rows = (await store.q
     .select({
       id: t.item.id,
       ref: t.item.ref,
@@ -40,9 +40,13 @@ async function timelineView(input: TimelineInput): Promise<TimelineView> {
       closed_at: t.item.closed_at,
       block_reason: t.item.block_reason,
       project_id: t.item.project_id,
+      decided_at: t.decisionDetail.decided_at,
     })
     .from(t.item)
-    .where(and(inArray(t.item.project_id, scope.projectIds), inArray(t.item.type, TICKET_TYPES)))) as TimelineItem[];
+    .leftJoin(t.decisionDetail, eq(t.decisionDetail.item_id, t.item.id))
+    .where(and(inArray(t.item.project_id, scope.projectIds), inArray(t.item.type, TICKET_TYPES)))) as TimelineRow[];
+  // OS-216: a decision is placed at its decided_at (an imported overnight night), not at its filing.
+  const items = placeDecisions(rows);
 
   const events = (await store.q
     .select({ id: t.event.id, ts: t.event.ts, type: t.event.type, item_id: t.event.item_id, actor: t.event.actor, payload: t.event.payload })

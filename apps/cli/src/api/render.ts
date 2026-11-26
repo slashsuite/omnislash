@@ -7,7 +7,7 @@
 // answers with the composed detail (352's `itemDetail`).
 import { parseGithubIssueUrl } from "../tracker-link.ts";
 import type { IssueSyncOutcome, SyncSkipReason } from "../tracker-link.ts";
-import type { Mode } from "../output.ts";
+import { priorityLabel, type Mode } from "../output.ts";
 import { renderDecision } from "../decisions.ts";
 import type { ItemDetail, TrackerMoveResponse } from "./contract.ts";
 
@@ -23,7 +23,7 @@ export function renderItemDetail(d: ItemDetail, mode: Mode): string {
 	if (d.aliases && d.aliases.length > 0) lines.push(`  was:       ${d.aliases.join(", ")}`);
 	lines.push(`  type:      ${d.type}`);
 	lines.push(`  status:    ${d.status}`);
-	lines.push(`  priority:  ${d.effective_priority}${d.priority ? " (explicit)" : " (derived)"}`);
+	lines.push(`  priority:  ${priorityLabel(d)}`);
 	lines.push(`  project:   ${d.project ?? "-"}${d.kind ? ` (${d.kind})` : ""}`);
 	if (d.today_rank !== null) lines.push(`  today:     rank ${d.today_rank}`);
 	if (d.queue_rank !== null && d.queue_rank !== undefined) lines.push(`  queue:     rank ${d.queue_rank}`);

@@ -95,6 +95,22 @@ export interface TimelineItem {
   project_id?: string | null;
 }
 
+/** A ticket row as the store reads it, with its decision's `decided_at` when it is a decision. */
+export type TimelineRow = TimelineItem & { decided_at?: string | null };
+
+/** A full ISO instant as ob writes it: `ob add --decided-at` stores free text, which would sort out of every range. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * OS-216: a decision sits on the timeline where it was decided, not where it was filed. An overnight decision
+ * imported days later (or logged with `ob overnight decide --at`) carries its night in `decided_at`, and its
+ * opened line moves there. A decision never gets `closed_at` (only `done` sets it), so that stays as it is. A
+ * `decided_at` that is not a full ISO instant, and every other row, is left where it was filed.
+ */
+export function placeDecisions(rows: readonly TimelineRow[]): TimelineItem[] {
+  return rows.map(({ decided_at, ...i }) => (i.type === "decision" && decided_at && ISO_INSTANT.test(decided_at) ? { ...i, created_at: decided_at } : i));
+}
+
 export interface TimelineEvent {
   id: number;
   ts: string;

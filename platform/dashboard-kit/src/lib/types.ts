@@ -180,6 +180,8 @@ export interface ItemDetail {
   status: string;
   priority: string | null;
   effective_priority: string;
+  /** OS-216: the open item this one blocks that raised its effective priority, when one did. */
+  raised_by?: string;
   today_rank: number | null;
   project: string | null;
   kind: string | null;

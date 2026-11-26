@@ -10,6 +10,7 @@ import { createItem, getItem } from "../../../apps/cli/src/items.ts";
 import { registerProject } from "../../../apps/cli/src/project.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
 import { nextWorklist, sortWorklist } from "../../../apps/cli/src/worklist.ts";
+import { NO_RAISES } from "../../../apps/cli/src/dep-priority.ts";
 import { setQueueOrder, setTodayRank, transitionTo } from "../../../apps/cli/src/workflow.ts";
 import { appendNote, editItem } from "../../../apps/cli/src/items.ts";
 import { order as orderHandler } from "../../../apps/cli/src/api/handlers.ts";
@@ -83,7 +84,7 @@ describe("sort (OB-2083)", () => {
     await mk("x", "alpha", MEDIUM);
     await mk("y", "alpha", MEDIUM);
     const { items } = await nextWorklist(store);
-    const again = sortWorklist([...items].reverse(), null);
+    const again = sortWorklist([...items].reverse(), null, NO_RAISES);
     expect(again.map((i) => i.id)).toEqual(items.map((i) => i.id));
   });
 });

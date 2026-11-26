@@ -241,7 +241,9 @@ function ItemDrawerBody({ itemId, onClose, getItem, transitionItem, setTodayRank
                 </Pill>
               </KeyValue>
               <KeyValue label="priority">
-                {detail.effective_priority}{detail.priority ? " (explicit)" : " (derived)"}
+                {detail.raised_by
+                  ? `${detail.effective_priority} (raised from ${detail.priority ?? "derived"}: blocks ${detail.raised_by})`
+                  : `${detail.effective_priority}${detail.priority ? " (explicit)" : " (derived)"}`}
               </KeyValue>
               <KeyValue label="project">{detail.project ?? "—"}</KeyValue>
               {detail.today_rank !== null && <KeyValue label="today">rank {detail.today_rank}</KeyValue>}

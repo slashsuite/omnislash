@@ -148,6 +148,7 @@ import { runReview } from "../commands/review.ts";
 import { runTournament, type TournamentBackend } from "../commands/tournament.ts";
 import { runCi, runGithub, type CiBackend, type CiCtx } from "../commands/ci.ts";
 import { runOvernight, type OvernightBackend } from "../commands/overnight.ts";
+import { runTags } from "../commands/tags.ts";
 
 export interface ApiCtx {
 	client: ApiClient;
@@ -436,6 +437,11 @@ async function apiNote(ctx: ApiCtx): Promise<void> {
 	if (!id || text.length === 0) throw new UsageError("note requires <id> <text>");
 	const res = await ctx.client.note(id, { text });
 	emitId(ctx, res.id, res.ref);
+}
+
+/** OS-216: `ob tags`, the counts from GET /tags; printed by the same renderer as the local command. */
+async function apiTags(ctx: ApiCtx): Promise<void> {
+	await runTags({ flags: ctx.flags as Record<string, unknown>, mode: ctx.mode }, async (project) => (await ctx.client.tagCounts(project)).tags);
 }
 
 async function apiTag(ctx: ApiCtx): Promise<void> {
@@ -2531,6 +2537,7 @@ async function apiOvernight(ctx: ApiCtx): Promise<void> {
 		summary: async (input) => (await usageOn400(c.overnightSummary(input))).run,
 		show: async (input) => (await usageOn400(c.overnightShow(input))).night,
 		list: async (input) => (await usageOn400(c.overnightRuns(input))).runs,
+		backfill: async (input) => (await usageOn400(c.overnightBackfill({ project: input.project, dry_run: input.dryRun }))).rows,
 	};
 	await runOvernight({ args: ctx.args, flags: ctx.flags as Record<string, unknown>, mode: ctx.mode }, be);
 }
@@ -2691,6 +2698,7 @@ export const API_HANDLERS: Record<string, (ctx: ApiCtx) => Promise<void>> = {
 	note: apiNote,
 	tag: apiTag,
 	untag: apiUntag,
+	tags: apiTags,
 	close: apiClose,
 	reopen: apiReopen,
 	start: simpleState("start", "start"),

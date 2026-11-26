@@ -7,6 +7,7 @@ import { clearBlock, clearTriage, editItem, getItem, queryItems, setBlocked, set
 import { getFocusProject } from "./config.ts";
 import { compareWithinBand } from "./worklist.ts";
 import { effectivePriority } from "./priority.ts";
+import { dependencyRaises } from "./dep-priority.ts";
 import { DECISION_SOURCE, DECISION_TYPE, recordDecision, type DecisionOpts } from "./decisions.ts";
 import { nowIso } from "./db.ts";
 import { parsePayload, type EventRow } from "./events.ts";
@@ -402,8 +403,10 @@ export async function setQueueOrder(
         .for("update");
     }
     const focusProject = await getFocusProject(tx);
-    const effOf = (r: { priority: number | null; project_id: string | null }) =>
-      effectivePriority({ priority: r.priority, projectId: r.project_id, focusProject });
+    // OS-216: the band is the effective priority `ob next` shows, a dependency raise included.
+    const raises = await dependencyRaises(tx, focusProject);
+    const effOf = (r: { id: string; priority: number | null; project_id: string | null }) =>
+      effectivePriority({ priority: r.priority, projectId: r.project_id, focusProject, raised: raises.get(r.id)?.priority });
     // `open` is "not done", which still admits an archived roadmap or an accepted decision: those are closed.
     const open = (await queryItems(tx, { open: true, projectId })).filter((r) => !isClosedStatus(r.type, r.status));
     const me = open.find((r) => r.id === id);
