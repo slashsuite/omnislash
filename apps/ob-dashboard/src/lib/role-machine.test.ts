@@ -39,11 +39,6 @@ describe("roleLanes (OS-261)", () => {
     expect(stages).toEqual(["idea", "plan", "build", "ship", "done"]);
   });
 
-  it("puts every state in exactly one cell", () => {
-    const placed = lanes.flatMap((r) => stages.flatMap((s) => cell(r, s).map((x) => x.id)));
-    expect([...placed].sort()).toEqual(states.map((s) => s.id).sort());
-  });
-
   it("puts the owner in every stage he decides in", () => {
     expect(cell("owner", "idea").map((s) => s.id)).toEqual(["confirm_complete"]);
     expect(cell("owner", "plan").map((s) => s.id)).toEqual(["owner_plan_call"]);

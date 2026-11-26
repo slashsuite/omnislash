@@ -56,7 +56,7 @@ const SPIKE_END = "spike:";
  * The role state a row is in. Pure.
  *
  * - A spike (tagged `spike`) runs its own row: pending, launching and launched are all the spike's build (it never
- *   reaches ready-for-gate), and a failed one that ended as a spike is closed.
+ *   reaches ready-for-gate), and a failed one that ended as a spike is back with the architect, on drilling (OS-261).
  * - A launched row whose builder is needs-human or blocked is on the owner's call, whatever its phase.
  * - A handed-off row whose verdict is needs-human waits on the owner's merge call, a human state, even though the
  *   handoff stamped phase `gating`. The verdict is read only for handed-off rows: a sendback moves the row back to
@@ -78,7 +78,8 @@ export function placeRow(input: {
 }): string {
   const { status, phase, builderStatus, spike, error, verdict } = input;
   if (spike && (status === "pending" || status === "launching" || status === "launched")) return "spike";
-  if (spike && status === "failed" && (error ?? "").startsWith(SPIKE_END)) return "closed";
+  // A spike that has ended reports its findings to the architect (OS-261): it does not close its ticket.
+  if (spike && status === "failed" && (error ?? "").startsWith(SPIKE_END)) return "drilling";
   if (status === "launched" && (builderStatus === "needs-human" || builderStatus === "blocked")) return "owner_call";
   if (status === "ready-for-gate" && isNeedsHuman(verdict)) return "owner_merge_call";
   if ((status === "launched" || status === "ready-for-gate") && phase && PHASE_STATES.includes(phase)) return phase;

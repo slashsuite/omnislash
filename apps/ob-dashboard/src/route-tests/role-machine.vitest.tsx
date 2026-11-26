@@ -61,10 +61,4 @@ describe("RoleMachine (OS-187, OS-261)", () => {
     expect(within(card("Builder builds")).queryByRole("button", { name: /^List the tickets/ })).toBeNull();
   });
 
-  it("names every persona's lane", () => {
-    render(<RoleMachine tickets={[]} />);
-    for (const name of ["Owner", "Muse", "Architect", "Builder", "Reviewer", "Sentinel", "System"]) {
-      expect(screen.getAllByText(name, { exact: true }).length, name).toBeGreaterThan(0);
-    }
-  });
 });

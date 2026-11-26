@@ -40,9 +40,9 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(placeRow({ ...base, status: "ready-for-gate", phase: "owner_merge_call" })).toBe("owner_merge_call");
   });
 
-  it("draws a spike's build on the spike state, and a spike that ended on closed", () => {
+  it("draws a spike's build on the spike state, and a spike that ended back on drilling (OS-261)", () => {
     for (const status of ["pending", "launching", "launched"]) expect(placeRow({ ...base, status, spike: true })).toBe("spike");
-    expect(placeRow({ ...base, status: "failed", spike: true, error: "spike: answered" })).toBe("closed");
+    expect(placeRow({ ...base, status: "failed", spike: true, error: "spike: answered" })).toBe("drilling");
     expect(placeRow({ ...base, status: "failed", spike: true, error: "launch refused" })).toBe("failed");
   });
 

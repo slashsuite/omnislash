@@ -13,7 +13,7 @@ export type RoleTicket = { ref: string; title: string; state: string };
  * OS-237, OS-261: each persona's colour, from uislash's categorical scale (every theme remaps it). The owner keeps
  * orange; the system, which is machinery rather than a persona, is grey.
  */
-export const ROLE_TONES: Readonly<Record<Role, CategoryTone | "neutral">> = {
+const ROLE_TONES: Readonly<Record<Role, CategoryTone | "neutral">> = {
   owner: "cat2",
   muse: "cat1",
   architect: "cat3",
