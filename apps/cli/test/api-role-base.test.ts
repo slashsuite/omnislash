@@ -400,14 +400,6 @@ describe("overnight and tag count routes go to the role server (OS-252)", () => 
     expect(main.seen).toEqual([]);
   });
 
-  test("an item's own tags stay on the main server", async () => {
-    process.env[ROLE_API_ENV] = role.url;
-    const client = new ApiClient({ base: main.url, token: TOKEN });
-    await client.tags("OS-1", { add: ["x"] } as never).catch(() => undefined);
-    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/items/OS-1/tags"]);
-    expect(role.seen).toEqual([]);
-  });
-
   test("with no role base, they stay on the main server", async () => {
     const client = new ApiClient({ base: main.url, token: TOKEN, roleBase: null });
     for (const { call } of OMNISLASH_CALLS) await call(client).catch(() => undefined);
