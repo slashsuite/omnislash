@@ -804,7 +804,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ['memory add "Prefer bun test for unit runs"', "memory show"],
     notes: [
       "Override file location with OMNISLASH_MEMORY_PATH (see 'ob help env').",
-      "In a checkout wired by 'ob project wire', the ob-memory plugin prepends MEMORY.md to every request.",
+      "OpenCode prepends MEMORY.md to every request in a checkout wired by 'ob project wire'.",
     ],
   },
 
