@@ -269,6 +269,20 @@ function optRouteMoves(o: Record<string, unknown>): Array<{ from: string; to: st
   return v.map((m) => ({ from: m.from, to: m.to, note: m.note }));
 }
 
+/** OS-211: a send-back restore's `verdict`, `{verdict, verdict_reason, gate_line}` of strings or nulls; anything else is refused. */
+function sendBackVerdict(v: unknown): { verdict: string | null; verdict_reason: string | null; gate_line: string | null } | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) bad("'verdict' must be {verdict, verdict_reason, gate_line}");
+  const o = v as Record<string, unknown>;
+  const field = (k: string): string | null => {
+    const x = o[k];
+    if (x === undefined || x === null) return null;
+    if (typeof x !== "string") bad(`'verdict.${k}' must be a string or null`);
+    return x as string;
+  };
+  return { verdict: field("verdict"), verdict_reason: field("verdict_reason"), gate_line: field("gate_line") };
+}
+
 function optStringArray(o: Record<string, unknown>, key: string): string[] | undefined {
   const v = o[key];
   if (v === undefined || v === null) return undefined;
@@ -1463,6 +1477,7 @@ async function route(
           note: optString(body, "note") ?? "",
           restore: body.restore === true,
           over_usage: optString(body, "over_usage") ?? null,
+          verdict: sendBackVerdict(body.verdict),
         }),
       );
     }

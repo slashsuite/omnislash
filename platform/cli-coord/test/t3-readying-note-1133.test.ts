@@ -36,7 +36,7 @@ import {
 import { registerAgent } from "../src/agent.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
 import { enqueueSpinoff, type EnqueueInput } from "../src/commands/spinoff.ts";
-import { __setSh } from "./sh-no-pr.ts";
+import { __setSh, __setShGreenPr } from "./sh-no-pr.ts";
 
 const restores: Array<() => void> = [];
 // OB-2172: a failed note is retried once after a wait; these tests do not wait for it.
@@ -431,10 +431,10 @@ const input = (over: Partial<EnqueueInput> = {}): EnqueueInput => ({
   ...over,
 });
 
-/** The git facts the ready path reads: clean worktree, a State: line, two commits past the base. */
+/** The git facts the ready path reads: clean worktree, a State: line, two commits past the base, a green PR (OS-211). */
 function fakeGit(): void {
   restores.push(
-    __setSh((cmd) => {
+    __setShGreenPr((cmd) => {
       const line = cmd.join(" ");
       if (line.includes("status --porcelain")) return { ok: true, err: "", out: "" };
       if (line.includes("rev-list --count")) return { ok: true, err: "", out: "2\n" };

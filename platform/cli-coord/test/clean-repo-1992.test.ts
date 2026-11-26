@@ -29,6 +29,7 @@ import {
   __setSh,
   cleanBranchFor,
   enqueueSpinoff,
+  getSpinoffRow,
   listSpinoffs,
   recordSpinoffVerdict,
   rowVerdictState,
@@ -191,7 +192,11 @@ describe("the verdict lives on a clean repo's row (design 3)", () => {
 
   test("recordSpinoffVerdict stores the three columns, refuses omnislash and a bad word", async () => {
     const db = freshDb();
-    const { row } = await enqueueSpinoff(db, { ticketRef: "HC-7", repo: "/r/hackcove", branch: "keep-zoom", mode: "interactive", brief: "b" });
+    const queued = (await enqueueSpinoff(db, { ticketRef: "HC-7", repo: "/r/hackcove", branch: "keep-zoom", mode: "interactive", brief: "b" })).row;
+    // OS-211: a queued row has no builder, so it takes no verdict; the builder records it while the row is building.
+    await expect(recordSpinoffVerdict(db, queued, { verdict: "landable" })).rejects.toThrow("a verdict is recorded only on a row a builder is on");
+    db.query("UPDATE spinoff SET status = 'launched' WHERE id = ?").run(queued.id);
+    const row = (await getSpinoffRow(db, queued.id))!;
     const saved = await recordSpinoffVerdict(db, row, { verdict: "needs-human", reason: "is the label right?", gate: "green (test 12)" });
     expect([saved.verdict, saved.verdict_reason, saved.gate_line]).toEqual(["needs-human", "is the label right?", "green (test 12)"]);
     expect(rowVerdictState(saved)).toBe("State: needs-human - is the label right?\nGate: green (test 12)");
@@ -203,7 +208,8 @@ describe("the verdict lives on a clean repo's row (design 3)", () => {
   test("ob spinoff state records it, and show prints it back", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath, { create: true });
-    await enqueueSpinoff(db, { ticketRef: "HC-7", repo: "/r/hackcove", branch: "keep-zoom", mode: "interactive", brief: "b" });
+    const { row } = await enqueueSpinoff(db, { ticketRef: "HC-7", repo: "/r/hackcove", branch: "keep-zoom", mode: "interactive", brief: "b" });
+    db.query("UPDATE spinoff SET status = 'launched' WHERE id = ?").run(row.id); // OS-211: the builder records it while building
     db.close();
     const r = await runCli(dbPath, ["spinoff", "state", "HC-7", "landable", "--reason", "all green", "--gate", "green (test 12)"]);
     expect(r.code).toBe(0);
@@ -246,6 +252,8 @@ async function seedCleanHandoff(dbPath: string): Promise<{ itemId: string; wt: s
   return { itemId, wt };
 }
 
+const CLEAN_HEAD = "c".repeat(40);
+
 /** git and gh over the `sh` seam: a clean worktree, the given commit messages and PR. */
 function fakeGitGh(commits: string, pr: { title: string; body: string } | null): void {
   restores.push(
@@ -253,7 +261,12 @@ function fakeGitGh(commits: string, pr: { title: string; body: string } | null):
       const line = cmd.join(" ");
       if (line.includes("--porcelain")) return { ok: true, err: "", out: "" };
       if (line.includes("rev-list --count")) return { ok: true, err: "", out: "1\n" };
-      if (cmd[0] === "gh" && cmd[2] === "list") return { ok: true, err: "", out: "[]" }; // OB-2044: no open PR, so no CI to read
+      if (line.includes("rev-parse --verify --quiet HEAD")) return { ok: true, err: "", out: `${CLEAN_HEAD}\n` };
+      // OB-2044, OS-211: the open PR is at HEAD with a green gate (a branch with commits needs its PR to hand off).
+      if (cmd[0] === "gh" && cmd[2] === "list") {
+        const open = pr ? [{ number: 7, url: "https://github.com/o/r/pull/7", headRefOid: CLEAN_HEAD, statusCheckRollup: [{ __typename: "CheckRun", name: "gate", status: "COMPLETED", conclusion: "SUCCESS" }] }] : [];
+        return { ok: true, err: "", out: JSON.stringify(open) };
+      }
       if (cmd[0] === "gh") return pr ? { ok: true, err: "", out: JSON.stringify(pr) } : { ok: false, err: "no pull requests found", out: "" };
       if (line.includes("log --format=%B")) return { ok: true, err: "", out: commits };
       return { ok: true, err: "", out: "" };

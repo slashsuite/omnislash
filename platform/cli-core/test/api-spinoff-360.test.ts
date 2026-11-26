@@ -1838,8 +1838,9 @@ describe("ob spinoff ready over the API client (391)", () => {
       "GET /projects": { projects: [{ ...OMNISLASH_PROJECT, team_name: null }] },
       "GET /agents": { agents: [] },
     });
+    // OS-211: no PR and no commit past main (`rev-list --count` answers 0), so the handoff passes without one.
     const restore = __setSh((cmd) =>
-      cmd[0] === "gh" ? { ok: true, err: "", out: "[]" } : cmd.includes("--porcelain") ? { ok: true, err: "", out: "" } : { ok: true, err: "", out: "State: ready — gated\n" },
+      cmd[0] === "gh" ? { ok: true, err: "", out: "[]" } : cmd.includes("--porcelain") ? { ok: true, err: "", out: "" } : cmd.includes("--count") ? { ok: true, err: "", out: "0\n" } : { ok: true, err: "", out: "State: ready — gated\n" },
     );
     try {
       const r = await runCli(freshDbPath(), ["spinoff", "ready", "391"], api(s));
@@ -1875,8 +1876,9 @@ describe("ob spinoff ready over the API client (391)", () => {
       // stray request would 404 and warn, which `r.err` below would catch.
       "GET /spinoffs/config": configAnswer(),
     });
+    // OS-211: no PR and no commit past main (`rev-list --count` answers 0), so the handoff passes without one.
     const restore = __setSh((cmd) =>
-      cmd[0] === "gh" ? { ok: true, err: "", out: "[]" } : cmd.includes("--porcelain") ? { ok: true, err: "", out: "" } : { ok: true, err: "", out: "State: ready — gated\n" },
+      cmd[0] === "gh" ? { ok: true, err: "", out: "[]" } : cmd.includes("--porcelain") ? { ok: true, err: "", out: "" } : cmd.includes("--count") ? { ok: true, err: "", out: "0\n" } : { ok: true, err: "", out: "State: ready — gated\n" },
     );
     try {
       const r = await runCli(freshDbPath(), ["spinoff", "ready", "1205", "--no-note"], api(s));

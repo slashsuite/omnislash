@@ -236,8 +236,8 @@ Once the build is committed, finish in this order. It is the only normal complet
   separate from the gate facts above: that note announces to the architect, this one is the record. It moves the row to `handed-off`, sends the note to the architect
   thread, and releases the builder's `ticket:`/`worktree:` holds; the readying note tells the architect to gate and merge the PR. Who runs it:
   - **The builder**, when the commit says `State: landable`, once every gate in §3 is green and the PR is open (c) **and its CI has passed**: run `~/.claude/skills/ob-babysit-pr/scripts/pr-wait <N> --until green` after `gh pr create` and hand off only on a green PR (never `gh pr checks --watch`, which waits on a PixelSlash review for ever). The handoff reads the check
-    rollup itself and refuses a pending or failing PR, naming the checks (a branch with no open PR, as for `blocked` or `partial`, has
-    nothing to wait for). A failing check is fixed on the branch or reported as a flake, never handed off. If CI genuinely cannot be
+    rollup itself and refuses a pending or failing PR, naming the checks (OS-211: a branch with commits past main and no open PR is refused; only a run with no commit past main, a scan or a
+    measurement, hands off without one). A failing check is fixed on the branch or reported as a flake, never handed off. If CI genuinely cannot be
     read (no `gh`, no network), `--ci-unchecked '<why>'` hands off and records the reason; do not use it to skip a wait or a failure.
   - **The human**, via `/ob-spinoff-handoff`, for `State: needs-human`. The human's yes is the handoff; `needs-human` does not block land.
   - Not for `State: blocked`, `partial` or a missing State. Those stop at (b) with the matching `--status` and wait.

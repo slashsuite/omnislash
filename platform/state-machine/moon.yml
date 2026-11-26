@@ -19,3 +19,12 @@ tasks:
     command: 'bun src/export.ts'
     options:
       cache: false
+  # OS-211 (OS-112): TLC on the spinoff row model (model/Spinoff.tla); test/tla-parity.test.ts keeps its edges
+  # equal to SPINOFF_EDGES. Needs java and fetches tla2tools.jar once (model/tlc.sh), so it is not part of
+  # :test; CI's `tla` job runs it on every PR.
+  tlc:
+    command: 'bash model/tlc.sh'
+    inputs:
+      - 'model/**/*'
+    options:
+      cache: false

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeRepoDir, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
-import { createItem, addTags } from "../../../apps/cli/src/items.ts";
+import { createItem, addTags, getItem } from "../../../apps/cli/src/items.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { __setSh } from "../src/commands/spinoff.ts";
 import { doneWhenItems } from "../src/spinoff-check.ts";
@@ -107,5 +107,28 @@ describe("the section reader (OB-1980)", () => {
     expect(sectionItems(body, "Drilled")).toEqual(["a"]);
     expect(doneWhenItems(body)).toEqual(["b", "c"]);
     expect(sectionItems("## Done whenever\n- x", "Done when")).toEqual([]);
+  });
+
+  test("OS-86: a heading behind the stamp `ob note` writes still opens its section", () => {
+    const body = "Need.\n[2026-11-25T10:00:00.000Z] ## Drilled\n- cause read\n[2026-11-25T10:01:00.000Z] ## Next\n- no";
+    expect(sectionItems(body, "Drilled")).toEqual(["cause read"]);
+    expect(sectionItems("[2026-11-25T10:00:00.000Z] ### Drilled\n- x", "Drilled")).toEqual([]);
+    expect(sectionItems("[not a stamp] ## Drilled\n- x", "Drilled")).toEqual([]);
+  });
+});
+
+describe("the Drilled gate reads a noted section (OS-86)", () => {
+  test("`ob note <t> '## Drilled ...'` passes the gate, and the ticket dispatches", async () => {
+    const { dbPath, id, repo } = await ticket(`Need.\n\n${DONE}`);
+    expect((await runCli(dbPath, ["note", id, "## Drilled\n- cause read in the code"])).code).toBe(0);
+    const db = openDb(dbPath);
+    const body = (await getItem(db, id))?.body ?? "";
+    db.close();
+    expect(body).toMatch(/\[\d{4}-\d{2}-\d{2}T[^\]]*\] ## Drilled/);
+    expect((await runCli(dbPath, ["spinoff", "check", id, ...sheets()])).code).toBe(0);
+    const r = await dispatch(dbPath, id, repo);
+    expect(r.err).not.toContain("Drilled");
+    expect(r.code).toBe(0);
+    expect(r.launches).toBe(1);
   });
 });

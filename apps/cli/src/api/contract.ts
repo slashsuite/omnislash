@@ -1510,6 +1510,8 @@ export interface SendBackSpinoffRequest {
   note: string;
   /** Undo a send-back whose note could not be delivered: put the row back to handed-off. */
   restore?: boolean;
+  /** OS-211: with `restore`, the verdict the row carried before the send-back cleared it, put back with the row. */
+  verdict?: { verdict: string | null; verdict_reason: string | null; gate_line: string | null } | null;
   /** OS-108: the `--over-usage` reason, checked on the client and recorded on the trail here. */
   over_usage?: string | null;
 }

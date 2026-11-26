@@ -2059,6 +2059,8 @@ export interface ReadyNoteFacts {
   worktree: string;
   /** Commits the branch has that its captured base does not; null when the row has no base. */
   commitsAhead: number | null;
+  /** OS-211: the branch has no commit past main (a scan or a measurement): nothing to gate or merge. */
+  nothingToMerge?: boolean;
   /** The last `State:` line on the branch, verbatim. */
   state: string | null;
   /** The builder's own latest `agent register --status readying --note` text, or null. */
@@ -2171,6 +2173,19 @@ export function readyingNote(facts: ReadyNoteFacts): string {
       ? "(unreported — the row captured no base commit)"
       : `${facts.commitsAhead} ahead of the base commit`;
   const gate = facts.builderNote?.trim();
+  // OS-211: a run with no commit past main has no PR: its answer is the builder's note, and closing is the land.
+  const ending = facts.nothingToMerge
+    ? [
+        "The branch has no commit past main and no PR: nothing to gate or merge. The work is the builder's note",
+        `on the ticket (\`ob show ${facts.ticket}\`). Read it, then \`ob close ${facts.ticket}\`, and remove the worktree.`,
+      ]
+    : [
+        facts.repo !== undefined && !isObRepo(facts.repo)
+          ? "The recorded state is the verdict (`ob spinoff state`), not this note; the PR carries none. The builder never merges its own PR (OB-1686, #82):"
+          : "The State: line in git is the verdict, not this note. The builder never merges its own PR (OB-1686, #82):",
+        "gate the PR head (plus any visual gate the repo requires), then merge it with `gh pr merge --squash",
+        "--delete-branch`, run `ob deploy run --sha <merge sha>` and `ob close`.",
+      ];
   return [
     readyNoteOpening(facts.ticket),
     `  row:       ${facts.rowId} · ${spinoffStatusWord(facts.status)} (as composed)`,
@@ -2178,7 +2193,7 @@ export function readyingNote(facts: ReadyNoteFacts): string {
     `  ticket:    ${facts.ticket}`,
     `  branch:    ${facts.branch}`,
     `  worktree:  ${facts.worktree}`,
-    `  commits:   ${commits}`,
+    `  commits:   ${facts.nothingToMerge ? "none past main (nothing to merge)" : commits}`,
     ...stateDisplayLines(facts.state, "  ", undefined, true),
     `  gate:      ${gate ? underLabel(gate, "             ") : GATE_UNREPORTED}`,
     `  review:    ${reviewLineFrom(facts.builderNote) ?? REVIEW_UNREPORTED}`,
@@ -2190,11 +2205,7 @@ export function readyingNote(facts: ReadyNoteFacts): string {
     "list ob-land reads — `ob spinoff gateable` — drops it once it has merged and marks `worktree missing`",
     "when the checkout went with the land. Either way there is nothing left to gate.",
     "",
-    facts.repo !== undefined && !isObRepo(facts.repo)
-      ? "The recorded state is the verdict (`ob spinoff state`), not this note; the PR carries none. The builder never merges its own PR (OB-1686, #82):"
-      : "The State: line in git is the verdict, not this note. The builder never merges its own PR (OB-1686, #82):",
-    "gate the PR head (plus any visual gate the repo requires), then merge it with `gh pr merge --squash",
-    "--delete-branch`, run `ob deploy run --sha <merge sha>` and `ob close`.",
+    ...ending,
   ].join("\n");
 }
 
@@ -2295,6 +2306,8 @@ export interface ReadyNoteInput {
   state: string | null;
   builderNote: string | null;
   commitsAhead: number | null;
+  /** OS-211: no commit past main, so the note says there is nothing to merge. */
+  nothingToMerge?: boolean;
   /** The `tier-fit:` line the handoff recorded (1552), or null when the builder rated none. */
   tierFit?: string | null;
   /** Head SHA of the builder's branch (OB-1805): the note's idempotence key. Null when git could not say. */
@@ -2378,6 +2391,7 @@ export async function announceReadyNote(registry: AgentRegistry, input: ReadyNot
         branch: row.branch,
         worktree: row.worktree,
         commitsAhead: input.commitsAhead,
+        ...(input.nothingToMerge ? { nothingToMerge: true } : {}),
         state: input.state,
         builderNote: input.builderNote,
         rowId: row.id,
