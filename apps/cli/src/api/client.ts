@@ -584,6 +584,13 @@ export const ROLE_ROUTE = /^\/teams\/[^/]+\/(runs|brief|notes|tick|inbox)(\/|\?|
  */
 export const PROJECT_STATUS_ROUTE = /^\/(projects|next)(\/|\?|$)|^\/spinoffs(\/launchable)?(\?|$)/;
 
+/**
+ * OS-252: routes the omnibus server on CT 130 does not serve at all, or serves without OS-216's fields. Every
+ * `/overnight` route (`/overnight/backfill` is new, `/overnight/decide` gained `at`, and the reads return
+ * `decided_at`) and `GET /tags` (tag counts; `/items/:id/tags` does not match). Same server as the role routes.
+ */
+export const OMNISLASH_ROUTE = /^\/overnight(\/|\?|$)|^\/tags(\?|$)/;
+
 export class ApiClient {
 	private readonly base: string;
 	private readonly roleOption: string | null | undefined;
@@ -611,11 +618,12 @@ export class ApiClient {
 	}
 
 	/**
-	 * OS-76: the server a route is sent to. Only a team role route (or, OS-189, a project status route) can go to the role base, and the role base is read
-	 * on the first such call (not at construction), so a bad role setting fails the role and project status routes and nothing else.
+	 * OS-76: the server a route is sent to. Only a team role route (or, OS-189, a project status route, or, OS-252, an
+	 * overnight or tag count route) can go to the role base, and the role base is read on the first such call (not at
+	 * construction), so a bad role setting fails those routes and nothing else.
 	 */
 	private baseFor(route: string): string {
-		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route)) return this.base;
+		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route) && !OMNISLASH_ROUTE.test(route)) return this.base;
 		return this.roleBaseUrl() ?? this.base;
 	}
 
