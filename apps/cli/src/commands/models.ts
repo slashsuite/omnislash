@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, warn } from "../output.ts";
-import { ModelsFileError, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, rangeText, tierOfComplexity, type ModelsFile } from "../models-file.ts";
+import { ModelsFileError, SPINOFF_TIERS, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, rangeText, tierOfComplexity, type ModelsFile } from "../models-file.ts";
 import { CREDIT_HIT_WINDOW_HOURS, recentCreditHits } from "../models-credit.ts";
 import { formatTrendLine, legTrend, readLegRecords } from "../review-legs.ts";
 import { ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
@@ -14,6 +14,7 @@ import {
   builderBandAt,
   builderBandsIn,
   addReader,
+  bareModelsOf,
   checkEffort,
   parseChain,
   profileOrderOf,
@@ -123,6 +124,44 @@ function readersText(v: ReviewReaders): string[] {
   return v.tiers.map((r) => `  ${rangeText(r).padEnd(7)} ${r.legs.map((l) => `${l}=${v.readers[l]!.model}`).join(", ")}`);
 }
 
+interface BareRoute {
+  route: string;
+  models: string[];
+  source: string;
+  /** How to fix it: an `ob models set` line for a server route, the file to edit for a local one. */
+  fix: string;
+}
+
+/** A chain with each bare id given a provider: Claude ids get `claudeAgent:`, any other a `<provider>:` to fill in. */
+function qualified(chain: readonly string[], route: string): string {
+  const bare = new Set(bareModelsOf(route, chain));
+  return chain.map((m) => (!bare.has(m) ? m : m.startsWith("claude-") ? `claudeAgent:${m}` : `<provider>:${m}`)).join(",");
+}
+
+/**
+ * OS-239: the builder and role routes a layer actually stores (this machine's file or the server) with a bare id.
+ * The defaults are left out: they are not stored, and a role thread's default names its provider itself.
+ */
+function storedBareRoutes(inputs: RouteInputs, profile: string | null, bands: readonly BuilderBand[], routes: readonly ResolvedRoute[]): BareRoute[] {
+  const own = profile === null ? {} : (inputs.server.profiles[profile]?.routes ?? {});
+  const fixOf = (route: string, setAs: string, chain: readonly string[], source: string): string =>
+    source === "local" ? `edit ${inputs.file?.path ?? modelsFilePath()}: give ${route} a provider` : `ob models set ${setAs} ${qualified(chain, route)}`;
+  const out: BareRoute[] = [];
+  for (const b of bands) {
+    const models = bareModelsOf(b.route, b.chain);
+    if (b.source === "default" || models.length === 0) continue;
+    // A server set still in the old tier form stores `builder.complex`, not `builder.7-10`: the fix names what is stored.
+    const tier = own[b.route] ? undefined : SPINOFF_TIERS.find((t) => own[`builder.${t}`] && TIER_BANDS[t].from === b.from && TIER_BANDS[t].to === b.to);
+    out.push({ route: b.route, models, source: b.source, fix: fixOf(b.route, tier ? `builder.${tier}` : b.route, b.chain, b.source) });
+  }
+  for (const r of routes) {
+    if (r.route.startsWith("builder.") || r.source === "default") continue;
+    const models = bareModelsOf(r.route, r.chain);
+    if (models.length > 0) out.push({ route: r.route, models, source: sourceLabel(r), fix: fixOf(r.route, r.route, r.chain, r.source) });
+  }
+  return out;
+}
+
 async function show(ctx: Ctx): Promise<void> {
   const inputs = await refusing(async () => loadRouteInputs(await io(ctx), { quiet: true, lenient: true }));
   const routes = resolveAllRoutes(inputs);
@@ -130,6 +169,7 @@ async function show(ctx: Ctx): Promise<void> {
   const active = activeProfileOf(inputs);
   const bands = builderBandsIn(inputs, active.name);
   const hits = recentCreditHits();
+  const bare = storedBareRoutes(inputs, active.name, bands, routes);
   if (ctx.mode === "json") {
     print(
       JSON.stringify(
@@ -146,6 +186,7 @@ async function show(ctx: Ctx): Promise<void> {
           routes: routes.map((r) => ({ route: r.route, profile: r.profile, chain: r.chain, effort: r.effort ?? null, source: r.source, label: sourceLabel(r) })),
           builder_ranges: bands.map((b) => ({ route: b.route, from: b.from, to: b.to, chain: b.chain, effort: b.effort ?? null, source: b.source })),
           review: { profile: review.profile, source: review.source, ...review.value },
+          bare_routes: bare,
         },
         null,
         2,
@@ -154,6 +195,7 @@ async function show(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.mode === "quiet") {
+    for (const b of bare) warn(`warning: ${b.route} names no provider (${b.models.join(", ")}) [${b.source}]`);
     print([...bands.map((b) => `${b.route}\t${b.chain.join(",")}\t${b.source}`), ...routes.filter((r) => !r.route.startsWith("builder.")).map((r) => `${r.route}\t${r.chain.join(",")}\t${sourceLabel(r)}`)].join("\n"));
     return;
   }
@@ -175,6 +217,10 @@ async function show(ctx: Ctx): Promise<void> {
   for (const b of bands) lines.push(`${bandName(b, standard).padEnd(width)}  ${bandChainText(b)}   [${b.source}]`);
   for (const r of others) lines.push(`${r.route.padEnd(width)}  ${chainText(r)}   [${sourceLabel(r)}]`);
   lines.push("", `review readers [${review.source}]:`, ...readersText(review.value));
+  if (bare.length > 0) {
+    lines.push("", "warning: these builder or role routes name no provider, so they run on each T3 project's own default model:");
+    for (const b of bare) lines.push(`  ${b.route}  ${b.models.join(", ")}   [${b.source}]  fix: ${b.fix}`);
+  }
   print(lines.join("\n"));
 }
 

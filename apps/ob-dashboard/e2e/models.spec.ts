@@ -98,7 +98,7 @@ test("the builder ranges show as rows, and moving a boundary is the server value
   const b = builder(page);
   await expect(b.getByRole("textbox", { name: /^From, builder row/ })).toHaveCount(3);
   await expect(b.getByRole("textbox", { name: "From, builder row 3" })).toHaveValue("7");
-  await expect(b.getByRole("combobox", { name: "Model 1 for builder row 3" })).toHaveValue("claude-opus-5-5");
+  await expect(b.getByRole("combobox", { name: "Model 1 for builder row 3" })).toHaveValue("claudeAgent:claude-opus-5-5");
   await expect(b.getByRole("combobox", { name: "Effort, builder row 3" })).toHaveValue("high");
 
   await b.getByRole("textbox", { name: "To, builder row 1" }).fill("4");
@@ -109,7 +109,7 @@ test("the builder ranges show as rows, and moving a boundary is the server value
 
   const set = shown().builder_ranges;
   expect(set.map((x) => [x.from, x.to, x.source])).toEqual([[1, 4, "server"], [5, 6, "server"], [7, 10, "server"]]);
-  expect(set[2]).toMatchObject({ chain: ["claude-opus-5-5"], effort: "max" });
+  expect(set[2]).toMatchObject({ chain: ["claudeAgent:claude-opus-5-5"], effort: "max" });
 
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
@@ -143,7 +143,7 @@ test("a range split and merged back round-trips the stored value", async ({ page
     await save(page, () => b.getByRole("button", { name: "Save builder ranges" }).click());
     await expect(b.getByText("saved", { exact: true })).toBeVisible();
     expect(bands().slice(2)).toEqual([
-      [7, 8, "claude-opus-5-5", "high", "server"],
+      [7, 8, "claudeAgent:claude-opus-5-5", "high", "server"],
       [9, 10, "claudeAgent:claude-sonnet-5-5", "high", "server"],
     ]);
   });
