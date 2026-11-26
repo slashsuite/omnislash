@@ -178,9 +178,12 @@ const SNAPSHOT_SUFFIX = ARTIFACT_SUFFIX;
 /** The most recent N snapshots are kept whatever their age: the hourly window. */
 export const SNAPSHOT_KEEP_HOURLY = 24;
 /** Beyond that window, the newest surviving snapshot from each of the next N distinct days. */
-export const SNAPSHOT_KEEP_DAILY = 7;
-/** A ceiling on what the whole directory may occupy, so rotation cannot fill the data volume. */
-export const SNAPSHOT_MAX_BYTES = 2 * 1024 ** 3;
+export const SNAPSHOT_KEEP_DAILY = 14;
+/**
+ * A ceiling on what the whole directory may occupy, so rotation cannot fill the data volume. Sized for
+ * CT 130's 64G mp0 (OB-2581); the old 2 GiB was sized for an 8G volume and capped the history at a day.
+ */
+export const SNAPSHOT_MAX_BYTES = 12 * 1024 ** 3;
 /** Free space that must remain on the volume AFTER writing the new snapshot. */
 export const SNAPSHOT_RESERVE_BYTES = 512 * 1024 ** 2;
 
@@ -461,7 +464,7 @@ function numberFlag(value: unknown, name: string, fallback: number): number {
 }
 
 /** Existing snapshots in `dir`, ours only, with their sizes. */
-function readSnapshots(dir: string): SnapshotEntry[] {
+export function readSnapshots(dir: string): SnapshotEntry[] {
   if (!existsSync(dir)) return [];
   const entries: SnapshotEntry[] = [];
   for (const file of readdirSync(dir, { withFileTypes: true })) {

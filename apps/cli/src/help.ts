@@ -1971,8 +1971,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         flags: [
           { flag: "--dir <path>", description: "Snapshot output directory (refused over API)" },
           { flag: "--keep-hourly <n>", description: "Hourly snapshots to retain (default 24)" },
-          { flag: "--keep-daily <n>", description: "Daily snapshots to retain (default 7)" },
-          { flag: "--max-bytes <n>", description: "Total retention size cap in bytes" },
+          { flag: "--keep-daily <n>", description: "Daily snapshots to retain (default 14)" },
+          { flag: "--max-bytes <n>", description: "Total retention size cap in bytes (default 12 GiB)" },
           { flag: "--list", description: "List retained snapshots" },
           { flag: "--dry-run", description: "Preview without writing a dump" },
           { flag: "--wait", description: "Wait for the API host job to finish" },
