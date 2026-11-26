@@ -66,9 +66,22 @@ test("an open ticket with no row sits on its planning state, and a box's click l
   await expect(dot(page, MACHINE_PLANNING.drilled.title, "Drilling (## Drilled, ## Done when)")).toHaveCount(1);
   const list = page.getByRole("button", { name: /^Planning call only the owner can make/ });
   await expect(list).toHaveAttribute("aria-expanded", "false");
-  await page.locator('[data-measure="n:owner_plan_call"]').click({ position: { x: 6, y: 6 } });
+  // ui-react draws the machine's boxes uniform, which marks a box's label (`l:<id>`), not its frame: a click on the
+  // frame's corner, off the label and the dots, finds the box by the label it holds (OS-260).
+  await page.locator('div:has(> [data-measure="l:owner_plan_call"])').click({ position: { x: 4, y: 4 } });
   await expect(list).toHaveAttribute("aria-expanded", "true");
   const row = page.getByRole("button", { name: new RegExp(`${MACHINE_PLANNING.owner.title}$`) });
   await row.click();
   await expect(page.getByRole("dialog").getByText(MACHINE_PLANNING.owner.title)).toBeVisible();
+});
+
+test("an open ticket with no ## Drilled section and no check is in the backlog, and Drilling holds only drilled ones (OS-260)", async ({ page }) => {
+  await openPage(page, "/machine");
+  await expect(page.getByRole("button", { name: "Drilling (## Drilled, ## Done when) 1", exact: true })).toBeVisible();
+  // The backlog holds the bulk (every other open ticket of this world), so its dot may sit behind the box's "+N": its
+  // list names it.
+  const backlog = page.getByRole("button", { name: /^Backlog \(open, not drilled yet\) \d+$/ });
+  await backlog.click();
+  await expect(backlog).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: new RegExp(`${MACHINE_PLANNING.backlog.title}$`) })).toBeVisible();
 });

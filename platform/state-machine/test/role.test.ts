@@ -25,11 +25,11 @@ describe("the generated files", () => {
     }
   });
 
-  test("the JSON keeps the v1 shape: 20 states, 39 transitions, every endpoint a state", () => {
+  test("the JSON keeps the v1 shape: 21 states, 42 transitions, every endpoint a state", () => {
     const json = JSON.parse(renderAll()["docs/role-state-machine.json"]!);
     expect(json.version).toBe(1);
-    expect(json.states).toHaveLength(20);
-    expect(json.transitions).toHaveLength(39);
+    expect(json.states).toHaveLength(21);
+    expect(json.transitions).toHaveLength(42);
     const ids = new Set(json.states.map((s: { id: string }) => s.id));
     for (const t of json.transitions) {
       expect(Object.keys(t)).toEqual(["from", "to", "label", "event", "actor", "source"]);
