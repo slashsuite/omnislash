@@ -122,7 +122,7 @@ describe("the readying note's key is the head SHA (OB-1805)", () => {
     expect(stored).toHaveLength(2);
     expect(stored[0]!.client_key).toContain(SHA_A);
     expect(stored[1]!.client_key).toContain(SHA_B);
-    expect(fake.sends.map((s) => s.clientRequestId)).toEqual(stored.map((m) => `ob-role-msg-${m.id}`));
+    expect(fake.sends.map((s) => s.clientRequestId)).toEqual(stored.map((m, i) => `ob-role-msg-${fake.sends[i]!.threadId}-${m.id}`));
   });
 
 });
@@ -195,7 +195,7 @@ describe("ob spinoff sendback (OB-1805)", () => {
     // the re-handoff note went out under the NEW commit's id (sentinel thread), the send-back under the builder's
     const toSentinel = fake.sends.filter((s) => s.threadId === SENTINEL_THREAD);
     expect(toSentinel).toHaveLength(1);
-    expect(toSentinel[0]!.clientRequestId).toBe("ob-role-msg-1");
+    expect(toSentinel[0]!.clientRequestId).toBe(`ob-role-msg-${SENTINEL_THREAD}-1`);
     expect((db.query("SELECT client_key FROM role_message").get() as { client_key: string }).client_key).toContain(SHA_B);
   });
 

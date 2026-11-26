@@ -1270,6 +1270,11 @@ export async function ensureTeamThread(
      * project's default model, which is what a route nobody set means for a team thread.
      */
     roleModel?: string;
+    /**
+     * OS-212: the recorded thread a restart is replacing. It is still live (it is retired only once its replacement
+     * holds the seat), so it is not read as the role's live thread: a new one opens and takes the row.
+     */
+    replacing?: string;
   },
 ): Promise<TeamThreadOutcome> {
   const seam = input.seam ?? (await t3Seam());
@@ -1319,7 +1324,7 @@ export async function ensureTeamThread(
     if (!live) {
       throw new T3Error("refused", `thread ${recorded} is not a live T3 thread (settled, archived or unknown), so it cannot be the ${team.name} ${role}`, "pass the id of a live thread");
     }
-  } else if (recorded) {
+  } else if (recorded && recorded !== input.replacing) {
     live = await readTeamThread(seam, recorded);
   }
 

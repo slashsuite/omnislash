@@ -125,7 +125,7 @@ function fakeT3(threads: T3Thread[], onHandoffAsk: (threadId: string) => Promise
       if (input.message.includes("ob t3 team handoff")) await onHandoffAsk(input.threadId);
     },
     queue: async (id) => ({ items: Array.from({ length: queued[id] ?? 0 }, (_, i) => ({ queuedRunId: `q${i}`, text: "x", truncated: false })) as never, complete: true }),
-    queueCancel: async () => {},
+    queueCancel: async (id) => void (queued[id] = Math.max(0, (queued[id] ?? 0) - 1)),
     wait: async () => ({ runId: null, status: "idle", timedOut: false }),
   };
   return { seam, threads, calls, launches, sends, queued };
@@ -205,7 +205,7 @@ describe("ob t3 team handoff (OB-2257 Done when 4)", () => {
 });
 
 describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
-  test("replaces each bound role in order: ask, record, settle, unpin, open, pin, seed with the handoff", async () => {
+  test("replaces each bound role in order: ask, record, open, pin, seed, tell the old thread, settle, unpin", async () => {
     const { dbPath, fake } = await seededTeam({ architect: "thr-a", sentinel: "thr-s" });
     const db = openDb(dbPath);
     const f = fakeT3([thread("thr-a"), thread("thr-s")], async (id) => {
@@ -215,18 +215,25 @@ describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
     fake(f);
     const res = await runCli(dbPath, ["t3", "team", "restart", "omni"]);
     expect(res.code).toBe(0);
+    // OS-212: the replacement opens first, so the old thread is told where the seat went before it is settled.
     expect(f.calls).toEqual([
+      "send:thr-a",
+      "launch",
+      "pin:new-1",
       "send:thr-a",
       "settle:thr-a",
       "unpin:thr-a",
+      "send:thr-s",
       "launch",
-      "pin:new-1",
+      "pin:new-2",
       "send:thr-s",
       "settle:thr-s",
       "unpin:thr-s",
-      "launch",
-      "pin:new-2",
     ]);
+    const notice = f.sends[1]!;
+    expect(notice).toMatchObject({ threadId: "thr-a", mode: "queue", clientRequestId: "ob-retired-thr-a" });
+    expect(notice.message).toContain("This thread is retired: the current omni architect is [🚌 Omni · architect](t3-thread://v1/new-1).");
+    expect(notice.message).toContain("ob t3 team forward omni --role architect --body-file <file>");
     expect(f.sends[0]!.mode).toBe("queue");
     expect(f.sends[0]!.message).toContain("ob t3 team handoff omni --role architect --body-file <file>");
     expect(f.sends[0]!.message).toContain("Only after that, delete your own scheduled tasks");
@@ -258,7 +265,7 @@ describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
     fake(f);
     const res = await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "sentinel"]);
     expect(res.code).toBe(0);
-    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-s"]);
+    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-s", "send:thr-s"]);
     expect(res.out).not.toContain("omni architect");
     expect((await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "boss"])).code).toBe(2);
     db.close();
@@ -278,7 +285,7 @@ describe("ob t3 team restart, local (OB-2257 Done when 1, 2, 5)", () => {
     const res = await runCli(dbPath, ["t3", "team", "restart", "--all", "--role", "architect"]);
     expect(res.code).toBe(0);
     // Teams go by name (omni, then slash), and each role finishes before the next one starts.
-    expect(f.calls.filter((c) => c.startsWith("send:") || c === "launch")).toEqual(["send:thr-a", "launch", "send:thr-x", "launch"]);
+    expect(f.calls.filter((c) => c.startsWith("send:") || c === "launch")).toEqual(["send:thr-a", "launch", "send:thr-a", "send:thr-x", "launch", "send:thr-x"]);
     expect(f.launches[1]!.message).toContain("from thr-x");
     expect((await runCli(dbPath, ["t3", "team", "restart", "omni", "--all"])).code).toBe(2);
     expect((await runCli(dbPath, ["t3", "team", "restart"])).code).toBe(2);
@@ -368,7 +375,7 @@ describe("a re-run resumes (OB-2257)", () => {
     await recordTeamHandoff(db, { team: "omni", role: "architect", body: "H1 late" });
     const h2 = await recordTeamHandoff(db, { team: "omni", role: "architect", body: "H2" });
     await consumeTeamHandoff(db, "omni", h2.id, "thr-n");
-    const f = fakeT3([thread("thr-x"), thread("thr-n", { createdAt: "2099-01-01T00:00:00.000Z" })], async () => {
+    const f = fakeT3([thread("thr-x", { settled: true }), thread("thr-n", { createdAt: "2099-01-01T00:00:00.000Z" })], async () => {
       await recordTeamHandoff(db, { team: "omni", role: "architect", body: "H3 fresh" });
     });
     const team = (await backendOf(db).show("omni"))!;
@@ -389,7 +396,8 @@ describe("a re-run resumes (OB-2257)", () => {
     const team = (await backendOf(db).show("omni"))!;
     const out = await restartTeamRole(backendOf(db), team, "architect", { seam: f.seam, log: () => {} });
     expect(out).toMatchObject({ result: "restarted", newThreadId: "new-1" });
-    expect(f.calls).toEqual(["unpin:thr-a", "launch", "pin:new-1"]);
+    // Already settled: it is only unpinned, never sent the retired notice (a send would unsettle it).
+    expect(f.calls).toEqual(["launch", "pin:new-1", "unpin:thr-a"]);
     expect(f.launches[0]!.message).toContain("held body");
     expect((await latestTeamHandoff(db, "omni", "architect"))!.new_thread_id).toBe("new-1");
     db.close();
@@ -487,7 +495,8 @@ describe("a restart does not broadcast the new thread (OS-88)", () => {
     fake(f);
     const res = await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "architect"]);
     expect(res.code).toBe(0);
-    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-a"]);
+    // The handoff ask and the retired notice, both to the old thread only.
+    expect(f.calls.filter((c) => c.startsWith("send:"))).toEqual(["send:thr-a", "send:thr-a"]);
     db.close();
   });
 });
@@ -507,7 +516,7 @@ describe("a handoff from a replaced thread is forwarded to the bound one (OB-227
     expect(rec.out).toContain("handoff 1 recorded (17 characters) from thr-old");
     expect(rec.out).toContain("thr-old is no longer the architect: forwarded to thr-new and marked consumed");
     expect(f.sends).toHaveLength(1);
-    expect(f.sends[0]).toMatchObject({ threadId: "thr-new", mode: "queue", clientRequestId: "ob-late-handoff-omni-1" });
+    expect(f.sends[0]).toMatchObject({ threadId: "thr-new", mode: "queue", clientRequestId: "ob-late-handoff-thr-new-1" });
     expect(f.sends[0]!.message).toBe("Late report from replaced thread thr-old, handoff 1:\n\nsentinel report 4");
     const db = openDb(dbPath);
     expect(await latestTeamHandoff(db, "omni", "architect")).toMatchObject({ id: 1, old_thread_id: "thr-old", new_thread_id: "thr-new" });
@@ -660,5 +669,200 @@ describe("a handoff from a replaced thread is forwarded to the bound one (OB-227
       delete process.env[T3_ENV];
       expect((await run(["t3", "team", "handoff", "omni", "--role", "architect", "--body", "from a terminal"])).out).toContain("from thr-new");
     });
+  });
+});
+
+/** OS-212: T3 refuses a settle while a run is live; the fake does the same. */
+function refuseLiveSettle(f: FakeT3): void {
+  const settle = f.seam.settle;
+  f.seam.settle = async (id) => {
+    const t = f.threads.find((x) => x.threadId === id);
+    if (t && (t.status === "running" || t.activeRunId)) throw new T3Error("refused", `Thread ${id} is still running. Stop it before settling.`);
+    await settle(id);
+  };
+}
+
+describe("a retired seat stays retired (OS-212)", () => {
+  test("a handoff turn still running is waited out: the old thread settles once it ends, and the pass does not fail", async () => {
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      // the handoff turn is still running when the handoff is recorded
+      Object.assign(f.threads[0]!, { status: "running", activeRunId: "run-h" });
+    });
+    refuseLiveSettle(f);
+    f.seam.wait = async () => ({ runId: "run-h", status: "running", timedOut: true });
+    let clock = 0;
+    let sleeps = 0;
+    const team = (await backendOf(db).show("omni"))!;
+    const out = await restartTeamRole(backendOf(db), team, "architect", {
+      seam: f.seam,
+      self: null,
+      log: () => {},
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+        // the turn ends after three polls of the retire step
+        if (++sleeps === 3) Object.assign(f.threads[0]!, { status: "idle", activeRunId: null });
+      },
+    });
+    expect(out).toMatchObject({ result: "restarted", newThreadId: "new-1" });
+    expect(f.threads[0]!.settled).toBe(true);
+    expect(f.calls.filter((c) => c === "settle:thr-a")).toEqual(["settle:thr-a"]);
+    expect((await backendOf(db).show("omni"))!.threads[0]!.thread_id).toBe("new-1");
+    db.close();
+  });
+
+  test("a turn that outlasts the retire wait fails by name with the new thread bound; a re-run finishes retiring the old one", async () => {
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      Object.assign(f.threads[0]!, { status: "running", activeRunId: "run-h" });
+    });
+    refuseLiveSettle(f);
+    let clock = 0;
+    const opts = { seam: f.seam, self: null, log: () => {}, retireTimeoutMs: 60_000, now: () => clock, sleep: async (ms: number) => void (clock += ms) };
+    const first = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", opts);
+    expect(first).toMatchObject({ result: "failed", newThreadId: "new-1" });
+    expect(first.reason).toContain("new-1 holds the seat");
+    expect(first.reason).toContain("the retired thread thr-a would not settle");
+    expect((await backendOf(db).show("omni"))!.threads[0]!.thread_id).toBe("new-1");
+    // The handoff stays unconsumed until thr-a settles, so the re-run resumes the retire.
+    expect((await backendOf(db).handoffLatest("omni", "architect", { from: "thr-a" }))!.consumed_at).toBeNull();
+
+    // The turn ends; the re-run retires thr-a and opens nothing new.
+    Object.assign(f.threads[0]!, { status: "idle", activeRunId: null });
+    f.calls.length = 0;
+    const again = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", opts);
+    expect(again).toMatchObject({ result: "restarted", oldThreadId: "thr-a", newThreadId: "new-1" });
+    expect(f.calls).toEqual(["send:thr-a", "settle:thr-a", "unpin:thr-a"]);
+    expect(f.sends.at(-1)!.clientRequestId).toBe("ob-retired-thr-a");
+    expect(f.threads[0]!.settled).toBe(true);
+    expect((await backendOf(db).handoffLatest("omni", "architect", { from: "thr-a" }))!.consumed_at).not.toBeNull();
+    db.close();
+  });
+
+  test("a retired thread woken later does not stop the next restart of the current one", async () => {
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const f = fakeT3([thread("thr-a")], async () => void (await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" })));
+    const opts = { seam: f.seam, self: null, log: () => {}, timeoutMs: 0 };
+    expect((await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", opts)).result).toBe("restarted");
+    f.threads.find((t) => t.threadId === "thr-a")!.settled = false; // a stray send woke it
+    Object.assign(f.threads.find((t) => t.threadId === "new-1")!, { status: "idle", activeRunId: null });
+    f.sends.length = 0;
+    await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", opts);
+    expect(f.sends[0]!.threadId).toBe("new-1");
+    expect(f.sends[0]!.message).toContain("ob t3 team handoff");
+    db.close();
+  });
+
+  test("a queued message T3 reads back cut short stays queued, and the settle waits for the queue to drain", async () => {
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      f.queued["thr-a"] = 1;
+    });
+    f.seam.queue = async (id) => ({ items: Array.from({ length: f.queued[id] ?? 0 }, () => ({ queuedRunId: "q0", text: "x", truncated: true })) as never, complete: true });
+    const lines: string[] = [];
+    let clock = 0;
+    const out = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", {
+      seam: f.seam,
+      self: null,
+      log: (l) => lines.push(l),
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+        f.queued["thr-a"] = 0; // the retired thread ran (and forwarded) it
+      },
+    });
+    expect(out.result).toBe("restarted");
+    expect(f.sends.some((s) => s.message.startsWith("Moved from"))).toBe(false);
+    expect(lines.some((l) => l.includes("left queued in thr-a"))).toBe(true);
+    expect(clock).toBeGreaterThan(0);
+    db.close();
+  });
+
+  test("what the old thread holds queued moves to the new thread before the notice", async () => {
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const cancelled: string[] = [];
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      f.queued["thr-a"] = 1; // a message arrived for the seat while it wrote its handoff
+    });
+    const cancel = f.seam.queueCancel;
+    f.seam.queueCancel = async (id, runId) => {
+      cancelled.push(`${id}/${runId}`);
+      await cancel(id, runId);
+    };
+    const out = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", { seam: f.seam, self: null, log: () => {} });
+    expect(out.result).toBe("restarted");
+    expect(f.calls).toEqual(["send:thr-a", "launch", "pin:new-1", "send:new-1", "send:thr-a", "settle:thr-a", "unpin:thr-a"]);
+    expect(f.sends[1]).toMatchObject({ threadId: "new-1", mode: "queue", clientRequestId: "ob-retired-move-thr-a-q0" });
+    expect(f.sends[1]!.message).toBe("Moved from the retired thread thr-a:\n\nx");
+    expect(cancelled).toEqual(["thr-a/q0"]);
+    db.close();
+  });
+});
+
+describe("ob t3 team forward (OS-212)", () => {
+  async function restarted(): Promise<{ dbPath: string; f: FakeT3 }> {
+    const { dbPath, fake } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const f = fakeT3([thread("thr-a")], async () => void (await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" })));
+    fake(f);
+    expect((await runCli(dbPath, ["t3", "team", "restart", "omni", "--role", "architect"])).code).toBe(0);
+    db.close();
+    f.sends.length = 0;
+    f.calls.length = 0;
+    return { dbPath, f };
+  }
+
+  test("one seat, one live thread: after a restart the old thread is settled and the seat is the new one", async () => {
+    const { dbPath, f } = await restarted();
+    expect(f.threads.filter((t) => !t.settled).map((t) => t.threadId)).toEqual(["new-1"]);
+    expect(JSON.parse((await runCli(dbPath, ["t3", "team", "show", "omni", "--json"])).out).threads).toEqual([{ role: "architect", agent_id: "architect-omni", thread_id: "new-1" }]);
+  });
+
+  test("by team and role it lands in the current thread", async () => {
+    const { dbPath, f } = await restarted();
+    const res = await runCli(dbPath, ["t3", "team", "forward", "omni", "--role", "architect", "--body", "OB-9 is yours"]);
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("omni architect: forwarded to new-1");
+    expect(f.sends).toEqual([{ threadId: "new-1", message: "OB-9 is yours", mode: "queue" }]);
+  });
+
+  test("a send aimed at the retired id is redirected to the current thread and never reaches the retired one", async () => {
+    const { dbPath, f } = await restarted();
+    const res = await runCli(dbPath, ["t3", "team", "forward", "--thread", "thr-a", "--body", "OB-9 is yours"]);
+    expect(res.code).toBe(0);
+    expect(res.out).toContain("omni architect: forwarded to new-1 (thr-a is retired; redirected)");
+    expect(f.sends.map((s) => s.threadId)).toEqual(["new-1"]);
+    expect(f.sends[0]!.message).toBe("Sent to the retired omni architect thread thr-a, forwarded to this one:\n\nOB-9 is yours");
+    expect(f.threads.find((t) => t.threadId === "thr-a")!.settled).toBe(true);
+    // -q prints the thread it went to; --json names the redirect
+    const q = await runCli(dbPath, ["t3", "team", "forward", "omni", "--role", "architect", "--thread", "thr-a", "--body", "x", "-q"]);
+    expect(q.out.trim()).toBe("new-1");
+    const j = JSON.parse((await runCli(dbPath, ["t3", "team", "forward", "omni", "--thread", "thr-a", "--body", "x", "--json"])).out);
+    expect(j).toEqual({ team: "omni", role: "architect", thread_id: "new-1", redirected_from: "thr-a" });
+  });
+
+  test("an id that is no seat's, current or retired, is refused by name and nothing is sent", async () => {
+    const { dbPath, f } = await restarted();
+    const unknown = await runCli(dbPath, ["t3", "team", "forward", "--thread", "thr-zzz", "--body", "x"]);
+    expect(unknown.code).not.toBe(0);
+    expect(unknown.err).toContain("thread thr-zzz is not any team seat's current thread and was not retired by it; nothing sent");
+    const wrongSeat = await runCli(dbPath, ["t3", "team", "forward", "omni", "--role", "sentinel", "--thread", "thr-a", "--body", "x"]);
+    expect(wrongSeat.code).not.toBe(0);
+    expect(wrongSeat.err).toContain("thread thr-a is not the omni sentinel seat's current thread");
+    const noRole = await runCli(dbPath, ["t3", "team", "forward", "omni", "--body", "x"]);
+    expect(noRole.code).toBe(2);
+    const noBody = await runCli(dbPath, ["t3", "team", "forward", "omni", "--role", "architect"]);
+    expect(noBody.code).toBe(2);
+    expect(f.sends).toEqual([]);
   });
 });

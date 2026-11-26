@@ -32,9 +32,13 @@ export function seatReader(agentId: string): string {
   return `seat:${agentId}`;
 }
 
-/** The T3 request id a queued message carries, so a retry of one message is one delivery. Pure. */
-export function roleMessageRequestId(id: number): string {
-  return `ob-role-msg-${id}`;
+/**
+ * The T3 request id a queued message carries, so a retry of one message is one delivery. T3 dedups request ids
+ * across every thread, and message ids restart at 1 in each store, so the id names the thread too (OS-212): two
+ * stores' message 1 are two deliveries, never one swallowed as a repeat of the other. Pure.
+ */
+export function roleMessageRequestId(threadId: string, id: number): string {
+  return `ob-role-msg-${threadId}-${id}`;
 }
 
 /**
@@ -75,7 +79,7 @@ export async function deliverToRole(
   let sendError: unknown = null;
   for (const m of pending) {
     try {
-      await s.send({ threadId: started.thread_id, message: queuedText(m, started.run ? "run" : "seat"), mode: "queue", clientRequestId: roleMessageRequestId(m.id) });
+      await s.send({ threadId: started.thread_id, message: queuedText(m, started.run ? "run" : "seat"), mode: "queue", clientRequestId: roleMessageRequestId(started.thread_id, m.id) });
     } catch (err) {
       sendError = err;
       break;

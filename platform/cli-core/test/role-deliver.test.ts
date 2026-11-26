@@ -129,7 +129,7 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       expect(res.code).toBe(0);
       expect(res.out).toContain("t architect: message #1 stored; 1 message queued into seat thread seat-1");
       expect(f.launches).toHaveLength(0);
-      expect(f.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["seat-1", "queue", "ob-role-msg-1"]]);
+      expect(f.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["seat-1", "queue", "ob-role-msg-seat-1-1"]]);
       expect(f.sends[0]!.message).toBe("x\n\n(inbox #1 from owner, message; marked read by this seat)");
       expect((await messages(h.store))[0]).toMatchObject({ read_by: "seat:architect-t" });
       expect(await runs(h.store)).toEqual([]);
@@ -178,7 +178,7 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
       expect(res.code).toBe(0);
       expect(res.out).toContain("t architect: message #1 stored; 1 message queued into run 1, thread t3-1, marked read by role-run-1");
       expect(f.launches).toHaveLength(1);
-      expect(f.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["t3-1", "queue", "ob-role-msg-1"]]);
+      expect(f.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["t3-1", "queue", "ob-role-msg-t3-1-1"]]);
       expect(f.sends[0]!.message).toBe("second\n\n(inbox #1 from sentinel-t, message; marked read by this run)");
       expect((await messages(h.store))[0]).toMatchObject({ read_by: "role-run-1" });
     },
@@ -249,4 +249,34 @@ describe("ob send delivers into the role's run, locally", () => {
 
 describe("ob send delivers into the role's run, over the API", () => {
   for (const [name, body] of CASES) test(name, () => withApi(body), 60_000);
+});
+
+describe("two stores share one T3 (OS-212)", () => {
+  test("message 1 of each store is two deliveries: the request id names the thread, so T3's global dedup keeps both", async () => {
+    const f = t3();
+    // T3 dedups a request id across every thread: a repeat is taken as delivered and dropped.
+    const seen = new Set<string>();
+    const delivered: string[] = [];
+    const send = __setT3Seam({
+      ...(await t3Seam()),
+      send: async (input) => {
+        f.sends.push(input);
+        if (input.clientRequestId && seen.has(input.clientRequestId)) return;
+        if (input.clientRequestId) seen.add(input.clientRequestId);
+        delivered.push(`${input.threadId}:${input.message.split("\n")[0]}`);
+      },
+    });
+    try {
+      const a = await local();
+      const b = await local();
+      await bindSeat(a.store, f, "architect", "seat-a");
+      await bindSeat(b.store, f, "architect", "seat-b");
+      expect((await a.run(["send", "t", "architect", "from store a"])).code).toBe(0);
+      expect((await b.run(["send", "t", "architect", "from store b"])).code).toBe(0);
+      expect(f.sends.map((s) => s.clientRequestId)).toEqual(["ob-role-msg-seat-a-1", "ob-role-msg-seat-b-1"]);
+      expect(delivered).toEqual(["seat-a:from store a", "seat-b:from store b"]);
+    } finally {
+      send();
+    }
+  });
 });

@@ -65,7 +65,7 @@ As soon as an answer comes back, before the next question:
 
 1. `ob note <ref> "Owner, <YYYY-MM-DD>: <their answer, in their words where they gave words>"`.
 2. `ob untag <ref> needs-owner` (a "Later" keeps the tag and gets no note).
-3. Tell the owning architect: `t3_thread_send` with `mode: "queue"` to its thread (from the item block, or found by `t3_thread_list` with `titleContains` its architect title), one message: `The owner answered <ref> (<title>): <answer>. The note is on the ticket; act on it.` If that architect thread is gone, the note on the ticket stands and its next architect picks it up from `ob next`; say so in the closing table.
+3. Tell the owning architect with `ob t3 team forward <team> --role architect --body-file <file>` (ob finds the seat's current thread, so a restart since the item was written does not matter; with only a thread id from the item block, `ob t3 team forward --thread <id> --body-file <file>` redirects a retired one), one message: `The owner answered <ref> (<title>): <answer>. The note is on the ticket; act on it.` If that architect thread is gone, the note on the ticket stands and its next architect picks it up from `ob next`; say so in the closing table.
 4. If the answer is "yes, land it" for a `needs-human` build, that is the owner's handoff: the architect runs `/ob-spinoff-handoff` and the land. Do not run it here.
 
 An answer that asks for an external send or a destructive step is routed like any other: the architect still shows the owner the exact content (or the backup) and asks again before it acts. This skill's answer is never that confirmation.
