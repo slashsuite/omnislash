@@ -1,10 +1,9 @@
 // Component tests (happy-dom). Named *.vitest.tsx so the repo-root `bun test` never matches them; `vitest run` includes them (vite.config.ts).
 // @vitest-environment happy-dom
-// OS-241: every state's tickets are listed by ref and title under its count, each opens the item drawer, and a
-// click in a state's box of the diagram names that state.
+// OS-241: every state's tickets are listed by ref and title under its count, and each opens the item drawer.
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boxOfClick, StateTickets } from "../components/StateTickets.tsx";
+import { StateTickets } from "../components/StateTickets.tsx";
 import type { MachineRow } from "../lib/machine.ts";
 import { roleDefinition } from "../lib/role-machine.ts";
 
@@ -22,12 +21,12 @@ describe("StateTickets (OS-241)", () => {
   it("lists each state that holds tickets with its count, and every ticket by ref and title once opened", () => {
     const onToggle = vi.fn();
     const { rerender } = render(<StateTickets states={states} tickets={tickets} open={new Set()} onToggle={onToggle} onOpenTicket={() => {}} />);
-    const drilling = screen.getByRole("button", { name: /Drilling/ });
+    const drilling = screen.getByRole("button", { name: /^Architect shapes the ticket/ });
     expect(drilling.textContent).toContain("2");
-    expect(screen.getByRole("button", { name: /Planning call only the owner can make/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^Building/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Owner answers a planning question/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Builder builds/ })).toBeTruthy();
     // A state with no tickets gets no list.
-    expect(screen.queryByRole("button", { name: /Blind check/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Reviewer cold-reads the brief/ })).toBeNull();
     fireEvent.click(drilling);
     expect(onToggle).toHaveBeenCalledWith("drilling", true);
 
@@ -38,29 +37,5 @@ describe("StateTickets (OS-241)", () => {
     expect(onOpenTicket).toHaveBeenCalledWith("i2");
     // The other states stay closed.
     expect(screen.queryByRole("button", { name: "OS-3 Owner decides" })).toBeNull();
-  });
-});
-
-describe("boxOfClick (OS-241)", () => {
-  it("names the state whose box was clicked, and nothing for a click on a button inside it or outside any box", () => {
-    const box = document.createElement("div");
-    box.setAttribute("data-measure", "n:checking");
-    box.innerHTML = "<span>label</span><button>dot</button>";
-    document.body.append(box);
-    expect(boxOfClick(box.querySelector("span"))).toBe("checking");
-    expect(boxOfClick(box.querySelector("button"))).toBeNull();
-    expect(boxOfClick(document.body)).toBeNull();
-    box.remove();
-  });
-
-  it("names the state of a uniform box, whose frame carries no key and holds its label's (OS-260)", () => {
-    const frame = document.createElement("div");
-    frame.innerHTML = '<div data-measure="l:backlog">Backlog</div><div data-measure="c:backlog"><i>dots</i><button>dot</button></div>';
-    document.body.append(frame);
-    expect(boxOfClick(frame)).toBe("backlog");
-    expect(boxOfClick(frame.querySelector('[data-measure="l:backlog"]'))).toBe("backlog");
-    expect(boxOfClick(frame.querySelector("i"))).toBe("backlog");
-    expect(boxOfClick(frame.querySelector("button"))).toBeNull();
-    frame.remove();
   });
 });

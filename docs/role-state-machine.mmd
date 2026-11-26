@@ -2,70 +2,67 @@
 %% Mirrors docs/role-state-machine.json: one state per JSON state and one arrow per JSON transition, in JSON order.
 %% Human states carry class human. Terminal states lead to [*].
 stateDiagram-v2
-    state "Exploring the design (muse)" as exploring
-    state "Is the thought complete? (owner)" as confirm_complete
-    state "Parked idea (tag idea) (muse)" as parked_idea
-    state "Backlog (open, not drilled yet) (architect)" as backlog
-    state "Drilling (## Drilled, ## Done when) (architect)" as drilling
-    state "Blind check (measure twice) (reviewer)" as checking
-    state "Planning call only the owner can make (owner)" as owner_plan_call
-    state "Spike running (builder)" as spike
-    state "Spinoff queued (system)" as queued
-    state "Spinoff launching (system)" as launching
-    state "Building (builder)" as building
-    state "Skeptical review round (reviewer)" as reviewing
-    state "PR open, waiting on CI (builder)" as pr_ci
-    state "Owner's call (verdict blocked or needs-human) (owner)" as owner_call
-    state "Partial (verdict) (builder)" as partial
-    state "Handed off, in the sentinel inbox (sentinel)" as handed_off
-    state "Sentinel gating the PR head (sentinel)" as gating
-    state "Sent back, builder updating the PR (builder)" as updating_pr
-    state "Merge call only the owner can make (owner)" as owner_merge_call
-    state "Closed (ticket done) (sentinel)" as closed
-    state "Failed or abandoned (system)" as failed
+    state "Muse explores the idea (muse)" as exploring
+    state "Owner confirms the idea is complete (owner)" as confirm_complete
+    state "Idea parked (muse)" as parked_idea
+    state "Waiting to be shaped (system)" as backlog
+    state "Architect shapes the ticket (architect)" as drilling
+    state "Reviewer cold-reads the brief (reviewer)" as checking
+    state "Owner answers a planning question (owner)" as owner_plan_call
+    state "Builder runs a spike (builder)" as spike
+    state "Waiting for a builder (system)" as queued
+    state "Starting the builder (system)" as launching
+    state "Builder builds (builder)" as building
+    state "Reviewer challenges the diff (reviewer)" as reviewing
+    state "Builder waits on CI (builder)" as pr_ci
+    state "Owner unblocks the builder (owner)" as owner_call
+    state "Builder stopped short (builder)" as partial
+    state "Waiting for the sentinel (sentinel)" as handed_off
+    state "Sentinel checks the PR (sentinel)" as gating
+    state "Builder fixes what was sent back (builder)" as updating_pr
+    state "Owner makes the merge call (owner)" as owner_merge_call
+    state "Shipped (sentinel)" as closed
+    state "Abandoned (system)" as failed
     [*] --> exploring
-    exploring --> confirm_complete: looks whole
-    confirm_complete --> exploring: no, keep going
-    confirm_complete --> backlog: yes, ticket it
-    exploring --> parked_idea: note a raw idea
-    parked_idea --> confirm_complete: picks it up
-    backlog --> drilling: drill it
-    drilling --> checking: seal score, run checker
-    checking --> queued: go, ob spinoff
-    checking --> drilling: no-go, change ticket
-    drilling --> owner_plan_call: owner's call
-    owner_plan_call --> drilling: answer
-    backlog --> spike: only by trying
-    backlog --> queued: no-check with reason
-    drilling --> spike: only by trying
-    spike --> drilling: answers on parent
-    spike --> closed: spike closed
-    drilling --> queued: no-check with reason
-    queued --> launching: claim
-    launching --> building: thread opened
-    launching --> queued: retry launch
-    launching --> failed: attempt cap hit
-    queued --> failed: abandon
-    building --> failed: abandon or lost trial
-    building --> reviewing: review legs run
-    reviewing --> building: open finding, fix
-    reviewing --> pr_ci: 0 open, open PR
-    pr_ci --> building: CI fails, fix
-    pr_ci --> handed_off: handoff, CI green
-    pr_ci --> owner_call: verdict needs-human
-    owner_call --> handed_off: owner hands off
-    owner_call --> building: owner answers
-    building --> owner_call: verdict blocked
-    building --> partial: verdict partial
-    partial --> building: redispatch
-    handed_off --> gating: read inbox
-    gating --> updating_pr: sendback
-    updating_pr --> handed_off: fixed, handoff again
-    gating --> owner_merge_call: taste, waiver or flake
-    owner_merge_call --> gating: owner answers
-    owner_merge_call --> building: owner sends back for more work
-    gating --> closed: merge, deploy, close
-    closed --> building: reopen
+    exploring --> confirm_complete: idea looks complete
+    confirm_complete --> exploring: needs more thought
+    confirm_complete --> backlog: file the ticket
+    exploring --> parked_idea: park for later
+    parked_idea --> exploring: revisit the idea
+    backlog --> drilling: pick up to shape
+    drilling --> checking: send for brief check
+    checking --> queued: brief passes, dispatch
+    checking --> drilling: gaps found, revise
+    drilling --> owner_plan_call: ask owner
+    owner_plan_call --> drilling: owner answers
+    backlog --> spike: run a spike
+    backlog --> queued: dispatch without check
+    drilling --> spike: run a spike
+    spike --> drilling: report findings
+    drilling --> queued: dispatch without check
+    queued --> launching: pick up from queue
+    launching --> building: builder ready
+    launching --> queued: retry start
+    launching --> failed: start failed
+    queued --> failed: cancelled
+    building --> failed: abandoned
+    building --> reviewing: send for diff review
+    reviewing --> building: issues found, fix
+    reviewing --> pr_ci: review clean, open PR
+    pr_ci --> building: CI failed, fix
+    pr_ci --> handed_off: CI green, hand off
+    pr_ci --> owner_call: needs owner sign-off
+    owner_call --> handed_off: approved, hand off
+    owner_call --> building: unblocked, continue
+    building --> owner_call: blocked, ask owner
+    building --> partial: stopped short
+    partial --> building: steer or restart
+    handed_off --> gating: start check
+    gating --> updating_pr: send back to fix
+    updating_pr --> handed_off: fixed, hand off again
+    gating --> owner_merge_call: ask owner to call it
+    owner_merge_call --> gating: owner decides
+    gating --> closed: merge and ship
     closed --> [*]
     failed --> [*]
     classDef human fill:#ffe08a,stroke:#b8860b,stroke-width:3px,color:#000

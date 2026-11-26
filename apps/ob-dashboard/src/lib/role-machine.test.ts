@@ -1,7 +1,8 @@
-// OS-214: the role and spinoff xstate machines as StateMachine definitions, through fromXState.
+// OS-214: the role and spinoff xstate machines as StateMachine definitions, through fromXState. OS-261: the role
+// machine as persona swimlanes.
 import { describe, expect, it } from "bun:test";
-import { ROLE_TRANSITIONS } from "../../../../platform/state-machine/src/role.ts";
-import { roleDefinition, spinoffDefinition } from "./role-machine.ts";
+import { ROLE_TRANSITIONS, ROLES, STAGES } from "../../../../platform/state-machine/src/role.ts";
+import { roleDefinition, roleLanes, spinoffDefinition } from "./role-machine.ts";
 
 describe("roleDefinition (fromXState over roleMachine)", () => {
   const { states, transitions } = roleDefinition();
@@ -10,6 +11,7 @@ describe("roleDefinition (fromXState over roleMachine)", () => {
   it("owns each state by its role", () => {
     expect(byId.get("drilling")?.owner).toBe("architect");
     expect(byId.get("queued")?.owner).toBe("system");
+    expect(byId.get("backlog")?.owner).toBe("system");
   });
 
   it("marks human states human and keeps the failed end failed", () => {
@@ -25,9 +27,37 @@ describe("roleDefinition (fromXState over roleMachine)", () => {
       expect(transitions.find((d) => d.from === t.from && d.to === t.to && d.event === t.label)?.actor).toBe(t.actor);
     }
   });
+});
 
-  it("names each arrow by its short label", () => {
-    expect(transitions.some((t) => t.from === "spike" && t.to === "closed" && t.event === "spike closed")).toBe(true);
+describe("roleLanes (OS-261)", () => {
+  const { lanes, stages, states, cell } = roleLanes();
+  const byId = new Map(states.map((s) => [s.id, s]));
+
+  it("has one lane per persona and five stages, in order", () => {
+    expect(lanes).toEqual(ROLES);
+    expect(stages).toEqual(STAGES);
+    expect(stages).toEqual(["idea", "plan", "build", "ship", "done"]);
+  });
+
+  it("puts every state in exactly one cell", () => {
+    const placed = lanes.flatMap((r) => stages.flatMap((s) => cell(r, s).map((x) => x.id)));
+    expect([...placed].sort()).toEqual(states.map((s) => s.id).sort());
+  });
+
+  it("puts the owner in every stage he decides in", () => {
+    expect(cell("owner", "idea").map((s) => s.id)).toEqual(["confirm_complete"]);
+    expect(cell("owner", "plan").map((s) => s.id)).toEqual(["owner_plan_call"]);
+    expect(cell("owner", "build").map((s) => s.id)).toEqual(["owner_call"]);
+    expect(cell("owner", "ship").map((s) => s.id)).toEqual(["owner_merge_call"]);
+  });
+
+  it("lists each state's moves with the target's label and the persona that makes it", () => {
+    expect(byId.get("checking")?.moves).toEqual([
+      { to: "queued", toLabel: "Waiting for a builder", label: "brief passes, dispatch", actor: "architect" },
+      { to: "drilling", toLabel: "Architect shapes the ticket", label: "gaps found, revise", actor: "reviewer" },
+    ]);
+    expect(byId.get("exploring")?.kind).toBe("initial");
+    expect(byId.get("closed")?.moves).toEqual([]);
   });
 });
 

@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { decide } from "../src/decide.ts";
 import { exportStates, exportTransitions, renderAll } from "../src/export.ts";
 import { moveEvent, taskMachine } from "../src/item.ts";
-import { MIRRORED_STATES, ROLE_TRANSITIONS, ROLES, ROW_STATE, type RoleStateMeta, roleMachine, STATE_IDS, type Stored } from "../src/role.ts";
+import { MIRRORED_STATES, ROLE_TRANSITIONS, ROLES, ROW_STATE, type RoleStateMeta, roleMachine, STAGES, STATE_IDS, type Stored } from "../src/role.ts";
 import { PHASE_EVENT, PHASES_BY_STATUS, SPINOFF_PHASES, isSpinoffPhase, phaseStateOf, spinoffPhaseMachine } from "../src/spinoff-phase.ts";
 import { SPINOFF_EDGES, type SpinoffState, spinoffMachine } from "../src/spinoff.ts";
 
@@ -25,18 +25,18 @@ describe("the generated files", () => {
     }
   });
 
-  test("the JSON keeps the v1 shape: 21 states, 42 transitions, every endpoint a state", () => {
+  test("the JSON keeps the v1 shape: 21 states, 39 transitions, every endpoint a state", () => {
     const json = JSON.parse(renderAll()["docs/role-state-machine.json"]!);
     expect(json.version).toBe(1);
     expect(json.states).toHaveLength(21);
-    expect(json.transitions).toHaveLength(42);
+    expect(json.transitions).toHaveLength(39);
     const ids = new Set(json.states.map((s: { id: string }) => s.id));
     for (const t of json.transitions) {
       expect(Object.keys(t)).toEqual(["from", "to", "label", "event", "actor", "source"]);
       expect(ids.has(t.from) && ids.has(t.to), `${t.from} -> ${t.to}`).toBe(true);
       expect(json.roles).toContain(t.actor);
     }
-    for (const s of json.states) expect(Object.keys(s)).toEqual(["id", "label", "role", "human_required", "terminal"]);
+    for (const s of json.states) expect(Object.keys(s)).toEqual(["id", "label", "role", "stage", "human_required", "terminal"]);
   });
 
   test("the export reads every move off the machine, in role.ts order", () => {
@@ -120,5 +120,46 @@ describe("the states that mirror the row and phase machines", () => {
         expect(decide(spinoffPhaseMachine, from, PHASE_EVENT[t.to]), at).toEqual({ ok: true, to: phaseStateOf(a.status, t.to) });
       }
     }
+  });
+});
+
+// OS-261: persona labels in plain words, one stage per state, and the three exceptions dropped.
+describe("the persona labels and stages (OS-261)", () => {
+  const meta = (id: string) => roleMachine.states[id]!.meta as RoleStateMeta;
+  const edge = (from: string, to: string) => ROLE_TRANSITIONS.find((t) => t.from === from && t.to === to);
+
+  test("no state or move label carries markdown, a verdict or the old process words", () => {
+    const labels = [...STATE_IDS.map((id) => meta(id).label), ...ROLE_TRANSITIONS.map((t) => t.label)];
+    for (const label of labels) expect(label, label).not.toMatch(/[#*`_]|verdict|no-check|measure twice/i);
+  });
+
+  test("every state sits in one of the five stages", () => {
+    for (const id of STATE_IDS) expect(STAGES, id).toContain(meta(id).stage);
+    expect(meta("exploring").stage).toBe("idea");
+    expect(meta("backlog")).toMatchObject({ label: "Waiting to be shaped", role: "system", stage: "plan" });
+    expect(meta("closed").stage).toBe("done");
+    expect(meta("failed").stage).toBe("done");
+  });
+
+  test("the spike close, the reopen and the merge-call resume are gone; a parked idea goes back to the muse", () => {
+    expect(edge("spike", "closed")).toBeUndefined();
+    expect(edge("closed", "building")).toBeUndefined();
+    expect(edge("owner_merge_call", "building")).toBeUndefined();
+    expect(edge("parked_idea", "confirm_complete")).toBeUndefined();
+    expect(edge("parked_idea", "exploring")).toBeDefined();
+    expect(edge("confirm_complete", "backlog")).toBeDefined();
+    expect(edge("backlog", "drilling")).toBeDefined();
+    expect(edge("checking", "drilling")?.actor).toBe("reviewer");
+  });
+
+  test("every state is reachable from exploring, and only the two ends have no way out", () => {
+    const seen = new Set(["exploring"]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const t of ROLE_TRANSITIONS) if (seen.has(t.from) && !seen.has(t.to)) grew = seen.add(t.to).size > 0;
+    }
+    expect([...seen].sort()).toEqual([...STATE_IDS].sort());
+    const stuck = STATE_IDS.filter((id) => !ROLE_TRANSITIONS.some((t) => t.from === id));
+    expect([...stuck].sort()).toEqual(["closed", "failed"]);
   });
 });
