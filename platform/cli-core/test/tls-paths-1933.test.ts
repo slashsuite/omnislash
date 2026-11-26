@@ -22,7 +22,7 @@ import { cmdWeb, type WebDeps } from "../../../apps/cli/src/commands/web.ts";
 // OB-1933: one TLS path resolver, `ob cert status` that fails on a broken pair, the `ob web` expiry
 // warning and child exit code, and the key-first pair install. No network, no lego, no port bound:
 // real throwaway pairs come from openssl in a temp dir (skipped where openssl is absent), and `ob web`
-// runs against a fake spawn and a fake realtime server.
+// runs against a fake spawn, so no port is bound.
 // -----------------------------------------------------------------------------
 
 const dirs: string[] = [];
@@ -285,7 +285,6 @@ describe("items 3 and 5: `ob web` warns on a near-expiry cert and exits with the
           },
         };
       },
-      startRealtime: () => ({ stop() {} }),
       onSignal: {
         on: (sig, fn) => void handlers.set(sig, fn),
         off: (sig, fn) => {
@@ -329,7 +328,7 @@ describe("items 3 and 5: `ob web` warns on a near-expiry cert and exits with the
     expect((await run(new Date())).out).not.toContain("WARNING");
     const expired = await run(new Date(Date.now() + 40 * DAY));
     expect(expired.out).toMatch(/WARNING: TLS certificate .* EXPIRED on .*; run ob cert renew/);
-    expect(expired.out).toContain("serving OmniSlash dashboard");
+    expect(expired.out).toContain("serving OmniSlash ob-dashboard");
     expect(expired.ctx.exit ?? 0).toBe(0);
   });
 });

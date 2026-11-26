@@ -371,15 +371,14 @@ export const FLAGS = {
   path: { type: "string" },
   "issued-on": { type: "string" },
   bind: { type: "string" },
-  // 220: TLS for `ob web` (both listeners) and the Let's Encrypt rehearsal switch for `ob cert renew`.
+  // 220: TLS for `ob web` and the Let's Encrypt rehearsal switch for `ob cert renew`.
   "tls-cert": { type: "string" },
   "tls-key": { type: "string" },
   // OB-2160: `ob web --prebuilt` serves the dist on disk without building (the server's unit).
   prebuilt: { type: "boolean" },
-  // OB-2199 step 1: `ob web --app <name>` serves apps/<name> on `--port`, and `--no-sidecar-port` opens no :5051 listener.
+  // OB-2199 step 1: `ob web --app <name>` serves apps/<name> on `--port` (default ob-dashboard, OS-214).
   app: { type: "string" },
   port: { type: "string" },
-  "no-sidecar-port": { type: "boolean" },
   staging: { type: "boolean" },
   session: { type: "string" },
   // 1414, OB-2255: `ob t3 architect|sentinel|muse --thread <id>` adopts the caller's own T3 thread as that team role.

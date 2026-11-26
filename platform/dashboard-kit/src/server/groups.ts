@@ -57,11 +57,16 @@ export async function projectGroups(store: Store): Promise<ProjectGroup[]> {
  * What a page shows for `?team=` and `?project=`. A project names its own group, so an old `?project=` link still
  * opens (on that project, inside its group), and a team that does not hold the named project gives way to it. No
  * project: the named team, else the focus project's group, else Slash, else the first. An unknown project is
- * refused, since an empty page for a typo reads as "nothing here"; an unknown team falls back to the default.
+ * refused, since an empty page for a typo reads as "nothing here"; an unknown team falls back to the default. No
+ * projects at all is the empty Other group.
  */
 export async function resolveScope(store: Store, ask: { team?: string | undefined; project?: string | undefined }): Promise<GroupScope> {
   const groups = await projectGroups(store);
-  if (groups.length === 0) throw new AppError("no projects yet (ob project add)");
+  // OS-214: a store with no projects (a fresh SQLite tracker) is an empty page, never a 500. A named project
+  // still has to exist, so it is refused below as before.
+  if (groups.length === 0 && ask.project === undefined) {
+    return { groups, group: { id: OTHER_GROUP, label: "Other", projects: [] }, project: null, projectIds: [] };
+  }
   const groupOf = (projectId: string) => groups.find((g) => g.projects.some((p) => p.id === projectId));
 
   if (ask.project !== undefined) {

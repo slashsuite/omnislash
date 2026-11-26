@@ -2,13 +2,35 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { freshDb, freshDbPath, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { sqliteStoreFor } from "../../../apps/cli/src/db/store.ts";
-import { createSidecar, sameSnapshot, snapshotFrom, startRealtimeServer, type Snapshot } from "../../../apps/cli/src/realtime.ts";
+import { createSidecar, REALTIME_WS_PATH, sameSnapshot, snapshotFrom, type Snapshot } from "../../../apps/cli/src/realtime.ts";
 import { createItem, setBlocked } from "../../../apps/cli/src/items.ts";
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
 // Inject an empty wayfinder-frontier fetcher (221) so the snapshot never hits GitHub in tests.
 const noFrontier = async () => [];
+
+/** The sidecar on a loopback Bun.serve of its own, the way the app's server mounts it (OS-214). */
+function serveSidecar(store: ReturnType<typeof sqliteStoreFor>) {
+  const sidecar = createSidecar({ store, pollMs: 60_000 });
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(req, srv) {
+      const res = await sidecar.fetch(req, (r) => srv.upgrade(r, { data: undefined }));
+      return res ?? new Response("not found", { status: 404 });
+    },
+    websocket: sidecar.websocket,
+  });
+  return {
+    port: server.port!,
+    poll: sidecar.poll,
+    stop() {
+      sidecar.stop();
+      void server.stop(true);
+    },
+  };
+}
 
 describe("realtime snapshot (083)", () => {
   test("snapshotFrom returns the three surfaces + a timestamp, reflecting DB state", async () => {
@@ -52,13 +74,13 @@ describe("the realtime sidecar pushes on change, not on a file event (337)", () 
   test("a poll with nothing connected does nothing, and a poll with no change pushes nothing", async () => {
     const dbPath = freshDbPath();
     const db = openDb(dbPath);
-    const rt = startRealtimeServer({ port: 0, store: sqliteStoreFor(db), pollMs: 60_000 });
+    const rt = serveSidecar(sqliteStoreFor(db));
     try {
       // No client: the read is skipped entirely, which is what keeps a poll affordable on a dashboard
       // nobody is looking at.
       expect(await rt.poll()).toBe(false);
 
-      const ws = new WebSocket(`ws://127.0.0.1:${rt.port}/`);
+      const ws = new WebSocket(`ws://127.0.0.1:${rt.port}${REALTIME_WS_PATH}`);
       const first = await new Promise<string>((resolve, reject) => {
         ws.addEventListener("message", (e) => resolve(String(e.data)), { once: true });
         ws.addEventListener("error", () => reject(new Error("ws failed")), { once: true });
@@ -103,7 +125,6 @@ describe("the mounted sidecar resolves its store through a host thunk (OB-1617)"
         return sqliteStoreFor(db);
       },
       pollMs: 60_000,
-      upgradeOnRoot: false,
     });
     try {
       const res = await sidecar.fetch(new Request("http://x/not-a-sidecar-path"), () => false);
@@ -139,7 +160,7 @@ const insertSpinoff = (db: ReturnType<typeof freshDb>, ref: string) =>
 
 /** A client that records every snapshot it is sent, and can wait for the n-th. */
 function listen(port: number) {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}${REALTIME_WS_PATH}`);
   const got: Snapshot[] = [];
   const waiters: Array<() => void> = [];
   ws.addEventListener("message", (e) => {
@@ -156,7 +177,7 @@ function listen(port: number) {
 describe("a new client does not hide a change from the others (OB-1944)", () => {
   test("two clients connected, a change, a third connects: the next poll delivers it to both", async () => {
     const db = openDb(freshDbPath());
-    const rt = startRealtimeServer({ port: 0, store: sqliteStoreFor(db), pollMs: 60_000 });
+    const rt = serveSidecar(sqliteStoreFor(db));
     try {
       const a = listen(rt.port);
       await a.nth(1);
@@ -195,7 +216,6 @@ describe("the sidecar runs one read at a time (OB-1944)", () => {
         return store;
       },
       pollMs: 60_000,
-      upgradeOnRoot: false,
     });
     const sent: Snapshot[] = [];
     const ws = { send: (m: string) => sent.push(JSON.parse(m).data) } as never;

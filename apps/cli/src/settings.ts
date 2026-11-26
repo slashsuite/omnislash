@@ -169,8 +169,8 @@ export const DEFAULTS: Record<string, string> = {
   // drafts sound like him without re-declaring it per chat. A config row (not schema); empty by default
   // (omitted from the prompt when blank → the exact prior 104/142 shape). Set via `ob whatsapp bio`.
   self_bio: "",
-  // Where `ob web` listens (192): the dashboard on :5050 and its realtime sidecar on :5051 both bind
-  // this address. Loopback by default, so a laptop serves nobody but itself; the always-on server sets
+  // Where `ob web` listens (192): the app on :5050 binds this address, and its realtime socket rides
+  // on the same listener. Loopback by default, so a laptop serves nobody but itself; the always-on server sets
   // its LAN address or, if a wildcard is genuinely needed, "0.0.0.0" deliberately.
   // `--bind` and OMNISLASH_WEB_BIND both outrank this row.
   web_bind: "127.0.0.1",
