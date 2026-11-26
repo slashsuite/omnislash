@@ -1552,7 +1552,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           "Escalates on a failed leg, no score, a wrong, an unproven or a score under 8 (at most two more).",
           "Extra readers: the leg's fallback, the range's other readers, then the other configured ones.",
           "Legs run through review-leg.ts with OB_REVIEW_RUN_ID; tokens are read back from review-legs.jsonl.",
-          "Briefs and findings: <git dir>/ob-review/<ticket>/round-<n>/. Records: review-runs.jsonl.",
+          "Briefs and findings: <git dir>/ob-review/<ticket>/<run id>/. Records: review-runs.jsonl.",
         ],
       },
       readers: {

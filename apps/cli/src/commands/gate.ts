@@ -16,7 +16,7 @@ import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print } from "../output.ts";
 
-export const GATE_FILE = "gate.json";
+const GATE_FILE = "gate.json";
 
 export interface GateStep {
   name: string;
@@ -75,7 +75,7 @@ function git(cwd: string, args: string[]): string {
 }
 
 /** The cache file for (sha, file hash), under the repo's git common dir. */
-export function gateCachePath(root: string, sha: string, fileHash: string): string {
+function gateCachePath(root: string, sha: string, fileHash: string): string {
   const common = git(root, ["rev-parse", "--git-common-dir"]);
   const dir = isAbsolute(common) ? common : join(root, common);
   return join(dir, "ob-gate", `${sha}-${fileHash.slice(0, 16)}.json`);
@@ -85,13 +85,13 @@ export interface RunStep {
   (step: GateStep, root: string): Promise<number>;
 }
 
-/** Run one step with `bash -c` from the repo root, output passed through. */
+/** Run one step with `bash -c` from the repo root. Its stdout goes to our stderr, so `--json` stdout stays one JSON document. */
 const runStepLive: RunStep = async (step, root) => {
   const proc = Bun.spawn(["bash", "-c", step.run], {
     cwd: root,
     env: { ...process.env, ...step.env },
     stdin: "ignore",
-    stdout: "inherit",
+    stdout: 2,
     stderr: "inherit",
   });
   return await proc.exited;

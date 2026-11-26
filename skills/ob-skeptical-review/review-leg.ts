@@ -345,8 +345,8 @@ export function legSpawn(
   argv: string[],
   brief: string,
   env: Record<string, string | undefined> = process.env,
-  cwd: string = process.cwd(),
 ): LegSpawn {
+  const cwd = process.cwd();
   if (argv[0] !== "agy") return { cmd: argv, stdin: brief };
   const baseTmp = env.TMPDIR?.trim() || tmpdir();
   mkdirSync(baseTmp, { recursive: true });

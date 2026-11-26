@@ -186,7 +186,7 @@ The brief is this skill's stance and output format, the scope line
 untracked ones are named on stderr and left out). Every leg runs through `review-leg.ts` (the read-only profile)
 with `OB_REVIEW_RUN_ID` set, so each leg record in `review-legs.jsonl` carries the run, and the command reads the
 leg's tokens back from it. It prints one line per leg (phase, score, counts, tokens) and the path of its findings
-file under `<git dir>/ob-review/<ticket>/round-<n>/` (scratch, never committed); one record per round, with each
+file under `<git dir>/ob-review/<ticket>/<run id>/` (scratch, never committed); one record per round, with each
 leg's verdict and tokens, goes to `review-runs.jsonl` beside `review-legs.jsonl`. Exit 1 on a red gate or when
 every leg failed; then do the pass yourself in a fresh turn with **only** that diff.
 
@@ -198,7 +198,7 @@ keeps the output it printed and exits 124 (report it as `failed (timeout)`), and
 of credits is `skipped (no credits), owed <ref>` (Out of credits rule).
 
 **From round 2 the round is the rebuttal pass.** Write the answers file with one `## <leg>` section per leg that
-returned findings in the previous round, each answering that leg's own findings (copy them from its findings file,
+returned findings (a `wrong`, `stupid`, `overboard` or `unproven` line) in the previous round; the rebuttal answers the ticket's most recent round and runs only those legs, each answering that leg's own findings (copy them from its findings file,
 so verbatim is a file copy):
 
 ```

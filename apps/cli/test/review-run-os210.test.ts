@@ -98,6 +98,7 @@ describe("verdicts", () => {
     const v = parseVerdict("- `wrong:` a.ts:1 x\n* stupid: b\n1. overboard: c\nunproven: d\nunproven: e\naccepted\nrejected: no\nscore: 6/10");
     expect(v).toEqual({ score: 6, wrong: 1, stupid: 1, overboard: 1, unproven: 2, ok: false, accepted: 1, rejected: 1 });
     expect(parseVerdict("ok (4 hunks read)\nscore: 10/10")).toMatchObject({ ok: true, score: 10 });
+    expect(parseVerdict("ok: 7 hunks read\nscore: 10/10").ok).toBe(true);
     expect(parseVerdict("score: none").score).toBeNull();
     expect(parseVerdict("the wrongness of it").wrong).toBe(0);
   });
@@ -180,7 +181,7 @@ describe("reviewRun", () => {
     const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", neon: "stupid: NEON-FINDING\nscore: 7/10", flash: "score: 9/10" });
     await reviewRun("OS-1", {}, first.d);
     const answers = join(dir, "answers.md");
-    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## neon\nrebutted: NEON-ANSWER\n## flash\nnothing to answer\n");
+    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## neon\nrebutted: NEON-ANSWER\n");
     const second = deps({ opus: "accepted\nscore: 9/10", neon: "rejected: still\nscore: 7/10", flash: "score: 9/10" });
     const r = await reviewRun("OS-1", { answers }, second.d);
     expect(r.round).toBe(2);
@@ -192,16 +193,31 @@ describe("reviewRun", () => {
     expect(r.legs.map((l) => [l.leg, l.phase, l.verdict.accepted, l.verdict.rejected])).toEqual([
       ["opus", "rebuttal", 1, 0],
       ["neon", "rebuttal", 0, 1],
-      ["flash", "rebuttal", 0, 0],
     ]);
+    // flash returned no finding, so it is not rerun and needs no section
+    expect(second.ran.map((x) => x.leg)).toEqual(["opus", "neon"]);
+  });
+
+  test("--answers answers the most recent round, even after a fresh round 1 restarted the count", async () => {
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: OLD-FINDING\nscore: 5/10", neon: "score: 9/10", flash: "score: 9/10" }).d);
+    const answers = join(dir, "answers.md");
+    writeFileSync(answers, "## opus\nfixed: x\n");
+    await reviewRun("OS-1", { answers }, deps({ opus: "accepted\nscore: 9/10" }).d);
+    const fresh = await reviewRun("OS-1", {}, deps({ opus: "wrong: NEW-FINDING\nscore: 5/10", neon: "score: 9/10", flash: "score: 9/10" }).d);
+    expect(fresh.round).toBe(1);
+    const again = deps({ opus: "accepted\nscore: 9/10" });
+    const r = await reviewRun("OS-1", { answers }, again.d);
+    expect(r.round).toBe(2);
+    expect(again.ran[0]!.brief).toContain("NEW-FINDING");
+    expect(again.ran[0]!.brief).not.toContain("OLD-FINDING");
   });
 
   test("--answers with no previous round, or missing a leg's section, is refused", async () => {
     const answers = join(dir, "answers.md");
     writeFileSync(answers, "## opus\nfixed: x\n");
     await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no recorded review round");
-    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", neon: "score: 9/10", flash: "score: 9/10" }).d);
-    await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("neon, flash");
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", neon: "stupid: y\nscore: 9/10", flash: "score: 9/10" }).d);
+    await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no '## <leg>' section for: neon");
   });
 
   test("a failed round-1 leg escalates and names its error", async () => {

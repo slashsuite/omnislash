@@ -29,15 +29,15 @@ import type { Flags } from "./ctx.ts";
 type Env = Record<string, string | undefined>;
 
 /** Round 1 escalates when its score is under this. */
-export const ESCALATE_BELOW = 8;
+const ESCALATE_BELOW = 8;
 /** Escalation adds at most this many readers. */
-export const ESCALATE_MAX = 2;
+const ESCALATE_MAX = 2;
 const DEFAULT_COMPLEXITY = 5;
 
 const REPO_ROOT = resolve(import.meta.dir, "../../..");
 const SKILL_DIR = join(REPO_ROOT, "skills/ob-skeptical-review");
 
-export const SCOPE_LINE = "Scope: read the diff above first, then only the files it touches and their direct callers, inside this checkout.";
+const SCOPE_LINE = "Scope: read the diff above first, then only the files it touches and their direct callers, inside this checkout.";
 
 export interface Verdict {
   score: number | null;
@@ -93,7 +93,7 @@ export function parseVerdict(text: string): Verdict {
       if (m) v.score = Number(m[1]);
       else if (/score[`*_]*\s*:\s*none/i.test(line)) v.score = null;
     } else if (k === "ok") {
-      if (!word[2] || line.length <= 4) v.ok = true;
+      v.ok = true;
     } else if (k === "accepted" || k === "rejected") v[k]++;
     else if (word[2]) v[k as "wrong" | "stupid" | "overboard" | "unproven"]++;
   }
@@ -157,7 +157,7 @@ export function skillBrief(skill: string): string {
   return [cut("## The stance", "## Which models"), "## What you return", cut("Each subagent returns a short list", "## Claims review")].join("\n\n");
 }
 
-export function reviewRunsPath(env: Env = process.env): string {
+function reviewRunsPath(env: Env = process.env): string {
   return join(dirname(reviewLegsPath(env)), "review-runs.jsonl");
 }
 
@@ -176,7 +176,7 @@ export function readRunRecords(env: Env = process.env): ReviewRunRecord[] {
 }
 
 /** Sum the tokens of a run's attempts of one leg; null when no attempt left any. */
-export function runTokens(run: string, leg: string, env: Env = process.env): LegTokens | null {
+function runTokens(run: string, leg: string, env: Env = process.env): LegTokens | null {
   let sum: LegTokens | null = null;
   for (const r of readLegRecords(env)) {
     if (r.run !== run || r.leg !== leg || !r.tokens) continue;
@@ -215,7 +215,7 @@ function exec(cmd: string[], cwd: string, env: Env): Exec {
   return { code: p.exitCode ?? 1, out: p.stdout.toString(), err: p.stderr.toString() };
 }
 
-export function liveDeps(cwd: string, io: ConfigIO, env: Env = process.env): ReviewRunDeps {
+function liveDeps(cwd: string, io: ConfigIO, env: Env = process.env): ReviewRunDeps {
   return {
     cwd,
     env,
@@ -278,7 +278,7 @@ async function runLegs(
 }
 
 /** One line per leg, the shape the review line in a commit copies from. */
-export function legLine(l: LegOutcome): string {
+function legLine(l: LegOutcome): string {
   const v = l.verdict;
   const t = l.tokens ? `tokens in ${l.tokens.input} out ${l.tokens.output}` : "tokens -";
   if (l.exit !== 0) return `${l.leg} (${l.phase}): failed (${l.error ?? `exit ${l.exit}`}); ${t}`;
@@ -321,21 +321,22 @@ export async function reviewRun(ticket: string, flags: Flags, d: ReviewRunDeps):
 
   const prior = readRunRecords(d.env).filter((r) => r.ticket === ticket);
   const answersPath = flags.answers === undefined ? null : String(flags.answers);
-  const round = answersPath === null ? 1 : Math.max(0, ...prior.map((r) => r.round)) + 1;
+  // The round answered is the ticket's most recent one, whatever its number: a fresh round 1 after a rebuttal restarts the count.
+  const last = prior.at(-1);
+  const round = answersPath === null ? 1 : (last?.round ?? 0) + 1;
   const run = `${ticket.toLowerCase()}-r${round}-${start.getTime().toString(36)}`;
   const gitDir = gitOk(d, ["rev-parse", "--git-dir"]).trim();
-  const dir = join(isAbsolute(gitDir) ? gitDir : join(d.cwd, gitDir), "ob-review", ticket, `round-${round}`);
+  const dir = join(isAbsolute(gitDir) ? gitDir : join(d.cwd, gitDir), "ob-review", ticket, run);
 
   let legs: LegOutcome[];
   let escalated = false;
   let reason: string | null = null;
   if (answersPath !== null) {
-    const last = prior.filter((r) => r.round === round - 1).at(-1);
     if (!last) throw new AppError(`--answers needs a previous round: ${ticket} has no recorded review round; run \`ob review run ${ticket}\` first`);
     if (!existsSync(answersPath)) throw new AppError(`no answers file at ${answersPath}`);
     const answers = parseAnswers(readFileSync(answersPath, "utf8"));
-    const ran = last.legs.filter((l) => l.exit === 0);
-    if (ran.length === 0) throw new AppError(`round ${round - 1} of ${ticket} has no leg that returned findings to answer; run a fresh round 1`);
+    const ran = last.legs.filter((l) => l.exit === 0 && l.verdict.wrong + l.verdict.stupid + l.verdict.overboard + l.verdict.unproven > 0);
+    if (ran.length === 0) throw new AppError(`round ${last.round} of ${ticket} has no leg that returned findings to answer; run a fresh round 1`);
     const missing = ran.filter((l) => !answers.has(l.leg)).map((l) => l.leg);
     if (missing.length) throw new AppError(`the answers file has no '## <leg>' section for: ${missing.join(", ")}`);
     legs = await runLegs(
@@ -347,7 +348,7 @@ export async function reviewRun(ticket: string, flags: Flags, d: ReviewRunDeps):
         phase: "rebuttal" as const,
         brief: [
           shared,
-          `## Your previous findings (round ${round - 1})\n\n${existsSync(l.out) ? readFileSync(l.out, "utf8").trim() : "(the previous findings file is gone)"}`,
+          `## Your previous findings (round ${last.round})\n\n${existsSync(l.out) ? readFileSync(l.out, "utf8").trim() : "(the previous findings file is gone)"}`,
           `## The builder's answers\n\n${answers.get(l.leg)}`,
           "Answer each previous finding `accepted` or `rejected: ...` first, in order, then any new finding, then the score.",
         ].join("\n\n"),
