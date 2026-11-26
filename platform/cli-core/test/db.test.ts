@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import {
   localDateStamp,
   monthStamp,
@@ -17,6 +20,11 @@ import {
   SNAPSHOT_PREFIX,
   LEGACY_SNAPSHOT_PREFIX,
   planSnapshotRotation,
+  readSnapshots,
+  SNAPSHOT_KEEP_HOURLY,
+  SNAPSHOT_KEEP_DAILY,
+  SNAPSHOT_MAX_BYTES,
+  SNAPSHOT_RESERVE_BYTES,
   fmtBytes,
   ensureGh,
   type SnapshotEntry,
@@ -278,6 +286,71 @@ describe("planSnapshotRotation: the age policy", () => {
     const plan = planSnapshotRotation(entries, { keepHourly: 0, keepDaily: 0 });
     expect(plan.keep.length).toBe(1);
     expect(plan.keep[0]!.name).toBe(entries[0]!.name);
+  });
+});
+
+describe("planSnapshotRotation: the default policy (OB-2581, 24 hourly plus 14 daily)", () => {
+  // Hourly copies at :30 for 20 days, so the default must keep two weeks and prune the rest.
+  const now = new Date(2026, 7, 20, 12, 30, 0);
+  const all = Array.from({ length: 20 * 24 }, (_, i) => snap(now, i));
+
+  test("the defaults are 24 hourly, 14 daily and a 12 GiB ceiling", () => {
+    expect(SNAPSHOT_KEEP_HOURLY).toBe(24);
+    expect(SNAPSHOT_KEEP_DAILY).toBe(14);
+    expect(SNAPSHOT_MAX_BYTES).toBe(12 * 1024 ** 3);
+    expect(SNAPSHOT_RESERVE_BYTES).toBe(512 * 1024 ** 2);
+  });
+
+  test("keeps the newest 24, then the newest copy of each of the next 14 days, and prunes the rest oldest first", () => {
+    const plan = planSnapshotRotation(all);
+    const hourly = all.slice(0, 24);
+    // After the hourly window the first older copy is 24h ago (Aug 19 12:30); each earlier day's
+    // newest copy is its 23:30.
+    const daily = [all[24]!, ...Array.from({ length: 13 }, (_, i) => snap(new Date(2026, 7, 18 - i, 23, 30, 0), 0))];
+    expect(names(plan.keep)).toEqual([...names(hourly), ...names(daily)]);
+    expect(plan.keep.length).toBe(38);
+    expect(plan.keep.at(-1)!.taken).toEqual(new Date(2026, 7, 6, 23, 30, 0));
+
+    const kept = new Set(names(plan.keep));
+    const expectedPrune = all.filter((e) => !kept.has(e.name)).reverse();
+    expect(names(plan.prune)).toEqual(names(expectedPrune));
+    expect(plan.prune.length).toBe(all.length - 38);
+    for (let i = 1; i < plan.prune.length; i++) {
+      expect(plan.prune[i]!.taken.getTime()).toBeGreaterThan(plan.prune[i - 1]!.taken.getTime());
+    }
+    // nothing older than the 14th day survives
+    expect(plan.prune[0]!.taken).toEqual(all.at(-1)!.taken);
+    expect(plan.shortfallBytes).toBe(0);
+  });
+
+  test("with maxBytes 1 and no free space the newest is still kept", () => {
+    const plan = planSnapshotRotation(all, { maxBytes: 1, freeBytes: 0 });
+    expect(names(plan.keep)).toEqual([all[0]!.name]);
+    expect(plan.prune.length).toBe(all.length - 1);
+  });
+
+  test("a single snapshot prunes nothing", () => {
+    const only = snap(now, 0);
+    const plan = planSnapshotRotation([only]);
+    expect(names(plan.keep)).toEqual([only.name]);
+    expect(plan.prune).toEqual([]);
+  });
+
+  test("omnibus.sqlite and pre-migration.dump in the directory are never read, so never pruned", () => {
+    const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "ob2581-snap-"));
+    try {
+      for (const e of all) writeFileSync(join(dir, e.name), "x");
+      for (const foreign of ["omnibus.sqlite", "pre-migration.dump"]) writeFileSync(join(dir, foreign), "keep me");
+      const found = readSnapshots(dir);
+      expect(found.length).toBe(all.length);
+      const plan = planSnapshotRotation(found, { maxBytes: 1, freeBytes: 0 });
+      const touched = [...names(plan.keep), ...names(plan.prune)];
+      expect(touched).not.toContain("omnibus.sqlite");
+      expect(touched).not.toContain("pre-migration.dump");
+      expect(plan.keep.length).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
