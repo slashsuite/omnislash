@@ -269,6 +269,13 @@ process.env.OB_T3_CREDENTIAL_FILE ??= join(scratch, "no-such-t3-credential");
 delete process.env.T3CODE_THREAD_ID;
 
 /**
+ * The private rules directory (OS-237). `ob` hands OB_REPOS_DIR to every child (OB-2360), so a suite run under
+ * `ob gate run` or `ob review run` read the live `repos/omnislash/AGENTS.md` into every launch prompt and failed
+ * five prompt tests that pass under a bare `moon run`. Deleted: a test that wants rules seeds its own directory.
+ */
+delete process.env.OB_REPOS_DIR;
+
+/**
  * The Postgres harness's own lifecycle (325): the stale-cluster sweep, a per-test lease release and the
  * postmaster shutdown. Registered here for the same reason as everything else in this file -- it is the
  * one scope that covers every test file, including the ones nobody has written yet. It starts nothing:

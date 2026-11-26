@@ -1,5 +1,6 @@
 // OS-214: the role and spinoff xstate machines as StateMachine definitions, through fromXState.
 import { describe, expect, it } from "bun:test";
+import { ROLE_TRANSITIONS } from "../../../../platform/state-machine/src/role.ts";
 import { roleDefinition, spinoffDefinition } from "./role-machine.ts";
 
 describe("roleDefinition (fromXState over roleMachine)", () => {
@@ -16,6 +17,13 @@ describe("roleDefinition (fromXState over roleMachine)", () => {
     expect(byId.get("owner_call")?.kind).toBe("human");
     expect(byId.get("failed")?.kind).toBe("failed");
     expect(byId.get("closed")?.kind).toBe("terminal");
+  });
+
+  it("gives every arrow the actor role.ts names for its move (OS-237)", () => {
+    expect(transitions).toHaveLength(ROLE_TRANSITIONS.length);
+    for (const t of ROLE_TRANSITIONS) {
+      expect(transitions.find((d) => d.from === t.from && d.to === t.to && d.event === t.label)?.actor).toBe(t.actor);
+    }
   });
 
   it("names each arrow by its short label", () => {

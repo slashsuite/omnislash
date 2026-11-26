@@ -26,6 +26,15 @@ describe("RoleMachine (OS-187)", () => {
     expect(screen.getByRole("img", { name: "OS-170 Empty state, in Owner's call (verdict blocked or needs-human)" })).toBeTruthy();
   });
 
+  it("keys every role in the legend, the owner on his own pinned colour (OS-237)", () => {
+    render(<RoleMachine tickets={[]} />);
+    const legend = screen.getByRole("list", { name: "Role state machine: roles" });
+    const swatch = (role: string) => within(legend).getByText(role).previousElementSibling?.className ?? "";
+    expect(swatch("owner")).toContain("text-orange-600");
+    const roles = within(legend).getAllByRole("listitem").map((li) => li.textContent);
+    expect(roles).toEqual(expect.arrayContaining(["owner", "muse", "architect", "builder", "reviewer", "sentinel", "system"]));
+  });
+
   it("maps human states to human, the failed end to failed and the other ends to terminal", () => {
     const kinds = new Map(states.map((s) => [s.id, s.kind]));
     expect(kinds.get("owner_call")).toBe("human");

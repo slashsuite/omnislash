@@ -1,12 +1,19 @@
 // OS-187, OS-214: the role and spinoff xstate machines (platform/state-machine) drawn by uislash's StateMachine,
 // through fromXState. The role machine's meta sets each state's owner and whether a person must act on it; the
-// failed end keeps its own tone. Pure: nothing here reads a file or the store.
-import { fromXState, type StateMachineDefinition, type StateMachineItem, type XStateMachineLike } from "@slashsuite/ui-react";
-import { type RoleStateMeta, roleMachine } from "../../../../platform/state-machine/src/role.ts";
+// failed end keeps its own tone. OS-237: each transition's meta.actor (role.ts) reaches fromXState as the arrow's
+// actor, so a line takes the colour of the role that makes the move. Pure: nothing here reads a file or the store.
+import { type CategoryTone, fromXState, type StateMachineDefinition, type StateMachineItem, type XStateMachineLike } from "@slashsuite/ui-react";
+import { type Role, type RoleStateMeta, roleMachine } from "../../../../platform/state-machine/src/role.ts";
 import { spinoffMachine } from "../../../../platform/state-machine/src/spinoff.ts";
 
 /** A ticket in flight: its ref, its title and the id of the role state it is in. */
 export type RoleTicket = { ref: string; title: string; state: string };
+
+/**
+ * OS-237: the owner keeps one colour whatever other roles the machine has, so the states and moves that are his
+ * read the same on every diagram. The other roles take the next colours in order.
+ */
+export const ROLE_TONES: Readonly<Partial<Record<Role, CategoryTone>>> = { owner: "cat2" };
 
 /** The one terminal state that means the work stopped, drawn in the danger tone rather than as done. */
 const FAILED = "failed";
