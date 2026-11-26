@@ -162,12 +162,12 @@ export async function projectRepoPrivate(
     return;
   }
   const dir = typeof dirFlag === "string" ? dirFlag : process.cwd();
-  const res = installOpencodeWiring(name, dir);
+  const res = installOpencodeWiring(name, dir, { built: true });
   if (mode === "json") print(JSON.stringify({ project: name, dir, ...res }, null, 2));
   else if (mode !== "quiet") {
     print(
       res.installed.length === 0 && res.kept.length === 0
-        ? `no opencode wiring for '${name}'`
+        ? `no opencode wiring for '${name}' (not a plain project name)`
         : `${name}: installed ${res.installed.length}, kept ${res.kept.length} (already in ${dir}/.opencode)`,
     );
     if (res.excludeFailed) print(`warning: could not write ${dir}'s git info/exclude; the installed files will show in git status`);

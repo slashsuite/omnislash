@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, appendFileSync, realpathSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, appendFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stageLine } from "./stage.ts";
@@ -13,6 +13,11 @@ import { stageLine } from "./stage.ts";
 //                                a checkout's `.opencode/` by `ob project wire` and by every spinoff launch
 //
 // A project with neither directory behaves exactly as before: no rules, nothing installed.
+//
+// OS-217: the public repo carries no `.opencode/` and no `repos/`, so `ob project wire` also BUILDS the wiring
+// every repo needs from this checkout's `apps/cli/opencode/`: one re-export shim per ob plugin (pointing at
+// this checkout's absolute path), the architect launcher, and starting points for the agent, the command
+// and SOUL.md. A private `repos/<project>/opencode/` file of the same name wins over the built one.
 
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -73,6 +78,47 @@ export function opencodeWiringFiles(project: string): string[] {
     }
   };
   walk("");
+  return out;
+}
+
+/** Where the shipped opencode sources live: `apps/cli/opencode/` in this checkout. */
+export function opencodeSourceDir(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "..", "opencode");
+}
+
+/** ob's four opencode runtime plugins, each `apps/cli/opencode/plugins/<id>.ts`. */
+export const OB_PLUGINS = ["ob-heartbeat", "ob-memory", "ob-skills", "ob-soul"] as const;
+
+/** Files `ob project wire` writes only when missing: they are starting points the repo is meant to edit. */
+const SEED_FILES = ["SOUL.md", "agents/architect.md", "commands/ob-architect.md"] as const;
+
+/** One file of built wiring: its path under `.opencode/`, its content, and how it is written. */
+export interface BuiltWiringFile {
+  rel: string;
+  content: string;
+  /** Written only when the target does not exist yet. */
+  seed: boolean;
+  /** File mode, for the executable launcher. */
+  mode?: number;
+}
+
+/**
+ * The wiring `ob project wire` builds for any repo from this checkout (OS-217). Pure given the shipped files.
+ * The plugin shims re-export by absolute path, so they work from any checkout on this machine.
+ */
+export function builtWiring(project: string): BuiltWiringFile[] {
+  const src = opencodeSourceDir();
+  const out: BuiltWiringFile[] = OB_PLUGINS.map((id) => ({
+    rel: `plugins/${id}.ts`,
+    content:
+      `// Installed by \`ob project wire\`: re-exports ob's ${id} plugin from this machine's OmniSlash checkout.\n` +
+      `export { default } from ${JSON.stringify(join(src, "plugins", `${id}.ts`))};\n`,
+    seed: false,
+  }));
+  out.push({ rel: "architect-tui.sh", content: readFileSync(join(src, "architect-tui.sh"), "utf8"), seed: false, mode: 0o755 });
+  for (const rel of SEED_FILES) {
+    out.push({ rel, content: readFileSync(join(src, "templates", rel), "utf8").replaceAll("{{project}}", project), seed: true });
+  }
   return out;
 }
 
@@ -157,26 +203,46 @@ function excludeFile(dir: string): string | null {
  * TRACK as its own, so a repo that still commits its wiring keeps every file it commits. ob's own untracked
  * copies are refreshed, so a long-lived checkout picks up a change to `repos/<project>/opencode` instead of
  * pinning the first version it ever installed. Installed files are listed in the checkout's `info/exclude`,
- * which keeps the worktree clean (`ob spinoff handoff` refuses a dirty tree). A project with no wiring is a
- * no-op that touches nothing, not even git.
+ * which keeps the worktree clean (`ob spinoff handoff` refuses a dirty tree).
+ *
+ * With `built` (the `ob project wire` command, OS-217) the files from `builtWiring` go in first and a private
+ * file of the same path replaces its built one; a built starting point (SOUL.md, the agent, the command) is
+ * never written over an existing file. Without it (a spinoff launch) only the private files are installed,
+ * and a project with none is a no-op that touches nothing, not even git.
  */
-export function installOpencodeWiring(project: string, dir: string): WiringResult {
-  const files = opencodeWiringFiles(project);
+export function installOpencodeWiring(project: string, dir: string, opts: { built?: boolean } = {}): WiringResult {
+  const privateFiles = opencodeWiringFiles(project);
   const result: WiringResult = { installed: [], kept: [], excludeFailed: false };
-  if (files.length === 0) return result;
-  const src = join(projectDir(project) as string, "opencode");
+  const plan = new Map<string, { write: (target: string) => void; seed: boolean }>();
+  if (opts.built && projectDir(project) !== null) {
+    for (const f of builtWiring(project)) {
+      plan.set(f.rel, {
+        seed: f.seed,
+        write: (target) => {
+          writeFileSync(target, f.content);
+          if (f.mode !== undefined) chmodSync(target, f.mode);
+        },
+      });
+    }
+  }
+  if (privateFiles.length > 0) {
+    const src = join(projectDir(project) as string, "opencode");
+    for (const rel of privateFiles) plan.set(rel, { seed: false, write: (target) => copyFileSync(join(src, rel), target) });
+  }
+  if (plan.size === 0) return result;
   const dest = join(resolve(dir), ".opencode");
   const root = checkoutRoot(dir);
   const prefix = root ? opencodePrefix(root, dir) : "";
   const tracked = root ? trackedOpencodeFiles(dir, prefix) : new Set<string>();
-  for (const rel of files) {
+  for (const rel of [...plan.keys()].sort()) {
+    const step = plan.get(rel)!;
     const target = join(dest, rel);
-    if (tracked.has(rel)) {
+    if (tracked.has(rel) || (step.seed && existsSync(target))) {
       result.kept.push(rel);
       continue;
     }
     mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(join(src, rel), target);
+    step.write(target);
     result.installed.push(rel);
   }
   if (result.installed.length > 0) {
