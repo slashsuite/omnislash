@@ -83,7 +83,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
   `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The Opus leg is never skipped on this rule, and the Neon leg is never skipped when the builder ran another model (on a range with two legs, a builder on one still gets the other independent reader; with Opus down, the unavailable rule below applies).
 - **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ neon: failed (exit 1: model gemini-4-neon unavailable)`), never a bare `failed`. It is never retried around and
-  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the fallback
+  never blocks the land; the review still stands on the readers that ran. The Opus leg failing is handled by the unavailable
   rule below.
 - **Profiles first.** `review-leg.ts` already reruns a leg that ends on a credit or quota error on the
   next models profile that gives that leg another (kind, model) (`ob models show`, the `fallback` list), and says so on
@@ -109,7 +109,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
 - **Optional legs:** `opencode-go/claude-haiku-5-5#high` and `opencode-go/qwen3.8-flash#high` (paid, so only while the
   account is funded). Their disagreement is signal; add one only to settle a thin or disputed finding, and never
   while `ob creds check opencode-go` warns "running low".
-- **A leg unavailable** → review readers are Opus only (OS-238), so an unavailable Opus is never stood in for by neon or any other non-Opus model, by a configured `fallback` or by a hand-run pass (OS-248). Wait for Opus and retry: run `ob review run` (or the leg) again once Opus answers. Until it does, the leg is reported `failed` with its reason and the work is not `landable` on that review; the report says so. The review is never skipped and never stamped
+- **A leg unavailable** → review readers are Opus only (OS-238), so an unavailable Opus is never stood in for by neon or any other non-Opus model, by a configured `fallback` or by a hand-run pass (OS-248). Wait for Opus and retry: run `ob review run` (or the leg) again once Opus answers. Until it does, the leg is reported `failed` with its reason; the report says so. The review is never skipped and never stamped
   `needs-human` for want of a reviewer.
 - **Independence, not consensus.** Each leg gets the **same shared part of the brief** and the **same diff**, and
   from round 2 only its **own** previous findings and answers (How to run), with **no knowledge of the others'
@@ -190,8 +190,8 @@ untracked ones are named on stderr and left out). Every leg runs through `review
 with `OB_REVIEW_RUN_ID` set, so each leg record in `review-legs.jsonl` carries the run, and the command reads the
 leg's tokens back from it. It prints one line per leg (phase, score, counts, tokens) and the path of its findings
 file under `<git dir>/ob-review/<ticket>/<run id>/` (scratch, never committed); one record per round, with each
-leg's verdict and tokens, goes to `review-runs.jsonl` beside `review-legs.jsonl`. Exit 1 on a red gate or when
-every leg failed; then wait for Opus and run `ob review run` again (or retry the failed leg). Never hand the pass to neon or another non-Opus model (OS-248).
+leg's verdict and tokens, goes to `review-runs.jsonl` beside `review-legs.jsonl`. Exit 1 on a red gate (no leg ran: fix the gate, then run it again) or when
+every leg failed (wait for Opus, then run `ob review run` again). Never hand the pass to neon or another non-Opus model (OS-248).
 
 Each leg ends on its own: an attempt that passes 15 minutes (`OB_REVIEW_LEG_TIMEOUT_S` overrides) is killed,
 keeps the output it printed and exits 124 (report it as `failed (timeout)`), and a reader has 40 turns
