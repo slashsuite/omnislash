@@ -389,7 +389,7 @@ export async function refuseUncheckedDispatch(
   const fix = (what: string): AppError =>
     new AppError(
       `not dispatched: ${what}. Nothing was queued. Run "Measure twice" in skills/ob-architect, record it with ` +
-        `'ob spinoff check ${ref} --architect <json> --checker <json> [--resolutions <json>]', then dispatch again; ` +
+        `'ob spinoff check ${ref} --architect <json> --reviewer <json> [--resolutions <json>]', then dispatch again; ` +
         `or override with 'ob spinoff ${ref} --no-check '<why>''`,
     );
   // OB-1826: a spike investigates what reading cannot settle, so asking it for confidence first would be

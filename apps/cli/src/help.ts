@@ -1078,14 +1078,14 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["spinoff list", "spinoff list --status building --team core"],
       },
       check: {
-        summary: "Record architect and checker sheets to pass the pre-dispatch gate",
-        usage: ["spinoff check <ref> --architect <json|file> --checker <json|file> [--resolutions <json|file>]"],
+        summary: "Record architect and reviewer sheets to pass the pre-dispatch gate",
+        usage: ["spinoff check <ref> --architect <json|file> --reviewer <json|file> [--resolutions <json|file>]"],
         flags: [
           { flag: "--architect <j>", description: "Architect readiness JSON or file path (required)" },
-          { flag: "--checker <j>", description: "Independent checker JSON or file path (required)" },
-          { flag: "--resolutions <j>", description: "JSON list of resolutions for checker questions" },
+          { flag: "--reviewer <j>", description: "Independent reviewer JSON or file path (required; old name --checker)" },
+          { flag: "--resolutions <j>", description: "JSON list of resolutions for reviewer questions" },
         ],
-        examples: ["spinoff check APP-12 --architect arch.json --checker check.json"],
+        examples: ["spinoff check APP-12 --architect arch.json --reviewer review.json"],
         notes: ["Exit 0 on go, exit 1 on no-go; --questions-resolved is retired in favor of --resolutions."],
       },
       overlap: {
@@ -1783,7 +1783,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     notes: [
       "Builder routes: builder.<from>-<to>, covering 1-10; builder.simple|medium|complex read 1-3, 4-6, 7-10.",
       "The dashboard's Models page edits, splits and merges the builder and review ranges as rows.",
-      "Routes: builder.*, checker, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
+      "Routes: builder.*, reviewer, role.<role>, sweep.first|escalate, subagent.explore|fixup, job.<name>.",
       "Precedence: the local models file, then the server's model_routes, then the default.",
       "builder.* and role.* routes need <provider>:<model>: set refuses a bare id, show flags one stored.",
       "A launch moves along a route's chain only on a credit or quota error.",

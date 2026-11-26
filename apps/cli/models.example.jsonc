@@ -12,11 +12,11 @@
   "fallback": ["claude"],
   "profiles": {
     "claude": {
-      // The blind scorer in the planner's measure-twice step.
-      "checker": "claude-haiku-5-5",
+      // The blind scorer in the planner's measure-twice step (the reviewer role; "checker" is its old name).
+      "reviewer": "claude-haiku-5-5",
       // Any route, as a fallback chain with an optional effort (OS-145). Routes: builder.<from>-<to>,
-      // checker, role.architect|sentinel|muse, sweep.first, sweep.escalate, subagent.explore, subagent.fixup,
-      // job.<name>. An entry here beats the same route in "checker" above.
+      // reviewer, role.architect|sentinel|muse, sweep.first, sweep.escalate, subagent.explore, subagent.fixup,
+      // job.<name>. An entry here beats the same route in "reviewer" above.
       "routes": {
         // Which model a spinoff builder runs on, by `ob spinoff --complexity <1-10>` (OS-177). The ranges must
         // cover 1-10 with no gap and no overlap. 1-3 runs DeepSeek on opencode, and the planner dispatches
@@ -45,7 +45,7 @@
     //     "builder.4-6": { "chain": ["claudeAgent2:claude-sonnet-5-5"] },
     //     "builder.7-10": { "chain": ["claudeAgent2:claude-opus-5-5"] }
     //   },
-    //   "checker": "claude-haiku-5-5",
+    //   "reviewer": "claude-haiku-5-5",
     //   "review": { "opus": "claude-opus-5-5" }
     // }
   }

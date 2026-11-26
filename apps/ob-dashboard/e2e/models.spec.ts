@@ -60,7 +60,7 @@ test("the header's Models tab opens every route with where its model comes from"
   await expect(row(page, "builder.complex")).toHaveCount(0);
   await expect(row(page, "job.nightly").getByText("server", { exact: true })).toBeVisible();
   await expect(row(page, "role.architect").getByText("server (builder.complex)", { exact: true })).toBeVisible();
-  await expect(row(page, "checker").getByText("default", { exact: true })).toBeVisible();
+  await expect(row(page, "reviewer").getByText("default", { exact: true })).toBeVisible();
 
   // The host's models file overrides sweep.first: the row says so and names the file, and its editor holds the
   // server value (none here), not the file's model: the file itself is never edited from the page.
@@ -171,12 +171,12 @@ test("unsetting the builder ranges drops them back to the defaults", async ({ pa
 
 test("a route set with the CLI shows on the page after a reload", async ({ page }) => {
   await open(page, "/models");
-  await expect(row(page, "checker").getByText("default", { exact: true })).toBeVisible();
-  ob("set", "checker", "claude-opus-5-5");
+  await expect(row(page, "reviewer").getByText("default", { exact: true })).toBeVisible();
+  ob("set", "reviewer", "claude-opus-5-5");
   await page.reload();
   await expect(page.locator("html[data-hydrated]")).toBeAttached();
-  await expect(row(page, "checker").getByText("server", { exact: true })).toBeVisible();
-  await expect(row(page, "checker").getByRole("combobox", { name: "Model 1 for checker" })).toHaveValue("claude-opus-5-5");
+  await expect(row(page, "reviewer").getByText("server", { exact: true })).toBeVisible();
+  await expect(row(page, "reviewer").getByRole("combobox", { name: "Model 1 for reviewer" })).toHaveValue("claude-opus-5-5");
 });
 
 test("a reader is added", async ({ page }) => {

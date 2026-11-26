@@ -5589,9 +5589,9 @@ function inlineCheckFiles(argv: string[]): DispatchRewrite {
   const out = [...argv];
   try {
     for (let i = 0; i < out.length; i++) {
-      const eq = out[i]!.match(/^--(architect|checker|resolutions)=(.*)$/s);
+      const eq = out[i]!.match(/^--(architect|reviewer|checker|resolutions)=(.*)$/s);
       if (eq) out[i] = `--${eq[1]}=${JSON.stringify(readCheckInput(eq[1]!, eq[2]!))}`;
-      else if ((out[i] === "--architect" || out[i] === "--checker" || out[i] === "--resolutions") && i + 1 < out.length) {
+      else if (["--architect", "--reviewer", "--checker", "--resolutions"].includes(out[i]!) && i + 1 < out.length) {
         out[i + 1] = JSON.stringify(readCheckInput(out[i]!.slice(2), out[i + 1]!));
       }
     }
@@ -6164,24 +6164,28 @@ async function resolveIssueRefOn(
   return { ticketRef: `#${issue.number}`, branch: deriveBranch(issue.number, issue.title), head, issue };
 }
 
-const QUESTIONS_RESOLVED_REPLACED = "--questions-resolved is replaced by --resolutions (one entry per checker question); see 'ob --help'";
+const QUESTIONS_RESOLVED_REPLACED = "--questions-resolved is replaced by --resolutions (one entry per reviewer question); see 'ob --help'";
 
 /** `ob spinoff check`'s arguments, on whichever machine holds the JSON files (OB-1825, OB-2131). */
 export function spinoffCheckArgs(ctx: {
   args: string[];
-  flags: { architect?: string; checker?: string; resolutions?: string; "questions-resolved"?: boolean };
+  flags: { architect?: string; reviewer?: string; checker?: string; resolutions?: string; "questions-resolved"?: boolean };
 }): { ref: string; architect: unknown; checker: unknown; resolutions: unknown } {
   // OB-2131: a bare yes lost which question was answered and how, so it is refused, not aliased.
   if (ctx.flags["questions-resolved"] !== undefined) throw new UsageError(QUESTIONS_RESOLVED_REPLACED);
   const ref = ctx.args[1];
-  const { architect, checker, resolutions } = ctx.flags;
-  if (!ref || architect === undefined || checker === undefined) {
-    throw new UsageError("spinoff check requires <ticket> --architect <json|file> --checker <json|file> [--resolutions <json|file>]");
+  const { architect, reviewer, checker, resolutions } = ctx.flags;
+  // OS-243: `--checker` is the old name of `--reviewer`, kept for one release. The sheet is still stored as `checker`.
+  if (reviewer !== undefined && checker !== undefined) throw new UsageError("spinoff check: pass --reviewer only (--checker is its old name)");
+  if (checker !== undefined) warn("note: --checker is now --reviewer; the old name still works for one release");
+  const sheet = reviewer ?? checker;
+  if (!ref || architect === undefined || sheet === undefined) {
+    throw new UsageError("spinoff check requires <ticket> --architect <json|file> --reviewer <json|file> [--resolutions <json|file>]");
   }
   return {
     ref,
     architect: readCheckInput("architect", architect),
-    checker: readCheckInput("checker", checker),
+    checker: readCheckInput(reviewer !== undefined ? "reviewer" : "checker", sheet),
     resolutions: resolutions === undefined ? undefined : readCheckInput("resolutions", resolutions),
   };
 }

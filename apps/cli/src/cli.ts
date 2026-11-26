@@ -243,10 +243,12 @@ export const FLAGS = {
   // behalf during a land, and the architect IS the thread the note goes to: so the caller that is its own
   // audience says so, and nothing is queued.
   "no-note": { type: "boolean" },
-  // OB-1825: `ob spinoff check --architect <json> --checker <json> [--resolutions <json>]`, and the deliberate
+  // OB-1825: `ob spinoff check --architect <json> --reviewer <json> [--resolutions <json>]` (OS-243: `--checker` is
+  // the old name of `--reviewer`, kept for one release), and the deliberate
   // `ob spinoff <ref> --no-check '<why>'`. A string, so an empty reason reaches the refusal instead of the parser.
   // OB-2131: `--questions-resolved` was replaced by `--resolutions`; it stays declared only so the refusal names it.
   architect: { type: "string" },
+  reviewer: { type: "string" },
   checker: { type: "string" },
   resolutions: { type: "string" },
   "questions-resolved": { type: "boolean" },

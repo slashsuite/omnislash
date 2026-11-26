@@ -269,8 +269,8 @@ export function reviewModelFor(review: Readonly<Record<string, string>> | undefi
   return undefined;
 }
 
-/** The architect's checker model when no profile names one (the measure-twice step runs Haiku). */
-export const DEFAULT_CHECKER = "claude-haiku-5-5";
+/** The reviewer route's model when no profile names one (the measure-twice step runs Haiku). */
+export const DEFAULT_REVIEWER = "claude-haiku-5-5";
 
 /** The file did not parse or does not make sense. The message names the file and what is wrong. */
 export class ModelsFileError extends Error {}
@@ -284,7 +284,7 @@ export const FIXED_ROUTES = [
   "builder.simple",
   "builder.medium",
   "builder.complex",
-  "checker",
+  "reviewer",
   "role.architect",
   "role.sentinel",
   "role.muse",
@@ -297,6 +297,17 @@ export type FixedRoute = (typeof FIXED_ROUTES)[number];
 
 /** A daily scheduled prompt's route: `job.` and a lowercase name. */
 export const JOB_ROUTE = /^job\.[a-z0-9-]+$/;
+
+/**
+ * OS-243: old route names, read as their new one for one release. `checker` became `reviewer` when OS-236 merged
+ * the checker and the skeptical reviewer into one role. Remove after the next release.
+ */
+export const ROUTE_ALIASES: Readonly<Record<string, FixedRoute>> = { checker: "reviewer" };
+
+/** A route name with any old alias replaced by its new name. Pure. */
+export function canonicalRoute(name: string): string {
+  return Object.hasOwn(ROUTE_ALIASES, name) ? ROUTE_ALIASES[name]! : name;
+}
 
 export function isRouteName(name: string): boolean {
   return (FIXED_ROUTES as readonly string[]).includes(name) || JOB_ROUTE.test(name) || builderRangeOf(name) !== null;
@@ -337,7 +348,8 @@ export function checkRouteSpec(where: string, v: unknown): RouteSpec {
 
 export interface ModelsProfile {
   builder: Partial<Record<SpinoffTier, string>>;
-  checker?: string;
+  /** The old one-model `reviewer` key (`checker` before OS-243, still read). */
+  reviewer?: string;
   /** Review leg name (`neon`, `opus`; `sonnet` is read as `opus`; `deepseek` and `luna` are refused, OS-206) to model id. */
   review: Record<string, string>;
   /** OS-145: route overrides for this machine (`builder.medium`, `role.architect`, `job.<name>`, ...). */
@@ -411,8 +423,8 @@ function modelString(path: string, where: string, v: unknown): string {
  *
  * OS-145: the file is a per-machine override of the server's `model_routes`, so `"active"`, `"fallback"` and
  * `"profiles"` are each optional, and a profile they name may be defined on the server instead of here (the
- * resolver refuses one defined nowhere). Each profile may add `"routes"`; `builder`, `checker` and `review` keep
- * working and map to builder.*, checker and the review readers.
+ * resolver refuses one defined nowhere). Each profile may add `"routes"`; `builder`, `reviewer` and `review` keep
+ * working and map to builder.*, the reviewer route and the review readers. `checker` is read as `reviewer` (OS-243).
  */
 export function parseModelsFile(text: string, path: string): ModelsFile {
   let raw: unknown;
@@ -437,7 +449,8 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
         profile.builder[tier as SpinoffTier] = modelString(path, `profile '${name}'.builder.${tier}`, model);
       }
     }
-    if (p.checker !== undefined) profile.checker = modelString(path, `profile '${name}'.checker`, p.checker);
+    if (p.checker !== undefined) profile.reviewer = modelString(path, `profile '${name}'.checker`, p.checker);
+    if (p.reviewer !== undefined) profile.reviewer = modelString(path, `profile '${name}'.reviewer`, p.reviewer);
     if (p.review !== undefined) {
       if (!isObject(p.review)) throw new ModelsFileError(`${path}: profile '${name}'.review must be an object of leg to model`);
       for (const [leg, model] of Object.entries(p.review)) {
@@ -451,9 +464,12 @@ export function parseModelsFile(text: string, path: string): ModelsFile {
     }
     if (p.routes !== undefined) {
       if (!isObject(p.routes)) throw new ModelsFileError(`${path}: profile '${name}'.routes must be an object of route to {chain, effort}`);
-      for (const [route, spec] of Object.entries(p.routes)) {
-        if (!isRouteName(route)) throw new ModelsFileError(`${path}: profile '${name}'.routes: ${routeNameRejection(route)}`);
-        profile.routes[route] = checkRouteSpec(`${path}: profile '${name}'.routes.${route}`, spec);
+      for (const [raw, spec] of Object.entries(p.routes)) {
+        const route = canonicalRoute(raw);
+        if (!isRouteName(route)) throw new ModelsFileError(`${path}: profile '${name}'.routes: ${routeNameRejection(raw)}`);
+        // The new name beats its old alias when a profile names both.
+        if (route !== raw && Object.hasOwn(p.routes, route)) continue;
+        profile.routes[route] = checkRouteSpec(`${path}: profile '${name}'.routes.${raw}`, spec);
       }
     }
     const formError = builderFormError(Object.keys(profile.routes), Object.keys(profile.builder));

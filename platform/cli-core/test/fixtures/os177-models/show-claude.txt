@@ -5,7 +5,7 @@ fallback order: claude -> antigravity
 builder.simple    claudeAgent:claude-haiku-5-5   [local]
 builder.medium    claudeAgent:claude-opus-5-5   [local]
 builder.complex   claudeAgent:claude-opus-5-5   [local]
-checker           claude-haiku-5-5   [local]
+reviewer          claude-haiku-5-5   [local]
 role.architect    claudeAgent:claude-opus-5-5   [local (builder.complex)]
 role.sentinel     claudeAgent:claude-opus-5-5   [local (builder.complex)]
 role.muse         claudeAgent:claude-opus-5-5   [local (builder.complex)]

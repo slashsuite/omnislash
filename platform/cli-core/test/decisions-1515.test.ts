@@ -331,7 +331,7 @@ describe("over the API (1515)", () => {
 
       const other = await createItem(store, { type: "task", title: "checked over the wire", body: READY_BODY });
       const sheet = JSON.stringify(GO_SHEET);
-      const checked = await runCli(scratch(), ["spinoff", "check", String(other), "--architect", sheet, "--checker", sheet], opts);
+      const checked = await runCli(scratch(), ["spinoff", "check", String(other), "--architect", sheet, "--reviewer", sheet], opts);
       expect(checked.code).toBe(0);
       expect(checked.out).toContain("go:");
       expect((await decisionsForItem(store, other))[0]).toMatchObject({ from: "check", to: "go" });

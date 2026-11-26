@@ -29,7 +29,7 @@ const side = (over: Record<string, unknown> = {}) => ({
   scores: ALL_TWO,
   ...over,
 });
-const sheets = (architect = side(), checker = side()) => ["--architect", JSON.stringify(architect), "--checker", JSON.stringify(checker)];
+const sheets = (architect = side(), checker = side()) => ["--architect", JSON.stringify(architect), "--reviewer", JSON.stringify(checker)];
 
 async function ticket(): Promise<{ dbPath: string; id: string; repo: string }> {
   const dbPath = freshDbPath();
@@ -126,7 +126,7 @@ describe("--resolutions (OB-2131)", () => {
     const file = join(dir, "resolutions.json");
     writeFileSync(file, JSON.stringify(RESOLVED));
     try {
-      const r = await runCli(dbPath, ["spinoff", "check", id, "--architect", JSON.stringify(side()), "--checker", JSON.stringify(checker), "--resolutions", file]);
+      const r = await runCli(dbPath, ["spinoff", "check", id, "--architect", JSON.stringify(side()), "--reviewer", JSON.stringify(checker), "--resolutions", file]);
       expect(r.code).toBe(0);
       expect(r.out).toContain("go:");
       const payload = await lastCheck(dbPath, id);
@@ -172,7 +172,7 @@ describe("--resolutions (OB-2131)", () => {
     const { dbPath, id } = await ticket();
     const r = await runCli(dbPath, ["spinoff", "check", id, ...sheets(), "--questions-resolved"]);
     expect(r.code).toBe(2);
-    expect(r.err).toContain("--questions-resolved is replaced by --resolutions (one entry per checker question); see 'ob --help'");
+    expect(r.err).toContain("--questions-resolved is replaced by --resolutions (one entry per reviewer question); see 'ob --help'");
   });
 });
 
@@ -182,7 +182,7 @@ describe("--resolutions over the API (OB-2131)", () => {
     const file = join(dir, "r.json");
     writeFileSync(file, JSON.stringify([{ q: 1, how: "edit", note: "n" }]));
     try {
-      const argv = ["spinoff", "check", "OB-1", "--architect", "{}", "--checker", "{}", "--resolutions", file];
+      const argv = ["spinoff", "check", "OB-1", "--architect", "{}", "--reviewer", "{}", "--resolutions", file];
       const out = rewriteSpinoffRepoArgv({ argv, command: "spinoff", args: ["check", "OB-1"], flags: {}, db: openDb(freshDbPath()) });
       expect(out.error).toBeNull();
       expect(JSON.parse(out.argv[out.argv.indexOf("--resolutions") + 1]!)).toEqual([{ q: 1, how: "edit", note: "n" }]);
