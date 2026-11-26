@@ -56,6 +56,8 @@ export interface LegRecord {
   stop?: "steps" | "max-turns" | null;
   /** The `ob review run` this attempt belongs to (OS-210, from OB_REVIEW_RUN_ID); absent on a hand-run leg. */
   run?: string;
+  /** The `ob review run` seat (OS-247, from OB_REVIEW_SEAT) when it differs from `leg`: `opus-2` runs `opus` again. */
+  seat?: string;
 }
 
 /** `review-legs.jsonl` beside the models file and `models-state.json`. */

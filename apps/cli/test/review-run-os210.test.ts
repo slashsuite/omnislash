@@ -60,7 +60,7 @@ const record = (leg: string, run: string, tokens: LegRecord["tokens"]): LegRecor
 
 /** Fake seams: each leg prints `outputs[leg]` and leaves a leg record under the run id with 100/10 tokens. */
 function deps(outputs: Record<string, string>, over: Partial<ReviewRunDeps> = {}) {
-  const ran: Array<{ leg: string; brief: string }> = [];
+  const ran: Array<{ leg: string; reader: string; brief: string }> = [];
   const ob: string[][] = [];
   const d: ReviewRunDeps = {
     cwd: dir,
@@ -75,10 +75,12 @@ function deps(outputs: Record<string, string>, over: Partial<ReviewRunDeps> = {}
       return { code: 0, out: "", err: "" };
     },
     gate: async () => green(),
-    leg: async (leg, brief, outPath, legEnv) => {
-      ran.push({ leg, brief });
+    leg: async (reader, brief, outPath, legEnv) => {
+      // the seat (`opus-2` for a second Opus seat) keys the canned output; the reader is what review-leg.ts runs
+      const leg = legEnv.OB_REVIEW_SEAT ?? reader;
+      ran.push({ leg, reader, brief });
       writeFileSync(outPath, outputs[leg] ?? "");
-      appendLegRecord(record(leg, legEnv.OB_REVIEW_RUN_ID!, { input: 100, output: 10, reasoning: 0 }), legEnv);
+      appendLegRecord({ ...record(reader, legEnv.OB_REVIEW_RUN_ID!, { input: 100, output: 10, reasoning: 0 }), ...(leg !== reader ? { seat: leg } : {}) }, legEnv);
       return outputs[leg] === undefined ? { code: 1, err: `review-leg: ${leg} failed: exit 1: boom\n` } : { code: 0, err: "" };
     },
     skill: () => SKILL,
@@ -113,17 +115,22 @@ describe("verdicts", () => {
     expect(escalation({ exit: 0, verdict: v("stupid: x\nscore: 8/10") }).escalate).toBe(false);
   });
 
-  test("round 1 is the range's first leg; escalation is its fallback, then the range's others, then the rest, at most two", () => {
+  test("OS-247: escalation adds one Opus reader, never neon (opus's fallback) or any non-Opus reader", () => {
+    // the default: opus alone, neon its fallback; escalation is a second Opus seat
     expect(planLegs(readers, 5)).toEqual({
       first: { leg: "opus", model: "claude-opus-5-5" },
-      extra: [
-        { leg: "neon", model: "antigravity:gemini-4-neon" },
-        { leg: "flash", model: "opencode-go/qwen3.8-flash#high" },
-      ],
+      extra: [{ leg: "opus-2", reader: "opus", model: "claude-opus-5-5" }],
     });
-    const two = withRange(readers, { from: 4, to: 6 }, ["flash", "opus"]);
-    expect(planLegs(two, 5).first.leg).toBe("flash");
-    expect(planLegs(two, 5).extra.map((e) => e.leg)).toEqual(["opus", "neon"]);
+    // a non-Opus reader in the range is skipped; another configured Opus reader is preferred to a second seat
+    const two = withRange(readers, { from: 4, to: 6 }, ["opus", "flash"]);
+    expect(planLegs(two, 5).extra.map((e) => e.leg)).toEqual(["opus-2"]);
+    const big = withReader(readers, "opus-big", "claudeAgent:claude-opus-5-5");
+    expect(planLegs(big, 5).extra).toEqual([{ leg: "opus-big", model: "claudeAgent:claude-opus-5-5" }]);
+    // a non-Opus round-1 reader escalates to an Opus reader, and to nobody when none is configured
+    const flashFirst = withRange(readers, { from: 4, to: 6 }, ["flash"]);
+    expect(planLegs(flashFirst, 5).extra).toEqual([{ leg: "opus", model: "claude-opus-5-5" }]);
+    const noOpus = withRange(withReader(withReader(readers, "opus", "opencode-go/x"), "neon", "antigravity:gemini-4-neon"), { from: 4, to: 6 }, ["flash"]);
+    expect(planLegs(noOpus, 5).extra).toEqual([]);
   });
 
   test("the brief carries the skill's stance and output format", () => {
@@ -154,17 +161,20 @@ describe("reviewRun", () => {
     expect(readRunRecords(env)).toHaveLength(1);
   });
 
-  test("a round 1 that calls for it escalates to two more readers, each with the same brief and its own tokens", async () => {
-    const { d, ran } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", neon: "ok\nscore: 9/10", flash: "score: 8/10" });
+  test("a round 1 that calls for it escalates to a second Opus seat, never neon, with the same brief and its own tokens", async () => {
+    const { d, ran } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", "opus-2": "ok\nscore: 9/10", neon: "score: 8/10" });
     const r = await reviewRun("OS-1", { complexity: "5" }, d);
-    expect(ran.map((x) => x.leg)).toEqual(["opus", "neon", "flash"]);
+    expect(ran.map((x) => [x.leg, x.reader])).toEqual([
+      ["opus", "opus"],
+      ["opus-2", "opus"],
+    ]);
     expect(new Set(ran.map((x) => x.brief)).size).toBe(1);
     expect(r.escalated).toBe(true);
     expect(r.reason).toContain("1 wrong");
+    // each seat reads back only its own attempt's tokens, though both ran the reader `opus` in the same run
     expect(r.legs.map((l) => [l.leg, l.phase, l.tokens?.input])).toEqual([
       ["opus", "round1", 100],
-      ["neon", "escalation", 100],
-      ["flash", "escalation", 100],
+      ["opus-2", "escalation", 100],
     ]);
     // the tokens are this run's only: another run's record for the same leg is not summed in
     expect(readLegRecords(env).every((x) => x.run === r.run)).toBe(true);
@@ -178,11 +188,11 @@ describe("reviewRun", () => {
   });
 
   test("--answers runs the rebuttal round: the previous legs again, each with only its own findings and answers", async () => {
-    const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", neon: "stupid: NEON-FINDING\nscore: 7/10", flash: "score: 9/10" });
+    const first = deps({ opus: "wrong: OPUS-FINDING\nscore: 5/10", "opus-2": "stupid: NEON-FINDING\nscore: 7/10", flash: "score: 9/10" });
     await reviewRun("OS-1", {}, first.d);
     const answers = join(dir, "answers.md");
-    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## neon\nrebutted: NEON-ANSWER\n");
-    const second = deps({ opus: "accepted\nscore: 9/10", neon: "rejected: still\nscore: 7/10", flash: "score: 9/10" });
+    writeFileSync(answers, "## opus\nfixed: OPUS-ANSWER\n## opus-2\nrebutted: NEON-ANSWER\n");
+    const second = deps({ opus: "accepted\nscore: 9/10", "opus-2": "rejected: still\nscore: 7/10", flash: "score: 9/10" });
     const r = await reviewRun("OS-1", { answers }, second.d);
     expect(r.round).toBe(2);
     const opus = second.ran.find((x) => x.leg === "opus")!.brief;
@@ -192,18 +202,20 @@ describe("reviewRun", () => {
     expect(opus).not.toContain("NEON-ANSWER");
     expect(r.legs.map((l) => [l.leg, l.phase, l.verdict.accepted, l.verdict.rejected])).toEqual([
       ["opus", "rebuttal", 1, 0],
-      ["neon", "rebuttal", 0, 1],
+      ["opus-2", "rebuttal", 0, 1],
     ]);
     // flash returned no finding, so it is not rerun and needs no section
-    expect(second.ran.map((x) => x.leg)).toEqual(["opus", "neon"]);
+    expect(second.ran.map((x) => x.leg)).toEqual(["opus", "opus-2"]);
+    // the second seat's rebuttal runs the reader opus again, under its own seat
+    expect(second.ran.find((x) => x.leg === "opus-2")!.reader).toBe("opus");
   });
 
   test("--answers answers the most recent round, even after a fresh round 1 restarted the count", async () => {
-    await reviewRun("OS-1", {}, deps({ opus: "wrong: OLD-FINDING\nscore: 5/10", neon: "score: 9/10", flash: "score: 9/10" }).d);
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: OLD-FINDING\nscore: 5/10", "opus-2": "score: 9/10", flash: "score: 9/10" }).d);
     const answers = join(dir, "answers.md");
     writeFileSync(answers, "## opus\nfixed: x\n");
     await reviewRun("OS-1", { answers }, deps({ opus: "accepted\nscore: 9/10" }).d);
-    const fresh = await reviewRun("OS-1", {}, deps({ opus: "wrong: NEW-FINDING\nscore: 5/10", neon: "score: 9/10", flash: "score: 9/10" }).d);
+    const fresh = await reviewRun("OS-1", {}, deps({ opus: "wrong: NEW-FINDING\nscore: 5/10", "opus-2": "score: 9/10", flash: "score: 9/10" }).d);
     expect(fresh.round).toBe(1);
     const again = deps({ opus: "accepted\nscore: 9/10" });
     const r = await reviewRun("OS-1", { answers }, again.d);
@@ -216,12 +228,12 @@ describe("reviewRun", () => {
     const answers = join(dir, "answers.md");
     writeFileSync(answers, "## opus\nfixed: x\n");
     await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no recorded review round");
-    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", neon: "stupid: y\nscore: 9/10", flash: "score: 9/10" }).d);
-    await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no '## <leg>' section for: neon");
+    await reviewRun("OS-1", {}, deps({ opus: "wrong: x\nscore: 5/10", "opus-2": "stupid: y\nscore: 9/10", flash: "score: 9/10" }).d);
+    await expect(reviewRun("OS-1", { answers }, deps({}).d)).rejects.toThrow("no '## <leg>' section for: opus-2");
   });
 
   test("a failed round-1 leg escalates and names its error", async () => {
-    const { d } = deps({ neon: "score: 8/10", flash: "score: 8/10" });
+    const { d } = deps({ "opus-2": "score: 8/10", flash: "score: 8/10" });
     const r = await reviewRun("OS-1", {}, d);
     expect(r.legs[0]).toMatchObject({ leg: "opus", exit: 1, error: "review-leg: opus failed: exit 1: boom" });
     expect(r.escalated).toBe(true);
@@ -239,4 +251,13 @@ test("review-leg.ts stamps each attempt with OB_REVIEW_RUN_ID, so the driver can
   const bare: LegRecord[] = [];
   await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, env, { record: (r) => bare.push(r), diff: null, readers: defaultReviewReaders() });
   expect(bare[0]!.run).toBeUndefined();
+  expect(bare[0]!.seat).toBeUndefined();
+  // OS-247: a second seat stamps its seat, so its tokens are read back apart from the first seat's
+  const seat: LegRecord[] = [];
+  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_RUN_ID: "r", OB_REVIEW_SEAT: "opus-2" }, {
+    record: (r) => seat.push(r),
+    diff: null,
+    readers: defaultReviewReaders(),
+  });
+  expect(seat[0]).toMatchObject({ leg: "opus", seat: "opus-2", run: "r" });
 });

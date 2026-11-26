@@ -55,7 +55,7 @@ These count as **stupid** or **overboard** in any repo on the standard stack
 `ob review readers set|rm|range`; both write the server's setting, so every machine reads the same
 set. The ranges cover complexity 1-10 (OS-175; the old simple, medium and complex tiers are 1-3, 4-6 and 7-10).
 `ob review readers --complexity <n> -q` prints the legs a row scored n can run, one per line; `ob review run` (How to
-run) starts the first and escalates to the others only when round 1 calls for it. Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
+run) starts the first and, only when round 1 calls for it, adds one more Opus reader (never neon or another non-Opus model, OS-247). Which readers run, on which model, and on which ranges is configuration, never this skill: run what `ob review readers` prints, and do not assume a reader or a range from memory (OS-238). The free
 `opencode/` readers failed on every review (glm and mimo hit "Free usage limit reached",
 `opencode/nemotron-3-ultra-free` is gone), so the page does not offer them.
 
@@ -176,9 +176,12 @@ The steps are fixed in the command, so nothing here is yours to decide:
 2. It runs the repo's gate (`ob gate run`, from `gate.json`, cached by sha). A red gate stops it; no leg runs.
 3. **Round 1 is one reader**: the first leg of the range covering the row's complexity (`ob spinoff show` prints
    `complexity N/10`; none reads as 5; `--complexity` overrides). The readers come from `ob review readers` only.
-4. **It escalates to up to two more readers only when round 1 calls for it**: the leg failed, gave no score,
-   raised a `wrong` or an `unproven`, or scored under 8. The extra readers are the leg's fallback, the range's other
-   readers, then the other configured readers. Each gets the same brief, none told what the others said.
+4. **It escalates to one more Opus reader only when round 1 calls for it**: the leg failed, gave no score,
+   raised a `wrong` or an `unproven`, or scored under 8. Review readers are Opus only (OS-238), so escalation never
+   adds neon or any other non-Opus reader, and never the leg's fallback, which stands in only when its reader is
+   unavailable (OS-247). The extra reader is the range's other Opus reader, then any other configured Opus reader,
+   else a second seat of the round-1 Opus reader, `opus-2` (its findings file, its `## opus-2` answers section and its
+   tokens are its own). It gets the same brief, not told what round 1 said.
 
 The brief is this skill's stance and output format, the scope line
 (`Scope: read the diff above first, then only the files it touches and their direct callers, inside this checkout.`),
@@ -257,9 +260,10 @@ On a rebuttal brief (round 2 on) it first answers each prior finding, one line e
 `rejected: <the evidence the answer misses>`. Then `ok` (say how many claims were read) or the findings, at most
 ~8, `wrong` first, and `score: N/10`.
 
-**The brief recipe.** The same legs as a diff review, every one `ob review readers --complexity <n> -q` lists
-(How to run), each through `review-leg.ts` with its own brief file; `review-leg.ts` and `ob-reviewer.md` do
-not change. Fetch first, because readers cannot:
+**The brief recipe.** The legs `ob review readers --complexity <n> -q` lists (How to run), each through
+`review-leg.ts` with its own brief file; `review-leg.ts` and `ob-reviewer.md` do not change. A claims review is not
+`ob review run`: it runs no gate and no escalation, so it never adds an extra reader (and never neon, OS-247).
+Fetch first, because readers cannot:
 
 ```bash
 git fetch origin
@@ -283,7 +287,7 @@ means nothing for a claims review; ignore it. Skipped and failed legs are report
 rounds as for a build. A claim in the report is fixed by editing the report. A claim in a note is fixed by
 a new `ob note <parent>` that corrects or withdraws it (a note cannot be edited), and the next round's brief
 carries it. The spike hands off with `claims-review: <N> cut, 0 open (<leg>: <a>, <leg>: <b>)` in `--note`,
-naming every leg, for example `claims-review: 3 cut, 0 open (opus: 2, neon: 1)` (`ob-spinoff`, the spike
+naming every leg, for example `claims-review: 3 cut, 0 open (opus: 3)` (`ob-spinoff`, the spike
 paragraph). The handoff refuses a spike without that line or with open findings. It reads the last such line in
 the note and `--report` together, report last, so a report that records earlier rounds ends on the final one.
 

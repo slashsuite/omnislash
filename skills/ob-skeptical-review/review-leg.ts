@@ -426,7 +426,7 @@ export function capStopOf(kind: LegKind | null, out: string): "steps" | "max-tur
 const STDOUT_TAIL = 600;
 
 /** What a record knows before the attempt ends. */
-export type InFlightRecord = Pick<LegRecord, "leg" | "kind" | "model" | "variant" | "profile" | "cwd" | "start" | "diff" | "brief_bytes" | "run">;
+export type InFlightRecord = Pick<LegRecord, "leg" | "kind" | "model" | "variant" | "profile" | "cwd" | "start" | "diff" | "brief_bytes" | "run" | "seat">;
 
 /**
  * The attempt running now, so a SIGTERM or SIGINT on this script (a caller's timeout) can still write its
@@ -516,6 +516,8 @@ export async function runAcrossProfiles(
       brief_bytes: opts.briefBytes ?? 0,
       // OS-210: `ob review run` reads this leg's tokens back by its run id.
       ...(env.OB_REVIEW_RUN_ID?.trim() ? { run: env.OB_REVIEW_RUN_ID.trim() } : {}),
+      // OS-247: a second seat of the same reader (`opus-2`) names itself, so its tokens are read back apart.
+      ...(env.OB_REVIEW_SEAT?.trim() && env.OB_REVIEW_SEAT.trim() !== leg ? { seat: env.OB_REVIEW_SEAT.trim() } : {}),
     };
     inFlight = base;
     inFlightBytes.out = 0;
