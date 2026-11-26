@@ -95,7 +95,7 @@ If the rebase brought anything in, the push puts the new tree in front of CI, wh
 - **Local-only checks, run by hand on every land (CI does not run them):**
   - App change: `bunx moon run <app>:build`.
   - CLI db/store (`apps/cli/src/db/**`, the store, or `platform/cli-db`): `bunx moon run cli-db:test` **twice**, the second with `--force` (otherwise it is a cache hit). CI runs it once; the second run is the flake check.
-  - The CLI docs surface matches (`ob --help` + `apps/cli/README.md`); the migration fingerprint moved only additively; the `State:` line is landable.
+  - The CLI docs surface matches (`ob --help` + `apps/cli/docs/`); the migration fingerprint moved only additively; the `State:` line is landable.
   - Visual gates, where the repo has one (step 6 and the repo's `AGENTS.md`).
   - When you ran the local gate instead of CI: that the affected *set* is the one you meant, and that any failing test NAMES match `origin/main`'s (run main's failing projects: that turns "3 tasks failed" into "no new failures").
 

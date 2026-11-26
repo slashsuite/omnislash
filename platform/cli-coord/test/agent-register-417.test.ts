@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 // 417 — register ≠ launch. `ob agent register --id 415` (and 416) without a real
 // `ob spinoff` created tree rows, and the interactive app opened empty-session tabs because
@@ -18,7 +19,7 @@ import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 // test is the regression guard: if the lock comes back, an architect blocks again.
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const COORD_SRC = readFileSync(join(import.meta.dir, "..", "src/commands/coord.ts"), "utf8");
 const API_AGENT_SRC = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/src/api/client-handlers.ts"), "utf8");
 

@@ -27,8 +27,9 @@ import {
 import { registerAgent } from "../src/agent.ts";
 import { alreadyLandedRefusal, enqueueSpinoff, type EnqueueInput } from "../src/commands/spinoff.ts";
 import { __setSh } from "./sh-no-pr.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 const restores: Array<() => void> = [];
 // OB-2172: a refused note is retried once after a wait; these tests do not wait for it.

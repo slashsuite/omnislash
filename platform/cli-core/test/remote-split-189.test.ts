@@ -16,6 +16,7 @@ import {
   type RemoteExec,
 } from "../../../apps/cli/src/remote.ts";
 import { dumpReplicaBytes, gunzip, readMeta, replicaPath, replicaToken } from "../../../apps/cli/src/replica.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 // ob 189: the SPLIT class -- a command whose side effect runs HERE and whose database half runs on the
 // server. Nothing in this file shells out to ssh, spawns a session or touches the network: the spawn is
@@ -314,7 +315,7 @@ describe("split class: agent register --session (189)", () => {
 
 describe("split class: the docs say what the code does (189)", () => {
   test("the README describes the class and no longer records the gap as open", () => {
-    const readme = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+    const readme = cliDocs();
     expect(readme).not.toContain("Known gap");
     expect(readme).toContain("local half");
   });

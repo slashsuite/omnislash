@@ -7,6 +7,7 @@ import { openDb } from "../../../apps/cli/src/db.ts";
 import { enqueueSpinoff, refuseSubcommandRef, type EnqueueInput, type SpinoffRow, type StampInput } from "../src/commands/spinoff.ts";
 import { abandonRefusal, abandonSpinoff, abandonedError, isAbandoned, renderAbandon, type AbandonDeps } from "../src/spinoff-abandon.ts";
 import { buildMix, type MixSource } from "../src/spinoff-mix.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 // 1697: `ob spinoff abandon` retires a launched-but-unbuilt spinoff without `ob close` (which stamps it landed).
 
@@ -243,7 +244,7 @@ describe("ob spinoff abandon (CLI)", () => {
 
 describe("docs (1697)", () => {
   test("HELP and the README name spinoff abandon", () => {
-    const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+    const README = cliDocs();
     for (const doc of [renderSubcommandHelp("spinoff", "abandon"), README]) {
       expect(doc).toContain("spinoff abandon");
       expect(doc).toContain("base_sha");

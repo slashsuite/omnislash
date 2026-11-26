@@ -13,9 +13,10 @@ import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { FakeDraftClient } from "../../cli-sources/test/fake-draft-client.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const PG_BUDGET = spawnBudget(2);
 
 const PREVIEW = {

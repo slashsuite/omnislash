@@ -177,7 +177,7 @@ is done" is not the trigger; a green PR is. The rest stays yours to run and repo
 - the 097 migration fingerprint snapshot (`platform/cli-db/test/db-migration.e2e.test.ts`) changed ONLY as a reviewed
   ADDITIVE diff (columns/tables added, none altered or dropped), or not at all.
 - any CLI change updates the docs in the SAME change: `ob --help` (the HELP string in `apps/cli/src/cli.ts`,
-  every HANDLERS command must appear) AND `apps/cli/README.md`.
+  every HANDLERS command must appear) AND the CLI docs (`apps/cli/docs/commands.md` for a command, `apps/cli/docs/guide.md` for how it fits).
 - **ob-skeptical-review** before `State: landable`: one read-only leg **per model** on `git diff main...HEAD`,
   each launched with the skill's `review-leg.ts` under the `ob-reviewer` profile (no edits, no writes, a read-only
   shell; not `delegate_task`, which cannot choose a tool profile). The legs are the ones the owner picked for your row's complexity range: `ob review readers --complexity <n> -q` (n is the `complexity N/10` that `ob spinoff show` prints), set on the dashboard; a row with no score reads as 5. Run exactly what it prints; never assume a reader or range from memory (OS-238). `deepseek` and `luna` are retired (OS-206) and refused. None is told what the others found. Readers presume every changed line is wrong and report

@@ -11,9 +11,10 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX, OB_API_ROUTES } from "../../../apps/cli/src/api/contract.ts";
 import { eq } from "drizzle-orm";
 import { createItem } from "../../../apps/cli/src/items.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const TOKEN = "a-test-bearer-token-that-is-long-enough";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 interface Ctx {
   store: Store;

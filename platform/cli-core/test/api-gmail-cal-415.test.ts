@@ -27,10 +27,11 @@ import type {
   GmailMessage,
   GoogleClient,
 } from "../../cli-sources/src/google.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const PG_BUDGET = spawnBudget(2);
 
 interface Stub {

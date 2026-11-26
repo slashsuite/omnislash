@@ -15,10 +15,11 @@ import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 const ROW_LIVE = {
   target: "live",

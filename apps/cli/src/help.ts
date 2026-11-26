@@ -636,7 +636,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["project rules web", "project rules web --json"],
       },
       wire: {
-        summary: "Build a checkout's .opencode/ (ob plugins, architect launcher, agent, command, SOUL) and git-exclude it",
+        summary: "Build a checkout's .opencode/ wiring (plugins, launcher, agent) and git-exclude it",
         usage: ["project wire <project> [--dir <path>]"],
         flags: [{ flag: "--dir <path>", description: "Target checkout directory (defaults to cwd)" }],
         examples: ["project wire web --dir ~/dev/web"],
@@ -804,7 +804,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ['memory add "Prefer bun test for unit runs"', "memory show"],
     notes: [
       "Override file location with OMNISLASH_MEMORY_PATH (see 'ob help env').",
-      "OpenCode prepends MEMORY.md to every request in a checkout wired with 'ob project wire' (the ob-memory plugin).",
+      "In a checkout wired by 'ob project wire', the ob-memory plugin prepends MEMORY.md to every request.",
     ],
   },
 

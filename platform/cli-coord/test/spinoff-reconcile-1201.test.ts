@@ -28,8 +28,9 @@ import {
   reconcileSpinoffs,
   type EnqueueInput,
 } from "../src/commands/spinoff.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 const input = (over: Partial<EnqueueInput> = {}): EnqueueInput => ({
   ticketRef: "738",

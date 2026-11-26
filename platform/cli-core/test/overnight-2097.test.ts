@@ -17,10 +17,11 @@ import { API_ROUTED_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import type { ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { appendToSection, emptySummary, localToday, summaryProblems } from "../../../apps/cli/src/overnight.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const NIGHT = "2026-11-17";
 
 type Run = (args: string[]) => Promise<{ code: number; out: string; err: string }>;

@@ -3,7 +3,7 @@
 Checked against main at 2cd30da on 2026-11-20.
 
 This is the full list of what OmniSlash does today, read from the source. The short list of claims is in
-[`FACTS.md`](FACTS.md); the command reference with every flag is in [`apps/cli/README.md`](apps/cli/README.md).
+[`FACTS.md`](FACTS.md); the command reference with every flag is in [`apps/cli/docs/commands.md`](apps/cli/docs/commands.md).
 
 ## Capture and edit
 - `ob-add`: Create a work item with a title, type, kind, project, priority, body, tags and links, or a roadmap, decision or learning entry. How to reach it: `ob add <title>`. Source: `apps/cli/src/commands/capture.ts`.

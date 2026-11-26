@@ -17,10 +17,11 @@ import { renderCommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import type { WhatsappHit } from "../../cli-whatsapp/src/ingest/whatsapp.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 interface Stub {
   transport: ApiTransport;

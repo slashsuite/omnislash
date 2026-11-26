@@ -7,7 +7,7 @@ description: Loads the live `ob` command surface, the current OmniSlash CLI comm
 
 `ob` (the OmniSlash CLI, `apps/cli`) is a large, fast-moving surface. The docs
 requirement is that EVERY CLI change updates `ob --help` and
-`apps/cli/README.md` in the same change, so the help IS the up-to-date source.
+the CLI docs (`apps/cli/docs/`) in the same change, so the help IS the up-to-date source.
 Load the commands **fresh from `ob --help`**, never from memory or a static list.
 
 ## 0. Load: print the live command index (always do this first)
@@ -34,11 +34,11 @@ edge cases:
 ```bash
 ob --help 2>&1 | sed -n '/^  <command> /,/^  [a-z][a-z-]* /p'   # that command's block
 ob <command> --help                                             # sub-help, where supported
-rg -n "\| \`?<command>" apps/cli/README.md                       # the authoritative guide
+rg -n "\| \`?<command>" apps/cli/docs/commands.md                # the command reference
 ```
 
-`apps/cli/README.md` is the real user guide (the command reference by area and
-the "how it fits together" model). Consult it when the question is *why/when*
+`apps/cli/docs/guide.md` is the real user guide (the "how it fits together" model, conventions and
+workflows) and `apps/cli/docs/commands.md` the command reference by area. Consult it when the question is *why/when*
 rather than *what flags*. For the build and land flow and what a spun-off agent
 must run, use the `ob-spinoff` skill instead.
 
@@ -62,7 +62,7 @@ must run, use the `ob-spinoff` skill instead.
   anything that writes.
 - **The command is only done when the docs match:** if this session changes
   the CLI, both `ob --help` (the HELP string in `apps/cli/src/cli.ts`, every
-  HANDLERS command must appear) and `apps/cli/README.md` must change in the
+  HANDLERS command must appear) and the CLI docs (`apps/cli/docs/`) must change in the
   same commit.
 
 ## 3. When to use which top-level command (the short version)

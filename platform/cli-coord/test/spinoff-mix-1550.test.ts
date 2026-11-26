@@ -8,6 +8,7 @@ import { createItem } from "../../../apps/cli/src/items.ts";
 import { UsageError } from "../../../apps/cli/src/errors.ts";
 import { enqueueSpinoff, type EnqueueInput } from "../src/commands/spinoff.ts";
 import { buildMix, parseSince, redispatchedHigher, type MixSource } from "../src/spinoff-mix.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 // 1550: `ob spinoff mix` reads the dispatch mix. Nothing is stored; a missing stamp is said, never invented.
 
@@ -184,7 +185,7 @@ describe("ob spinoff mix (CLI)", () => {
 
 describe("docs (1550)", () => {
   test("HELP and README name spinoff mix and the 50/30/20 target", () => {
-    const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+    const README = cliDocs();
     const help = renderSubcommandHelp("spinoff", "mix");
     expect(help).toContain("spinoff mix");
     expect(README).toContain("spinoff mix");

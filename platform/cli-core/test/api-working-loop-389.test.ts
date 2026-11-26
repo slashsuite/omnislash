@@ -18,10 +18,11 @@ import { __setCreateIssue, type CreatedIssue } from "../../../apps/cli/src/githu
 import { __setListIssues } from "../../../apps/cli/src/tracker-link.ts";
 import { __setSh, type Sh } from "../../../apps/cli/src/tracker-link.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const REPO = "owner/acme";
 const REC = "\x1e";
 const FLD = "\x1f";

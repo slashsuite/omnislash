@@ -13,6 +13,7 @@ import { formatReadyReport, type SpinoffRow } from "../src/commands/spinoff.ts";
 import { noteErrorLine } from "../src/spinoff-gateable.ts";
 import { sendBackSpinoff } from "../src/spinoff-sendback.ts";
 import { formatSpikeReport } from "../src/spinoff-spike.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const ROOT = join(import.meta.dir, "../../..");
 const PLANNER = /planner/i;
@@ -143,7 +144,7 @@ describe("help, README and skills (OB-2256 Done when 2 and 7)", () => {
       }
     }
     expect(renderSubcommandHelp("spinoff", "check")).toContain("--architect");
-    const readme = readFileSync(join(ROOT, "apps/cli/README.md"), "utf8");
+    const readme = cliDocs();
     expect(readme).not.toMatch(PLANNER);
   });
 
