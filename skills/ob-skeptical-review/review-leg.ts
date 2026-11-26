@@ -371,9 +371,10 @@ export function legSpawn(
 /**
  * The profiles a leg tries, in order: the active one, then `fallback`, each kept only when it
  * gives the leg a (kind, model) pair not already in the list (the same model on the same provider would hit
- * the same empty balance). The opus leg keeps only profiles that run it on claude: readers are Opus only, so a
- * profile mapping opus to another provider never takes an Opus quota error (OS-256). `[undefined]` with no models
- * file: the one built-in model.
+ * the same empty balance). For the opus leg (or its old name sonnet) a fallback profile is kept only when it runs
+ * opus on claude: readers are Opus only, so an Opus quota error never moves to another provider (OS-256). The
+ * active profile is the owner's own choice and is always tried. `[undefined]` with no models file: the one
+ * built-in model.
  */
 export function legProfiles(leg: string, env: Record<string, string | undefined> = process.env, readers: ReviewReaders | null = null): Array<string | undefined> {
   // A leg whose model comes from review_readers gets one attempt; there is no other profile to try.
@@ -385,7 +386,7 @@ export function legProfiles(leg: string, env: Record<string, string | undefined>
   for (const profile of profileOrder(file)) {
     const resolved = resolveLeg(leg, env, profile);
     if (resolved === undefined) continue;
-    if (leg === "opus" && resolved.kind !== "claude") continue;
+    if (profile !== file.active && canonicalLeg(leg) === "opus" && resolved.kind !== "claude") continue;
     const key = `${resolved.kind}\u0000${resolved.model}`;
     if (seen.has(key)) continue;
     seen.add(key);

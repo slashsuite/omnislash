@@ -200,6 +200,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
         "utf8",
       );
       expect(legProfiles("opus", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
+      expect(legProfiles("sonnet", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
     });
   });
 
