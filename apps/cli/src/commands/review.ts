@@ -4,6 +4,7 @@ import { editModelRoutes, loadRouteInputs, storeConfigIo } from "../model-routes
 import { ModelRoutesError, resolveReview, serverReview, setReaderFallback, withProfileReview, writeProfile } from "../model-routes.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, type Mode } from "../output.ts";
+import { cmdReviewRun } from "../review-run.ts";
 import { TIER_BANDS, TIER_COMPLEXITY, isSpinoffTier, parseComplexity, rangeText, type SpinoffTier } from "../models-file.ts";
 import {
   REVIEW_TIERS,
@@ -31,7 +32,7 @@ import {
 // -----------------------------------------------------------------------------
 
 const USAGE =
-  "review readers [--complexity <1-10>] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers range <from-to> <leg>... | review readers fallback <leg> <other-leg|none> (`--tier` and `tier <tier>` are the old spellings)";
+  "review run <ticket> [--complexity <1-10>] [--answers <file>] [--json] | review readers [--complexity <1-10>] [--json|-q] | review readers set <leg> --model <id> | review readers rm <leg> | review readers range <from-to> <leg>... | review readers fallback <leg> <other-leg|none> (`--tier` and `tier <tier>` are the old spellings)";
 
 function table(v: ReviewReaders, stored: boolean): string {
   const legs = Object.keys(v.readers);
@@ -69,6 +70,8 @@ function scoreOf(flags: Flags): number | null {
 
 /** The whole `ob review` command over any ConfigIO. Exported for the API-mode handler and tests. */
 export async function runReview(args: string[], flags: Flags, mode: Mode, io: ConfigIO): Promise<void> {
+  // OS-210: `review run <ticket>` drives the review itself (gate, round 1, escalation); see review-run.ts.
+  if (args[0] === "run") return cmdReviewRun(args, flags, mode, io);
   if (args[0] !== "readers") throw new UsageError(`usage: ob ${USAGE}`);
   const sub = args[1];
   try {

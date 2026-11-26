@@ -7,6 +7,7 @@ import { DEFAULT_REVIEW_LEGS, DEFAULT_REVIEW_MODELS } from "../../../apps/cli/sr
 import { antigravityUsageTokens, readLegRecords } from "../../../apps/cli/src/review-legs.ts";
 import { defaultReviewReaders, loadReviewReaders, type ConfigIO } from "../../../apps/cli/src/review-readers.ts";
 import {
+  agyCommandPattern,
   antigravitySettings,
   DENIED_COMMANDS,
   finishAntigravityRun,
@@ -58,20 +59,28 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     const settingsIdx = cmd.argv.indexOf("--settings");
     expect(settingsIdx).toBeGreaterThan(0);
     const parsed = JSON.parse(cmd.argv[settingsIdx + 1]!) as ReturnType<typeof antigravitySettings>;
-    expect(parsed.permissions.allow).toContain("read_file(*)");
-    for (const c of READ_COMMANDS) {
-      expect(parsed.permissions.allow).toContain(`command(${c})`);
-      expect(parsed.permissions.allow).toContain(`command(${c} *)`);
-    }
+    // OS-210: Default mode, so a command no allow rule matches is denied in a headless run (Auto mode ran them).
+    expect(parsed.agentMode).toBe("");
+    expect(parsed.permissions.allow).toEqual(["read_file(*)", ...READ_COMMANDS.map((c) => `command(regex:${agyCommandPattern(c)})`)]);
     expect(parsed.permissions.deny).toContain("write_file(*)");
     for (const c of DENIED_COMMANDS) {
       expect(parsed.permissions.deny).toContain(`command(${c})`);
       expect(parsed.permissions.deny).toContain(`command(${c} *)`);
     }
-    expect(parsed.permissions.deny).toContain("command(git * --output*)");
   });
 
-  test("200 KiB brief goes into a temp file under $TMPDIR with --add-dir and short -p prompt, never on argv", async () => {
+  test("the allow patterns take a read command with plain arguments and refuse metacharacters and git's --output (OS-210)", () => {
+    const allowed = (s: string) => READ_COMMANDS.some((c) => new RegExp(agyCommandPattern(c)).test(s));
+    for (const ok of ["ls", "git diff --stat HEAD~1", "git diff origin/main...HEAD -- apps/x.ts", "git show abc:path/x.ts", "git log -5 --format=%h", "grep -n ESCALATE apps/cli/src/review-run.ts", "cat gate.json", "ob show OS-1"]) {
+      expect([ok, allowed(ok)]).toEqual([ok, true]);
+    }
+    for (const bad of ["ls; touch x", "echo $(touch x)", "ls $(touch x)", "cat gate.json | tee x", "ls > x", "ls `touch x`", "cat a\ntouch b",
+      "git diff --output=x", "git diff --out=x", 'git diff "--output=x"', "git log --output x", "git diff && touch x", "touch x", "rm -rf x", "bash -c ls"]) {
+      expect([bad, allowed(bad)]).toEqual([bad, false]);
+    }
+  });
+
+  test("200 KiB brief goes into a temp file under $TMPDIR named in a short -p prompt, never on argv", async () => {
     await withScratch((dir) => {
       const customTmp = join(dir, "tmp");
       const marker = "UNIQUE-200K-BRIEF-MARKER-OS130";
@@ -85,9 +94,8 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
         expect(spawn.briefDir).toBeDefined();
         expect(spawn.briefDir!.startsWith(customTmp)).toBe(true);
 
-        const addDirIdx = spawn.cmd.indexOf("--add-dir");
-        expect(addDirIdx).toBeGreaterThan(0);
-        expect(spawn.cmd[addDirIdx + 1]).toBe(spawn.briefDir!);
+        // No --add-dir: with one, agy's terminal leaves the checkout (OS-210); read_file(*) reads the brief.
+        expect(spawn.cmd).not.toContain("--add-dir");
 
         const promptIdx = spawn.cmd.indexOf("-p");
         expect(promptIdx).toBeGreaterThan(0);
@@ -287,6 +295,30 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     expect(logs.some((l) => l.includes("RESOURCE_EXHAUSTED"))).toBe(true);
   });
 
+  test("a refused command (SUCCESS, empty response, denied_actions) is a failed leg that keeps its tokens (OS-210)", () => {
+    const written: string[] = [];
+    const logs: string[] = [];
+    // The payload agy returned live when the reader tried `ls; touch x` under the read-only settings.
+    const out = JSON.stringify({
+      conversation_id: "303133a3",
+      status: "SUCCESS",
+      response: "",
+      num_turns: 1,
+      usage: { input_tokens: 11134, output_tokens: 813, thinking_tokens: 691, cache_read_tokens: 0 },
+      denied_actions: [{ action: "command", display_name: "Bash" }],
+    });
+    const err = 'jetski: no output produced: a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied.';
+    const r = finishAntigravityRun({ code: 0, out, err, signal: null, timedOut: false }, { write: (s) => written.push(s) }, (l) => logs.push(l));
+    expect(r.code).toBe(1);
+    expect(r.out).toBe("");
+    expect(written).toEqual([]);
+    expect(r.err.split("\n")[0]).toBe("agy refused 1 action(s) outside the read-only allow list and returned no findings");
+    expect(r.tokens).toEqual({ input: 11134, output: 813, reasoning: 691 });
+    expect(logs.some((l) => l.includes("refused 1 action"))).toBe(true);
+    const empty = finishAntigravityRun({ code: 0, out: JSON.stringify({ status: "SUCCESS", response: " " }), err: "", signal: null, timedOut: false }, { write: () => {} }, () => {});
+    expect([empty.code, empty.err]).toEqual([1, "agy returned an empty response"]);
+  });
+
   test("end-to-end: fake agy succeeds, emits plain response on stdout, records agy tokens, handles 200 KiB brief, and cleans up temp brief dir", async () => {
     await withScratch((dir) => {
       const binDir = join(dir, "bin");
@@ -301,8 +333,9 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
 bun -e '
   const fs = require("node:fs");
   const args = process.argv.slice(2);
-  const addDir = args[args.indexOf("--add-dir") + 1];
-  const briefText = fs.readFileSync(addDir + "/brief.md", "utf8");
+  const briefPath = args[args.indexOf("-p") + 1].match(/Read (\\S+brief\\.md)/)[1];
+  const addDir = require("node:path").dirname(briefPath);
+  const briefText = fs.readFileSync(briefPath, "utf8");
   fs.writeFileSync(process.env.CAPTURE_PATH, JSON.stringify({
     args,
     addDir,

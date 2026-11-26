@@ -10,7 +10,7 @@
 // full-access, and gives a Claude child no tool list), so the legs launch here instead:
 //   - Antigravity legs (`antigravity:<model>`, default `neon`) run `agy --sandbox --output-format json`
 //     with `--settings` allowing only read-only tools/commands and denying writes, reading the brief
-//     from a temp file under `$TMPDIR` via `--add-dir` + a short `-p` prompt, printing `response` as
+//     from a temp file under `$TMPDIR` via a short `-p` prompt, printing `response` as
 //     plain text and recording `usage` tokens.
 //   - OpenCode legs run the `ob-reviewer` agent (ob-reviewer.md beside this file): every tool denied
 //     but read/grep/glob and a read-only shell allowlist, with shell metacharacters denied.
@@ -218,31 +218,40 @@ export function resolveLeg(
   return classifyModel(value);
 }
 
+// Characters no allowed argument may hold: whitespace (so no newline), the shell's control, redirect,
+// substitution and escape characters, and brackets.
+const AGY_NOT = "\\s;|&<>$`\\\\(){}";
+// Any argument of a non-git read command (quotes allowed: with `$` and backtick refused they expand nothing).
+const AGY_ARG = `[^${AGY_NOT}]+`;
+// A git argument: no quotes (a quoted "--output=x" would hide the flag), and no `--o...` long flag, since git
+// takes any unique prefix of `--output` (`--out=x`) and `--output` writes a file. `--oneline` goes with it.
+const AGY_GIT_NOT = `${AGY_NOT}'"`;
+const AGY_GIT_ARG = `(?:[^-${AGY_GIT_NOT}][^${AGY_GIT_NOT}]*|-[^-o${AGY_GIT_NOT}][^${AGY_GIT_NOT}]*|--[^o${AGY_GIT_NOT}][^${AGY_GIT_NOT}]*|--)`;
+
+/** The anchored RE2 an allowed read command must match whole: the command, then plain arguments. */
+export function agyCommandPattern(command: string): string {
+  const arg = command.startsWith("git ") ? AGY_GIT_ARG : AGY_ARG;
+  return `^${command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: +${arg})*$`;
+}
+
 /**
- * Read-only permissions passed to `agy --settings`: read files and READ_COMMANDS allowed, file writes and
- * DENIED_COMMANDS denied (no `--dangerously-skip-permissions`).
+ * Read-only settings passed to `agy --settings` (OS-210, proven live). Two things hold, and only these:
+ * - `agentMode: ""` (Default mode). Headless `-p` runs otherwise start in Auto mode, which ran `ls; touch x`,
+ *   `$(...)`, a pipe into `tee` and a `>` redirect inside `--sandbox` without asking. In Default mode a
+ *   command no allow rule matches needs approval, which a headless run cannot give, so agy denies it and ends
+ *   the turn with no output: the leg fails closed (exit 1, no findings) rather than writing.
+ * - The allow list: `read_file(*)` and one anchored `command(regex:...)` per READ_COMMANDS entry, whose
+ *   arguments hold no shell metacharacter and, for git, no `--o...` flag. A command deny rule does NOT override
+ *   a matching allow rule (`git diff --output=x` ran past `command(*--output*)`), so the allow list is what
+ *   keeps writes out; the deny entries below only name the mutating commands outright.
+ * `write_file(*)` is denied, which agy reports to the model as a tool error.
  */
-export function antigravitySettings(): { permissions: { allow: string[]; deny: string[] } } {
+export function antigravitySettings(): { agentMode: string; permissions: { allow: string[]; deny: string[] } } {
   return {
+    agentMode: "",
     permissions: {
-      allow: [
-        "read_file(*)",
-        ...READ_COMMANDS.flatMap((c) => [`command(${c})`, `command(${c} *)`]),
-      ],
-      deny: [
-        "write_file(*)",
-        ...DENIED_COMMANDS.flatMap((c) => [`command(${c})`, `command(${c} *)`]),
-        "command(git * --output*)",
-        // Shell metacharacters, as ob-reviewer.md denies them. Whether agy's matcher splits compound commands is
-        // unverified; these entries cost nothing if it does not.
-        "command(*`*)",
-        "command(*$(*)",
-        "command(*;*)",
-        "command(*|*)",
-        "command(*&*)",
-        "command(*>*)",
-        "command(*<*)",
-      ],
+      allow: ["read_file(*)", ...READ_COMMANDS.map((c) => `command(regex:${agyCommandPattern(c)})`)],
+      deny: ["write_file(*)", ...DENIED_COMMANDS.flatMap((c) => [`command(${c})`, `command(${c} *)`])],
     },
   };
 }
@@ -329,13 +338,14 @@ export interface LegSpawn {
  * What to spawn for `brief`:
  * - Claude and OpenCode take the brief on stdin, leaving argv untouched.
  * - Antigravity (`agy`) does not read a prompt from stdin in print mode, so the brief is written to a temp
- *   file under `$TMPDIR` and `agy` gets `--add-dir <dir>` and a short `-p` prompt pointing at that file.
+ *   file under `$TMPDIR` and `agy` gets a short `-p` prompt pointing at that file (its `read_file(*)` allow reads it).
  * In every case the brief never goes in argv, where Linux caps one string at 128 KiB (E2BIG).
  */
 export function legSpawn(
   argv: string[],
   brief: string,
   env: Record<string, string | undefined> = process.env,
+  cwd: string = process.cwd(),
 ): LegSpawn {
   if (argv[0] !== "agy") return { cmd: argv, stdin: brief };
   const baseTmp = env.TMPDIR?.trim() || tmpdir();
@@ -343,9 +353,16 @@ export function legSpawn(
   const briefDir = mkdtempSync(join(baseTmp, "ob-review-brief-"));
   const briefPath = join(briefDir, "brief.md");
   writeFileSync(briefPath, brief, "utf8");
-  const prompt = `Read ${briefPath} in full and follow every instruction in it. Return only the findings and score requested by the brief.`;
+  // No `--add-dir`: with any added dir agy's terminal leaves the checkout and relative paths miss (OS-210's
+  // live run); `read_file(*)` reads the brief where it is. The prompt names the read-only commands, since any
+  // other command ends the leg with no output.
+  const prompt =
+    `Read ${briefPath} in full and follow every instruction in it. Return only the findings and score requested by the brief. ` +
+    `The checkout under review is ${cwd}; read files with your file-read tool. A shell command may only be one of ` +
+    `${READ_COMMANDS.join(", ")}, one per call, with plain arguments: no ; | & > < $ \` ( ) or quotes. Any other ` +
+    `command is refused and ends your review with no output.`;
   return {
-    cmd: [...argv, "--add-dir", briefDir, "-p", prompt],
+    cmd: [...argv, "-p", prompt],
     stdin: "",
     briefDir,
   };
@@ -409,7 +426,7 @@ export function capStopOf(kind: LegKind | null, out: string): "steps" | "max-tur
 const STDOUT_TAIL = 600;
 
 /** What a record knows before the attempt ends. */
-export type InFlightRecord = Pick<LegRecord, "leg" | "kind" | "model" | "variant" | "profile" | "cwd" | "start" | "diff" | "brief_bytes">;
+export type InFlightRecord = Pick<LegRecord, "leg" | "kind" | "model" | "variant" | "profile" | "cwd" | "start" | "diff" | "brief_bytes" | "run">;
 
 /**
  * The attempt running now, so a SIGTERM or SIGINT on this script (a caller's timeout) can still write its
@@ -497,6 +514,8 @@ export async function runAcrossProfiles(
       start: now().toISOString(),
       diff,
       brief_bytes: opts.briefBytes ?? 0,
+      // OS-210: `ob review run` reads this leg's tokens back by its run id.
+      ...(env.OB_REVIEW_RUN_ID?.trim() ? { run: env.OB_REVIEW_RUN_ID.trim() } : {}),
     };
     inFlight = base;
     inFlightBytes.out = 0;
@@ -688,6 +707,16 @@ export function finishAntigravityRun(
   }
   const response = typeof parsed.response === "string" ? parsed.response : "";
   const text = response.length > 0 && !response.endsWith("\n") ? `${response}\n` : response;
+  if (run.code === 0 && text.trim().length === 0) {
+    // A command outside the allow list ends the headless turn: SUCCESS, an empty response and `denied_actions`
+    // (OS-210's live run). That is a failed leg, never a clean one with nothing to say.
+    const denied = Array.isArray(parsed.denied_actions) ? parsed.denied_actions.length : 0;
+    const reason = denied > 0
+      ? `agy refused ${denied} action(s) outside the read-only allow list and returned no findings`
+      : "agy returned an empty response";
+    log(`review-leg: ${reason}`);
+    return { ...run, code: 1, err: run.err.trim() ? `${reason}\n${run.err}` : reason, out: "", rawOut: run.out, tokens };
+  }
   if (run.code === 0 && text.length > 0) {
     stdout.write(text);
     countOutput("out", Buffer.byteLength(text));

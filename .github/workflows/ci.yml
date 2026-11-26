@@ -22,13 +22,10 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - run: bunx moon run --concurrency 3 :typecheck :test :lint ob-dashboard:build-storybook
-        env:
-          MOON_BASE: origin/main
-      # OS-174: docs/role-state-machine.json and .mmd are generated from platform/state-machine/src/role.ts.
-      # A change to the machine without the regenerated files fails here.
-      - run: bunx moon run state-machine:export -- --check
-      - run: bun scripts/check-workflows.ts .github/workflows/*.yml
+      # OS-210: the steps live in the repo's gate.json, and this runs them through the same command a builder
+      # runs locally (`ob gate run`), so the local gate and CI cannot disagree. gate.json carries MOON_BASE and
+      # the state-machine export check (OS-174) and the hosted-runner check.
+      - run: bun apps/cli/src/index.ts gate run
 
   # OS-211 (OS-112): TLC model-checks the spinoff row lifecycle (platform/state-machine/model/Spinoff.tla).
   # The gate's state-machine tests keep the model's edges, states and events equal to the machine's; TLC then

@@ -188,6 +188,7 @@ export const LOCAL_ONLY_COMMANDS: ReadonlyMap<string, LocalOnlyCommand> = new Ma
 	["models", local(OB_API_LOCAL_ONLY.models!, "this-machine", "run")],
 	["usage", local(OB_API_LOCAL_ONLY.usage!, "this-machine", "run")],
 	["skills", local(OB_API_LOCAL_ONLY.skills!, "this-machine", "run")],
+	["gate", local(OB_API_LOCAL_ONLY.gate!, "this-machine", "run")],
 	["api-token", local(OB_API_LOCAL_ONLY["api-token"]!, "this-machine", "run")],
 ]);
 
