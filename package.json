@@ -12,7 +12,7 @@
     ],
     "catalog": {
       "@playwright/test": "^1.65.1",
-      "@slashsuite/ui-react": "^0.15.0",
+      "@slashsuite/ui-react": "^0.15.2",
       "@storybook/react-vite": "10.6.7",
       "@tailwindcss/vite": "^4.3.5",
       "@tanstack/react-router": "^1.170.46",
