@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,21 +11,39 @@ import { join } from "node:path";
 // process.env.PATH inside the test does not move `opencode`. The test therefore runs a tiny driver
 // under a PATH that starts with the fake, and the driver is what calls runHeadless.
 
-const HEADLESS_RUN = join(import.meta.dir, "..", "..", "..", "apps", "cli", "src", "headless-run.ts");
+const HEADLESS_RUN = join(
+  import.meta.dir,
+  "..",
+  "..",
+  "..",
+  "apps",
+  "cli",
+  "src",
+  "headless-run.ts",
+);
 
 // ~224 KB, the same order as the 215 KB brief that broke OB-1981.
 const BIG_PROMPT = `Summarise this day:\n${"message line 0123456789abcdef\n".repeat(8000)}`;
 
-const scratch = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "ob-1982-"));
-const bin = join(scratch, "bin");
-const report = join(scratch, "report.json");
-const driver = join(scratch, "driver.ts");
-const received = join(scratch, "stdin.txt");
+// OS-254: each test makes its own scratch dir, so no other test's cleanup can remove the fake bin
+// between module load and the run, and each test removes only its own dir.
+let scratch: string;
+let bin: string;
+let report: string;
+let driver: string;
+let received: string;
 
-mkdirSync(bin, { recursive: true });
-writeFileSync(
-  join(bin, "opencode"),
-  `#!/usr/bin/env bun
+beforeEach(() => {
+  scratch = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "ob-1982-"));
+  bin = join(scratch, "bin");
+  report = join(scratch, "report.json");
+  driver = join(scratch, "driver.ts");
+  received = join(scratch, "stdin.txt");
+
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "opencode"),
+    `#!/usr/bin/env bun
 import { writeFileSync } from "node:fs";
 const argv = process.argv.slice(2);
 if (process.env.OB_1982_EXIT) {
@@ -40,12 +58,12 @@ writeFileSync(process.env.OB_1982_REPORT, JSON.stringify({
 writeFileSync(process.env.OB_1982_STDIN, stdin);
 console.log("fake opencode ok");
 `,
-);
-chmodSync(join(bin, "opencode"), 0o755);
+  );
+  chmodSync(join(bin, "opencode"), 0o755);
 
-writeFileSync(
-  driver,
-  `import { runHeadless } from ${JSON.stringify(HEADLESS_RUN)};
+  writeFileSync(
+    driver,
+    `import { runHeadless } from ${JSON.stringify(HEADLESS_RUN)};
 const prompt = await Bun.stdin.text();
 try {
   const out = await runHeadless({ prompt });
@@ -54,9 +72,10 @@ try {
   console.log(JSON.stringify({ ok: false, message: (e as Error).message }));
 }
 `,
-);
+  );
+});
 
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
 async function drive(prompt: string, extraEnv: Record<string, string> = {}) {
   const proc = Bun.spawn(["bun", driver], {
