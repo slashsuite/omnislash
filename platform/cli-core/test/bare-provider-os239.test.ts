@@ -33,7 +33,7 @@ describe("OS-239: builder and role routes name their provider", () => {
     const empty = emptyModelRoutes();
     expect(withRoute(empty, "default", "builder.1-10", ["claudeAgent:claude-opus-5-5"]).profiles.default!.routes["builder.1-10"]!.chain).toEqual(["claudeAgent:claude-opus-5-5"]);
     expect(withRoute(empty, "default", "role.sentinel", ["antigravity:gemini-4-neon"]).profiles.default!.routes["role.sentinel"]).toBeDefined();
-    for (const route of ["checker", "sweep.first", "subagent.explore", "job.nightly"]) {
+    for (const route of ["reviewer", "sweep.first", "subagent.explore", "job.nightly"]) {
       expect(bareModelRefusal(route, ["claude-haiku-5-5"])).toBeNull();
       expect(withRoute(empty, "default", route, ["claude-haiku-5-5"]).profiles.default!.routes[route]).toBeDefined();
     }

@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CHECKER, DEFAULT_REVIEW_LEGS, DEFAULT_TIER_MODELS, FIXED_ROUTES } from "../../../apps/cli/src/models-file.ts";
+import { DEFAULT_REVIEWER, DEFAULT_REVIEW_LEGS, DEFAULT_TIER_MODELS, FIXED_ROUTES } from "../../../apps/cli/src/models-file.ts";
 import { emptyRouteInputs, resolveReview, resolveRoute, sourceLabel, type ModelRoutes } from "../../../apps/cli/src/model-routes.ts";
 import { loadRouteInputs, teamRoleModelFrom } from "../../../apps/cli/src/model-routes-io.ts";
 import { pickUnderLimit } from "../../../apps/cli/src/commands/models.ts";
@@ -54,7 +54,7 @@ describe("OS-145: model routes", () => {
     expect(resolveRoute(inputs, "builder.medium").chain).toEqual([DEFAULT_TIER_MODELS.medium]);
     expect(resolveRoute(inputs, "builder.complex").chain).toEqual([DEFAULT_TIER_MODELS.complex]);
     expect(DEFAULT_TIER_MODELS).toEqual({ simple: "claude-haiku-5-5", medium: "claude-sonnet-5-5", complex: "claude-opus-5-5" });
-    expect(resolveRoute(inputs, "checker").chain).toEqual([DEFAULT_CHECKER]);
+    expect(resolveRoute(inputs, "reviewer").chain).toEqual([DEFAULT_REVIEWER]);
     for (const role of ["architect", "sentinel", "muse"]) expect(resolveRoute(inputs, `role.${role}`).chain).toEqual(["claudeAgent:claude-opus-5-5"]);
     expect(resolveRoute(inputs, "sweep.first").chain).toEqual(["claude-haiku-5-5"]);
     expect(resolveRoute(inputs, "sweep.escalate").chain).toEqual(["claude-opus-5-5"]);

@@ -16,7 +16,7 @@ import { sectionItems } from "../src/spinoff-spike.ts";
 const DONE = "## Done when\n- a test shows it";
 const ALL_TWO = { problem: 2, scope: 2, done: 2, design: 2, proof: 2, unknowns: 2, size: 2 };
 const side = () => ({ does: "Adds a gate.", files: ["platform/cli-coord/src/spinoff-check.ts"], questions: [], scores: ALL_TWO });
-const sheets = () => ["--architect", JSON.stringify(side()), "--checker", JSON.stringify(side())];
+const sheets = () => ["--architect", JSON.stringify(side()), "--reviewer", JSON.stringify(side())];
 
 async function ticket(body: string, tags: string[] = []): Promise<{ dbPath: string; id: string; repo: string }> {
   const dbPath = freshDbPath();

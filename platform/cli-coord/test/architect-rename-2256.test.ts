@@ -27,7 +27,7 @@ const row = {
 
 describe("ob spinoff check --architect (OB-2256 Done when 3)", () => {
   test("--planner is refused by name, exit 2", async () => {
-    const r = await runCli(freshDbPath(), ["spinoff", "check", "OB-1", "--planner", "{}", "--checker", "{}"]);
+    const r = await runCli(freshDbPath(), ["spinoff", "check", "OB-1", "--planner", "{}", "--reviewer", "{}"]);
     expect(r.code).toBe(2);
     expect(r.err).toContain("--planner");
   });

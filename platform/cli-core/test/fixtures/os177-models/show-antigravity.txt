@@ -5,7 +5,7 @@ fallback order: antigravity -> claude
 builder.simple    antigravity:gemini-4-neon   [local]
 builder.medium    antigravity:gemini-4-neon   [local]
 builder.complex   antigravity:gemini-4-neon   [local]
-checker           claude-haiku-5-5   [local]
+reviewer          claude-haiku-5-5   [local]
 role.architect    antigravity:gemini-4-neon   [local (builder.complex)]
 role.sentinel     antigravity:gemini-4-neon   [local (builder.complex)]
 role.muse         antigravity:gemini-4-neon   [local (builder.complex)]

@@ -22,7 +22,7 @@ import { entryCovers, renderOverlap, sharedPaths, touchedFiles } from "../src/sp
 const READY = "Need stated.\n\n## Drilled\n- cause read in the code\n\n## Done when\n- a test shows it";
 const ALL_TWO = { problem: 2, scope: 2, done: 2, design: 2, proof: 2, unknowns: 2, size: 2 };
 const side = (files: string[]) => ({ does: "Changes a thing.", files, questions: [], scores: ALL_TWO });
-const sheets = (architect: string[], checker: string[] = []) => ["--architect", JSON.stringify(side(architect)), "--checker", JSON.stringify(side(checker))];
+const sheets = (architect: string[], checker: string[] = []) => ["--architect", JSON.stringify(side(architect)), "--reviewer", JSON.stringify(side(checker))];
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {

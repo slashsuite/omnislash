@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, warn } from "../output.ts";
-import { ModelsFileError, SPINOFF_TIERS, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, rangeText, tierOfComplexity, type ModelsFile } from "../models-file.ts";
+import { ModelsFileError, SPINOFF_TIERS, canonicalRoute, TIER_BANDS, TIER_COMPLEXITY, builderRangeOf, builderTierOf, initModelsFile, loadModelsFile, modelsFilePath, rangeText, tierOfComplexity, type ModelsFile } from "../models-file.ts";
 import { CREDIT_HIT_WINDOW_HOURS, recentCreditHits } from "../models-credit.ts";
 import { formatTrendLine, legTrend, readLegRecords } from "../review-legs.ts";
 import { ReviewReadersError, type ReviewReaders } from "../review-readers.ts";
@@ -224,10 +224,17 @@ async function show(ctx: Ctx): Promise<void> {
   print(lines.join("\n"));
 }
 
+/** A route argument with an old alias replaced by its new name, and a stderr note saying so (OS-243). */
+function routeArg(raw: string): string {
+  const route = canonicalRoute(raw);
+  if (route !== raw) warn(`note: route '${raw}' is now '${route}'; the old name still works for one release`);
+  return route;
+}
+
 /** `ob models get <route>`: the model to run now. The chain's first entry whose provider is under its weekly limit. */
 async function get(ctx: Ctx): Promise<void> {
-  const route = ctx.args[1];
-  if (!route) throw new UsageError("usage: ob models get <route>");
+  if (!ctx.args[1]) throw new UsageError("usage: ob models get <route>");
+  const route = routeArg(ctx.args[1]);
   const r = await refusing(async () => resolveRoute(await loadRouteInputs(await io(ctx)), route));
   print(pickUnderLimit(r.chain));
 }
@@ -262,8 +269,9 @@ function localHidesWarning(inputs: RouteInputs, profile: string, route: string):
 }
 
 async function set(ctx: Ctx): Promise<void> {
-  const [, route, models] = ctx.args;
-  if (!route || !models) throw new UsageError("usage: ob models set <route> <model>[,<model>...] [--effort <lvl>] [--profile <p>]");
+  const [, rawRoute, models] = ctx.args;
+  if (!rawRoute || !models) throw new UsageError("usage: ob models set <route> <model>[,<model>...] [--effort <lvl>] [--profile <p>]");
+  const route = routeArg(rawRoute);
   const rawEffort = ctx.flags.effort;
   const named = profileFlag(ctx);
   await refusing(async () => {
@@ -280,8 +288,8 @@ async function set(ctx: Ctx): Promise<void> {
 }
 
 async function unset(ctx: Ctx): Promise<void> {
-  const route = ctx.args[1];
-  if (!route) throw new UsageError("usage: ob models unset <route> [--profile <p>]");
+  if (!ctx.args[1]) throw new UsageError("usage: ob models unset <route> [--profile <p>]");
+  const route = routeArg(ctx.args[1]);
   const named = profileFlag(ctx);
   await refusing(async () => {
     let profile = "";

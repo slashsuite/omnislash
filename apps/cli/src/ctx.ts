@@ -168,8 +168,10 @@ export interface Flags {
   label?: string;
   /** OB-1825: `ob spinoff check` inputs, and the `--no-check '<why>'` override on a dispatch. */
   architect?: string;
+  reviewer?: string;
+  /** OS-243: the old name of `--reviewer`, kept for one release. */
   checker?: string;
-  /** OB-2131: one entry per checker question; `--questions-resolved` is kept only to be refused by name. */
+  /** OB-2131: one entry per reviewer question; `--questions-resolved` is kept only to be refused by name. */
   resolutions?: string;
   "questions-resolved"?: boolean;
   "no-check"?: string;

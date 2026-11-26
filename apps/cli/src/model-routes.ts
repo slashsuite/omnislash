@@ -1,6 +1,6 @@
 // OS-145: which model runs every use, in ONE server setting, `model_routes`.
 //
-// A route is a named use of a model (`builder.medium`, `checker`, `role.architect`, `sweep.first`,
+// A route is a named use of a model (`builder.medium`, `reviewer`, `role.architect`, `sweep.first`,
 // `job.<name>`, ...). Each route is a fallback CHAIN of models tried in order (a credit or quota error moves to
 // the next entry) and an optional effort. Routes are grouped into profiles (one per account), and the setting
 // names the profile in force for everyone:
@@ -10,10 +10,10 @@
 //                            "review": {"readers": {...}, "tiers": {...}}}}}
 //
 // Each route resolves in three layers, the first that names it winning:
-//   1. local:   this machine's `~/.config/ob/models.jsonc` (its `routes`, or the old `builder` / `checker` keys);
+//   1. local:   this machine's `~/.config/ob/models.jsonc` (its `routes`, or the old `builder` / `reviewer` keys);
 //   2. server:  the `model_routes` setting;
 //   3. default: what ob ran before OS-145 (the `spinoff_tier_models` setting over the built-in tiers, Haiku for the
-//               checker, the builder.complex model for role threads, Haiku/Opus for the sweep).
+//               reviewer, the builder.complex model for role threads, Haiku/Opus for the sweep).
 // The review readers resolve the same way: the profile's `review` here, else the old `review_readers` key (read,
 // never written), else Opus (Neon its fallback), with the local file's `review` legs laid over the result.
 //
@@ -24,7 +24,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
-  DEFAULT_CHECKER,
+  DEFAULT_REVIEWER,
+  canonicalRoute,
   DEFAULT_TIER_MODELS,
   EFFORT_LEVELS,
   TIER_BANDS,
@@ -39,6 +40,7 @@ import {
   type ComplexityRange,
   type RangeModel,
   FIXED_ROUTES,
+  ROUTE_ALIASES,
   ModelsFileError,
   SPINOFF_TIERS,
   canonicalLeg,
@@ -124,10 +126,14 @@ export function validateModelRoutes(v: unknown): ModelRoutes {
     for (const key of Object.keys(p)) if (key !== "routes" && key !== "review") throw new ModelRoutesError(`model_routes profile '${name}' has an unknown key '${key}' (use routes, review)`);
     if (p.routes !== undefined && !isObject(p.routes)) throw new ModelRoutesError(`model_routes profile '${name}'.routes must be an object of route to {chain, effort}`);
     const routes: Record<string, RouteSpec> = {};
-    for (const [route, spec] of Object.entries((p.routes ?? {}) as Record<string, unknown>)) {
-      if (!isRouteName(route)) throw new ModelRoutesError(`model_routes profile '${name}': ${routeNameRejection(route)}`);
+    const rawRoutes = (p.routes ?? {}) as Record<string, unknown>;
+    for (const [raw, spec] of Object.entries(rawRoutes)) {
+      const route = canonicalRoute(raw);
+      if (!isRouteName(route)) throw new ModelRoutesError(`model_routes profile '${name}': ${routeNameRejection(raw)}`);
+      // OS-243: the new name beats its old alias when a profile stores both.
+      if (route !== raw && Object.hasOwn(rawRoutes, route)) continue;
       try {
-        routes[route] = checkRouteSpec(`model_routes profile '${name}'.routes.${route}`, spec);
+        routes[route] = checkRouteSpec(`model_routes profile '${name}'.routes.${raw}`, spec);
       } catch (e) {
         if (e instanceof ModelsFileError) throw new ModelRoutesError(e.message);
         throw e;
@@ -220,12 +226,12 @@ export function profileOrderOf(inputs: RouteInputs): string[] {
   return [...new Set([...(active ? [active] : []), ...fallback])];
 }
 
-/** The local file's own spec for a non-builder `route` in `profile`: its `routes`, else the old `checker` key. */
+/** The local file's own spec for a non-builder `route` in `profile`: its `routes`, else the old `reviewer` key. */
 function localSpec(file: ModelsFile | null, profile: string | null, route: string): RouteSpec | null {
   if (!file || profile === null || !Object.hasOwn(file.profiles, profile)) return null;
   const p = file.profiles[profile]!;
   if (p.routes[route]) return p.routes[route]!;
-  if (route === "checker" && p.checker) return { chain: [p.checker] };
+  if (route === "reviewer" && p.reviewer) return { chain: [p.reviewer] };
   return null;
 }
 
@@ -353,7 +359,8 @@ function spec(route: string, profile: string | null, s: RouteSpec, source: Route
 }
 
 /** One route in one profile (`profile` null = no profile: defaults only). Throws on a name that is no route. Pure. */
-export function resolveRouteIn(inputs: RouteInputs, route: string, profile: string | null): ResolvedRoute {
+export function resolveRouteIn(inputs: RouteInputs, name: string, profile: string | null): ResolvedRoute {
+  const route = canonicalRoute(name);
   if (!isRouteName(route)) throw new ModelRoutesError(routeNameRejection(route));
   const range = builderRangeOf(route);
   if (range) {
@@ -368,7 +375,7 @@ export function resolveRouteIn(inputs: RouteInputs, route: string, profile: stri
   if (local) return spec(route, profile, local, "local");
   const server = serverSpec(inputs.server, profile, route);
   if (server) return spec(route, profile, server, "server");
-  if (route === "checker") return { route, profile, chain: [DEFAULT_CHECKER], source: "default" };
+  if (route === "reviewer") return { route, profile, chain: [DEFAULT_REVIEWER], source: "default" };
   if (route.startsWith("role.")) {
     // Today's behaviour: a role thread opens on builder.complex when a profile names it, else Opus on Claude.
     // The `spinoff_tier_models` setting never reached role threads, so the default layer's builder.complex does not either.
@@ -510,7 +517,7 @@ export function parseChain(text: string): string[] {
 /**
  * OS-239: a builder or role route must name its provider. A bare id runs on each T3 project's own default
  * provider, so on 2026-11-26 a bare `claude-opus-5-5` sent one project's builders to Gemini and made projects with
- * no default refuse every launch. Other routes (`checker`, `sweep.*`, `job.*`) keep taking a bare id.
+ * no default refuse every launch. Other routes (`reviewer`, `sweep.*`, `job.*`) keep taking a bare id.
  */
 export function needsProvider(route: string): boolean {
   return route.startsWith("builder.") || route.startsWith("role.");
@@ -559,7 +566,8 @@ function withoutBuilder(routes: Record<string, RouteSpec>): Record<string, Route
  *   old key, as before. On a profile in the range form it sets the tier's band when exactly that range exists,
  *   and is refused, naming the ranges, otherwise.
  */
-export function withRoute(v: ModelRoutes, profile: string, route: string, chain: string[], effort?: RouteEffort, tierModels: Readonly<Record<SpinoffTier, string>> = DEFAULT_TIER_MODELS): ModelRoutes {
+export function withRoute(v: ModelRoutes, profile: string, name: string, chain: string[], effort?: RouteEffort, tierModels: Readonly<Record<SpinoffTier, string>> = DEFAULT_TIER_MODELS): ModelRoutes {
+  const route = canonicalRoute(name);
   if (!isRouteName(route)) throw new ModelRoutesError(routeNameRejection(route));
   const bare = bareModelRefusal(route, chain);
   if (bare) throw new ModelRoutesError(bare);
@@ -618,7 +626,8 @@ export function withBuilderRanges(v: ModelRoutes, profile: string, ranges: reado
 /** `ob models unset builder`: the profile's whole builder set off the server, back to the defaults. */
 export const BUILDER_SET = "builder";
 
-export function withoutRoute(v: ModelRoutes, profile: string, route: string): ModelRoutes {
+export function withoutRoute(v: ModelRoutes, profile: string, name: string): ModelRoutes {
+  const route = canonicalRoute(name);
   if (route === BUILDER_SET) {
     const routes = v.profiles[profile]?.routes ?? {};
     if (!Object.keys(routes).some((r) => r.startsWith("builder."))) throw new ModelRoutesError(`profile '${profile}' sets no builder routes on the server: nothing to unset`);
@@ -740,11 +749,21 @@ export async function loadServerRoutes(io: ConfigIO): Promise<ServerRoutes> {
   };
 }
 
+/** The key a route is stored under: its old alias while one exists (OS-243, one release). Pure. */
+function storedRouteName(route: string): string {
+  return Object.entries(ROUTE_ALIASES).find(([, to]) => to === route)?.[0] ?? route;
+}
+
 export async function saveModelRoutes(io: ConfigIO, v: ModelRoutes): Promise<ModelRoutes> {
   const clean = validateModelRoutes(v);
-  // A profile's review is written in the form older readers still parse where it can be (storedReviewReaders).
+  // A profile's review is written in the form older readers still parse where it can be (storedReviewReaders),
+  // and each route under its old alias (OS-243: `reviewer` as `checker`) for one release, so an older ob still
+  // parses the setting. Every reader maps the alias back.
   const profiles = Object.fromEntries(
-    Object.entries(clean.profiles).map(([name, p]) => [name, p.review ? { ...p, review: storedReviewReaders(p.review) } : p]),
+    Object.entries(clean.profiles).map(([name, p]) => {
+      const routes = Object.fromEntries(Object.entries(p.routes).map(([route, s]) => [storedRouteName(route), s]));
+      return [name, { ...p, routes, ...(p.review ? { review: storedReviewReaders(p.review) } : {}) }];
+    }),
   );
   await io.set(MODEL_ROUTES_KEY, JSON.stringify({ ...clean, profiles }));
   return clean;

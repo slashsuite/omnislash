@@ -28,7 +28,7 @@ function view(): ModelsView {
     profile: "claude",
     routes: [
       { route: "job.nightly", chain: ["claude-opus-5-5"], effort: null, source: "server", label: "server", server: { chain: ["claude-opus-5-5"], effort: null } },
-      { route: "checker", chain: ["claude-haiku-5-5"], effort: null, source: "default", label: "default", server: null },
+      { route: "reviewer", chain: ["claude-haiku-5-5"], effort: null, source: "default", label: "default", server: null },
     ],
     builder: { bands: [{ from: 1, to: 10, chain: ["claudeAgent:claude-opus-5-5"], effort: null, source: "server" }], local: false },
     review: { source: "server", value: { readers: { opus: { model: "claude-opus-5-5" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }, local: {} } as ModelsView["review"],

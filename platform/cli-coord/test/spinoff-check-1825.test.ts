@@ -26,7 +26,7 @@ const side = (over: Record<string, unknown> = {}) => ({
   scores: ALL_TWO,
   ...over,
 });
-const sheets = (architect = side(), checker = side()) => ["--architect", JSON.stringify(architect), "--checker", JSON.stringify(checker)];
+const sheets = (architect = side(), checker = side()) => ["--architect", JSON.stringify(architect), "--reviewer", JSON.stringify(checker)];
 
 async function ticket(body: string | null = READY): Promise<{ dbPath: string; id: string; repo: string }> {
   const dbPath = freshDbPath();
@@ -147,16 +147,29 @@ describe("ob spinoff check (OB-1825)", () => {
     expect(renderDecision(decision!)).not.toMatch(/architect|checker|apart/);
   });
 
+  test("OS-243: --checker is the old name of --reviewer: it records with a note, and both together are refused", async () => {
+    const { dbPath, id } = await ticket();
+    const old = await runCli(dbPath, ["spinoff", "check", id, "--architect", JSON.stringify(side()), "--checker", JSON.stringify(side())]);
+    expect(old.code).toBe(0);
+    expect(old.err).toContain("note: --checker is now --reviewer");
+    expect((await trail(dbPath, id))[0]).toMatchObject({ to: "go" });
+    const both = await runCli(dbPath, ["spinoff", "check", id, ...sheets(), "--checker", JSON.stringify(side())]);
+    expect(both.code).toBe(2);
+    expect(both.err).toContain("pass --reviewer only");
+    const none = await runCli(dbPath, ["spinoff", "check", id, "--architect", JSON.stringify(side())]);
+    expect(none.err).toContain("--reviewer <json|file>");
+  });
+
   test("a ref with no item and a malformed sheet are refused by name", async () => {
     const dbPath = freshDbPath();
     const none = await runCli(dbPath, ["spinoff", "check", "ZZ-9", ...sheets()]);
     expect(none.code).not.toBe(0);
     expect(none.err).toContain("no ob item for 'ZZ-9'");
     const { dbPath: db2, id } = await ticket();
-    const bad = await runCli(db2, ["spinoff", "check", id, "--architect", "{\"files\":[]}", "--checker", JSON.stringify(side())]);
+    const bad = await runCli(db2, ["spinoff", "check", id, "--architect", "{\"files\":[]}", "--reviewer", JSON.stringify(side())]);
     expect(bad.code).toBe(2);
     expect(bad.err).toContain("scores.problem");
-    const missing = await runCli(db2, ["spinoff", "check", id, "--architect", "/nonexistent/sheet.json", "--checker", JSON.stringify(side())]);
+    const missing = await runCli(db2, ["spinoff", "check", id, "--architect", "/nonexistent/sheet.json", "--reviewer", JSON.stringify(side())]);
     expect(missing.err).toContain("cannot read");
   });
 });
