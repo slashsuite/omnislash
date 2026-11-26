@@ -25,22 +25,22 @@ export interface RunApiOptions {
 	flags: Flags;
 	base: string;
 	/** Injected by tests so the suite reaches no network; production uses fetch. */
-	transport?: ApiTransport;
+	transport?: ApiTransport | undefined;
 	/** OB-1808: the byte-stream seam for files. Tests inject; production omits. */
-	download?: ApiDownload;
+	download?: ApiDownload | undefined;
 	/** Injected by tests so a token file is never needed to exercise the routing. */
-	token?: string;
-	cwd?: string;
-	git?: (cwd: string) => { branch?: string; worktree?: string };
+	token?: string | undefined;
+	cwd?: string | undefined;
+	git?: (cwd: string) => { branch?: string | undefined; worktree?: string | undefined };
 	/** The local handler for a LOCAL_ONLY "run" command, injected so this module imports no command. */
 	localHandler?: (ctx: Ctx) => void | Promise<void>;
 	/** 420: google-auth seams. Tests inject; production omits and the real loopback runs. */
-	googleAuth?: ApiCtx["googleAuth"];
+	googleAuth?: ApiCtx["googleAuth"] | undefined;
 	/** ob 636: ssh seam for `ob deploy run`. Tests inject; production omits. */
-	deploySsh?: ApiCtx["deploySsh"];
-	cloudflareFetch?: ApiCtx["cloudflareFetch"];
+	deploySsh?: ApiCtx["deploySsh"] | undefined;
+	cloudflareFetch?: ApiCtx["cloudflareFetch"] | undefined;
 	/** OB-1808: how a client waits on a host job. Tests inject; production omits. */
-	hostJobWait?: ApiCtx["hostJobWait"];
+	hostJobWait?: ApiCtx["hostJobWait"] | undefined;
 }
 
 /**
@@ -97,7 +97,7 @@ export function unreachableDatabase(command: string): Database {
 	) as unknown as Database;
 }
 
-function defaultGit(cwd: string): { branch?: string; worktree?: string } {
+function defaultGit(cwd: string): { branch?: string | undefined; worktree?: string | undefined } {
 	const read = (args: string[]): string | undefined => {
 		try {
 			const p = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "ignore" });

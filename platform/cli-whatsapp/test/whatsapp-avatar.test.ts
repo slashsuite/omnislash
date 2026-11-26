@@ -3,7 +3,6 @@ import { mkdtempSync, writeFileSync, existsSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 
@@ -12,7 +11,6 @@ import { setConfig } from "../../../apps/cli/src/config.ts";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 import { fetchWhatsappAvatar, avatarCachePath, avatarCacheDir, AVATAR_TTL_MS } from "../src/whatsapp/avatar.ts";
 import { handleWhatsappRequest } from "../../../apps/cli/src/realtime.ts";
-import type { Database } from "bun:sqlite";
 
 // Ticket 163 — WhatsApp profile-picture (avatar) proxy. NO live bridge or network: the bridge fetch is a
 // mock. Asserts the proxy never leaks the bearer token, streams the bytes on 200, passes a bridge 404

@@ -17,16 +17,16 @@ import { defaultMasterKey, getSecret, hasSecret, setSecret, type MasterKey } fro
 
 export interface GoogleToken {
   access_token: string;
-  refresh_token?: string;
+  refresh_token?: string | undefined;
   /** Absolute expiry as ISO-8601 (preferred) … */
-  expiry?: string;
+  expiry?: string | undefined;
   /** … or epoch millis. Either is accepted; ISO wins if both are set. */
-  expiry_ms?: number;
-  client_id?: string;
-  client_secret?: string;
-  token_uri?: string;
+  expiry_ms?: number | undefined;
+  client_id?: string | undefined;
+  client_secret?: string | undefined;
+  token_uri?: string | undefined;
   /** ISO time Google refused the refresh token (invalid_grant, OB-1950). Cleared by a re-auth. */
-  refresh_invalid_at?: string;
+  refresh_invalid_at?: string | undefined;
 }
 
 /** The error for a refresh token Google refused (OB-1950). Names no token and no response body. */
@@ -268,15 +268,15 @@ function isAbortError(err: unknown): boolean {
 }
 
 export interface GoogleClient {
-  gmailListMessages(opts: { q?: string; pageToken?: string; maxResults?: number }): Promise<GmailListResponse>;
+  gmailListMessages(opts: { q?: string; pageToken?: string | undefined; maxResults?: number }): Promise<GmailListResponse>;
   gmailGetMessage(id: string): Promise<GmailMessage>;
-  gmailHistoryList(opts: { startHistoryId: string; pageToken?: string }): Promise<GmailHistoryResponse>;
+  gmailHistoryList(opts: { startHistoryId: string; pageToken?: string | undefined }): Promise<GmailHistoryResponse>;
   /** OB-1914: `users/me/profile`; its historyId is where a backfill hands over to the history poll. */
   gmailGetProfile(): Promise<{ historyId?: string }>;
   calendarListEvents(opts: {
     calendarId: string;
-    syncToken?: string;
-    pageToken?: string;
+    syncToken?: string | undefined;
+    pageToken?: string | undefined;
     timeMin?: string;
   }): Promise<CalendarListResponse>;
 }
@@ -319,13 +319,13 @@ export interface GmailDraftClient {
   gmailGetMessage(id: string): Promise<GmailMessage>;
   /** 1680: one attachment's bytes (`data` is base64url), read-only. */
   gmailGetAttachment(messageId: string, attachmentId: string): Promise<GmailAttachmentBody>;
-  gmailCreateDraft(req: { raw: string; threadId?: string }): Promise<GmailDraft>;
+  gmailCreateDraft(req: { raw: string; threadId?: string | undefined }): Promise<GmailDraft>;
   gmailGetDraft(id: string): Promise<GmailDraft>;
   gmailSendDraft(id: string): Promise<GmailMessage>;
   /** OB-1750: the newest drafts first. Ids only: `gmailGetDraft` has the headers. */
   gmailListDrafts(opts: { maxResults?: number; pageToken?: string; includeSpamTrash?: boolean }): Promise<GmailDraftListResponse>;
   /** OB-1750: replace a draft's message in place (`drafts.update`); the draft id is kept. Never sends. */
-  gmailUpdateDraft(id: string, req: { raw: string; threadId?: string }): Promise<GmailDraft>;
+  gmailUpdateDraft(id: string, req: { raw: string; threadId?: string | undefined }): Promise<GmailDraft>;
   /** OB-1750: `drafts.delete` removes the draft outright (it does not go to Trash). */
   gmailDeleteDraft(id: string): Promise<void>;
 }
@@ -350,11 +350,11 @@ const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 
 export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
   private token: GoogleToken;
-  private readonly persist?: (t: GoogleToken) => void | Promise<void>;
+  private readonly persist?: ((t: GoogleToken) => void | Promise<void>) | undefined;
   private readonly fetchImpl: GoogleFetch;
   private readonly timeoutMs: number;
   /** Called when Google refuses the refresh token (invalid_grant), to record the failing credential. */
-  private readonly onInvalidGrant?: () => void | Promise<void>;
+  private readonly onInvalidGrant?: (() => void | Promise<void>) | undefined;
   /** The in-flight refresh, shared by concurrent callers (single flight); cleared when it settles. */
   private refreshing: Promise<string> | undefined;
   /** A pre-emptive refresh of a token with no recorded expiry was rejected; do not try it again. */
@@ -369,7 +369,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
   constructor(
     token: GoogleToken,
     persist?: (t: GoogleToken) => void | Promise<void>,
-    opts: { fetch?: GoogleFetch; timeoutMs?: number; onInvalidGrant?: () => void | Promise<void> } = {},
+    opts: { fetch?: GoogleFetch | undefined; timeoutMs?: number; onInvalidGrant?: () => void | Promise<void> } = {},
   ) {
     this.token = token;
     this.persist = persist;
@@ -538,7 +538,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     return this.send<T>("POST", url, body);
   }
 
-  gmailCreateDraft(req: { raw: string; threadId?: string }): Promise<GmailDraft> {
+  gmailCreateDraft(req: { raw: string; threadId?: string | undefined }): Promise<GmailDraft> {
     const message: { raw: string; threadId?: string } = { raw: req.raw };
     if (req.threadId) message.threadId = req.threadId;
     return this.post<GmailDraft>(`${GMAIL_BASE}/drafts`, { message });
@@ -561,7 +561,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     return this.get<GmailDraftListResponse>(`${GMAIL_BASE}/drafts?${p.toString()}`);
   }
 
-  gmailUpdateDraft(id: string, req: { raw: string; threadId?: string }): Promise<GmailDraft> {
+  gmailUpdateDraft(id: string, req: { raw: string; threadId?: string | undefined }): Promise<GmailDraft> {
     const message: { raw: string; threadId?: string } = { raw: req.raw };
     if (req.threadId) message.threadId = req.threadId;
     return this.send<GmailDraft>("PUT", `${GMAIL_BASE}/drafts/${encodeURIComponent(id)}`, { id, message });
@@ -576,7 +576,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     return res.sendAs ?? [];
   }
 
-  gmailListMessages(opts: { q?: string; pageToken?: string; maxResults?: number }): Promise<GmailListResponse> {
+  gmailListMessages(opts: { q?: string; pageToken?: string | undefined; maxResults?: number }): Promise<GmailListResponse> {
     const p = new URLSearchParams();
     if (opts.q) p.set("q", opts.q);
     if (opts.pageToken) p.set("pageToken", opts.pageToken);
@@ -594,7 +594,7 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
     );
   }
 
-  gmailHistoryList(opts: { startHistoryId: string; pageToken?: string }): Promise<GmailHistoryResponse> {
+  gmailHistoryList(opts: { startHistoryId: string; pageToken?: string | undefined }): Promise<GmailHistoryResponse> {
     const p = new URLSearchParams({ startHistoryId: opts.startHistoryId, historyTypes: "messageAdded" });
     if (opts.pageToken) p.set("pageToken", opts.pageToken);
     return this.get<GmailHistoryResponse>(`${GMAIL_BASE}/history?${p.toString()}`);
@@ -606,8 +606,8 @@ export class HttpGoogleClient implements GoogleClient, GmailDraftClient {
 
   calendarListEvents(opts: {
     calendarId: string;
-    syncToken?: string;
-    pageToken?: string;
+    syncToken?: string | undefined;
+    pageToken?: string | undefined;
     timeMin?: string;
   }): Promise<CalendarListResponse> {
     const p = new URLSearchParams({ singleEvents: "true", maxResults: "250" });

@@ -147,7 +147,7 @@ export async function recordEventFor(db: Database | Store, e: EventInput): Promi
 /** The store-aware form of `eventsBetween`, oldest-first with `id` breaking ties. */
 export async function eventsBetweenFor(
   db: Database | Store,
-  opts: { source?: string; type?: string; since?: string; until?: string },
+  opts: { source?: string | undefined; type?: string | undefined; since?: string | undefined; until?: string | undefined },
 ): Promise<EventRow[]> {
   const s = asStore(db);
   const conditions = [];

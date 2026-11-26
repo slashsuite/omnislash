@@ -80,7 +80,7 @@ export async function docCreate(
 export async function docSet(
   db: Database | Store,
   row: ItemRow,
-  fields: { title?: string; body?: string },
+  fields: { title?: string | undefined; body?: string | undefined },
 ): Promise<DocDetail> {
   if (fields.title === undefined && fields.body === undefined) {
     throw new UsageError("doc set requires --body, --body-file or --title");
@@ -125,7 +125,7 @@ export function renderDocHistory(doc: DocDetail): string {
 }
 
 /** `--body`, or `--body-file` read on THIS machine; both is an error. */
-export function bodyFromFlags(flags: { body?: string; "body-file"?: string }): string | undefined {
+export function bodyFromFlags(flags: { body?: string | undefined; "body-file"?: string | undefined }): string | undefined {
   if (flags.body !== undefined && flags["body-file"] !== undefined) {
     throw new UsageError("pass --body or --body-file, not both");
   }

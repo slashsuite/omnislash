@@ -13,12 +13,11 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import { API_ROUTED_COMMANDS, LOCAL_ONLY_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
-import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
+import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const BUDGET = spawnBudget(4);
 
 interface Stub {
   transport: ApiTransport;
@@ -225,8 +224,8 @@ describe("GET /triage (375)", () => {
       // Newest first: the second-created item leads, even if created_at ties (id breaks the tie).
       expect(res.body.items.map((i: { id: string }) => i.id)).toEqual([newer, older]);
       const [row] = res.body.items as Array<{ id: string; origin_repo: string; note: string }>;
-      expect(row.origin_repo).toBe("cue-frontend");
-      expect(row.note).toBe("1234567890".repeat(5) + "1234567...");
+      expect(row?.origin_repo).toBe("cue-frontend");
+      expect(row?.note).toBe("1234567890".repeat(5) + "1234567...");
       const olderRow = res.body.items[1] as { note: string };
       expect(olderRow.note).toBe("a short note");
     });

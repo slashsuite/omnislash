@@ -67,7 +67,7 @@ function thread(over: Partial<T3Thread> & { threadId: string }): T3Thread {
 interface FakeSeam {
   seam: T3Seam;
   reads: string[];
-  lists: Array<{ projectId?: string; includeSubagents?: boolean }>;
+  lists: Array<{ projectId?: string | undefined; includeSubagents?: boolean | undefined }>;
 }
 
 function fakeSeam(
@@ -75,7 +75,7 @@ function fakeSeam(
   opts: { failList?: string; failRead?: string[]; failReadHard?: boolean; failProjects?: string; projects?: T3Project[] } = {},
 ): FakeSeam {
   const reads: string[] = [];
-  const lists: Array<{ projectId?: string; includeSubagents?: boolean }> = [];
+  const lists: Array<{ projectId?: string | undefined; includeSubagents?: boolean | undefined }> = [];
   const projects = opts.projects ?? [PROJECT];
   return {
     reads,
@@ -104,7 +104,7 @@ function fakeSeam(
             settled: t.settled,
             parentThreadId: t.parentThreadId ?? null,
             relationshipToParent: t.relationshipToParent ?? null,
-            updatedAt: t.updatedAt,
+            ...(t.updatedAt !== undefined && { updatedAt: t.updatedAt }),
           })),
           nextCursor: null,
         };

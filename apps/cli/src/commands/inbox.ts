@@ -26,7 +26,7 @@ export interface InboxCtx {
   mode: Mode;
   flags: Flags;
   args: string[];
-  exit?: number;
+  exit?: number | undefined;
 }
 
 /** OS-56: deliver the role's unread messages into its run (see ../role-deliver.ts). */

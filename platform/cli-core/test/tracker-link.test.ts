@@ -629,7 +629,6 @@ describe("an item holds ONE reference, and neither kind may eat the other (77)",
     expect(r.err).toContain("CUE-1234");
     // the Linear ref survived, id and url both
     const db = openDb(dbPath);
-    const store = sqliteStoreFor(db);
     expect(await getLinearOnlyRef(db, id)).toEqual({ linear_id: "CUE-1234", url: linearUrl });
     expect(await getIssueLink(db, id)).toBeNull();
     expect((await runCli(dbPath, ["show", id])).out).toContain("CUE-1234");

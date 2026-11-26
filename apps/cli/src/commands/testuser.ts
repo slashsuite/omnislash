@@ -35,12 +35,12 @@ export interface TestUserRow {
 
 export interface AddTestUserInput {
   label: string;
-  role?: string | null;
-  email?: string | null;
-  workspace?: string | null;
-  env?: string | null;
-  secretRef?: string | null;
-  notes?: string | null;
+  role?: string | null | undefined;
+  email?: string | null | undefined;
+  workspace?: string | null | undefined;
+  env?: string | null | undefined;
+  secretRef?: string | null | undefined;
+  notes?: string | null | undefined;
 }
 
 const STALE_DAYS = 90;
@@ -181,7 +181,7 @@ export function listTestUsers(
 
 export async function listTestUsersFor(
   store: Store,
-  filter: { role?: string | null; env?: string | null } = {},
+  filter: { role?: string | null | undefined; env?: string | null | undefined } = {},
 ): Promise<TestUserRow[]> {
   const conds = [];
   if (filter.role) conds.push(eq(store.t.testUser.role, filter.role));

@@ -3,7 +3,7 @@ import type { Database } from "bun:sqlite";
 import { freshDb, freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { sqliteStoreFor } from "../../../apps/cli/src/db/store.ts";
-import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
+import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 import {
   CREDENTIALS,

@@ -59,7 +59,7 @@ const has = (n: string) => screen.queryAllByRole("button").some((b) => b.textCon
 
 async function open(id: string) {
   const view = render(<ItemDrawer itemId={id} onClose={() => {}} {...fns} />);
-  await screen.findByText(byId[id].title);
+  await screen.findByText(byId[id]!.title);
   return view;
 }
 
@@ -78,7 +78,7 @@ describe("switching items", () => {
     expect(has("Start")).toBe(false);
     expect(screen.getByText("Loading…")).toBeTruthy();
 
-    await act(async () => resolveB(byId.B));
+    await act(async () => resolveB(byId.B!));
     expect(await screen.findByText("Item B")).toBeTruthy();
     expect(has("Close")).toBe(true);
     expect(has("Start")).toBe(false);

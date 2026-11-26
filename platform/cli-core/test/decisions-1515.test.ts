@@ -22,7 +22,6 @@ import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
 import { decisionsForItem, recordDecision } from "../../../apps/cli/src/decisions.ts";
 import { blockItem, closeItem, reopenItem, startItem, unblockItem } from "../../../apps/cli/src/workflow.ts";
-import { itemDetail } from "../../../apps/cli/src/detail.ts";
 import { renderItemDetail } from "../../../apps/cli/src/api/render.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";

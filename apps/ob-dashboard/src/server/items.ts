@@ -92,7 +92,7 @@ const isPriority = (p: unknown): p is number => typeof p === "number" && Number.
 
 /** A group's queue, banded by priority (`?team=`, OS-185), or one project's in it (`?project=`). Read-only. */
 export const getQueue = createServerFn({ method: "GET" })
-  .validator((d: { team?: string; project?: string } | undefined) => {
+  .validator((d: { team?: string | undefined; project?: string | undefined } | undefined) => {
     for (const k of ["team", "project"] as const) {
       if (d?.[k] !== undefined && typeof d[k] !== "string") throw new Error(`${k} must be a string`);
     }

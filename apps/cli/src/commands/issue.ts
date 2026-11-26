@@ -44,7 +44,7 @@ import { DEFAULT_KEY, equivalentRefs, resolveItemId } from "../refs.ts";
  *  - a checkout that is not `wayfinder_repo`. `ob` is on PATH everywhere, so `cd ~/dev/cue-frontend &&
  *    ob issue landed 55` would otherwise read a completely unrelated repo's history and answer from it.
  */
-export function resolveTrackerCheckout(opts: { cwd: string; explicit?: string; trackerRepo: string }): string {
+export function resolveTrackerCheckout(opts: { cwd: string; explicit?: string | undefined; trackerRepo: string }): string {
   const explicit = opts.explicit;
   let root: string | null;
   if (explicit) {

@@ -7,7 +7,6 @@ import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { localCheckout, nearestNames, renderFacts, replaceFacts, runWiki, type WikiCtx } from "../../../apps/cli/src/commands/wiki.ts";
 import type { Project } from "../../../apps/cli/src/project.ts";
 
-const REPO = join(import.meta.dir, "..", "..", "..");
 let tmp: string;
 let db: string;
 

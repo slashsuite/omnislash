@@ -47,7 +47,7 @@ export function sinceToGmailQuery(since: string): string {
 const DAY_SECONDS = 86_400;
 
 /** Resolve the backfill list query: raw --query wins, then --days, then --since, else the default window. */
-export function resolveBackfillQuery(opts: { query?: string; days?: number; since?: string }): string {
+export function resolveBackfillQuery(opts: { query?: string | undefined; days?: number | undefined; since?: string | undefined }): string {
   if (opts.query) return opts.query;
   if (typeof opts.days === "number" && Number.isFinite(opts.days) && opts.days > 0) return `newer_than:${opts.days}d`;
   if (opts.since) return sinceToGmailQuery(opts.since);
@@ -61,7 +61,7 @@ export function resolveBackfillQuery(opts: { query?: string; days?: number; sinc
  * `after:YYYY/MM/DD`.
  */
 export function resolveAbsoluteBackfillQuery(
-  opts: { query?: string; days?: number; since?: string },
+  opts: { query?: string | undefined; days?: number | undefined; since?: string | undefined },
   nowMs: number,
 ): string {
   const q = resolveBackfillQuery(opts);
@@ -85,7 +85,7 @@ export function header(payload: GmailMessagePart | undefined, name: string): str
 export function parseAddr(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const m = raw.match(/<([^>]+)>/);
-  const addr = (m ? m[1] : raw).trim().toLowerCase();
+  const addr = ((m ? m[1] : raw) ?? "").trim().toLowerCase();
   return addr.length > 0 ? addr : null;
 }
 
@@ -204,17 +204,17 @@ export interface GmailSyncResult {
 }
 
 export interface GmailSyncOpts {
-  backfill?: boolean;
+  backfill?: boolean | undefined;
   /** Raw Gmail search query — overrides the recent-window default. */
-  query?: string;
+  query?: string | undefined;
   /** Bound the backfill to the last <days> days. */
-  days?: number;
+  days?: number | undefined;
   /** Bound the backfill from a `--since` instant (ISO / YYYY-MM-DD / "-Nd"). */
-  since?: string;
+  since?: string | undefined;
   /** Hard cap on messages fetched this run (default DEFAULT_MAX_MESSAGES). */
-  max?: number;
+  max?: number | undefined;
   /** Clock seam (epoch ms) for the absolute backfill window; tests pin it. */
-  now?: () => number;
+  now?: (() => number) | undefined;
 }
 
 /** A capped backfill's resume point. `h` is the profile historyId read when the backfill started. */
@@ -470,7 +470,7 @@ export async function searchEmail(store: Store, query: string, limit = 20): Prom
 /** Recent ingested email (most recent first), optionally within a [since, until] window. */
 export async function recentEmail(
   store: Store,
-  opts: { since?: string; until?: string; limit?: number } = {},
+  opts: { since?: string | undefined; until?: string | undefined; limit?: number | undefined } = {},
 ): Promise<EmailHit[]> {
   const conds = [];
   if (opts.since) conds.push(gte(store.t.emailMessage.ts, opts.since));

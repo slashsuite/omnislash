@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 import { and, asc, desc, eq, inArray, ne, not, sql } from "drizzle-orm";
 import type { Ctx } from "../ctx.ts";
 import { orm } from "../db/orm.ts";
-import { event, item, prComment } from "../db/schema.ts";
+import { event, prComment } from "../db/schema.ts";
 import { triageCount } from "../items.ts";
 import { triageBanner } from "./triage.ts";
 import { print } from "../output.ts";

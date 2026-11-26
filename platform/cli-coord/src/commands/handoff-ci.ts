@@ -127,7 +127,7 @@ export interface HandoffCiInput {
   /** The worktree's HEAD for the branch (full sha), or null when git could not say. */
   headSha: string | null;
   /** The `--ci-unchecked` reason, when passed. */
-  unchecked?: string | null;
+  unchecked?: string | null | undefined;
   /** OS-211: the branch's commits past main, read only when it has no open PR; null when git could not count them. */
   commitsPastMain: () => number | null;
   sh: ShFn;

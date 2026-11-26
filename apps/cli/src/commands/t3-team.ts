@@ -43,7 +43,7 @@ export interface TeamRunCtx {
   flags: Flags;
   /** The arguments after `t3`: `["team", "add", "x"]`, `["architect", "slash"]`. */
   args: string[];
-  exit?: number;
+  exit?: number | undefined;
 }
 
 /** Every flag an `ob t3` subcommand reads (OB-2255): anything else is refused by name, before any change. */

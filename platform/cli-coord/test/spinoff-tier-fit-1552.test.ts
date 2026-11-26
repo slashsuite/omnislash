@@ -113,11 +113,11 @@ describe("the tier-fit goes on the ticket's decisions trail (1552)", () => {
     const trail = await decisionsForItem(db, itemId);
     // Two rows, both the same move: the handoff itself (1515, no note here) and the rating beside it.
     expect(trail).toHaveLength(2);
-    expect(trail[0].note).toBe(line);
-    expect(trail[0].from).toBe("building");
-    expect(trail[0].to).toBe("handed-off");
-    expect(trail[0].spinoff_row).toBe(row.id);
-    expect(trail[1].note).toBeNull();
+    expect(trail[0]!.note).toBe(line);
+    expect(trail[0]!.from).toBe("building");
+    expect(trail[0]!.to).toBe("handed-off");
+    expect(trail[0]!.spinoff_row).toBe(row.id);
+    expect(trail[1]!.note).toBeNull();
   });
 
   test("no rating leaves no tier-fit row, and the result says so", async () => {

@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { Ctx } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { eventsBetweenFor, parsePayload, nowIso } from "../events.ts";

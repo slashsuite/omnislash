@@ -228,7 +228,7 @@ export async function handleWhatsappRequest(
         Number.isFinite(raw) && raw > 0 ? Math.min(raw, WHATSAPP_THREAD_CAP) : WHATSAPP_THREAD_DEFAULT;
       // 193: `before` cursor pages upward — each request returns the next older batch + a hasMore flag.
       const before = url.searchParams.get("before") || undefined;
-      return json(await threadPageForChat(store, chatJid, { limit, before }));
+      return json(await threadPageForChat(store, chatJid, { limit, ...(before !== undefined && { before }) }));
     }
 
     if (isTranscribe && req.method === "POST") {
@@ -339,12 +339,12 @@ export function createSidecar(
      * engine rather than a file this module picked for itself. A thunk (OB-1617) lets a host hand its
      * own singleton through, opened with the options it chose (the dashboard's `migrate: false`).
      */
-    store?: Store | (() => Promise<Store>);
-    debounceMs?: number;
+    store?: Store | (() => Promise<Store>) | undefined;
+    debounceMs?: number | undefined;
     /** How often the snapshot is re-read while a client is connected (337). */
-    pollMs?: number;
+    pollMs?: number | undefined;
     /** Whether `GET /` upgrades to a socket. True for the standalone listener, false when mounted. */
-    upgradeOnRoot?: boolean;
+    upgradeOnRoot?: boolean | undefined;
   } = {},
 ): SidecarMount {
   const storeFor = async (): Promise<Store> =>

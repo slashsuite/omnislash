@@ -159,12 +159,12 @@ function parseAs(raw: string | undefined): CompareAs | null {
 
 export function parseCompareRequest(input: {
   args: string[];
-  as?: string;
-  design?: string;
-  on?: string[];
-  off?: string[];
-  noEnforce?: boolean;
-  json?: boolean;
+  as?: string | undefined;
+  design?: string | undefined;
+  on?: string[] | undefined;
+  off?: string[] | undefined;
+  noEnforce?: boolean | undefined;
+  json?: boolean | undefined;
 }): ComparePlan {
   const [sub, ...rest] = input.args;
   if (sub === undefined) throw new UsageError("vision requires compare");

@@ -4,8 +4,6 @@
 // (insert, conflict does nothing, returning) once more on a real Postgres store. Repos and threads are invented.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { asStore, openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
@@ -26,7 +24,6 @@ import {
   type GithubRest,
 } from "../../../apps/cli/src/ci-main.ts";
 import { storeAgentRegistry, __setT3Seam, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
-import { daemonJobs } from "../../cli-coord/src/commands/coord.ts";
 import { migratedDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 
@@ -63,7 +60,7 @@ function fakeSeam(state: { sent: Sent[]; fail: boolean }): T3Seam {
   return {
     send: async (input: Sent) => {
       if (state.fail) throw new Error("connection refused");
-      state.sent.push({ threadId: input.threadId, message: input.message, clientRequestId: input.clientRequestId });
+      state.sent.push({ threadId: input.threadId, message: input.message, ...(input.clientRequestId !== undefined ? { clientRequestId: input.clientRequestId } : {}) });
     },
   } as unknown as T3Seam;
 }

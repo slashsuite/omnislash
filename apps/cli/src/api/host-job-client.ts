@@ -6,9 +6,9 @@
 //   KICK: start, say so and return, `--wait` follows instead. For a command whose point is its effect and which
 //     can take many minutes: `backup`, `db backup`, `db snapshot` (pg_dump) and `cert renew` (lego DNS-01).
 // Neither holds an HTTP request open: a poll is a short GET, and the job outlives a client that goes away.
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseSnapshotName } from "../commands/db.ts";
 import { dbClone } from "../commands/db-clone.ts";
 import { AppError, UsageError } from "../errors.ts";

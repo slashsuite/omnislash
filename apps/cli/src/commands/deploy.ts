@@ -37,7 +37,7 @@ export interface RecordDeployInput {
   host: string;
   unit: string;
   sha: string;
-  at?: string;
+  at?: string | undefined;
   result: DeployResult;
 }
 
@@ -138,7 +138,7 @@ export async function runLiveDeploy(opts: {
   record: (input: RecordDeployInput) => Promise<void>;
   ssh: LiveDeploySsh;
   /** 1534: deploy exactly this commit, or refuse on the server. Validated before it reaches argv. */
-  sha?: string;
+  sha?: string | undefined;
 }): Promise<{ kicked: true } | { kicked: false; recorded: RecordDeployInput }> {
   const sshResult = opts.ssh(liveDeploySshArgv(opts.sha));
   if (sshResult.code === 0) return { kicked: true };

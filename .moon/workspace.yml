@@ -6,6 +6,7 @@
 $schema: './cache/schemas/workspace.json'
 
 projects:
+  repo: '.'
   cli: 'apps/cli'
   ob-dashboard: 'apps/ob-dashboard'
   cli-coord: 'platform/cli-coord'
@@ -15,6 +16,7 @@ projects:
   cli-whatsapp: 'platform/cli-whatsapp'
   dashboard-kit: 'platform/dashboard-kit'
   state-machine: 'platform/state-machine'
+  skills: 'skills'
 
 vcs:
   client: 'git'
@@ -39,3 +41,4 @@ hasher:
     # apps/ob-dashboard/.gitignore
     - 'apps/ob-dashboard/**/{routeTree.gen.ts,.output,.nitro,.tanstack,dist,*.log}'
     - 'apps/ob-dashboard/**/{routeTree.gen.ts,.output,.nitro,.tanstack,dist,*.log}/**/*'
+    - 'skills/ob-new-project/routeTree.gen.ts'

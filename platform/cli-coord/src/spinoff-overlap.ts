@@ -178,7 +178,7 @@ export interface DispatchOverlapDeps extends Omit<OverlapDeps, "declared"> {
 }
 
 /** Record one `overlap` decision on `ref`'s trail. A ref with no item has no trail: nothing is recorded. */
-export async function recordOverlap(store: Database | Store, ref: string, rows: OverlapDecisionRow[], opts: { note?: string | null; actor?: string | null; itemId?: string | null } = {}): Promise<boolean> {
+export async function recordOverlap(store: Database | Store, ref: string, rows: OverlapDecisionRow[], opts: { note?: string | null | undefined; actor?: string | null | undefined; itemId?: string | null | undefined } = {}): Promise<boolean> {
   const itemId = opts.itemId ?? (await ticketItemIdFor(store, ref));
   if (!itemId) return false;
   await recordDecision(store, itemId, OVERLAP_FROM, OVERLAP_TO, { actor: opts.actor, note: opts.note, extra: { rows } });
@@ -193,7 +193,7 @@ export async function recordOverlap(store: Database | Store, ref: string, rows: 
 export async function warnDispatchOverlap(
   store: Database | Store | null,
   ticket: { ref: string; repo: string; itemId?: string | null },
-  opts: DispatchOverlapDeps & { noCheck?: string | null; actor?: string | null },
+  opts: DispatchOverlapDeps & { noCheck?: string | null | undefined; actor?: string | null | undefined },
 ): Promise<OverlapResult> {
   if (opts.noCheck != null) {
     warn(`  ⚠ ${OVERLAP_UNKNOWN_LINE}`);

@@ -3,7 +3,6 @@ import { Database } from "bun:sqlite";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
-import type { Store } from "../../../apps/cli/src/db/store.ts";
 import { addPersonFor } from "../../../apps/cli/src/commands/person.ts";
 import { eventsBetweenFor, parsePayload } from "../../../apps/cli/src/events.ts";
 

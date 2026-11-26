@@ -21,7 +21,7 @@ export const DEFAULT_CALENDAR_WINDOW_DAYS = 30;
 export const DEFAULT_MAX_EVENTS = 500;
 
 /** Resolve the `timeMin` bound for a full sync: explicit --timeMin, then --since, else the default window. */
-export function resolveCalendarTimeMin(opts: { timeMin?: string; since?: string }, now = new Date()): string {
+export function resolveCalendarTimeMin(opts: { timeMin?: string | undefined; since?: string | undefined }, now = new Date()): string {
   if (opts.timeMin) return opts.timeMin;
   if (opts.since) return normalizeSince(opts.since);
   return new Date(now.getTime() - DEFAULT_CALENDAR_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
@@ -168,13 +168,13 @@ export interface CalendarSyncResult {
 }
 
 export interface CalendarSyncOpts {
-  backfill?: boolean;
+  backfill?: boolean | undefined;
   /** Absolute lower bound for a full sync (ISO). Overrides --since and the default window. */
-  timeMin?: string;
+  timeMin?: string | undefined;
   /** Bound the full sync from a `--since` instant (ISO / YYYY-MM-DD / "-Nd"). */
-  since?: string;
+  since?: string | undefined;
   /** Hard cap on events processed per CALENDAR in this run (default DEFAULT_MAX_EVENTS, 1936). */
-  max?: number;
+  max?: number | undefined;
 }
 
 /**

@@ -155,7 +155,7 @@ export interface ObApiErrorBody {
     code: ObApiErrorCode;
     message: string;
     /** For `unknown_endpoint`: every route this API serves, so a refusal is self-documenting. */
-    served?: string[];
+    served?: string[] | undefined;
   };
 }
 
@@ -193,7 +193,7 @@ export interface ObApiRoute {
    * admin only (403 to a scoped token); `read` admits a GET; `write` admits any method. Only a route in an
    * OB_API_SCOPABLE_FAMILIES family may carry it, and every such route filters to the token's projects.
    */
-  scoped?: "read" | "write";
+  scoped?: "read" | "write" | undefined;
 }
 
 /**
@@ -537,7 +537,7 @@ export interface IssueLinkRequest {
   item_id: string;
   number: number;
   /** Only a URL carries its own repo; a bare `#<n>` leaves this null and the server defaults it. */
-  repo?: string | null;
+  repo?: string | null | undefined;
 }
 
 export interface IssueLinkResponse {
@@ -574,7 +574,7 @@ export interface IssuePairingSpinoff {
 export interface IssuePairingResponse {
   tracker_repo: string;
   /** `type` is absent from an older server; the client reads that as a task (OB-1929). */
-  issues: Array<IssueLinkView & { type?: string }>;
+  issues: Array<IssueLinkView & { type?: string | undefined }>;
   unlinked_ob_ids: number[];
   spinoffs: IssuePairingSpinoff[];
   item_ids: string[];
@@ -614,53 +614,53 @@ export interface ItemLinkRequest {
 
 export interface ItemLinkResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
 }
 
 export interface EditItemRequest {
-  title?: string;
-  body?: string;
-  priority?: string | null;
-  project?: string | null;
+  title?: string | undefined;
+  body?: string | undefined;
+  priority?: string | null | undefined;
+  project?: string | null | undefined;
   /** OS-26: why, and who, for the priority change this edit may record on the trail. */
-  note?: string;
-  actor?: string;
+  note?: string | undefined;
+  actor?: string | undefined;
 }
 
 export interface EditItemResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
 }
 
 export interface DeleteItemResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
 }
 
 export interface TodayRequest {
-  id?: string | null;
-  rank?: number;
-  clear?: boolean;
+  id?: string | null | undefined;
+  rank?: number | undefined;
+  clear?: boolean | undefined;
 }
 
 export interface TodayResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
-  id?: string;
-  cleared?: boolean;
+  ref?: string | null | undefined;
+  id?: string | undefined;
+  cleared?: boolean | undefined;
 }
 
 export interface FocusRequest {
-  project?: string | null;
-  clear?: boolean;
+  project?: string | null | undefined;
+  clear?: boolean | undefined;
 }
 
 export interface FocusResponse {
   focus_project: string | null;
-  cleared?: boolean;
+  cleared?: boolean | undefined;
 }
 
 // --- /triage ------------------------------------------------------------------------------------------
@@ -687,7 +687,7 @@ export interface TriageResponse {
 /** The outcome of a clear/reject: the id and the item's status AFTER the move. */
 export interface TriageActionResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
   status: string;
 }
@@ -709,21 +709,21 @@ export type ItemsSort = "priority" | "created" | "updated";
 
 /** The query, as VALUES. Booleans are real booleans here; the CLI turns `--open` into `true`. */
 export interface ItemsQuery {
-  open?: boolean;
-  status?: string;
-  type?: string;
+  open?: boolean | undefined;
+  status?: string | undefined;
+  type?: string | undefined;
   /** A project id OR name -- resolved on the server, because the name map lives there. */
-  project?: string;
+  project?: string | undefined;
   /** OB-2255: only items in the team's member projects; an unknown team is a 404 naming it. */
-  team?: string;
-  tag?: string;
-  kind?: string;
+  team?: string | undefined;
+  tag?: string | undefined;
+  kind?: string | undefined;
   /** A priority NAME (`critical`|`urgent`|`flake`|`high`|`medium`|`low`|`none`) or its 0-6 integer, as a string. */
-  priority?: string;
-  since?: string;
-  updated_after?: string;
-  by?: ItemsSort;
-  limit?: number;
+  priority?: string | undefined;
+  since?: string | undefined;
+  updated_after?: string | undefined;
+  by?: ItemsSort | undefined;
+  limit?: number | undefined;
 }
 
 export interface ItemsResponse {
@@ -736,27 +736,27 @@ export interface ItemsResponse {
 export interface CreateItemRequest {
   type: string;
   title: string;
-  body?: string | null;
-  status?: string;
+  body?: string | null | undefined;
+  status?: string | undefined;
   /** A project id or name; resolved server-side, and stored as given when it names no known project. */
-  project?: string | null;
+  project?: string | null | undefined;
   /** A priority NAME or its 0-6 integer, as a string. */
-  priority?: string | null;
-  tags?: string[];
-  triage?: boolean;
-  origin_repo?: string | null;
+  priority?: string | null | undefined;
+  tags?: string[] | undefined;
+  triage?: boolean | undefined;
+  origin_repo?: string | null | undefined;
   /** Create a GitHub issue on wayfinder_repo and pair it. Credential stays on the host. */
-  issue?: boolean;
-  map?: string | null;
-  exec?: string | null;
+  issue?: boolean | undefined;
+  map?: string | null | undefined;
+  exec?: string | null | undefined;
   /** `ob add --link <url>`: stored as the item's ref-row URL when `issue` is not set. */
-  link_url?: string | null;
+  link_url?: string | null | undefined;
 }
 
 export interface CreateItemResponse {
   id: string;
   item: ItemView;
-  issue?: { number: number; url: string } | null;
+  issue?: { number: number; url: string } | null | undefined;
 }
 
 // --- GET /items/:id -----------------------------------------------------------------------------------
@@ -777,18 +777,18 @@ export interface TrackerMoveRequest {
    * Mirror the move onto the linked GitHub issue. Default TRUE -- moving both trackers is what `ob close`
    * / `ob reopen` MEAN (#77), and the client passes `false` for `--no-github`.
    */
-  github?: boolean;
+  github?: boolean | undefined;
   /** Why (ob 1515). Optional; recorded as a decision on the item. An older host ignores it. */
-  note?: string;
+  note?: string | undefined;
   /** Who moved it (`--holder`); a human at the keyboard when omitted. An older host ignores it. */
-  actor?: string;
+  actor?: string | undefined;
   /**
    * OB-1993, OS-163: what the CLIENT (the machine with the transcripts, the checkout and `gh`) read for each of the
    * item's landable spinoff rows, keyed by row id: its tokens, and its branch's merged PR URL when it found one. The
    * close records these instead of reading on the server, which has none. A row absent here has its tokens read on
    * the server and records no PR.
    */
-  landById?: Record<number, { tokens: TokenUsage; pr_url?: string | null }>;
+  landById?: Record<number, { tokens: TokenUsage; pr_url?: string | null }> | undefined;
 }
 
 export type CloseItemRequest = TrackerMoveRequest;
@@ -803,7 +803,7 @@ export type ReopenItemRequest = TrackerMoveRequest;
 export interface TrackerMoveResponse {
   id: string;
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   /** The item's status after the local move. */
   status: string;
   issue: number | null;
@@ -828,24 +828,24 @@ export type ObApiStateAction = (typeof OB_API_STATE_ACTIONS)[number];
 export interface StateRequest {
   action: ObApiStateAction;
   /** Required for `block`. */
-  reason?: string;
+  reason?: string | undefined;
   /** Optional owner for `block`. */
-  owner?: string;
+  owner?: string | undefined;
   /** Required for `set` -- the target state, validated against the item's own vocabulary. */
-  status?: string;
+  status?: string | undefined;
   /** Why (ob 1515). Optional; recorded as a decision on the item. An older host ignores it. */
-  note?: string;
+  note?: string | undefined;
   /** Who moved it (`--holder`); a human at the keyboard when omitted. An older host ignores it. */
-  actor?: string;
+  actor?: string | undefined;
 }
 
 export interface StateResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
   status: string;
   /** OB-1928: present when a `set` to `open` reopened a done item, so the reopen's GitHub mirror is reported. */
-  tracker?: TrackerMoveResponse;
+  tracker?: TrackerMoveResponse | undefined;
 }
 
 // --- POST /items/:id/notes ----------------------------------------------------------------------------
@@ -856,7 +856,7 @@ export interface NoteRequest {
 
 export interface NoteResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
   /** The body AFTER the append, so the caller sees the note it just wrote rather than assuming it. */
   body: string | null;
@@ -865,13 +865,13 @@ export interface NoteResponse {
 // --- POST /items/:id/tags -----------------------------------------------------------------------------
 
 export interface TagsRequest {
-  add?: string[];
-  remove?: string[];
+  add?: string[] | undefined;
+  remove?: string[] | undefined;
 }
 
 export interface TagsResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
   /** The tags AFTER the change -- the read-back, not an echo of the request. */
   tags: string[];
@@ -893,33 +893,33 @@ export type ObApiTransitionAction = (typeof OB_API_TRANSITION_ACTIONS)[number];
 export interface TransitionRequest {
   action: ObApiTransitionAction;
   /** Required for `block` (a `note` may stand in). */
-  reason?: string;
-  owner?: string;
+  reason?: string | undefined;
+  owner?: string | undefined;
   /** `close` / `reopen` mirror onto the linked GitHub issue unless `github: false` (#77), as on the CLI. */
-  github?: boolean;
-  note?: string;
-  actor?: string;
+  github?: boolean | undefined;
+  note?: string | undefined;
+  actor?: string | undefined;
 }
 
 /** The answer to a transition or a rank: the item's fresh `ob show`-level detail. */
 export interface ItemDetailResponse {
   item: ItemDetail;
   /** `close` / `reopen` only: the GitHub half's outcome. Non-null `issue_error` means the trackers are out of sync. */
-  tracker?: TrackerMoveResponse;
+  tracker?: TrackerMoveResponse | undefined;
 }
 
 /** OB-2083: exactly one of `top`, `before`, `after`. */
 export interface OrderRequest {
   /** First in its band (the item's own, or `priority`'s). */
-  top?: boolean;
+  top?: boolean | undefined;
   /** With `top`: put it first in this band, setting the priority. A name or 0-6. */
-  priority?: string;
+  priority?: string | undefined;
   /** Place it right before / after this item (same project, open). A different band's priority is adopted. */
-  before?: string;
-  after?: string;
+  before?: string | undefined;
+  after?: string | undefined;
   /** OS-26: why, and who, for the priority change a move across bands records on the trail. */
-  note?: string;
-  actor?: string;
+  note?: string | undefined;
+  actor?: string | undefined;
 }
 
 /** The answer to an order: the fresh detail, plus what the move did. */
@@ -936,9 +936,9 @@ export interface OrderResponse extends ItemDetailResponse {
 
 export interface RankRequest {
   /** An explicit rank; absent or null takes the next free slot. */
-  rank?: number | null;
+  rank?: number | null | undefined;
   /** Remove the item from Today instead. */
-  clear?: boolean;
+  clear?: boolean | undefined;
 }
 
 // --- GET /search --------------------------------------------------------------------------------------
@@ -973,20 +973,20 @@ export type ObApiAgentAction = (typeof OB_API_AGENT_ACTIONS)[number];
 export interface AgentRequest {
   action: ObApiAgentAction;
   id: string;
-  ticket?: string | null;
-  worktree?: string | null;
-  branch?: string | null;
-  status?: string | null;
+  ticket?: string | null | undefined;
+  worktree?: string | null | undefined;
+  branch?: string | null | undefined;
+  status?: string | null | undefined;
   /** T3's run word (1189). The run-state mirror is the only writer; `status` above stays ob's. */
-  run?: string | null;
-  note?: string | null;
-  launcher?: string | null;
-  session_id?: string | null;
-  ttl_s?: number;
+  run?: string | null | undefined;
+  note?: string | null | undefined;
+  launcher?: string | null | undefined;
+  session_id?: string | null | undefined;
+  ttl_s?: number | undefined;
   /** Skip the ticket-lease claim (the deliberate second registrant). */
-  no_lease?: boolean;
+  no_lease?: boolean | undefined;
   /** A lease the CALLER already holds; a hold of the caller's own is compatible, not a collision (#75). */
-  holder?: string | null;
+  holder?: string | null | undefined;
 }
 
 export interface AgentResponse {
@@ -999,11 +999,11 @@ export interface AgentResponse {
   /** Lease keys a `done` released. */
   released: string[];
   /** Lease keys a `done` must not drop: inherited architect holds, or a ticket another live agent is on (341). */
-  kept?: string[];
+  kept?: string[] | undefined;
   /** OB-1922: on a `heartbeat`, this holder's expired leases it acquired again as fresh leases. Optional. */
-  reacquired_leases?: string[];
+  reacquired_leases?: string[] | undefined;
   /** OS-110: on a `heartbeat`, the row's ticket:/worktree: keys another session now holds live. Empty when none. */
-  lost_leases?: Array<{ resource: string; holder: string; since: string | null }>;
+  lost_leases?: Array<{ resource: string; holder: string; since: string | null }> | undefined;
 }
 
 // --- GET /agents/active -------------------------------------------------------------------------------
@@ -1018,7 +1018,7 @@ export interface AgentResponse {
 
 export interface AgentsResetRequest {
   /** Preview only. Lists every agent id and lease resource that would go; writes nothing. */
-  dry_run?: boolean;
+  dry_run?: boolean | undefined;
 }
 
 export interface AgentsResetResponse {
@@ -1031,7 +1031,7 @@ export interface AgentsResetResponse {
 
 export interface AgentActiveQuery {
   /** The liveness window in minutes (`ob agent active --within`). Defaults to 20, as the CLI does. */
-  within_min?: number;
+  within_min?: number | undefined;
 }
 
 export interface AgentActiveResponse {
@@ -1061,7 +1061,7 @@ export interface AcquireLeaseRequest {
   holder: string;
   ttl_s: number;
   /** `heartbeat` refreshes an existing hold and refuses to create one; `acquire` takes or refreshes. */
-  heartbeat?: boolean;
+  heartbeat?: boolean | undefined;
 }
 
 export interface AcquireLeaseResponse {
@@ -1075,16 +1075,16 @@ export interface AcquireLeaseResponse {
    * <you> ... re-run as it with --holder <holder>" -- which cannot be written from `ok: false` alone.
    * Without it the client says it could not act and does not guess at a holder.
    */
-  recorded?: RecordedHold | null;
+  recorded?: RecordedHold | null | undefined;
   /** OB-1922: set when a heartbeat was refused because the caller's own lease had expired. Optional. */
-  error?: "LeaseExpiredError";
+  error?: "LeaseExpiredError" | undefined;
 }
 
 export interface ReleaseLeaseResponse {
   resource: string;
   released: boolean;
   /** ob 353: as above -- who the row names, so a release that released nothing can say why. Optional. */
-  recorded?: RecordedHold | null;
+  recorded?: RecordedHold | null | undefined;
 }
 
 // --- secrets ------------------------------------------------------------------------------------------
@@ -1181,8 +1181,8 @@ export interface CredsResponse {
 
 export interface CredsCheckRequest {
   /** One credential by name, or `all` for every checkable one. Exactly one of the two. */
-  name?: string;
-  all?: boolean;
+  name?: string | undefined;
+  all?: boolean | undefined;
 }
 
 export interface CredsCheckResponse {
@@ -1223,7 +1223,7 @@ export interface SpinoffConfig {
    *  launcher (readSpinoffLaunchConfig) — a client has no business re-reading nothing settable on it. */
   engine: string;
   /** 1480: `spinoff_tier_models`, raw. Absent from a host older than 1480: the client uses the defaults. */
-  tier_models?: string;
+  tier_models?: string | undefined;
 }
 
 export interface SpinoffConfigResponse {
@@ -1236,7 +1236,7 @@ export interface SpinoffsQuery {
    * the response rows carry too. Since 1513 a host also accepts the printed words (`queued` | `building` |
    * `handed-off` | `landed`). Absent means every row.
    */
-  status?: string;
+  status?: string | undefined;
 }
 
 /**
@@ -1256,7 +1256,7 @@ export interface SpinoffsResponse {
    * left alone (a wrong join costs a real builder turn, 1188), so they are NAMED rather than dropped: an
    * empty `spinoffs` on its own reads exactly like "this ticket never dispatched anything".
    */
-  unresolved?: Array<{ id: number; ticket_ref: string }>;
+  unresolved?: Array<{ id: number; ticket_ref: string }> | undefined;
 }
 
 /**
@@ -1266,34 +1266,34 @@ export interface SpinoffsResponse {
 export interface EnqueueSpinoffRequest {  ticket_ref: string;
   repo: string;
   branch: string;
-  worktree?: string | null;
+  worktree?: string | null | undefined;
   mode: SpinoffMode;
   brief: string;
-  launcher?: string | null;
+  launcher?: string | null | undefined;
   /** 1480: the complexity tier (`complex|medium|simple`). Absent = the default tier, recorded as such. */
-  tier?: string | null;
+  tier?: string | null | undefined;
   /** OS-177: the complexity score 1-10 (`--complexity`), the routing key. Wins over `tier` when both are sent. */
-  complexity?: number | null;
+  complexity?: number | null | undefined;
   /** OB-1815: the reasoning level `--effort` named (`low|medium|high|xhigh|max`). Absent = none named. */
-  effort?: string | null;
+  effort?: string | null | undefined;
   /** OB-1825: `--note`, for the Decisions trail's `— → queued` line. */
-  note?: string | null;
+  note?: string | null | undefined;
   /** OB-1825: the `--no-check` reason. Absent means the measure-twice gate applies; blank is refused. */
-  no_check?: string | null;
+  no_check?: string | null | undefined;
   /** OB-2230: the `--no-flake-slot` reason: a flake row launches without taking `flake:slot`. Blank is refused. */
-  no_flake_slot?: string | null;
+  no_flake_slot?: string | null | undefined;
   /** OS-108: the `--over-usage` reason, checked on the client (the usage cache is there) and recorded on the trail here. */
-  over_usage?: string | null;
+  over_usage?: string | null | undefined;
   /** OS-134: the `--allow-paused` reason: a paused or archived project's ticket is queued anyway. Blank is refused. */
-  allow_paused?: string | null;
+  allow_paused?: string | null | undefined;
   /** OB-2230: is `flake-box` on the client that will launch the builder? Absent reads as present. */
-  flake_box?: boolean | null;
+  flake_box?: boolean | null | undefined;
   /** OB-1825: `--holder`, who the trail names for the note and the override. Absent means the human. */
-  actor?: string | null;
+  actor?: string | null | undefined;
   /** OB-1991: which leg of a model-trial pair this row is (`a|b`). Absent = not a trial leg. */
-  trial_leg?: string | null;
+  trial_leg?: string | null | undefined;
   /** OB-1991: the model the trial launches this leg on, over the tier's model. */
-  trial_model?: string | null;
+  trial_model?: string | null | undefined;
 }
 
 /** OB-1991: `ob spinoff trial ...`, one store operation per call (the shapes live in cli-coord's spinoff-trial.ts). */
@@ -1304,7 +1304,7 @@ export type SpinoffTrialResponse = import("../../../../platform/cli-coord/src/sp
 export interface SpinoffCheckRequest {
   ticket_ref: string;
   /** `--holder`, who the trail names for the verdict. Absent means the human. */
-  actor?: string | null;
+  actor?: string | null | undefined;
   architect: unknown;
   checker: unknown;
   /** OB-2131: one `{q, how, note}` per checker question, validated on the server. Absent is none. */
@@ -1344,18 +1344,18 @@ export interface EnqueueSpinoffResponse {
    * so the dispatch can say the coincidence aloud. Resolved on the host that holds the store, so the client
    * needs no read of its own (and none with an id in a url, 357). Null in the ordinary case.
    */
-  collision?: string | null;
+  collision?: string | null | undefined;
   /** OB-1825: a warning from the measure-twice gate, for the client to show (a `--no-check` with no trail). */
-  warning?: string | null;
+  warning?: string | null | undefined;
   /**
    * OB-2075: the item is urgent, so the row is on the complex tier (Opus). Absent from an older host, which
    * read as false.
    */
-  urgent?: boolean;
+  urgent?: boolean | undefined;
   /** OB-2075: the lower tier the caller named that the urgent rule raised to complex; null when none was. */
-  raised_from?: number | null;
+  raised_from?: number | null | undefined;
   /** OB-2230: the item is at priority `flake`: the row takes flake:slot and its brief carries the flake-box paragraph. */
-  flake?: boolean;
+  flake?: boolean | undefined;
 }
 
 /** A live foreign hold on a row's ticket/worktree, as reported per row rather than per sweep. */
@@ -1381,11 +1381,11 @@ export interface LaunchableSpinoff {
    */
   ticket_title: string | null;
   /** OB-2075: the item is urgent: the row sent is on complex, and an adopted thread keeps its own model. */
-  urgent?: boolean;
+  urgent?: boolean | undefined;
   /** OB-2075: the tier the host raised this row from, or null. The row's tier is recorded at the stamp, not here. */
-  raised_from?: number | null;
+  raised_from?: number | null | undefined;
   /** OS-134: why the row's paused or archived project keeps it pending, or null. Non-null means it is not launched. */
-  paused?: string | null;
+  paused?: string | null | undefined;
 }
 
 /**
@@ -1394,9 +1394,9 @@ export interface LaunchableSpinoff {
  */
 export interface LaunchableRequest {
   /** `--holder`: a hold that is ALREADY the caller's is compatible, not a collision (#75/#136). */
-  holder?: string | null;
+  holder?: string | null | undefined;
   /** The CALLER's own lease-holder id. Read on the client, because the server's pid is not the caller. */
-  caller?: string | null;
+  caller?: string | null | undefined;
 }
 
 export interface LaunchableResponse {
@@ -1409,7 +1409,7 @@ export interface LaunchableResponse {
 
 export interface ClaimSpinoffRequest {
   id: number;
-  holder?: string | null;
+  holder?: string | null | undefined;
 }
 
 export interface ClaimSpinoffResponse {
@@ -1423,25 +1423,25 @@ export interface ClaimSpinoffResponse {
 export interface StampSpinoffRequest {
   id: number;
   outcome: "launched" | "failed";
-  worktree?: string | null;
-  base_sha?: string | null;
-  launcher?: string | null;
-  session_id?: string | null;
-  engine?: string | null;
+  worktree?: string | null | undefined;
+  base_sha?: string | null | undefined;
+  launcher?: string | null | undefined;
+  session_id?: string | null | undefined;
+  engine?: string | null | undefined;
   /** 1120: the T3 thread this launch opened — or ADOPTED from a previous attempt — and its run. They
    *  cross the wire like every other fact about the client's machine: the thread lives on the client's
    *  T3 server, the row lives here. */
-  t3_thread_id?: string | null;
-  t3_run_id?: string | null;
+  t3_thread_id?: string | null | undefined;
+  t3_run_id?: string | null | undefined;
   /** 1480: the model that T3 launch ran on — a client fact, like the thread id. */
-  model?: string | null;
+  model?: string | null | undefined;
   /** OB-1815: the effort text that launch ran at (`high`, `default (high)`, `default (none listed)`). */
-  effort?: string | null;
+  effort?: string | null | undefined;
   /** OB-2075: the launch ran an urgent item on complex (not an adopted thread); the host then records the row as complex. */
-  raised?: boolean;
-  error?: string | null;
+  raised?: boolean | undefined;
+  error?: string | null | undefined;
   /** OS-145: the moves this launch made along its route on a quota error, for the host to write on the Decisions trail. */
-  route_moves?: RouteMove[];
+  route_moves?: RouteMove[] | undefined;
 }
 
 /** OS-145: one move along a route (models `from` -> `to`), with its Decisions line. */
@@ -1460,9 +1460,9 @@ export interface LandSpinoffRequest {
   id: number;
   tokens: TokenUsage;
   /** OS-163: the branch's merged PR, read on the client; recorded on the landed event for the timeline. */
-  pr_url?: string | null;
-  holder?: string | null;
-  caller?: string | null;
+  pr_url?: string | null | undefined;
+  holder?: string | null | undefined;
+  caller?: string | null | undefined;
 }
 
 /**
@@ -1488,19 +1488,19 @@ export interface LandSpinoffResponse {
 
 export interface ReadySpinoffRequest {
   /** Spinoff row id. Preferred when the client already resolved the row. */
-  id?: number;
+  id?: number | undefined;
   /** Ticket ref (or `#<n>`) when the client has no id. */
-  ticket_ref?: string;
+  ticket_ref?: string | undefined;
   /**
    * The builder's rating of its own tier (`--tier-fit`, 1552): `lower` | `right` | `higher`. The HOST
    * records it on the ticket's decisions trail, because the host owns the trail; a value that is not one
    * of the three is a 400 and nothing is stamped.
    */
-  tier_fit?: string | null;
+  tier_fit?: string | null | undefined;
   /** The one-line reason for the rating (`--tier-fit-why`). Meaningless without `tier_fit`. */
-  tier_fit_why?: string | null;
+  tier_fit_why?: string | null | undefined;
   /** OB-1992: the handoff `--note`, with any `--report` file's text, for the ticket's Decisions trail. */
-  note?: string | null;
+  note?: string | null | undefined;
 }
 
 export interface SendBackSpinoffRequest {
@@ -1509,11 +1509,11 @@ export interface SendBackSpinoffRequest {
   /** What to fix: recorded on the ticket's decisions trail and the agent row's note. */
   note: string;
   /** Undo a send-back whose note could not be delivered: put the row back to handed-off. */
-  restore?: boolean;
+  restore?: boolean | undefined;
   /** OS-211: with `restore`, the verdict the row carried before the send-back cleared it, put back with the row. */
-  verdict?: { verdict: string | null; verdict_reason: string | null; gate_line: string | null } | null;
+  verdict?: { verdict: string | null; verdict_reason: string | null; gate_line: string | null } | null | undefined;
   /** OS-108: the `--over-usage` reason, checked on the client and recorded on the trail here. */
-  over_usage?: string | null;
+  over_usage?: string | null | undefined;
 }
 
 export interface SendBackSpinoffResponse {
@@ -1550,8 +1550,8 @@ export interface SpinoffVerdictRequest {
   id: number;
   /** landable | needs-human | blocked | partial */
   verdict: string;
-  reason?: string | null;
-  gate?: string | null;
+  reason?: string | null | undefined;
+  gate?: string | null | undefined;
 }
 
 export interface SpinoffVerdictResponse {
@@ -1564,7 +1564,7 @@ export interface SpinoffPhaseRequest {
   id: number;
   /** reviewing | pr_ci | updating_pr | gating | owner_merge_call */
   phase: string;
-  actor?: string | null;
+  actor?: string | null | undefined;
 }
 
 export interface SpinoffPhaseResponse {
@@ -1579,7 +1579,7 @@ export interface SpinoffNoteErrorRequest {
   id: number;
   outcome: "sent" | "failed";
   /** T3's reason, for `failed`. */
-  reason?: string | null;
+  reason?: string | null | undefined;
 }
 
 export interface SpinoffNoteErrorResponse {
@@ -1597,15 +1597,15 @@ export interface ReadySpinoffResponse {
    * the review line inside it. Optional: a host older than 1133 does not send it, and the readying note
    * then says the gate is unreported rather than inventing one.
    */
-  builder_note?: string | null;
+  builder_note?: string | null | undefined;
   /**
    * The `tier-fit:` line the HOST recorded on the ticket's decisions trail (1552), or null when the builder
    * rated no tier. The client puts this same line in the readying note so the trail and the note agree; an
    * older host sends none (it also records none), and the note then reads unreported.
    */
-  tierFit?: string | null;
+  tierFit?: string | null | undefined;
   /** OB-1826: the row serves a spike, so it was not stamped handed-off (it stays building until `ob close`). */
-  spike?: boolean;
+  spike?: boolean | undefined;
 }
 
 export interface ReclaimSpinoffsResponse {
@@ -1614,10 +1614,10 @@ export interface ReclaimSpinoffsResponse {
 
 /** One candidate a local cleanup sweep found in git and wants to remove. */
 export interface CleanupGuardRequest {
-  branch?: string | null;
+  branch?: string | null | undefined;
   /** The worktree path, or "" for a dangling branch with no worktree. */
-  path?: string | null;
-  caller?: string | null;
+  path?: string | null | undefined;
+  caller?: string | null | undefined;
 }
 
 export interface CleanupGuardResponse {
@@ -1637,12 +1637,12 @@ export interface CleanupGuardResponse {
 
 export interface WhatsappSearchQuery {
   q: string;
-  limit?: number;
+  limit?: number | undefined;
 }
 
 export interface WhatsappRecentQuery {
-  limit?: number;
-  since?: string;
+  limit?: number | undefined;
+  since?: string | undefined;
 }
 
 export interface WhatsappHitsResponse {
@@ -1657,16 +1657,16 @@ export type { StatusPage as WhatsappStatusResponse, WhatsappChatItem };
 export const WHATSAPP_CHATS_CAP = 200;
 export const WHATSAPP_CHATS_DEFAULT = 50;
 export interface WhatsappStatusQuery {
-  limit?: number;
+  limit?: number | undefined;
   /** An ISO ts: a history page of posts strictly before it. Absent: the current 24h tray. */
-  before?: string;
+  before?: string | undefined;
   /** Narrow a history page to one sender (the "load earlier" of one person). */
-  sender?: string;
+  sender?: string | undefined;
 }
 export interface WhatsappChatsQuery {
-  limit?: number;
+  limit?: number | undefined;
   /** Include chats the human hid. Default false, as in the feed. */
-  hidden?: boolean;
+  hidden?: boolean | undefined;
 }
 export interface WhatsappChatsResponse {
   chats: WhatsappChatItem[];
@@ -1687,9 +1687,9 @@ export interface WhatsappSendRequest {
   body: string;
   /** The gate. The literal true, set only after a human confirmed; anything else is refused. */
   confirm: boolean;
-  file?: WhatsappSendFile;
+  file?: WhatsappSendFile | undefined;
   /** OB-1909: send even though an identical send of the last 24 h may already have gone. Set only by the human's --resend. */
-  resend?: boolean;
+  resend?: boolean | undefined;
 }
 
 export interface WhatsappSendResponse {
@@ -1729,12 +1729,12 @@ export interface WhatsappPrefChatsResponse {
 
 export interface GmailSearchQuery {
   q: string;
-  limit?: number;
+  limit?: number | undefined;
 }
 
 export interface GmailListQuery {
-  limit?: number;
-  since?: string;
+  limit?: number | undefined;
+  since?: string | undefined;
 }
 
 export interface GmailHitsResponse {
@@ -1745,11 +1745,11 @@ export type GmailSearchResponse = GmailHitsResponse;
 export type GmailListResponse = GmailHitsResponse;
 
 export interface GmailSyncRequest {
-  backfill?: boolean;
-  query?: string;
-  days?: number;
-  since?: string;
-  max?: number;
+  backfill?: boolean | undefined;
+  query?: string | undefined;
+  days?: number | undefined;
+  since?: string | undefined;
+  max?: number | undefined;
 }
 
 export interface GmailSyncResponse {
@@ -1781,9 +1781,9 @@ export type GmailMessageResponse = GmailMessageRead;
 export type GmailAttachmentsResponse = GmailAttachmentsResult;
 
 export interface CalSyncRequest {
-  backfill?: boolean;
-  since?: string;
-  max?: number;
+  backfill?: boolean | undefined;
+  since?: string | undefined;
+  max?: number | undefined;
 }
 
 export interface CalSyncResponse {
@@ -1818,12 +1818,12 @@ export interface ProjectsResponse {
 export interface ProjectCreateRequest {
   name: string;
   kind: string;
-  remote?: string | null;
+  remote?: string | null | undefined;
   /** 1949: the ref key (`PS`); omitted takes the agreed key for a known id, or none. */
-  key?: string | null;
+  key?: string | null | undefined;
   /** OB-2116: the architect title's emoji and display name. */
-  icon?: string | null;
-  display_name?: string | null;
+  icon?: string | null | undefined;
+  display_name?: string | null | undefined;
 }
 
 export interface ProjectCreateResponse {
@@ -1831,18 +1831,18 @@ export interface ProjectCreateResponse {
 }
 
 export interface ProjectEditRequest {
-  remote?: string;
-  kind?: string;
+  remote?: string | undefined;
+  kind?: string | undefined;
   /** 1949: numbers the project's items under it; a change keeps their old refs as aliases. */
-  key?: string;
+  key?: string | undefined;
   /** OB-2116: the architect title's emoji; '' clears it. */
-  icon?: string;
+  icon?: string | undefined;
   /** OB-2116: the architect title's name; '' clears it. */
-  display_name?: string;
+  display_name?: string | undefined;
   /** OB-2103: the release stage, alpha|beta|rc|stable|legacy; 'none' clears it. */
-  stage?: string;
+  stage?: string | undefined;
   /** OS-134: the lifecycle status, active|paused|archived. */
-  status?: string;
+  status?: string | undefined;
 }
 
 export interface ProjectEditResponse {
@@ -1874,16 +1874,16 @@ export interface TeamResponse {
 
 export interface TeamCreateRequest {
   name: string;
-  icon?: string | null;
-  display_name?: string | null;
+  icon?: string | null | undefined;
+  display_name?: string | null | undefined;
   /** The team's first projects; one already in another team is refused (409). */
-  projects?: string[];
+  projects?: string[] | undefined;
 }
 
 /** '' clears a field. */
 export interface TeamEditRequest {
-  icon?: string;
-  display_name?: string;
+  icon?: string | undefined;
+  display_name?: string | undefined;
 }
 
 export interface TeamJoinRequest {
@@ -1909,7 +1909,7 @@ export interface TeamHandoffRequest {
   role: string;
   body: string;
   /** OB-2275: the thread writing it, when the client knows it (`T3CODE_THREAD_ID`); absent means the role's bound thread. */
-  from_thread_id?: string;
+  from_thread_id?: string | undefined;
 }
 
 export interface TeamHandoffConsumeRequest {
@@ -1927,11 +1927,11 @@ export interface RoleRunMarkRequest {
 }
 
 export interface RoleRunUpdateRequest {
-  thread_id?: string;
-  item_count?: number | null;
-  context_tokens?: number | null;
-  last_activity_at?: string;
-  end_reason?: string;
+  thread_id?: string | undefined;
+  item_count?: number | null | undefined;
+  context_tokens?: number | null | undefined;
+  last_activity_at?: string | undefined;
+  end_reason?: string | undefined;
 }
 
 // `ob role tick`'s findings (OS-67), read on the server where the store is.
@@ -1952,7 +1952,7 @@ export interface RoleNoteRequest {
 export interface RoleRunResponse {
   run: RoleRun;
   /** On a mark: false when the role already had an open run, which is the run answered. */
-  created?: boolean;
+  created?: boolean | undefined;
 }
 
 export interface RoleRunsResponse {
@@ -1963,10 +1963,10 @@ export interface RoleRunsResponse {
 export interface RoleMessageRequest {
   role: string;
   from: string;
-  kind?: "message" | "handoff";
-  ref?: string | null;
+  kind?: "message" | "handoff" | undefined;
+  ref?: string | null | undefined;
   body: string;
-  client_key?: string | null;
+  client_key?: string | null | undefined;
 }
 
 export interface RoleMessageResponse {
@@ -1994,8 +1994,8 @@ export interface TeamRemoveResponse {
 }
 
 export interface BriefQuery {
-  q?: string;
-  in_flight?: boolean;
+  q?: string | undefined;
+  in_flight?: boolean | undefined;
 }
 
 export interface BriefResponse {
@@ -2003,8 +2003,8 @@ export interface BriefResponse {
 }
 
 export interface LogQuery {
-  type?: JournalType;
-  since?: string;
+  type?: JournalType | undefined;
+  since?: string | undefined;
 }
 
 export interface LogListResponse {
@@ -2014,8 +2014,8 @@ export interface LogListResponse {
 export interface LogCreateRequest {
   type: JournalType;
   text: string;
-  about?: string | null;
-  item?: string | null;
+  about?: string | null | undefined;
+  item?: string | null | undefined;
 }
 
 export interface LogCreateResponse {
@@ -2048,7 +2048,7 @@ export interface DeployRecordRequest {
   unit: string;
   sha: string;
   /** ISO timestamp; absent = the server stamps now. */
-  at?: string;
+  at?: string | undefined;
   result: "ok" | "rolled-back" | "refused";
 }
 
@@ -2058,13 +2058,13 @@ export interface DeployRecordResponse {
 
 /** OB-1809: start the live deploy. `sha` pins it; ob-deploy.sh refuses anything but origin/main's tip. */
 export interface DeployRunRequest {
-  sha?: string;
+  sha?: string | undefined;
 }
 
 export interface DeployRunResponse {
   kicked: true;
   target: string;
-  sha?: string;
+  sha?: string | undefined;
 }
 
 export interface AlertsResponse {
@@ -2078,7 +2078,7 @@ export interface AlertSnoozeRequest {
 export interface AlertSnoozeResponse {
   snoozed: string;
   /** OB-1762: the alert list AFTER the snooze, so a client redraws without a second call. Absent from an older host. */
-  alerts?: Alert[];
+  alerts?: Alert[] | undefined;
 }
 
 /** POST /alerts/ack. Ack and snooze are one write (suppress until the alert's state moves); two names so a UI can label either. */
@@ -2128,8 +2128,8 @@ export interface DocCreateRequest {
 }
 
 export interface DocSetRequest {
-  title?: string;
-  body?: string;
+  title?: string | undefined;
+  body?: string | undefined;
 }
 
 export interface DecisionListRow {
@@ -2211,12 +2211,12 @@ export interface RoadmapShowResponse {
 
 export interface RoadmapAddMemberRequest {
   item_id: string;
-  position?: number;
+  position?: number | undefined;
 }
 
 export interface RoadmapAddMemberResponse {
   /** 1949: the item's current ref (`PS-12`), so the client's echo reads it; absent from an older server. */
-  ref?: string | null;
+  ref?: string | null | undefined;
   id: string;
 }
 
@@ -2226,7 +2226,7 @@ export interface StandupLatestResponse {
 
 export interface StandupWriteRequest {
   md: string;
-  date?: string;
+  date?: string | undefined;
 }
 
 export interface StandupWriteResponse {
@@ -2239,7 +2239,7 @@ export interface StandupPostedResponse {
 }
 
 export interface SlackUnreadQuery {
-  limit?: number;
+  limit?: number | undefined;
 }
 
 export interface SlackUnreadResponse {
@@ -2262,7 +2262,7 @@ export interface PeopleResponse {
 
 export interface PersonCreateRequest {
   real_name: string;
-  fields?: PersonFields;
+  fields?: PersonFields | undefined;
 }
 
 export interface PersonCreateResponse {
@@ -2298,7 +2298,7 @@ export interface ReviewMissAddRequest {
   pr: string;
   class: string;
   finding: string;
-  scope?: string;
+  scope?: string | undefined;
 }
 
 export interface ReviewMissAddResponse {
@@ -2335,12 +2335,12 @@ export interface TestUsersResponse {
 export interface TestUserCreateRequest {
   label: string;
   value: string;
-  role?: string | null;
-  email?: string | null;
-  workspace?: string | null;
-  env?: string | null;
-  secret_ref?: string | null;
-  notes?: string | null;
+  role?: string | null | undefined;
+  email?: string | null | undefined;
+  workspace?: string | null | undefined;
+  env?: string | null | undefined;
+  secret_ref?: string | null | undefined;
+  notes?: string | null | undefined;
 }
 
 export interface TestUserCreateResponse {
@@ -2364,12 +2364,12 @@ export interface TestUserCheckResponse {
 }
 
 export interface SyncRequest {
-  source?: "github";
-  since?: string;
-  backfill?: boolean;
+  source?: "github" | undefined;
+  since?: string | undefined;
+  backfill?: boolean | undefined;
 }
 export interface SyncResponse {
-  github?: { prs: number; events: number };
+  github?: { prs: number; events: number } | undefined;
 }
 
 // --- /ci/main, /github/hooks (OB-2276) -----------------------------------------------------------------------
@@ -2378,7 +2378,7 @@ export interface CiMainResponse {
   reports: CiMainReport[];
 }
 export interface CiMainNotifyRequest {
-  project?: string | null;
+  project?: string | null | undefined;
 }
 export interface CiMainNotifyResponse {
   reports: CiMainReport[];
@@ -2406,13 +2406,13 @@ export interface TournamentAddRequest {
   subject: string;
   repo: string;
   criteria: string[];
-  ref?: string | null;
+  ref?: string | null | undefined;
 }
 export interface TournamentCandidateRequest {
   key: string;
-  label?: string | null;
-  images?: string[] | null;
-  revises?: string | null;
+  label?: string | null | undefined;
+  images?: string[] | null | undefined;
+  revises?: string | null | undefined;
 }
 export interface TournamentCandidateResponse {
   candidate: TournamentCandidate;
@@ -2420,14 +2420,14 @@ export interface TournamentCandidateResponse {
 export interface TournamentRecordRequest {
   /** The match file as parsed JSON; the server validates it. */
   match: unknown;
-  replace?: boolean;
+  replace?: boolean | undefined;
 }
 export interface TournamentMatchResponse {
   match: TournamentMatch;
 }
 export interface TournamentPickRequest {
   candidate: string;
-  note?: string | null;
+  note?: string | null | undefined;
 }
 
 // --- /overnight/* (OB-2097) -------------------------------------------------------------------------------
@@ -2446,18 +2446,18 @@ export interface OvernightDecideRequest {
   title: string;
   what: string;
   why: string;
-  doubt?: string | null;
-  undo?: string | null;
-  context?: string | null;
+  doubt?: string | null | undefined;
+  undo?: string | null | undefined;
+  context?: string | null | undefined;
   project: string;
-  night?: string | null;
+  night?: string | null | undefined;
 }
 export interface OvernightDecisionResponse {
   decision: OvernightDecision;
 }
 export interface OvernightSummaryRequest {
   project: string;
-  date?: string;
+  date?: string | undefined;
   section: string;
   line: string;
 }
@@ -2466,7 +2466,7 @@ export interface OvernightRunResponse {
 }
 export interface OvernightShowRequest {
   project: string;
-  date?: string;
+  date?: string | undefined;
 }
 export interface OvernightNightResponse {
   night: OvernightNight;
@@ -2489,21 +2489,21 @@ export type HostJobKind =
   | "whatsapp-bridge-status";
 
 export interface HostJobOptions {
-  dryRun?: boolean;
-  force?: boolean;
-  staging?: boolean;
-  json?: boolean;
-  quiet?: boolean;
+  dryRun?: boolean | undefined;
+  force?: boolean | undefined;
+  staging?: boolean | undefined;
+  json?: boolean | undefined;
+  quiet?: boolean | undefined;
   /** `whatsapp-sync` only (OB-1809). */
-  backfill?: boolean;
-  since?: string;
-  days?: string;
-  max?: string;
+  backfill?: boolean | undefined;
+  since?: string | undefined;
+  days?: string | undefined;
+  max?: string | undefined;
 }
 
 export interface HostJobRequest {
   kind: HostJobKind;
-  options?: HostJobOptions;
+  options?: HostJobOptions | undefined;
 }
 
 /** `lost` is a job that died without recording an exit: the host restarted under it. */
@@ -2519,11 +2519,11 @@ export interface HostJobRow {
   started_at: string;
   finished_at: string | null;
   /** This start joined an identical job already running. */
-  reused?: boolean;
+  reused?: boolean | undefined;
   /** Only on GET /host-jobs/:id, and only once the job has finished. Scrubbed. */
-  stdout?: string;
-  stderr?: string;
-  truncated?: boolean;
+  stdout?: string | undefined;
+  stderr?: string | undefined;
+  truncated?: boolean | undefined;
 }
 
 export interface HostJobResponse {

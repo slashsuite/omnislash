@@ -103,7 +103,7 @@ export function messageText(payload: GmailMessagePart | undefined): string {
 export interface FilePart {
   info: GmailAttachmentInfo;
   /** base64url bytes when the part carries them inline instead of behind an attachment id. */
-  inline?: string;
+  inline?: string | undefined;
 }
 
 /** Every file part of a message, in document order. */
@@ -223,7 +223,7 @@ function uniqueNames(names: string[]): string[] {
  * Write the attachments into `dir` and return the paths. It never overwrites silently: if any target
  * exists the whole save is refused, before anything is written, unless `force` is set.
  */
-export function saveAttachments(files: GmailAttachmentFile[], dir: string, opts: { force?: boolean } = {}): string[] {
+export function saveAttachments(files: GmailAttachmentFile[], dir: string, opts: { force?: boolean | undefined } = {}): string[] {
   const names = uniqueNames(files.map((f, i) => safeFileName(f.filename, `attachment-${i + 1}`)));
   const paths = names.map((n) => join(dir, n));
   if (!opts.force) {

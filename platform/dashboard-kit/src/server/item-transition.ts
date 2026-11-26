@@ -5,7 +5,7 @@ import { blockItem, moveItem, reopenItem, unblockItem } from "../../../../apps/c
 export const TRANSITIONS = ["start", "ready", "block", "unblock", "move", "close", "reopen"] as const;
 export type TransitionAction = (typeof TRANSITIONS)[number];
 
-export type ItemTransition = { id: string; action: TransitionAction; reason?: string; owner?: string; to?: string };
+export type ItemTransition = { id: string; action: TransitionAction; reason?: string | undefined; owner?: string | undefined; to?: string | undefined };
 
 async function close(store: Store, id: string): Promise<void> {
   const landed = await closeAndLand(store, id);

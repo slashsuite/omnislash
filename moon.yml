@@ -1,0 +1,20 @@
+$schema: './.moon/cache/schemas/project.json'
+
+# OS-209: the root project holds the repo-level scripts (scripts/). Its typecheck covers them under the strict
+# base; its test runs their tests (it was a separate `bun test scripts` step in ci.yml), among them
+# scripts/ts-coverage.test.ts, which reads every tsconfig and every TypeScript file in the repo.
+tasks:
+  typecheck:
+    command: 'bunx tsc --noEmit -p tsconfig.json'
+    inputs:
+      - 'scripts/**/*'
+      - 'tsconfig.json'
+  test:
+    command: 'bun test scripts'
+    inputs:
+      - 'scripts/**/*'
+      - '.github/workflows/**/*'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/tsconfig*.json'
+      - '!**/node_modules/**'

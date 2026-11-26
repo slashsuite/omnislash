@@ -1,11 +1,8 @@
-import type { Database } from "bun:sqlite";
 import type { Store } from "../../../../apps/cli/src/db/store.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { orm } from "../../../../apps/cli/src/db/orm.ts";
-import { whatsappMessage } from "../../../../apps/cli/src/db/schema.ts";
 import { settingFor } from "../../../../apps/cli/src/settings.ts";
 import { AppError } from "../../../../apps/cli/src/errors.ts";
 import { fetchWhatsappMedia, isAudioMedia, mediaRow, type FetchMediaOpts } from "./media.ts";

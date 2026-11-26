@@ -45,12 +45,12 @@ export interface WebTlsMaterial extends WebTlsPaths {
 }
 
 export interface WebTlsSources {
-  certFlag?: string | null;
-  keyFlag?: string | null;
-  certEnv?: string | null;
-  keyEnv?: string | null;
-  certConfigured?: string | null;
-  keyConfigured?: string | null;
+  certFlag?: string | null | undefined;
+  keyFlag?: string | null | undefined;
+  certEnv?: string | null | undefined;
+  keyEnv?: string | null | undefined;
+  certConfigured?: string | null | undefined;
+  keyConfigured?: string | null | undefined;
 }
 
 const clean = (v: string | null | undefined): string | null => {
@@ -119,7 +119,7 @@ export interface TlsPaths {
  */
 export async function tlsPathsFor(
   store: Store,
-  flags: { certFlag?: string | null; keyFlag?: string | null } = {},
+  flags: { certFlag?: string | null | undefined; keyFlag?: string | null | undefined } = {},
   env: Record<string, string | undefined> = process.env,
 ): Promise<TlsPaths> {
   const resolved = resolveWebTlsSource({

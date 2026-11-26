@@ -1248,7 +1248,7 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
 
     // the acceptance line: a plain call (and a repeated adopt of the same id) is the idempotent no-op
     for (const adoptThreadId of [undefined, "t3-me"]) {
-      const again = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, adoptThreadId });
+      const again = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, ...(adoptThreadId !== undefined ? { adoptThreadId } : {}) });
       expect(again.message).toMatch(/^omnislash architect already live: architect-omnislash → t3-me .*nothing created$/);
     }
     expect(fake.calls.rename).toBe(1);
@@ -1310,7 +1310,7 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
     setT3Seam(fake.seam);
     const roleModel = await teamRoleModelFrom(storeConfigIo(db), "architect");
     expect(roleModel).toBe("claudeAgent:claude-sonnet-5-5");
-    const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, roleModel });
+    const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, ...(roleModel !== undefined ? { roleModel } : {}) });
     expect(out.created).toBe(true);
     expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-sonnet-5-5" });
     db.close();
@@ -1338,7 +1338,7 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
         const fake = fakeT3({ repoPath: repo, defaultModel, extraProviders: antigravityProvider });
         setT3Seam(fake.seam);
         const roleModel = await teamRoleModelFrom(null, "muse"); // role.* follows builder.complex (OS-145)
-        const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "muse", members: ["omnislash"], repoPath: repo, roleModel });
+        const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "muse", members: ["omnislash"], repoPath: repo, ...(roleModel !== undefined ? { roleModel } : {}) });
         expect(out.created).toBe(true);
         expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "antigravity", model: "gemini-4-neon" });
       }
@@ -1350,7 +1350,7 @@ describe("t3 dispatch: a team role thread (1120, OB-2255)", () => {
       setT3Seam(fake.seam);
       const roleModel = await teamRoleModelFrom(null, "architect");
       expect(roleModel).toBeUndefined();
-      const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, roleModel });
+      const out = await ensureTeamThread(storeAgentRegistry(db), { team: OMNISLASH, role: "architect", members: ["omnislash"], repoPath: repo, ...(roleModel !== undefined ? { roleModel } : {}) });
       expect(out.created).toBe(true);
       expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-opus-5-5" });
     } finally {
@@ -1375,7 +1375,7 @@ describe("spinoff tier → model (1480)", () => {
     const repo = trackedRepo();
     trackedDir(`${repo}.999`);
     stubGit();
-    const fake = fakeT3({ repoPath: repo, catalog: opts.catalog });
+    const fake = fakeT3({ repoPath: repo, ...(opts.catalog !== undefined ? { catalog: opts.catalog } : {}) });
     setT3Seam(fake.seam);
     if (opts.tierModels !== undefined) await setConfig(db, "spinoff_tier_models", opts.tierModels);
     const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", ...tierArgs]);
@@ -1921,7 +1921,7 @@ describe("models file → builder model (OB-1969)", () => {
     const repo = trackedRepo();
     trackedDir(`${repo}.999`);
     stubGit();
-    const fake = fakeT3({ repoPath: repo, catalog: opts.catalog });
+    const fake = fakeT3({ repoPath: repo, ...(opts.catalog !== undefined ? { catalog: opts.catalog } : {}) });
     setT3Seam(fake.seam);
     if (opts.tierModels !== undefined) await setConfig(db, "spinoff_tier_models", opts.tierModels);
     if (opts.routes !== undefined) await setConfig(db, "model_routes", opts.routes);

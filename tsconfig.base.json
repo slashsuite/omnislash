@@ -1,4 +1,6 @@
 {
+  // OS-209: the one strict base. Every project tsconfig extends it; a project adds only its lib, types,
+  // jsx and include. The strict flags match the new-project template (skills/ob-new-project/template).
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
@@ -6,12 +8,17 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "paths": {
-      "@omnislash/core/*": ["apps/cli/src/*"]
-    }
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedSideEffectImports": true
   }
 }

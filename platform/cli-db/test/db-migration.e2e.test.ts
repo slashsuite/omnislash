@@ -1,7 +1,7 @@
 import { sqliteStoreFor } from "../../../apps/cli/src/db/store.ts";
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { openDb, MIGRATIONS, LEGACY_SCHEMA_VERSION } from "../../../apps/cli/src/db.ts";
+import { openDb } from "../../../apps/cli/src/db.ts";
 // The fingerprint moved to src (183) so the replica's schema-skew guard and this safety-net share ONE
 // notion of the schema's shape. The computation is unchanged, so the golden snapshot is unchanged.
 import { schemaFingerprint, tableNames } from "../../../apps/cli/src/db/fingerprint.ts";
@@ -33,34 +33,6 @@ async function seed(db: Database): Promise<void> {
   (await enqueueSpinoff(db, { ticketRef: "CUE-9388", repo: "/r", branch: "b2", mode: "agent", brief: "x" }));
   (await saveGenerated(sqliteStoreFor(db), "2026-07-18", "## What I did\n- shipped"));
   (await setEdited(sqliteStoreFor(db), "2026-07-18", "## What I did\n- shipped (edited)"));
-}
-
-/** Reconstruct a genuine PRE-drizzle DB the way the user's live DB was built: open raw, replay the
- *  historical MIGRATIONS chain exactly as the old openDb did (FK off around the run, per-step
- *  user_version), then hand-seed representative FK-valid rows across several tables — including two
- *  fts-backed items — so adoption is proven against real data, not an empty shell. */
-function buildLegacyV18Db(path: string): void {
-  const db = new Database(path, { create: true });
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = OFF;");
-  for (let v = 0; v < MIGRATIONS.length; v++) {
-    db.transaction(() => {
-      db.exec(MIGRATIONS[v]!);
-      db.exec(`PRAGMA user_version = ${v + 1}`);
-    })();
-  }
-  db.query("INSERT INTO epic(epic_ref, title, color, created_at, updated_at) VALUES('CUE-9388','Measurement layer','magenta','2026-01-01','2026-01-01')").run();
-  db.query("INSERT INTO item(id,type,title,body,status,created_at,updated_at) VALUES('itm-1','task','Wire drizzle migrate','convert the MIGRATIONS array to migrate()','open','2026-01-01','2026-01-01')").run();
-  db.query("INSERT INTO item(id,type,title,body,status,created_at,updated_at) VALUES('itm-2','task','Persist PR comments','durable searchable review corpus','done','2026-01-01','2026-01-01')").run();
-  db.query("INSERT INTO item_fts(item_id, title, body) VALUES('itm-1','Wire drizzle migrate','convert the MIGRATIONS array to migrate()')").run();
-  db.query("INSERT INTO item_fts(item_id, title, body) VALUES('itm-2','Persist PR comments','durable searchable review corpus')").run();
-  db.query("INSERT INTO event(ts,source,type,item_id,actor) VALUES('2026-01-02','test','created','itm-1','tester')").run();
-  db.query("INSERT INTO spinoff(ticket_ref,repo,branch,worktree,mode,brief,status,epic,request_at) VALUES('CUE-9388','/r','b','/wt','agent','do it','pending','CUE-9388','2026-01-02')").run();
-  // an already-completed spinoff, so 0019's reported_at backfill (#41) is proven against real data
-  db.query("INSERT INTO spinoff(ticket_ref,repo,branch,worktree,mode,brief,status,epic,request_at) VALUES('CUE-9000','/r','b0','/wt0','agent','shipped it','merged','CUE-9388','2026-01-01')").run();
-  const bad = db.query("PRAGMA foreign_key_check").all();
-  if (bad.length > 0) throw new Error("legacy seed foreign_key_check failed: " + JSON.stringify(bad));
-  db.close();
 }
 
 describe("DB migration safety-net (097)", () => {

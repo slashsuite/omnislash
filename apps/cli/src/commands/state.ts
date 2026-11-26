@@ -2,7 +2,7 @@ import { type Ctx, emitItem, itemArg } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { decisionOptsOf } from "../decisions.ts";
 import { closeAndLand, type CloseAndLandResult } from "../close.ts";
-import { emitId, print, warn, type Mode } from "../output.ts";
+import { print, warn, type Mode } from "../output.ts";
 import { syncIssueState } from "../tracker-link.ts";
 import { refsFor } from "../refs.ts";
 // 1120: landing settles the ticket's T3 threads (best effort, after the close stands).

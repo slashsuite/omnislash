@@ -11,7 +11,7 @@ import { settingFor } from "./settings.ts";
 
 export interface NotifyDeps {
   /** Tests inject; production omits (global fetch). Nothing in a test ever reaches Home Assistant. */
-  fetch?: typeof fetch;
+  fetch?: typeof fetch | undefined;
 }
 
 /**

@@ -220,12 +220,12 @@ export interface DecideInput {
   title: string;
   what: string;
   why: string;
-  doubt?: string | null;
-  undo?: string | null;
-  context?: string | null;
+  doubt?: string | null | undefined;
+  undo?: string | null | undefined;
+  context?: string | null | undefined;
   project: string;
   /** The night it belongs to; absent for a daytime decision. */
-  night?: string | null;
+  night?: string | null | undefined;
 }
 
 function required(v: string | undefined | null, what: string): string {
@@ -282,7 +282,7 @@ async function readDecision(db: Db, row: ItemRow, night: string | null): Promise
 /** Append a bullet to one section of the night's summary; the replaced text is kept as a doc version. */
 export async function addSummaryLine(
   db: Db,
-  input: { project: string; date?: string; section: string; line: string },
+  input: { project: string; date?: string | undefined; section: string; line: string },
 ): Promise<OvernightRun> {
   const section = parseSection(input.section);
   const line = required(input.line, "--add '<line>'");
@@ -294,7 +294,7 @@ export async function addSummaryLine(
 }
 
 /** The night: its summary, any problem with the summary's headings, and its decisions in the order they were made. */
-export async function showNight(db: Db, input: { project: string; date?: string }): Promise<OvernightNight> {
+export async function showNight(db: Db, input: { project: string; date?: string | undefined }): Promise<OvernightNight> {
   const date = input.date === undefined ? undefined : parseDate(input.date, "--date");
   const run = await requireRun(db, input.project, date);
   const rows = await queryItems(db, { type: "decision", tag: nightTag(run.date), projectId: run.project });
@@ -304,7 +304,7 @@ export async function showNight(db: Db, input: { project: string; date?: string 
 }
 
 /** One row per run, oldest night first: its decision count, its Review these count and any summary problem. */
-export async function listRuns(db: Db, input: { project?: string; since?: string } = {}): Promise<OvernightRunRow[]> {
+export async function listRuns(db: Db, input: { project?: string | undefined; since?: string | undefined } = {}): Promise<OvernightRunRow[]> {
   const since = input.since === undefined ? undefined : parseDate(input.since, "--since");
   const projectId = input.project === undefined ? undefined : (await requireProject(db, input.project)).id;
   const out: OvernightRunRow[] = [];

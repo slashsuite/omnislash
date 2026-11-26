@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
@@ -1374,11 +1373,7 @@ describe("images (198b) — vision descriptions reach the suggest prompt", () =>
       await storeMediaDesc(d, o.chatJid, o.id, `described ${o.id}`);
       return { ok: true, text: `described ${o.id}` };
     };
-    let captured = "";
-    const run: ClaudeRunner = async (prompt) => {
-      captured = prompt;
-      return "ok";
-    };
+    const run: ClaudeRunner = async () => "ok";
 
     await suggestWhatsappReply(db, { chatJid: CHAT, run, describeImage });
     expect(calls).toBe(6); // exactly the cap, not all 7

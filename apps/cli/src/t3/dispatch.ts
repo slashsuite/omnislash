@@ -58,7 +58,6 @@ import {
   type T3LaunchResult,
   type T3Project,
   type T3ProviderModel,
-  type T3QueuedMessage,
   type T3QueueRead,
   type T3SendInput,
   type T3Thread,
@@ -354,7 +353,7 @@ export type LeaseMarkerState = "waiting" | "holding";
 /** A title split into its lease marker tokens (front first) and the rest. Pure. */
 function splitLeaseMarkers(title: string): { markers: string[]; rest: string } {
   const m = LEASE_MARKER_RUN.exec(title);
-  return m ? { markers: m[1].split(" "), rest: title.slice(m[0].length) } : { markers: [], rest: title };
+  return m ? { markers: m[1]!.split(" "), rest: title.slice(m[0].length) } : { markers: [], rest: title };
 }
 
 /** The label a marker token carries: everything after its state emoji. Pure. */
@@ -1023,10 +1022,10 @@ export function spinoffLaunchPlan(input: {
   projectId: string;
   model: T3ModelSelection;
   /** The `options` a named effort sends (OB-1815): `[{id:"effort",value:"high"}]`. Absent sends none. */
-  options?: Array<{ id: string; value: string }>;
+  options?: Array<{ id: string; value: string }> | undefined;
   runtimeMode: string;
   /** The ticket's own ob title, read once at launch (1143). Absent/null falls back inside the title builder. */
-  ticketTitle?: string | null;
+  ticketTitle?: string | null | undefined;
 }): T3LaunchInput {
   const { row } = input;
   return {

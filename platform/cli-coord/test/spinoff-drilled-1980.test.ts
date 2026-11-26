@@ -14,7 +14,6 @@ import { doneWhenItems } from "../src/spinoff-check.ts";
 import { sectionItems } from "../src/spinoff-spike.ts";
 
 const DONE = "## Done when\n- a test shows it";
-const DRILLED = "## Drilled\n- cause read in the code";
 const ALL_TWO = { problem: 2, scope: 2, done: 2, design: 2, proof: 2, unknowns: 2, size: 2 };
 const side = () => ({ does: "Adds a gate.", files: ["platform/cli-coord/src/spinoff-check.ts"], questions: [], scores: ALL_TWO });
 const sheets = () => ["--architect", JSON.stringify(side()), "--checker", JSON.stringify(side())];

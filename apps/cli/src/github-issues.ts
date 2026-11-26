@@ -31,7 +31,7 @@ export interface CreateIssueInput {
  * Labels for a wayfinder task issue: `wayfinder:task` always; `map:<name>` when a map is given;
  * `exec:<mode>` when an exec mode is given. Pure. (These labels already exist in the repo.)
  */
-export function issueLabels(opts: { map?: string | null; exec?: string | null }): string[] {
+export function issueLabels(opts: { map?: string | null | undefined; exec?: string | null | undefined }): string[] {
   const labels = ["wayfinder:task"];
   if (opts.map) labels.push(`map:${opts.map}`);
   if (opts.exec) labels.push(`exec:${opts.exec}`);

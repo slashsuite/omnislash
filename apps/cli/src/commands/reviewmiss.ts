@@ -48,7 +48,7 @@ export interface RankedClass {
 export function rankClasses(
   events: { class: string; ts: string; scope?: string }[],
   now: Date,
-  opts?: { halfLifeDays?: number; scope?: string; limit?: number },
+  opts?: { halfLifeDays?: number | undefined; scope?: string | undefined; limit?: number | undefined },
 ): RankedClass[] {
   const halfLife = opts?.halfLifeDays ?? HALF_LIFE_DAYS;
   const limit = opts?.limit ?? 10;

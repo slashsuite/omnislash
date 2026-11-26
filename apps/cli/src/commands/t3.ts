@@ -351,7 +351,7 @@ export function broadcastInput(args: string[], flags: Pick<Flags, "message-file"
 }
 
 /** Print a broadcast report in the run's mode; exit 1 if any send failed. Shared by the local and API paths. */
-export function emitBroadcast(ctx: { mode: Ctx["mode"]; exit?: number }, report: BroadcastReport): void {
+export function emitBroadcast(ctx: { mode: Ctx["mode"]; exit?: number | undefined }, report: BroadcastReport): void {
   print(
     ctx.mode === "json"
       ? JSON.stringify(report, null, 2)

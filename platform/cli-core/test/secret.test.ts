@@ -3,12 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID, randomBytes } from "node:crypto";
 import { writeFileSync, rmSync } from "node:fs";
-import { Database } from "bun:sqlite";
-import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
+import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 
 const PG_BUDGET = spawnBudget(2);
-import { openDb } from "../../../apps/cli/src/db.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
 import { AppError } from "../../../apps/cli/src/errors.ts";
 import {

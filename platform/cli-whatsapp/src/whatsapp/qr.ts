@@ -1,4 +1,3 @@
-import type { Database } from "bun:sqlite";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { settingFor } from "../../../../apps/cli/src/settings.ts";

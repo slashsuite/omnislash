@@ -234,7 +234,7 @@ describe("deleteGmailDraft (OB-1750)", () => {
 
 describe("HttpGoogleClient draft list/update/delete over a fake fetch (OB-1750)", () => {
   test("list, update and delete use the right URL, method and body; delete accepts Gmail's empty 204", async () => {
-    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const calls: Array<{ url: string; method?: string | undefined; body?: unknown }> = [];
     const fetch = async (input: string | URL, init?: RequestInit): Promise<Response> => {
       calls.push({ url: String(input), method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       return init?.method === "DELETE" ? new Response(null, { status: 204 }) : new Response(JSON.stringify({ id: "d1" }), { status: 200 });

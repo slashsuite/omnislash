@@ -37,7 +37,7 @@ import { GroupPicker, groupSearch, type GroupSearch } from "../components/GroupP
 // range; the feed grouped by day, newest first, paged by "Load older". Build steps are folded per spinoff row
 // and shown only with the Builds switch (`builds=true`). Read-only: nothing on this page writes.
 
-type Search = GroupSearch & { from?: string; to?: string; builds?: boolean };
+type Search = GroupSearch & { from?: string; to?: string; builds?: boolean | undefined };
 
 const DAY = 86_400_000;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -86,7 +86,7 @@ function Entry({ e, projectLabel }: { e: FeedEntry; projectLabel: string | null 
       time={clock(e.at)}
       title={
         <Cluster gap="xs">
-          <Pill size="sm" tone={k.tone === "neutral" ? undefined : k.tone}>
+          <Pill size="sm" {...(k.tone === "neutral" ? {} : { tone: k.tone })}>
             {k.label}
           </Pill>
           {e.ref && (

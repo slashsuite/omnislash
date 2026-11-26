@@ -204,7 +204,7 @@ async function storeComment(store: Store, c: StoreCommentInput): Promise<void> {
 
 export async function syncGithub(
   db: Database | Store,
-  opts: { since?: string; backfill?: boolean },
+  opts: { since?: string | undefined; backfill?: boolean | undefined },
 ): Promise<{ prs: number; events: number; cursor: string | null }> {
   const store = asStore(db);
   const token = await readGithubToken(store);

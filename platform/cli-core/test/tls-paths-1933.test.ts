@@ -268,7 +268,7 @@ describe("items 3 and 5: `ob web` warns on a near-expiry cert and exits with the
     const serveExited = new Promise<number>((r) => (resolveServe = r));
     const calls: string[][] = [];
     const deps: WebDeps = {
-      now: opts.now,
+      ...(opts.now !== undefined ? { now: opts.now } : {}),
       spawn: (cmd) => {
         calls.push(cmd);
         if (cmd.join(" ") === "bun run build") return { exited: Promise.resolve(0), kill() {} };

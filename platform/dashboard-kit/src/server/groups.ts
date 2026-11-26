@@ -59,7 +59,7 @@ export async function projectGroups(store: Store): Promise<ProjectGroup[]> {
  * project: the named team, else the focus project's group, else Slash, else the first. An unknown project is
  * refused, since an empty page for a typo reads as "nothing here"; an unknown team falls back to the default.
  */
-export async function resolveScope(store: Store, ask: { team?: string; project?: string }): Promise<GroupScope> {
+export async function resolveScope(store: Store, ask: { team?: string | undefined; project?: string | undefined }): Promise<GroupScope> {
   const groups = await projectGroups(store);
   if (groups.length === 0) throw new AppError("no projects yet (ob project add)");
   const groupOf = (projectId: string) => groups.find((g) => g.projects.some((p) => p.id === projectId));

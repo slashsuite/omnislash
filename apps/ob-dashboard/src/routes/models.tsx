@@ -34,7 +34,7 @@ import { getModels, saveModels, type ModelsOp, type ModelsPage, type ModelsView 
 // `ob models sync-favorites`), never typed, so a chain saves as <provider>:<model> ids. OS-23: the OpenCode Go credit state (from omnibus's retired Reviewers
 // page) sits above the review readers, since the paid readers run on that account.
 
-type ModelsSearch = { profile?: string };
+type ModelsSearch = { profile?: string | undefined };
 
 export const Route = createFileRoute("/models")({
   validateSearch: (s: Record<string, unknown>): ModelsSearch => (typeof s.profile === "string" && s.profile ? { profile: s.profile } : {}),

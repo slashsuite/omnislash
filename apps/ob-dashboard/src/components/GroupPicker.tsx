@@ -8,7 +8,7 @@ import type { GroupProject, ProjectGroup } from "../../../../platform/dashboard-
 
 const ALL_PROJECTS = "";
 
-export type GroupSearch = { team?: string; project?: string };
+export type GroupSearch = { team?: string | undefined; project?: string | undefined };
 
 export function GroupPicker({
   group,

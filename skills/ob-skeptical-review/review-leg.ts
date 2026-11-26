@@ -626,7 +626,7 @@ export async function spawnLeg(
     passThroughStdout?: boolean;
   },
 ): Promise<LegRun> {
-  const proc = Bun.spawn(cmd, { env: opts.env, stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(cmd, { ...(opts.env && { env: opts.env }), stdin: new Blob([stdin]), stdout: "pipe", stderr: "pipe" });
   opts.onChild?.(proc);
   let timedOut = false;
   let killer: ReturnType<typeof setTimeout> | undefined;

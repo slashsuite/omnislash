@@ -137,7 +137,7 @@ function phrasesOf(text: string | null | undefined): string[] {
  * model can see is guarded, by construction). Newest material is added first, so the MAX_GUARD_PHRASES cap
  * drops the oldest thread history rather than the message currently being discussed.
  */
-export function buildSearchGuard(ctx: SuggestContext, opts?: { draft?: string }): SearchGuard {
+export function buildSearchGuard(ctx: SuggestContext, opts?: { draft?: string | undefined }): SearchGuard {
   const words = new Set<string>();
   for (const token of [
     ...nameTokens(ctx.sender),

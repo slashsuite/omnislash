@@ -83,7 +83,7 @@ export interface RoleRunCtx {
   flags: Flags;
   /** The arguments after `role`: `["start", "acme", "architect"]`. */
   args: string[];
-  exit?: number;
+  exit?: number | undefined;
 }
 
 const ROLE_SUBCOMMANDS = "start|status|end|brief|note|tick";

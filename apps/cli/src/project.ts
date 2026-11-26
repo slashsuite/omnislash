@@ -109,7 +109,7 @@ export async function registerProject(
  */
 export function addConflict(
   existing: Project,
-  want: { kind: string; remote?: string | null; icon?: string | null; displayName?: string | null },
+  want: { kind: string; remote?: string | null | undefined; icon?: string | null | undefined; displayName?: string | null | undefined },
 ): string | null {
   const diffs: string[] = [];
   if (want.kind !== existing.kind) diffs.push(`kind is ${existing.kind}, not ${want.kind}`);

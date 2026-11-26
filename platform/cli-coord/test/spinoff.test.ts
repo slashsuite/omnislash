@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { runCli, freshDb, freshDbPath, fakeRepoDir, psTable, spawnBudget, until } from "../../../apps/cli/test/helpers.ts";
+import { runCli, freshDb, freshDbPath, fakeRepoDir, psTable, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 import { rulesBlock } from "../../../apps/cli/src/repo-private.ts";
 
@@ -25,7 +25,6 @@ import {
   liveBuildAgentsByRepo,
   worktreePath,
   spinoffTabCommand,
-  withSessionID,
   composeBrief,
   selectProcedure,
   operatingProcedure,
@@ -34,12 +33,10 @@ import {
   ticketBrief,
   selectLauncherName,
   rowLauncherName,
-  spinoffEngine,
   parseProcessTable,
   processTableSawSelf,
   processUsingPath,
   probeArgv,
-  launchNotReady,
   launcherRejection,
   isLauncherName,
   isLegacyLauncherName,
@@ -84,21 +81,17 @@ import {
 } from "../src/commands/spinoff.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { run } from "../../../apps/cli/src/cli.ts";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { registerAgent, listAgents, getAgent } from "../src/agent.ts";
 import { addTags, createItem } from "../../../apps/cli/src/items.ts";
-import { linkIssue, workHasLanded } from "../../../apps/cli/src/tracker-link.ts";
+import { workHasLanded } from "../../../apps/cli/src/tracker-link.ts";
 import { liveHold, ticketLeaseKey } from "../src/lease.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
 import { setting, DEFAULTS } from "../../../apps/cli/src/settings.ts";
 import { mkdirSync, rmSync, chmodSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 
 // Plain code-unit order of the string form, what a bare sort() gives.
 const byCodeUnit = (x: string | null, y: string | null) => (String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0);
-
-/** The monorepo root, for the cross-language pins that read the Swift side of a shared contract. */
-const REPO_ROOT = join(import.meta.dir, "../../..");
 
 const input = (over: Partial<EnqueueInput> = {}): EnqueueInput => ({
   ticketRef: "CUE-9893",
@@ -1779,7 +1772,7 @@ describe("ensureWorktree — git-driven, no `wt` dependency (160)", () => {
     expect(calls[0]).toEqual(["git", "-C", repo, "worktree", "list", "--porcelain"]);
     expect(calls[1]).toEqual(["git", "-C", repo, "remote", "get-url", "origin"]);
     expect(calls[2]).toEqual(["git", "-C", repo, "fetch", "--quiet", "origin", "main"]);
-    expect(calls[3].slice(0, 5)).toEqual(["git", "-C", repo, "rev-parse", "--verify"]);
+    expect(calls[3]!.slice(0, 5)).toEqual(["git", "-C", repo, "rev-parse", "--verify"]);
     expect(calls[4]).toEqual(["git", "-C", repo, "worktree", "add", wt, "-b", branch, "main"]); // no origin/main in this repo: local main
   });
 
@@ -2785,7 +2778,7 @@ describe("cleanupWorktrees (217) — classify + sweep with a mocked git seam", (
     expect(mutations).toContainEqual(["git", "-C", REPO, "branch", "-D", "dangling-merged"]);
     expect(mutations.every((m) => !m.includes("main"))).toBe(true);
     // no force → only branches proven merged are deleted (-D: `-d` would judge them against a stale HEAD, 1760)
-    expect(mutations.filter((m) => m.includes("-D")).map((m) => m[m.length - 1]).sort()).toEqual(["dangling-merged", "fix-1"]);
+    expect(mutations.filter((m) => m.includes("-D")).map((m) => m.at(-1) ?? "").sort()).toEqual(["dangling-merged", "fix-1"]);
   });
 
   test("--dry-run removes nothing (no mutations) but reports the same plan", async () => {

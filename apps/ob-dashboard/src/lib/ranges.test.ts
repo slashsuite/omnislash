@@ -14,11 +14,11 @@ const rows: DraftRange<string>[] = draftsOf(
 
 describe("splitAt", () => {
   it("splits a-b at n into a-(n-1) and n-b, both with the row's value", () => {
-    expect(splitAt(rows, 2, "9")).toEqual([rows[0], rows[1], { from: "7", to: "8", value: "opus" }, { from: "9", to: "10", value: "opus" }]);
+    expect(splitAt(rows, 2, "9")).toEqual([...rows.slice(0, 2), { from: "7", to: "8", value: "opus" }, { from: "9", to: "10", value: "opus" }]);
   });
 
   it("splits at the row's to, leaving a one-score half", () => {
-    expect(splitAt(rows, 0, "3")).toEqual([{ from: "1", to: "2", value: "haiku" }, { from: "3", to: "3", value: "haiku" }, rows[1], rows[2]]);
+    expect(splitAt(rows, 0, "3")).toEqual([{ from: "1", to: "2", value: "haiku" }, { from: "3", to: "3", value: "haiku" }, ...rows.slice(1)]);
   });
 
   it("refuses a split at the row's from, outside the row, or not a number", () => {
@@ -31,7 +31,7 @@ describe("splitAt", () => {
 
 describe("mergeNext", () => {
   it("merges a row with the next, keeping the first row's value", () => {
-    expect(mergeNext(rows, 1)).toEqual([rows[0], { from: "4", to: "10", value: "sonnet" }]);
+    expect(mergeNext(rows, 1)).toEqual([...rows.slice(0, 1), { from: "4", to: "10", value: "sonnet" }]);
   });
 
   it("undoes a split", () => {

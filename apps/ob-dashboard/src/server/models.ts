@@ -44,7 +44,7 @@ function hostFile(notes: string[]): ModelsFile | null {
 }
 
 export const getModels = createServerFn({ method: "GET" })
-  .validator((d: { profile?: string } | undefined) => ({ profile: typeof d?.profile === "string" && d.profile ? d.profile : undefined }))
+  .validator((d: { profile?: string | undefined } | undefined) => ({ profile: typeof d?.profile === "string" && d.profile ? d.profile : undefined }))
   .handler(async ({ data }): Promise<ModelsPage> => {
     const notes: string[] = [];
     const file = hostFile(notes);

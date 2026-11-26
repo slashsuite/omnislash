@@ -13,7 +13,6 @@ import { planExecution } from "../../../apps/cli/src/remote.ts";
 import { freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { registerProject, updateProject } from "../../../apps/cli/src/project.ts";
 
-const REPO = join(import.meta.dir, "..", "..", "..");
 let tmp: string;
 
 beforeEach(() => {

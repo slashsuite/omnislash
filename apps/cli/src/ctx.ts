@@ -333,15 +333,15 @@ export interface Ctx {
    * That is what keeps inert mode byte-for-byte identical and what makes the handler correct when it is
    * the server running it.
    */
-  remote?: RemoteWriter;
+  remote?: RemoteWriter | undefined;
   /** ob 636: ssh seam for `ob deploy run`. Tests inject; production omits. */
-  deploySsh?: (argv: readonly string[]) => { code: number };
+  deploySsh?: ((argv: readonly string[]) => { code: number }) | undefined;
   /** ob 1756: the fetch `ob cloudflare` uses. Tests inject; production omits (global fetch). */
-  cloudflareFetch?: typeof fetch;
+  cloudflareFetch?: typeof fetch | undefined;
   /** ob 1655: the fetch `ob creds check` makes its provider call with. Tests inject; production omits (global fetch). */
-  credsFetch?: typeof fetch;
+  credsFetch?: typeof fetch | undefined;
   /** ob 1655: the fetch the `alerts --notify` Home Assistant push uses. Tests inject; production omits (global fetch). */
-  notifyFetch?: typeof fetch;
+  notifyFetch?: typeof fetch | undefined;
 }
 
 /**

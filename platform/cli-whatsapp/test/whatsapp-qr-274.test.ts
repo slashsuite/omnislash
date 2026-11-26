@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 

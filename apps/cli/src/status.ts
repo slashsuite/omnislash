@@ -79,7 +79,7 @@ export function defaultStatus(type: string): string {
   }
 }
 
-export function statusVocab(type: string, kind: Kind | null): string[] {
+export function statusVocab(type: string, _kind: Kind | null): string[] {
   if (type === "roadmap") return ROADMAP_STATUSES;
   if (type === "decision") return DECISION_STATUSES;
   if (type === "learning") return LEARNING_STATUSES;

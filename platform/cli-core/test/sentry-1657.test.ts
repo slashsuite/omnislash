@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import {
@@ -13,7 +11,6 @@ import {
 import { scrubEvent } from "../../../apps/cli/src/sentry/scrub.ts";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 
-const REPO = join(import.meta.dir, "../../..");
 const store = (async () => ({}) as Store) as () => Promise<Store>;
 
 function fakeSdk() {

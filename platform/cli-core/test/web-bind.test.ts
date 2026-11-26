@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { freshDb, freshDbPath } from "../../../apps/cli/test/helpers.ts";
+import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { sqliteStoreFor } from "../../../apps/cli/src/db/store.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";
 import { DEFAULTS, setting } from "../../../apps/cli/src/settings.ts";

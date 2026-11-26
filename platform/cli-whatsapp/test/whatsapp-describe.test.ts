@@ -3,8 +3,6 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Database } from "bun:sqlite";
-import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { freshPgStore, type PgStoreLease } from "../../../apps/cli/test/pg/store.ts";
 import { spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import { setConfig } from "../../../apps/cli/src/config.ts";

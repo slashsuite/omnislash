@@ -51,12 +51,12 @@ export interface MachineAudit {
 
 export interface MachineAuditOptions {
   /** ISO lower bound for the would-refuse events; default DEFAULT_SINCE_DAYS before `now`. */
-  since?: string;
-  staleDays?: number;
-  now?: Date;
+  since?: string | undefined;
+  staleDays?: number | undefined;
+  now?: Date | undefined;
 }
 
-function statesOf(machine: { config: { states?: object } }): Set<string> {
+function statesOf(machine: { config: { states?: object | undefined } }): Set<string> {
   return new Set(Object.keys(machine.config.states ?? {}));
 }
 

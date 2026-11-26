@@ -1,0 +1,32 @@
+{
+  "name": "@omnislash/skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.70.2",
+    "@playwright/test": "catalog:",
+    "@storybook/react-vite": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "@tanstack/react-start": "catalog:",
+    "@tanstack/router-cli": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/node": "^26.6.6",
+    "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
+    "@vitejs/plugin-react": "catalog:",
+    "bun-types": "catalog:",
+    "drizzle-kit": "catalog:",
+    "drizzle-orm": "catalog:",
+    "react": "catalog:react",
+    "react-dom": "catalog:react",
+    "storybook": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

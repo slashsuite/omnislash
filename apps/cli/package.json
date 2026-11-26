@@ -1,7 +1,7 @@
 {
   "name": "omnislash",
   "version": "1.0.0",
-  "description": "Personal task tracker CLI (ob) — unified, prioritized worklist across side projects, home, admin, and learning.",
+  "description": "Personal task tracker CLI (ob) \u2014 unified, prioritized worklist across side projects, home, admin, and learning.",
   "type": "module",
   "bin": {
     "ob": "src/index.ts"
@@ -13,14 +13,14 @@
     "build": "bun build --compile src/index.ts --outfile out/ob"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.4",
-    "drizzle-kit": "^0.31.11",
-    "typescript": "^5"
+    "@types/bun": "catalog:",
+    "drizzle-kit": "catalog:",
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@omnislash/state-machine": "workspace:*",
     "@sentry/bun": "11.13.0",
-    "drizzle-orm": "^0.45.4"
+    "drizzle-orm": "catalog:"
   },
   "optionalDependencies": {
     "@embedded-postgres/darwin-arm64": "17.10.0-beta.17",

@@ -96,7 +96,7 @@ export async function transitionItem(ctx: WriteContext, data: ItemTransition): P
 }
 
 /** Rank an item into Today (explicit rank, or the next slot). Returns the fresh detail. */
-export async function setTodayRank(ctx: WriteContext, data: { id: string; rank?: number }): Promise<ItemDetail> {
+export async function setTodayRank(ctx: WriteContext, data: { id: string; rank?: number | undefined }): Promise<ItemDetail> {
   const s = await open(ctx);
   await setTodayRankCore(s, data.id, data.rank);
   return await itemDetail(s, data.id);

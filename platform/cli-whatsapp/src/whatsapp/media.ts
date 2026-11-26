@@ -1,10 +1,7 @@
-import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { orm } from "../../../../apps/cli/src/db/orm.ts";
-import { whatsappMessage } from "../../../../apps/cli/src/db/schema.ts";
 import { settingFor } from "../../../../apps/cli/src/settings.ts";
 import type { Store } from "../../../../apps/cli/src/db/store.ts";
 import { expandHome } from "../../../../apps/cli/src/net.ts";
@@ -43,16 +40,16 @@ export interface FetchMediaOpts {
   chatJid: string;
   id: string;
   /** Transport seam — tests inject a mock so they NEVER hit the bridge. Defaults to global fetch. */
-  fetch?: typeof fetch;
+  fetch?: typeof fetch | undefined;
   /** FS read seam — tests inject the bridge-saved file's bytes. Defaults to node readFileSync. */
-  readFile?: (path: string) => Uint8Array;
+  readFile?: ((path: string) => Uint8Array) | undefined;
   /** Cache dir override (tests point at a tmp dir). Defaults to whatsapp_media_cache_dir / XDG derive. */
-  cacheDir?: string;
+  cacheDir?: string | undefined;
   /**
    * Write the decrypted bytes into the ob on-disk cache (default true). Status media for a sender
    * who is not a favourite must pass false (629) — the bytes are still returned for on-demand view.
    */
-  persist?: boolean;
+  persist?: boolean | undefined;
 }
 
 /** The file extension the bridge writes for a media_type (mirrors the bridge's own switch). Pure. */

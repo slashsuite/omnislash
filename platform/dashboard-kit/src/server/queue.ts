@@ -51,7 +51,7 @@ export interface QueueView {
  * one. `groups.ts` resolveScope picks the group: the named team, else the focus project's, else Slash. A band's
  * order across projects is ob next's own (kind, then each project's queue rank, then recency).
  */
-export async function queueView(store: Store, ask: { team?: string; project?: string } = {}): Promise<QueueView> {
+export async function queueView(store: Store, ask: { team?: string | undefined; project?: string | undefined } = {}): Promise<QueueView> {
   const scope = await resolveScope(store, ask);
   const projectOf = new Map(scope.group.projects.map((p) => [p.id, p]));
   const { items, focusProject } = await nextWorklist(store, scope.project ? { project: scope.project.id } : { allowedProjects: new Set(scope.projectIds) });
