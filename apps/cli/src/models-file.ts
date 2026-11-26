@@ -300,7 +300,8 @@ export const JOB_ROUTE = /^job\.[a-z0-9-]+$/;
 
 /**
  * OS-243: old route names, read as their new one for one release. `checker` became `reviewer` when OS-236 merged
- * the checker and the skeptical reviewer into one role. Remove after the next release.
+ * the checker and the skeptical reviewer into one role. `saveModelRoutes` stores the route under the old name meanwhile
+ * (`storedRouteName`): drop that first and re-save `model_routes` once, then a release later this alias.
  */
 export const ROUTE_ALIASES: Readonly<Record<string, FixedRoute>> = { checker: "reviewer" };
 
