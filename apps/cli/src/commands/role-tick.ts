@@ -2,6 +2,7 @@
 // this machine it writes the store's findings into the architect's inbox (see ../role-tick.ts), then delivers the
 // architect's unread messages with `deliverToRole`. No unread messages after the writes is one line and no T3 call.
 // Then (OS-57) it ends the team's role runs that are idle or over the context cap, each leaving its note (../role-end.ts).
+// OS-213: a building builder whose thread is past the same cap is one architect message asking for its relaunch.
 // OS-48: before delivering, it test-merges the team's running branches here; each conflicting pair goes to the sentinel.
 //
 // One procedure serves the store and the API client: each passes a `TickBackend` for the data. T3 is the caller's.
@@ -10,10 +11,11 @@ import type { Flags } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { print, warn, type Mode } from "../output.ts";
 import { deliverToRole, nightLockedUntil, renderDelivery, type DeliverOutcome } from "../role-deliver.ts";
-import { endPass, renderEndResult, type EndPassDeps, type EndPassResult } from "../role-end.ts";
-import { TICK_FROM, tickClientKey, type TickFinding } from "../role-tick.ts";
+import { contextTokens, endPass, renderEndResult, ROLE_CONTEXT_END_TOKENS, type EndPassDeps, type EndPassResult } from "../role-end.ts";
+import { builderContextFindings, TICK_FROM, tickClientKey, type TickFinding } from "../role-tick.ts";
 import { resolveRepoWith } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { conflictKey, conflictMessage, conflictNote, findBranchConflicts, renderConflict, type ConflictSource } from "../../../../platform/cli-coord/src/spinoff-conflicts.ts";
+import type { OverlapRow } from "../../../../platform/cli-coord/src/spinoff-overlap.ts";
 import { worktreeRepoOf, type T3Seam } from "../t3/dispatch.ts";
 import type { TeamView } from "../team.ts";
 import type { InboxBackend } from "./inbox.ts";
@@ -93,9 +95,9 @@ function oneLine(err: unknown): string {
  * conflicting pair, keyed by its rows and heads, so unchanged heads write nothing. A new message also notes both
  * tickets. Git failures are warnings on the result, never a failed tick.
  */
-async function tickConflicts(backend: TickBackend, result: TickTeamResult, source: ConflictSource): Promise<void> {
+async function tickConflicts(backend: TickBackend, result: TickTeamResult, source: ConflictSource, rows: OverlapRow[]): Promise<void> {
   const team = result.team;
-  const check = await findBranchConflicts(await source.rows(team), source);
+  const check = await findBranchConflicts(rows, source);
   result.conflict_warnings.push(...check.warnings);
   for (const c of check.conflicts) {
     const { message, created } = await backend.inbox.send({
@@ -121,9 +123,33 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
 }
 
 /** One team's pass, recorded on `result` as it goes, so a failure part way keeps what was written. Throws on a failure. */
-async function tickTeam(backend: TickBackend, result: TickTeamResult, checkout: string, seam: () => Promise<T3Seam>): Promise<void> {
+async function tickTeam(
+  backend: TickBackend,
+  result: TickTeamResult,
+  checkout: string,
+  seam: () => Promise<T3Seam>,
+  readContext: (threadId: string) => number | null,
+): Promise<void> {
   const team = result.team;
-  for (const f of await backend.findings(team)) {
+  // The team's spinoff rows, read once for the context check and the conflict check. Both are best-effort: a
+  // failure warns and never keeps the architect's other findings from being delivered.
+  let source: ConflictSource | null = null;
+  let rows: OverlapRow[] = [];
+  try {
+    source = await backend.conflicts();
+    rows = await source.rows(team);
+  } catch (e) {
+    source = null;
+    result.conflict_warnings.push(`conflicts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // OS-213: builder threads past the context cap, read from this machine's T3.
+  let contextFindings: TickFinding[] = [];
+  try {
+    contextFindings = builderContextFindings(rows, readContext, ROLE_CONTEXT_END_TOKENS);
+  } catch (e) {
+    result.conflict_warnings.push(`builder context: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  for (const f of [...(await backend.findings(team)), ...contextFindings]) {
     const { message, created } = await backend.inbox.send({
       team,
       role: TICK_ROLE,
@@ -138,7 +164,7 @@ async function tickTeam(backend: TickBackend, result: TickTeamResult, checkout: 
   // The conflict check is best-effort: whatever fails in it (git, the rows, the inbox) warns and never keeps the
   // architect's findings from being delivered.
   try {
-    await tickConflicts(backend, result, await backend.conflicts());
+    if (source) await tickConflicts(backend, result, source, rows);
   } catch (e) {
     result.conflict_warnings.push(`conflicts: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -200,7 +226,7 @@ export async function runRoleTick(
     else if (!checkout) r.skipped = "no checkout here";
     else {
       try {
-        await tickTeam(backend, r, checkout, seam);
+        await tickTeam(backend, r, checkout, seam, endDeps.contextTokens ?? ((id) => contextTokens(id)));
       } catch (err) {
         r.error = oneLine(err);
       }

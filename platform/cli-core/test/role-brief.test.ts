@@ -139,6 +139,24 @@ describe("renderRoleBrief", () => {
     expect(sectionOf(text, "## Note from the last run")).toEqual(["keep the gate green", "watch PS-9"]);
   });
 
+  test("OS-213: a day focus renders after Team with its body and tickets; a theme item with no ticket tag has no ticket lines", () => {
+    const focus = { ref: "OB-1", title: "Focus for 2026-11-26: x", body: "why\n", ticket_tag: "focus:jacobus", tickets: [{ ref: "PS-1", priority: "high", title: "a" }], elsewhere: 0 };
+    const text = renderRoleBrief({ ...emptyFacts(), focus });
+    expect(sectionOf(text, "## Today's focus")).toEqual(["OB-1: Focus for 2026-11-26: x", "why", "Your team's tickets in it (tagged focus:jacobus):", "PS-1 high: a"]);
+    const theme = renderRoleBrief({ ...emptyFacts(), focus: { ...focus, body: null, ticket_tag: null, tickets: [] } });
+    expect(sectionOf(theme, "## Today's focus")).toEqual(["OB-1: Focus for 2026-11-26: x"]);
+    const long = renderRoleBrief({ ...emptyFacts(), focus: { ...focus, body: Array.from({ length: 25 }, (_, i) => `l${i}`).join("\n"), tickets: [] } });
+    const lines = sectionOf(long, "## Today's focus");
+    expect(lines).toContain("+5 more lines (`ob show OB-1`)");
+    expect(lines.slice(-2)).toEqual(["Your team's tickets in it (tagged focus:jacobus):", "none"]);
+  });
+
+  test("OS-213: without a day focus the brief is exactly as before", () => {
+    const text = renderRoleBrief(emptyFacts());
+    expect(renderRoleBrief({ ...emptyFacts(), focus: null })).toBe(text);
+    expect(text).not.toContain("Today's focus");
+  });
+
   test("empty sections say none, and a missing note says none", () => {
     const text = renderRoleBrief(emptyFacts());
     for (const s of ["## Rows in flight", "## PRs to gate", "## Unread inbox", "## Open asks for the owner", "## Next three", "## Note from the last run"]) {
@@ -407,6 +425,39 @@ const CASES: Array<[string, (h: Harness) => Promise<void>]> = [
 
       const second = await brief(h);
       expect(sectionOf(second, "## Note from the last run")).toEqual(["none"]);
+    },
+  ],
+  [
+    "OS-213: the open day-focus item and the team's tickets tagged with its user's focus are in the brief; with none open, no section",
+    async (h) => {
+      expect((await brief(h, ["--peek"])).split("\n")).not.toContain("## Today's focus");
+      await registerProject(h.store, { name: "elsewhere", kind: "side" });
+      const old = await createItem(h.store, { type: "task", title: "Focus for 2026-11-25: yesterday", projectId: "elsewhere", tags: ["day-focus:jacobus"] });
+      expect((await h.run(["close", old])).code).toBe(0);
+      expect((await brief(h, ["--peek"])).split("\n")).not.toContain("## Today's focus");
+      await createItem(h.store, {
+        type: "task",
+        title: "Focus for 2026-11-26: the dashboard",
+        body: "Jacobus, 2026-11-26: the dashboard.\nTickets tagged this morning: a few.",
+        projectId: "elsewhere",
+        tags: ["day-focus:jacobus"],
+      });
+      await createItem(h.store, { type: "task", title: "dashboard row", projectId: "acme", tags: ["focus:jacobus"] });
+      await createItem(h.store, { type: "task", title: "someone else's", projectId: "elsewhere", tags: ["focus:jacobus"] });
+      await createItem(h.store, { type: "task", title: "another user's", projectId: "acme", tags: ["focus:someone"] });
+      const text = await brief(h, ["--peek"]);
+      const focus = sectionOf(text, "## Today's focus");
+      expect(focus[0]).toMatch(/: Focus for 2026-11-26: the dashboard$/);
+      expect(focus.slice(1)).toEqual([
+        "Jacobus, 2026-11-26: the dashboard.",
+        "Tickets tagged this morning: a few.",
+        "Your team's tickets in it (tagged focus:jacobus):",
+        expect.stringMatching(/^\S+ \S+: dashboard row$/),
+        "1 more in other teams' projects",
+      ]);
+      const lines = text.split("\n");
+      expect(lines.indexOf("## Team")).toBeLessThan(lines.indexOf("## Today's focus"));
+      expect(lines.indexOf("## Today's focus")).toBeLessThan(lines.indexOf("## Pacing"));
     },
   ],
   [
