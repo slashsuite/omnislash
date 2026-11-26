@@ -4,6 +4,7 @@ import { MACHINE_SHADOW_SOURCE } from "./machine-shadow.ts";
 import { getDetail, getItem, getLinearRef, getLinks, getTags, getTaskDetail, type LinkRow } from "./items.ts";
 import { decisionsForItem, type Decision } from "./decisions.ts";
 import { itemView } from "./output.ts";
+import { dependencyRaises } from "./dep-priority.ts";
 import { type Kind } from "./status.ts";
 import { validNextStatuses } from "./workflow.ts";
 import { aliasesOf } from "./refs.ts";
@@ -52,6 +53,8 @@ export interface ItemDetail {
   status: string;
   priority: string | null;
   effective_priority: string;
+  /** OS-216: the open item this one blocks that raised its effective priority, when one did. */
+  raised_by?: string;
   today_rank: number | null;
   queue_rank: number | null;
   project: string | null;
@@ -80,11 +83,12 @@ export interface ItemDetail {
  *  so the drawer cannot render one engine's item beside another's activity trail. `eventsForItemFor`
  *  orders by `event.ts` then `event.id`, both NOT NULL, so the DESC read cannot meet the
  *  NULLS-FIRST-on-Postgres split and two events in the same millisecond keep a stable order. */
-export async function itemDetail(store: Store, id: string): Promise<ItemDetail> {
+export async function itemDetail(store: Store, id: string, opts: { allowedProjects?: ReadonlySet<string> | undefined } = {}): Promise<ItemDetail> {
   const row = await getItem(store, id);
   if (!row) throw new Error(`no item with id '${id}'`);
   id = row.id;
-  const view = itemView(row, await getFocusProject(store));
+  const focus = await getFocusProject(store);
+  const view = itemView(row, focus, await dependencyRaises(store, focus, opts.allowedProjects));
   const detail = await getDetail(store, row.type, id);
   const taskDetail = row.type === "task" ? await getTaskDetail(store, id) : null;
   const linear = await getLinearRef(store, id);
@@ -111,6 +115,7 @@ export async function itemDetail(store: Store, id: string): Promise<ItemDetail> 
     status: view.status,
     priority: view.priority,
     effective_priority: view.effective_priority,
+    ...(view.raised_by ? { raised_by: view.raised_by } : {}),
     today_rank: view.today_rank,
     queue_rank: view.queue_rank,
     project: view.project,

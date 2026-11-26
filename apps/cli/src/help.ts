@@ -224,7 +224,20 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     usage: ["tag <id> <tag>... [--repo <slug>]"],
     flags: [{ flag: "--repo <slug>", description: "Also set the item's project/repo" }],
     examples: ["tag APP-12 backend bug-fix", "tag APP-12 frontend --repo web"],
-    notes: ["Common work tags: frontend, backend, new-work, rework, maintenance, security-fix, bug-fix."],
+    notes: ["See the tags already in use, most used first, with 'ob tags'."],
+  },
+
+  tags: {
+    section: "Tasks",
+    summary: "List every tag in use with how many items carry it, most used first",
+    usage: ["tags [--project <slug>] [--json]"],
+    flags: [
+      { flag: "--project <slug>", description: "Count only this project's items" },
+      { flag: "--repo <slug>", description: "Alias for --project" },
+      { flag: "--json", description: "Print [{ tag, count }]" },
+    ],
+    examples: ["tags", "tags --project app --json"],
+    notes: ["Read from the items themselves, open and closed, so a new tag shows as soon as an item carries it."],
   },
 
   untag: {
@@ -242,7 +255,11 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       "link APP-15 blocks APP-12",
       "link APP-20 spun_off_from APP-12",
     ],
-    notes: ["Relations: roadmap_member, spun_off_from, references, blocks, supersedes."],
+    notes: [
+      "Relations: roadmap_member, spun_off_from, references, blocks, supersedes.",
+      "'A blocks B': while B is open A ranks at B's priority, down a whole chain.",
+      "A's stored priority is unchanged; 'ob show A' names what raised it.",
+    ],
   },
 
   issue: {
@@ -804,7 +821,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       },
       decide: {
         summary: "Record an accepted overnight or daytime architect decision",
-        usage: ['overnight decide "<title>" --what <t> --why <t> [--doubt <t>] [--undo <t>] [--night <d>]'],
+        usage: ['overnight decide "<title>" --what <t> --why <t> [--doubt <t>] [--undo <t>] [--night <d>] [--at <when>]'],
         flags: [
           { flag: "--what <text>", description: "Decision made (required)" },
           { flag: "--why <text>", description: "Rationale (required)" },
@@ -813,6 +830,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--context <text>", description: "Additional context" },
           { flag: "--project <slug>", description: "Project slug" },
           { flag: "--night <date>", description: "Attach decision to a specific overnight run YYYY-MM-DD" },
+          { flag: "--at <when>", description: "When decided: YYYY-MM-DD (00:00 UTC) or an ISO date-time with a zone; default now" },
         ],
         examples: ['overnight decide "Skip cache" --what "Bypass Redis" --why "Stale reads" --night 2026-11-21'],
       },
@@ -844,6 +862,16 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--check", description: "Exit 1 if any run summary has malformed headings" },
         ],
         examples: ["overnight list --check"],
+      },
+      backfill: {
+        summary: "Date each decision imported from the wayfinder reviews to its night",
+        usage: ["overnight backfill [--project <p>] [--dry-run]"],
+        flags: [
+          { flag: "--project <slug>", description: "Only this project's decisions" },
+          { flag: "--dry-run", description: "Print what would change and write nothing" },
+        ],
+        examples: ["overnight backfill --dry-run", "overnight backfill"],
+        notes: ["Sets decided_at to <night>T00:00:00Z from the overnight:<night> tag. Running it again changes nothing."],
       },
     },
     examples: ["overnight start", "overnight show", "overnight list --check"],

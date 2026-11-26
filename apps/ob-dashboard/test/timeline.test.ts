@@ -2,7 +2,7 @@
 // weekly table and a page of the feed. The e2e (e2e/timeline.spec.ts) drives the same on a seeded store.
 import { describe, expect, test } from "bun:test";
 import { PRIORITY_CHANGE_TYPE as RECORDED } from "../../cli/src/decisions.ts";
-import { buildTimeline, PRIORITY_CHANGE_TYPE, type TimelineEvent, type TimelineItem } from "../src/lib/timeline.ts";
+import { buildTimeline, placeDecisions, PRIORITY_CHANGE_TYPE, type TimelineEvent, type TimelineItem } from "../src/lib/timeline.ts";
 
 /** The `from` of a spinoff row's first transition (U+2014). */
 const NONE = String.fromCharCode(0x2014);
@@ -165,5 +165,23 @@ describe("buildTimeline (OS-27)", () => {
     const items = [item({ id: "a", created_at: "2026-10-01T00:00:00.000Z" })];
     const events = [ev("a", "2026-11-30T00:00:00.000Z", { from: "open", to: "in_progress" })];
     expect(buildTimeline(items, events, RANGE).feed).toEqual([]);
+  });
+});
+
+describe("placeDecisions (OS-216)", () => {
+  test("an imported overnight decision opens on its night, not the day it was imported", () => {
+    const imported = { ...item({ id: "d", type: "decision", status: "accepted", created_at: "2026-11-25T10:00:00.000Z" }), decided_at: "2026-11-18T00:00:00.000Z" };
+    const task = { ...item({ id: "t", created_at: "2026-11-25T10:00:00.000Z" }), decided_at: null };
+    const view = buildTimeline(placeDecisions([imported, task]), [], RANGE);
+    const opened = view.feed.filter((e) => e.kind === "opened").map((e) => [e.ref, e.at.slice(0, 10)]);
+    expect(opened).toContainEqual(["D", "2026-11-18"]);
+    expect(opened).toContainEqual(["T", "2026-11-25"]);
+  });
+
+  test("a decided_at that is not a full ISO instant leaves the decision where it was filed", () => {
+    const filed = "2026-11-25T10:00:00.000Z";
+    const rows = ["2026-11-20", "last week"].map((d, n) => ({ ...item({ id: `d${n}`, type: "decision", created_at: filed }), decided_at: d }));
+    expect(placeDecisions(rows).map((r) => r.created_at)).toEqual([filed, filed]);
+    expect("decided_at" in placeDecisions(rows)[0]!).toBe(false);
   });
 });

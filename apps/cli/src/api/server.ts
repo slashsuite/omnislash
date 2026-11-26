@@ -1126,6 +1126,10 @@ async function route(
     return null;
   }
 
+  if (head === "tags" && segments.length === 1 && method === "GET") {
+    return json(await h.tagCountsFor(store, url.searchParams.get("project") ?? undefined, scope));
+  }
+
   if (head === "search" && segments.length === 1 && method === "GET") {
     const q = url.searchParams.get("q")?.trim() ?? "";
     if (!q) bad("'q' is required");
@@ -1994,6 +1998,7 @@ async function route(
           context: optNullableString(body, "context") ?? null,
           project: reqString(body, "project"),
           night: optNullableString(body, "night") ?? null,
+          at: optNullableString(body, "at") ?? null,
         }),
       );
     }
@@ -2011,6 +2016,10 @@ async function route(
     if (second === "show" && method === "POST") {
       const body = await readJson(req);
       return json(await h.overnightShow(store, { project: reqString(body, "project"), date: optString(body, "date") }));
+    }
+    if (second === "backfill" && method === "POST") {
+      const body = await readJson(req);
+      return json(await h.overnightBackfill(store, { project: optString(body, "project"), dry_run: body.dry_run === true }));
     }
     if (second === "runs" && method === "GET") {
       return json(

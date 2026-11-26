@@ -1,5 +1,6 @@
 import type { ItemRow } from "./items.ts";
 import { effectivePriority, priorityName } from "./priority.ts";
+import type { Raises } from "./dep-priority.ts";
 
 export type Mode = "human" | "json" | "table" | "quiet";
 
@@ -28,14 +29,24 @@ export interface ItemView {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+  /** OS-216: the open ticket this one blocks whose priority raised its effective priority (absent when not raised). */
+  raised_by?: string;
+  /** OS-216: the item's tags (`ob list --json`). */
+  tags?: string[];
 }
 
-export function itemView(item: ItemRow, focusProject: string | null): ItemView {
+export function itemView(item: ItemRow, focusProject: string | null, raises: Raises): ItemView {
+  const raise = raises?.get(item.id);
   const eff = effectivePriority({
     priority: item.priority,
     projectId: item.project_id,
     focusProject,
+    raised: raise?.priority,
   });
+  // OS-216: name the dependent only when the raise is what set the effective priority.
+  const raisedBy = raise && raise.priority === eff && eff !== effectivePriority({ priority: item.priority, projectId: item.project_id, focusProject })
+    ? (raise.viaRef ?? raise.via)
+    : null;
   return {
     id: item.id,
     ref: item.ref ?? null,
@@ -53,7 +64,14 @@ export function itemView(item: ItemRow, focusProject: string | null): ItemView {
     created_at: item.created_at,
     updated_at: item.updated_at,
     closed_at: item.closed_at,
+    ...(raisedBy ? { raised_by: raisedBy } : {}),
   };
+}
+
+/** The `priority:` value `ob show` prints: explicit or derived, and (OS-216) the dependent that raised it. */
+export function priorityLabel(v: Pick<ItemView, "priority" | "effective_priority" | "raised_by">): string {
+  if (v.raised_by) return `${v.effective_priority} (raised from ${v.priority ?? "derived"}: blocks ${v.raised_by})`;
+  return `${v.effective_priority}${v.priority ? " (explicit)" : " (derived)"}`;
 }
 
 function line(v: ItemView): string {

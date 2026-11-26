@@ -46,6 +46,8 @@ export const API_ROUTED_COMMANDS: ReadonlySet<string> = new Set([
 	"note",
 	"tag",
 	"untag",
+	// OS-216: tag counts, GET /tags.
+	"tags",
 	"search",
 	"status",
 	"agent",

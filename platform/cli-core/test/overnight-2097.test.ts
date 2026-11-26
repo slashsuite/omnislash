@@ -141,7 +141,7 @@ async function script(run: Run): Promise<string[]> {
     [["overnight", "start", "--project", "alpha", "--date", "2026-02-30"], "--date must be a date YYYY-MM-DD"],
     [["overnight", "summary", "shipped", "--project", "alpha"], "overnight summary requires --add '<line>'"],
     [["overnight", "show", "--project", "nope"], "project 'nope' does not exist"],
-    [["overnight", "frob"], "unknown overnight subcommand 'frob' (start|decide|summary|show|list)"],
+    [["overnight", "frob"], "unknown overnight subcommand 'frob' (start|decide|summary|show|list|backfill)"],
   ];
   for (const [args, message] of usage) {
     const r = await step(args);

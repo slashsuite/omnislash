@@ -9,7 +9,7 @@
 import type { Database } from "bun:sqlite";
 import { AppError, UsageError } from "./errors.ts";
 import type { Store } from "./db/store.ts";
-import { createItem, getDecisionDetail, getItem, queryItems, type ItemRow } from "./items.ts";
+import { createItem, getDecisionDetail, getItem, queryItems, setDecidedAt, tagsForItems, type ItemRow } from "./items.ts";
 import { getProject } from "./project.ts";
 import { docSet } from "./commands/doc.ts";
 
@@ -48,6 +48,20 @@ export function parseDate(raw: string, flag: string): string {
     throw new UsageError(`${flag} must be a date YYYY-MM-DD (got '${raw}')`);
   }
   return raw;
+}
+
+/**
+ * OS-216: when a decision was made, for `--at`. A bare `YYYY-MM-DD` is that day at 00:00 UTC; a full ISO date-time
+ * must name its zone (`Z` or `+02:00`) so the stored instant never depends on the clock of the machine that ran it.
+ */
+export function parseAt(raw: string, flag = "--at"): string {
+  if (DATE.test(raw)) return `${parseDate(raw, flag)}T00:00:00.000Z`;
+  const ok = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(raw);
+  const d = new Date(raw);
+  if (!ok || Number.isNaN(d.getTime())) {
+    throw new UsageError(`${flag} must be YYYY-MM-DD or an ISO date-time with a zone, like 2026-11-18T23:40:00Z (got '${raw}')`);
+  }
+  return d.toISOString();
 }
 
 /** Today on this machine's clock, local time: the night a run started. */
@@ -226,6 +240,8 @@ export interface DecideInput {
   project: string;
   /** The night it belongs to; absent for a daytime decision. */
   night?: string | null | undefined;
+  /** OS-216: when it was decided (`--at`), for a decision logged after the fact; absent means now. */
+  at?: string | null | undefined;
 }
 
 function required(v: string | undefined | null, what: string): string {
@@ -243,6 +259,7 @@ export async function decide(db: Db, input: DecideInput): Promise<OvernightDecis
   const what = required(input.what, "--what");
   const why = required(input.why, "--why");
   const night = input.night === undefined || input.night === null ? null : parseDate(input.night, "--night");
+  const at = input.at === undefined || input.at === null ? null : parseAt(input.at);
   const p = await requireProject(db, input.project);
   if (night !== null) await requireRun(db, p.id, night);
   const id = await createItem(db, {
@@ -251,7 +268,7 @@ export async function decide(db: Db, input: DecideInput): Promise<OvernightDecis
     status: "accepted",
     projectId: p.id,
     tags: night !== null ? [nightTag(night)] : [],
-    decision: { choice: what, rationale: why, doubt: optional(input.doubt), undo: optional(input.undo), context: optional(input.context) },
+    decision: { choice: what, rationale: why, doubt: optional(input.doubt), undo: optional(input.undo), context: optional(input.context), ...(at !== null ? { decidedAt: at } : {}) },
   });
   return readDecision(db, (await getItem(db, id))!, night);
 }
@@ -321,6 +338,55 @@ export async function listRuns(db: Db, input: { project?: string | undefined; si
     });
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project));
+}
+
+/** The rationale `ob overnight` gave each decision imported from the wayfinder review files (2026-11-19). */
+export const WAYFINDER_IMPORT_PREFIX = "imported from wayfinder/";
+
+export interface BackfillRow {
+  id: string;
+  ref: string | null;
+  project: string | null;
+  night: string;
+  /** The decided_at before the backfill: the moment of the import, not of the decision. */
+  from: string | null;
+  to: string;
+}
+
+/**
+ * OS-216: the decisions imported from the wayfinder overnight reviews were stamped with the moment of the import,
+ * so the timeline put a fortnight of nights on one day. Each one carries its night in its `overnight:<date>` tag;
+ * set its decided_at to that night (00:00 UTC, as `--at <date>` does). Only those imports are touched, only when the
+ * date is not already the night's, so a second run changes nothing. `dryRun` reports without writing.
+ */
+export async function backfillImportedDates(
+  db: Db,
+  input: { project?: string | undefined; dryRun?: boolean | undefined } = {},
+): Promise<BackfillRow[]> {
+  const projectId = input.project === undefined ? undefined : (await requireProject(db, input.project)).id;
+  const rows = await queryItems(db, { type: "decision", projectId });
+  const tags = await tagsForItems(db, rows.map((r) => r.id));
+  const out: BackfillRow[] = [];
+  for (const row of rows) {
+    const night = (tags.get(row.id) ?? []).find((t) => t.startsWith(`${OVERNIGHT_TAG}:`))?.slice(OVERNIGHT_TAG.length + 1);
+    if (night === undefined || !DATE.test(night)) continue;
+    const d = await readDecision(db, row, night);
+    if (!d.why?.startsWith(WAYFINDER_IMPORT_PREFIX)) continue;
+    if (d.decided_at?.slice(0, 10) === night) continue;
+    const to = `${night}T00:00:00.000Z`;
+    if (!input.dryRun) await setDecidedAt(db, row.id, to);
+    out.push({ id: row.id, ref: row.ref, project: row.project_id, night, from: d.decided_at, to });
+  }
+  return out.sort((a, b) => a.night.localeCompare(b.night) || a.id.localeCompare(b.id, undefined, { numeric: true }));
+}
+
+export function renderBackfill(rows: readonly BackfillRow[], dryRun: boolean): string {
+  if (rows.length === 0) return "no imported overnight decisions to backfill";
+  const verb = dryRun ? "would set" : "set";
+  return [
+    ...rows.map((r) => `${r.ref ?? r.id}  ${r.night}  ${verb} decided_at ${r.from ?? "(none)"} -> ${r.to}`),
+    `${rows.length} decision${rows.length === 1 ? "" : "s"} ${dryRun ? "to backfill (dry run, nothing written)" : "backfilled"}`,
+  ].join("\n");
 }
 
 // --- rendering, shared by the local command and the API client ---------------------------------------------------

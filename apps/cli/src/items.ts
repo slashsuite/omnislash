@@ -570,6 +570,61 @@ export async function tagsForItems(db: Database | Store, ids: readonly string[])
   return out;
 }
 
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+/**
+ * OS-216: every tag in use with how many items carry it, most used first (ties by name). Optionally only the
+ * items of the given projects. Read from the tags themselves, never a fixed list, so a new tag shows the moment an
+ * item carries it. Counted here rather than with `count(*)`, so no engine's aggregate type leaks out.
+ */
+export async function tagCounts(db: Database | Store, opts: { projectIds?: readonly string[] | undefined } = {}): Promise<TagCount[]> {
+  const s = asStore(db);
+  const base = s.q
+    .select({ name: s.t.tag.name })
+    .from(s.t.itemTag)
+    .innerJoin(s.t.tag, eq(s.t.itemTag.tagId, s.t.tag.id));
+  if (opts.projectIds !== undefined && opts.projectIds.length === 0) return [];
+  const rows = (opts.projectIds === undefined
+    ? await base
+    : await base.innerJoin(s.t.item, eq(s.t.itemTag.itemId, s.t.item.id)).where(inArray(s.t.item.project_id, [...opts.projectIds]))) as Array<{ name: string }>;
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.name, (counts.get(r.name) ?? 0) + 1);
+  return [...counts]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+/** OS-216: every `blocks` link, `from` blocks `to` (so `to` depends on `from`). */
+export async function blocksLinks(db: Database | Store): Promise<Array<{ from: string; to: string }>> {
+  const s = asStore(db);
+  return (await s.q
+    .select({ from: s.t.itemLink.fromItem, to: s.t.itemLink.toItem })
+    .from(s.t.itemLink)
+    .where(eq(s.t.itemLink.relType, "blocks"))) as Array<{ from: string; to: string }>;
+}
+
+/** OS-216: the few fields effective priority needs, for the given items. */
+export async function priorityRows(
+  db: Database | Store,
+  ids: readonly string[],
+): Promise<Array<{ id: string; ref: string | null; type: string; status: string; priority: number | null; project_id: string | null }>> {
+  if (ids.length === 0) return [];
+  const s = asStore(db);
+  return (await s.q
+    .select({ id: s.t.item.id, ref: s.t.item.ref, type: s.t.item.type, status: s.t.item.status, priority: s.t.item.priority, project_id: s.t.item.project_id })
+    .from(s.t.item)
+    .where(inArray(s.t.item.id, [...ids]))) as Array<{ id: string; ref: string | null; type: string; status: string; priority: number | null; project_id: string | null }>;
+}
+
+/** OS-216: set a decision's decided_at (the overnight backfill). */
+export async function setDecidedAt(db: Database | Store, id: string, decidedAt: string): Promise<void> {
+  const s = asStore(db);
+  await s.q.update(s.t.decisionDetail).set({ decided_at: decidedAt }).where(eq(s.t.decisionDetail.item_id, id));
+}
+
 export async function getTags(db: Database | Store, id: string): Promise<string[]> {
   const s = asStore(db);
   const rows = (await s.q

@@ -14,6 +14,7 @@ import { getFocusProject } from "./config.ts";
 import { queryItems, type ItemRow } from "./items.ts";
 import { listRoleMessages, type RoleMessage } from "./inbox.ts";
 import { effectivePriority, priorityName } from "./priority.ts";
+import { dependencyRaises } from "./dep-priority.ts";
 import { listProjects, UnknownTeamError } from "./project.ts";
 import { pendingRoleNote, type RoleNote } from "./role-run.ts";
 import { settingFor } from "./settings.ts";
@@ -139,9 +140,11 @@ async function dayFocus(s: Store, memberIds: ReadonlySet<string>, focusProject: 
   if (!best) return null;
   const ticketTag = best.tag.startsWith(DAY_FOCUS_PREFIX) ? `focus:${best.tag.slice(DAY_FOCUS_PREFIX.length)}` : null;
   const tagged = ticketTag ? (await queryItems(s, { open: true, tag: ticketTag })).filter((i) => i.id !== best.item.id) : [];
+  const raises = await dependencyRaises(s, focusProject);
   const mine = sortWorklist(
     tagged.filter((i) => i.project_id !== null && memberIds.has(i.project_id)),
     focusProject,
+    raises,
   );
   return {
     ref: best.item.ref ?? best.item.id,
@@ -150,7 +153,7 @@ async function dayFocus(s: Store, memberIds: ReadonlySet<string>, focusProject: 
     ticket_tag: ticketTag,
     tickets: mine.map((i) => ({
       ref: i.ref ?? i.id,
-      priority: priorityName(effectivePriority({ priority: i.priority, projectId: i.project_id, focusProject })),
+      priority: priorityName(effectivePriority({ priority: i.priority, projectId: i.project_id, focusProject, raised: raises.get(i.id)?.priority })),
       title: i.title,
     })),
     elsewhere: tagged.length - mine.length,
@@ -213,10 +216,11 @@ export async function roleBriefStoreFacts(db: Database | Store, teamName: string
   // OS-134: a paused or archived project offers no next items.
   const heldIds = new Set(allProjects.filter(isProjectHeld).map((p) => p.id));
   for (const p of members) if (!heldIds.has(p.id)) items.push(...(await queryItems(s, { open: true, projectId: p.id })));
-  const buildable = sortWorklist(items, focus).filter((i) => isBuildable(i, inFlight));
+  const raises = await dependencyRaises(s, focus);
+  const buildable = sortWorklist(items, focus, raises).filter((i) => isBuildable(i, inFlight));
   const next = buildable.slice(0, BRIEF_NEXT_COUNT).map((i) => ({
     ref: i.ref ?? i.id,
-    priority: priorityName(effectivePriority({ priority: i.priority, projectId: i.project_id, focusProject: focus })),
+    priority: priorityName(effectivePriority({ priority: i.priority, projectId: i.project_id, focusProject: focus, raised: raises.get(i.id)?.priority })),
     title: i.title,
   }));
 

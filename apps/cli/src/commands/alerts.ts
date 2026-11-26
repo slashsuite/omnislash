@@ -8,6 +8,7 @@ import { queryItems, type ItemRow } from "../items.ts";
 import { jobHealth } from "../jobs.ts";
 import { sendHaNotify } from "../notify.ts";
 import { CREDENTIALS, lastCredentialChecks } from "../credentials.ts";
+import { dependencyRaises, type Raises } from "../dep-priority.ts";
 import { effectivePriority, PRIORITY_CRITICAL, PRIORITY_FLAKE, PRIORITY_HIGH, PRIORITY_URGENT } from "../priority.ts";
 import { print } from "../output.ts";
 import type { Store } from "../db/store.ts";
@@ -75,11 +76,12 @@ export function parsePrRef(url: string | null | undefined): string | null {
   return null;
 }
 
-function effOf(item: ItemRow, focusProject: string | null): number {
+function effOf(item: ItemRow, focusProject: string | null, raises: Raises): number {
   return effectivePriority({
     priority: item.priority,
     projectId: item.project_id,
     focusProject,
+    raised: raises.get(item.id)?.priority,
   });
 }
 
@@ -95,6 +97,7 @@ interface ComputeOpts {
 export async function computeAlerts(store: Store, opts: ComputeOpts): Promise<Alert[]> {
   const now = opts.now ?? nowIso();
   const focus = opts.focusProject;
+  const raises = await dependencyRaises(store, focus);
   const alerts: Alert[] = [];
 
   const unreviewedHrs = await settingNumFor(store, "alert_pr_unreviewed_hours");
@@ -149,7 +152,7 @@ export async function computeAlerts(store: Store, opts: ComputeOpts): Promise<Al
 
   // --- Rule 1: high-priority PR unreviewed ---------------------------------
   for (const item of await queryItems(store, { status: "ready" })) {
-    if (!isHighPri(effOf(item, focus))) continue;
+    if (!isHighPri(effOf(item, focus, raises))) continue;
     const pr = parsePrRef(prUrlByItem.get(item.id));
     let baseTs = item.updated_at;
     let reviewCount = 0;
@@ -179,7 +182,7 @@ export async function computeAlerts(store: Store, opts: ComputeOpts): Promise<Al
   // --- Rule 2: aging high-priority work ------------------------------------
   for (const item of await queryItems(store, { open: true })) {
     if (item.status === "blocked" || item.status === "ready") continue;
-    if (!isHighPri(effOf(item, focus))) continue;
+    if (!isHighPri(effOf(item, focus, raises))) continue;
     const days = ageDays(item.updated_at, now);
     if (days <= agingDays) continue;
     alerts.push({

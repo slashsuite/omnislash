@@ -86,9 +86,18 @@ export interface EffectivePriorityInput {
   priority: number | null;
   projectId: string | null;
   focusProject: string | null;
+  /** OS-216: the priority an open dependent passes down the chain (dep-priority.ts); wins when it ranks better. */
+  raised?: number | null | undefined;
 }
 
 export function effectivePriority(input: EffectivePriorityInput): number {
+  const base = basePriority(input);
+  const raised = input.raised;
+  if (raised === null || raised === undefined) return base;
+  return prioritySortRank(raised) < prioritySortRank(base) ? raised : base;
+}
+
+function basePriority(input: EffectivePriorityInput): number {
   if (input.priority !== null && input.priority !== undefined) return input.priority;
   if (input.projectId !== null && input.focusProject !== null && input.projectId === input.focusProject) {
     return PRIORITY_HIGH;

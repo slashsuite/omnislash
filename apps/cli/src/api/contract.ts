@@ -64,7 +64,7 @@ import type { RoadmapMember, Progress, OnTrack } from "../commands/roadmap.ts";
 import type { PersonRow, PersonFields } from "../commands/person.ts";
 import type { CiMainReport, CiOutcome, HookPlanRow } from "../ci-main.ts";
 import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatch, TournamentView } from "../tournament.ts";
-import type { OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
+import type { BackfillRow, OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
 import type { MachineAudit } from "../machine-audit.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
@@ -217,6 +217,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "GET", path: "/snapshot", family: "snapshot", what: "the dashboard's full snapshot (status rollup incl. the Today list, standup, spinoffs, agents, WhatsApp feed + Status tray, alert count; OB-1762)" },
   { method: "POST", path: "/items/:id/notes", family: "items", what: "append a note to the body", scoped: "write" },
   { method: "POST", path: "/items/:id/tags", family: "items", what: "add and/or remove tags", scoped: "write" },
+  { method: "GET", path: "/tags", family: "items", what: "every tag in use with its count, most used first (?project=) (OS-216)", scoped: "read" },
   { method: "POST", path: "/items/:id/links", family: "items", what: "add an item-to-item link (rel + other id)", scoped: "write" },
   { method: "POST", path: "/items/:id/edit", family: "items", what: "edit title, body, priority, project", scoped: "write" },
   { method: "DELETE", path: "/items/:id", family: "items", what: "delete an item" },
@@ -396,6 +397,7 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/overnight/summary", family: "overnight", what: "append a bullet to one section of a night's summary (OB-2097)" },
   { method: "POST", path: "/overnight/show", family: "overnight", what: "a night: its summary, problems and decisions in the order made (OB-2097)" },
   { method: "GET", path: "/overnight/runs", family: "overnight", what: "one row per run with decision and Review these counts (?project=&since=; OB-2097)" },
+  { method: "POST", path: "/overnight/backfill", family: "overnight", what: "set each imported wayfinder decision's decided_at to its night; dry_run only reports (OS-216)" },
   { method: "POST", path: "/review-misses", family: "review-misses", what: "record a review-miss class" },
   { method: "GET", path: "/review-misses/top", family: "review-misses", what: "ranked review-miss classes (?scope=&limit=)" },
   { method: "GET", path: "/machine/audit", family: "machine", what: "rows the lifecycle machines cannot resolve, stale spinoff rows and would-refuse events (?since=&stale_days=; OS-170)" },
@@ -861,6 +863,13 @@ export interface NoteResponse {
   id: string;
   /** The body AFTER the append, so the caller sees the note it just wrote rather than assuming it. */
   body: string | null;
+}
+
+// --- GET /tags (OS-216) -------------------------------------------------------------------------------
+
+export interface TagCountsResponse {
+  /** Every tag in use, most used first; a scoped token counts only its own projects' items. */
+  tags: Array<{ tag: string; count: number }>;
 }
 
 // --- POST /items/:id/tags -----------------------------------------------------------------------------
@@ -2452,6 +2461,8 @@ export interface OvernightDecideRequest {
   context?: string | null | undefined;
   project: string;
   night?: string | null | undefined;
+  /** OS-216: when it was decided, `YYYY-MM-DD` or an ISO date-time with a zone; absent means now. */
+  at?: string | null | undefined;
 }
 export interface OvernightDecisionResponse {
   decision: OvernightDecision;
@@ -2474,6 +2485,13 @@ export interface OvernightNightResponse {
 }
 export interface OvernightRunsResponse {
   runs: OvernightRunRow[];
+}
+export interface OvernightBackfillRequest {
+  project?: string | undefined;
+  dry_run?: boolean | undefined;
+}
+export interface OvernightBackfillResponse {
+  rows: BackfillRow[];
 }
 
 // --- OB-1808: commands the API host runs as a job ---------------------------------------------------------
