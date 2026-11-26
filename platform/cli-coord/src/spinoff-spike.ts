@@ -24,12 +24,16 @@ export function isSpikeTagged(tags: readonly string[]): boolean {
   return tags.some((t) => t.trim().toLowerCase() === SPIKE_TAG);
 }
 
-/** The non-empty items under a `## <title>` heading, up to the next heading. A bullet marker, checkbox or empty line is not content; a sub-heading is not an item. Pure. */
+/** The `[<iso time>] ` stamp `ob note` puts in front of a note's first line (OS-86): a heading behind it is still a heading. */
+const NOTE_STAMP = /^\[\d{4}-\d{2}-\d{2}T[^\]\s]*\]\s+/;
+
+/** The non-empty items under a `## <title>` heading, up to the next heading. A bullet marker, checkbox or empty line is not content; a sub-heading is not an item. A heading `ob note` stamped (`[<iso>] ## Box`) counts (OS-86). Pure. */
 export function sectionItems(body: string | null | undefined, title: string): string[] {
   const want = title.toLowerCase();
   const lines: string[] = [];
   let inside = false;
-  for (const line of (body ?? "").split(/\r?\n/)) {
+  for (const raw of (body ?? "").split(/\r?\n/)) {
+    const line = raw.replace(NOTE_STAMP, "");
     if (/^#{1,2}\s/.test(line)) {
       // A suffix after the title still counts (`## Done when (live)`, `## Done when: all green`), as it did before.
       inside = new RegExp(`^${want}(?![\\w-])`).test(line.replace(/^#+\s+/, "").trim().toLowerCase());

@@ -7,7 +7,9 @@
  * fake `gh` and nothing here forks a real process.
  *
  * The rules (the ticket's design calls):
- *  - no open PR for the branch: nothing to check (a blocked or partial row, or a spike, opens no PR);
+ *  - no open PR for the branch (OS-211): a branch with no commit past main (a scan or a measurement, whose answer is
+ *    its note) hands off with nothing to merge; a branch with commits is refused, open the PR first; a count git
+ *    could not read refuses as `COULD NOT READ CI`. A spike never reaches this guard (it opens no PR for code);
  *  - the PR head is not the worktree HEAD: refuse, push first;
  *  - any check failing (a conclusion other than success, skipped or neutral): refuse, naming each with its link;
  *  - any check pending, or no checks yet while the repo has a workflow that runs on `pull_request`: refuse, wait;
@@ -35,8 +37,8 @@ export interface CiCheck {
 
 /** What the guard concluded. `line` goes on the trail and in the readying note; null when there was nothing to say. */
 export interface HandoffCiResult {
-  /** `checked`: a green PR. `no-pr`: the branch has no open PR. `no-checks`: a PR, and the repo runs no CI on it. `unchecked`: overridden. */
-  kind: "checked" | "no-pr" | "no-checks" | "unchecked";
+  /** `checked`: a green PR. `no-commits`: no open PR and no commit past main, so nothing to merge (OS-211). `no-checks`: a PR, and the repo runs no CI on it. `unchecked`: overridden. `not-read`: the caller skipped the guard (a spike, a gone worktree, a quiet repeat). */
+  kind: "checked" | "no-commits" | "no-checks" | "unchecked" | "not-read";
   line: string | null;
   /** OB-2544: one `PixelSlash review owed: ...` line per pending PixelSlash status; also folded into `line`. */
   owed?: string[];
@@ -126,6 +128,8 @@ export interface HandoffCiInput {
   headSha: string | null;
   /** The `--ci-unchecked` reason, when passed. */
   unchecked?: string | null;
+  /** OS-211: the branch's commits past main, read only when it has no open PR; null when git could not count them. */
+  commitsPastMain: () => number | null;
   sh: ShFn;
 }
 
@@ -167,13 +171,31 @@ export function assertHandoffCi(input: HandoffCiInput, fail: (message: string) =
   } catch {
     throw cannot("gh pr list printed something that is not a JSON list of PRs");
   }
-  if (prs.length === 0) return { kind: "no-pr", line: null };
+  if (prs.length === 0) return noPr(input, fail, cannot);
   // `gh pr list --head` matches by branch name, so more than one open PR can come back: every one must pass.
   const results = prs.map((pr) => checkPr(pr, input, fail, cannot));
   // One PR reports its own line; several report each, so the trail never names just the first.
   if (results.length === 1) return results[0]!;
   const owed = results.flatMap((r) => r.owed ?? []);
   return { kind: results[0]!.kind, line: results.map((r) => r.line).filter(Boolean).join("; ") || null, ...(owed.length > 0 ? { owed } : {}) };
+}
+
+/** The text a branch with no open PR and no commit past main hands off with (OS-211). */
+export const NO_COMMITS_LINE = "ci: none (no commit past main and no PR: nothing to merge)";
+
+/**
+ * OS-211: the branch has no open PR. A build with commits must open one first (the architect merges a PR, never a
+ * bare branch); a run with no commit past main (a scan, a measurement) has nothing to merge and hands off. Throws
+ * the refusal; returns the pass.
+ */
+function noPr(input: HandoffCiInput, fail: (message: string) => Error, cannot: (reason: string) => Error): HandoffCiResult {
+  const n = input.commitsPastMain();
+  if (n === null) throw cannot(`${input.branch} has no open PR, and git could not count its commits past main`);
+  if (n === 0) return { kind: "no-commits", line: NO_COMMITS_LINE };
+  throw fail(
+    `${input.branch} has ${n} commit(s) past main and no open PR: a build hands off through its PR. ` +
+      "Push the branch and open it (`gh pr create --base main`), wait for CI, then hand off again. Nothing was handed off.",
+  );
 }
 
 /** One open PR against the worktree HEAD. Throws the refusal; returns the pass. */

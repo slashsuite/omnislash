@@ -30,3 +30,18 @@ jobs:
       - run: bunx moon run state-machine:export -- --check
       - run: bun scripts/check-workflows.ts .github/workflows/*.yml
       - run: bun test scripts
+
+  # OS-211 (OS-112): TLC model-checks the spinoff row lifecycle (platform/state-machine/model/Spinoff.tla).
+  # The gate's state-machine tests keep the model's edges, states and events equal to the machine's; TLC then
+  # checks the rules (no handoff of commits without a PR, no stale verdict, failed stays failed) over those
+  # edges. The guards in code are pinned by cli-coord's tests, not by this job. About a second.
+  tla:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: bash platform/state-machine/model/tlc.sh

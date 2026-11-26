@@ -1750,7 +1750,7 @@ export async function spinoffSendBack(store: Store, req: SendBackSpinoffRequest)
     const row = (await listSpinoffs(store)).find((r) => r.id === req.id);
     if (!row) throw new ApiFault("not_found", 404, `no spinoff #${req.id}`);
     if (req.restore) {
-      const restored = await restoreSentBackRow(store, row.id, { note: "send-back undone: the builder thread could not be told" });
+      const restored = await restoreSentBackRow(store, row.id, { note: "send-back undone: the builder thread could not be told" }, req.verdict ?? undefined);
       if (req.over_usage?.trim()) await recordOverUsageUndone(store, row.ticket_ref, { spinoffRow: row.id, itemId: row.item_id }); // OS-108
       return { row: restored.row };
     }

@@ -120,6 +120,7 @@ import {
   refuseSubcommandRef,
   readyResultJson,
   commitsAheadFor,
+  commitsPastMainFor,
   headShaFor,
   overlapSh,
   rowsInTeam,
@@ -661,6 +662,7 @@ async function composeReadyOverApi(
     state,
     builderNote,
     commitsAhead: commitsAheadFor(row.worktree, row.branch, row.base_sha),
+    nothingToMerge: !spike && commitsPastMainFor(row.worktree, row.branch) === 0,
     tierFit,
     headSha: headShaFor(row.worktree, row.branch),
     repeat,
@@ -1332,7 +1334,7 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
     // an older host sends none and the note then says unreported, which is exactly what its trail says too.
     const tierFit = tierFitOf(flag(ctx, "tier-fit"), flag(ctx, "tier-fit-why"));
     // OB-2044: the same CI guard the local path runs; a pending or failing PR is refused before the stamp.
-    let ci: HandoffCiResult = { kind: "no-pr", line: null };
+    let ci: HandoffCiResult = { kind: "not-read", line: null };
     // OB-2227: a spike may now push a doc commit and open a PR, so its branch, commits and PR are checked too.
     if (!gone) {
       const keys = await ctx.client.projects().then((r) => r.projects.map((p) => p.key).filter((k): k is string => !!k), () => []);
@@ -1419,7 +1421,9 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
         await ctx.client.sendBackSpinoff({ id: row.id, note: flag(ctx, "note") ?? "", over_usage: overUsage });
       },
       restore: async () => {
-        await ctx.client.sendBackSpinoff({ id: row.id, note: "", restore: true, over_usage: overUsage });
+        // OS-211: the flip cleared the verdict; the undo puts back the one the row carried before it.
+        const verdict = { verdict: row.verdict ?? null, verdict_reason: row.verdict_reason ?? null, gate_line: row.gate_line ?? null };
+        await ctx.client.sendBackSpinoff({ id: row.id, note: "", restore: true, over_usage: overUsage, verdict });
       },
       send: async (threadId, message, clientRequestId) => {
         await (await t3Seam()).send({ threadId, message, mode: "queue", clientRequestId });

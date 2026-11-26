@@ -15,7 +15,7 @@ import { __setT3Seam, readyingNote, reviewLineFrom, type T3Seam } from "../../..
 import type { T3SendInput } from "../../../apps/cli/src/t3/client.ts";
 import { registerAgent } from "../src/agent.ts";
 import { __setSh, enqueueSpinoff, gateNoteWithCi, listSpinoffs } from "../src/commands/spinoff.ts";
-import { COULD_NOT_READ_CI, assertHandoffCi, isPixelSlashCheck, ciLine, normaliseCheck, repoRunsCiOnPullRequests, type HandoffCiInput } from "../src/commands/handoff-ci.ts";
+import { COULD_NOT_READ_CI, NO_COMMITS_LINE, assertHandoffCi, isPixelSlashCheck, ciLine, normaliseCheck, repoRunsCiOnPullRequests, type HandoffCiInput } from "../src/commands/handoff-ci.ts";
 
 const restores: Array<() => void> = [];
 afterEach(() => {
@@ -51,6 +51,7 @@ function guard(gh: Gh, over: Partial<HandoffCiInput> = {}, worktree = tempDir("o
     worktree,
     branch: "ob-2044",
     headSha: HEAD,
+    commitsPastMain: () => 0,
     sh: (cmd) => {
       calls.push(cmd);
       return gh.ok ? { ok: true, err: "", out: JSON.stringify(gh.prs) } : { ok: false, err: gh.err, out: "" };
@@ -144,8 +145,25 @@ describe("assertHandoffCi: the guard (OB-2044)", () => {
     expect(() => g.run()).toThrow("PR #431 head is bbbbbbb, your HEAD is aaaaaaa: the two differ: push (or pull, if the PR is ahead)");
   });
 
-  test("no open PR for the branch means no CI check and no line", () => {
-    expect(guard({ ok: true, prs: [] }).run()).toEqual({ kind: "no-pr", line: null });
+  // OS-211: with no open PR, the commits past main decide (a scan hands off; a build opens its PR first).
+  test("no open PR and no commit past main hands off with nothing to merge", () => {
+    expect(guard({ ok: true, prs: [] }).run()).toEqual({ kind: "no-commits", line: NO_COMMITS_LINE });
+  });
+
+  test("no open PR on a branch with commits past main is refused: open the PR first", () => {
+    const g = guard({ ok: true, prs: [] }, { commitsPastMain: () => 2 });
+    expect(() => g.run()).toThrow("ob-2044 has 2 commit(s) past main and no open PR: a build hands off through its PR");
+  });
+
+  test("no open PR and a commit count git could not read is COULD NOT READ CI", () => {
+    const g = guard({ ok: true, prs: [] }, { commitsPastMain: () => null });
+    expect(() => g.run()).toThrow(`${COULD_NOT_READ_CI}: ob-2044 has no open PR, and git could not count its commits past main`);
+  });
+
+  test("an open PR never reads the commit count", () => {
+    let read = false;
+    guard({ ok: true, prs: [pr([green("gate")])] }, { commitsPastMain: () => ((read = true), 0) }).run();
+    expect(read).toBe(false);
   });
 
   test("gh failing is COULD NOT READ CI, never green", () => {
@@ -249,13 +267,13 @@ async function seedHandoff(dbPath: string): Promise<{ itemId: string; wt: string
 }
 
 /** git and gh over the `sh` seam: a clean worktree on `HEAD`, one State: landable commit, and the given `gh` answer. */
-function fakeGitGh(gh: Gh): void {
+function fakeGitGh(gh: Gh, commits = 1): void {
   restores.push(
     __setSh((cmd) => {
       const line = cmd.join(" ");
       if (cmd[0] === "gh") return gh.ok ? { ok: true, err: "", out: JSON.stringify(gh.prs) } : { ok: false, err: gh.err, out: "" };
       if (line.includes("--porcelain")) return { ok: true, err: "", out: "" };
-      if (line.includes("rev-list --count")) return { ok: true, err: "", out: "1\n" };
+      if (line.includes("rev-list --count")) return { ok: true, err: "", out: `${commits}\n` };
       if (line.includes("rev-parse --verify")) return { ok: true, err: "", out: `${HEAD}\n` };
       if (line.includes("log --format=%B")) return { ok: true, err: "", out: "feat(OB-2044): hand off on green CI\n\nState: landable\n" };
       return { ok: true, err: "", out: "" };
@@ -418,14 +436,25 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
     expect(r.err).toContain("tier-fit");
   });
 
-  test("a branch with no PR hands off with no CI line", async () => {
+  // OS-211: a build cannot hand off without its PR; a run with no commit past main has nothing to merge.
+  test("a branch with commits and no PR is refused and stays building", async () => {
     const dbPath = freshDbPath();
     const { itemId } = await seedHandoff(dbPath);
     fakeGitGh({ ok: true, prs: [] });
     const r = await runCli(dbPath, ["spinoff", "handoff", itemId, "--note", "no pr here"]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("1 commit(s) past main and no open PR");
+    expect(await status(dbPath)).toBe("launched");
+  });
+
+  test("a branch with no commit past main and no PR hands off, saying there is nothing to merge", async () => {
+    const dbPath = freshDbPath();
+    const { itemId } = await seedHandoff(dbPath);
+    fakeGitGh({ ok: true, prs: [] }, 0);
+    const r = await runCli(dbPath, ["spinoff", "handoff", itemId, "--note", "measured: 41 rows"]);
     expect(r.code).toBe(0);
     expect(await status(dbPath)).toBe("ready-for-gate");
-    expect(await trail(dbPath, itemId)).not.toContain("ci:");
+    expect(await trail(dbPath, itemId)).toContain(NO_COMMITS_LINE);
   });
 
   test("gh failing refuses with COULD NOT READ CI and stamps nothing", async () => {
@@ -465,7 +494,7 @@ describe("ob spinoff handoff reads the PR's CI (OB-2044, local path)", () => {
   test("a repeat --no-note on an already handed-off row announces nothing, so it skips the CI read; a repeat that announces is guarded", async () => {
     const dbPath = freshDbPath();
     const { itemId } = await seedHandoff(dbPath);
-    fakeGitGh({ ok: true, prs: [] });
+    fakeGitGh({ ok: true, prs: [pr([green("gate")])] });
     expect((await runCli(dbPath, ["spinoff", "handoff", itemId, "--no-note"])).code).toBe(0);
     expect(await status(dbPath)).toBe("ready-for-gate");
     fakeGitGh({ ok: true, prs: [pr([run("gate", "COMPLETED", "FAILURE")])] });
@@ -535,8 +564,8 @@ describe("the readying note names what CI passed (OB-2044)", () => {
   });
 
   test("no ci line leaves the builder's note as it was, and a missing note becomes just the line", () => {
-    expect(gateNoteWithCi("moon clean", { kind: "no-pr", line: null })).toBe("moon clean");
-    expect(gateNoteWithCi(null, { kind: "no-pr", line: null })).toBeNull();
+    expect(gateNoteWithCi("moon clean", { kind: "not-read", line: null })).toBe("moon clean");
+    expect(gateNoteWithCi(null, { kind: "not-read", line: null })).toBeNull();
     expect(gateNoteWithCi(null, { kind: "unchecked", line: "ci: UNCHECKED (--ci-unchecked: x)" })).toBe("ci: UNCHECKED (--ci-unchecked: x)");
   });
 });

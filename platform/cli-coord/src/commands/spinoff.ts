@@ -3780,7 +3780,8 @@ export async function markSpinoffSentBack(db: Database | Store, row: SpinoffRow,
   }
   const s = asStore(db);
   await retakeFlakeSlot(s, row, "send back"); // OB-2230: the handoff freed it, and the fix is building again
-  const moved = await moveSpinoff(s, row.id, "sendback", {}, [READY_FOR_GATE]);
+  // OS-211 (OS-93): the verdict judged the work the gate sent back, so the next handoff must read a new one.
+  const moved = await moveSpinoff(s, row.id, "sendback", CLEARED_VERDICT, [READY_FOR_GATE]);
   await recordRowDecision(s, row, spinoffStatusWord(READY_FOR_GATE), spinoffStatusWord("launched"), decision, "sendback");
   await noteLegSendback(s, row); // OB-1991: a trial leg sent back did not pass the gate first time
   const existing = await getAgent(s, builderIdOf(row));
@@ -3811,7 +3812,7 @@ export async function markSpinoffResumed(db: Database | Store, row: SpinoffRow, 
   if (!decision.note?.trim()) throw new AppError("spinoff resume needs --note '<the work that continues>': the ticket's trail records it");
   const s = asStore(db);
   await retakeFlakeSlot(s, row, "resume"); // OB-2230: the handoff freed it, and the work is building again
-  const moved = await moveSpinoff(s, row.id, "resume", { verdict: null, verdict_reason: null, gate_line: null }, [READY_FOR_GATE]);
+  const moved = await moveSpinoff(s, row.id, "resume", CLEARED_VERDICT, [READY_FOR_GATE]);
   await recordRowDecision(s, row, spinoffStatusWord(READY_FOR_GATE), spinoffStatusWord("launched"), decision, "resume");
   const existing = await getAgent(s, builderIdOf(row));
   if (existing) {
@@ -3856,7 +3857,8 @@ export async function markSpinoffReopened(db: Database | Store, row: SpinoffRow,
   }
   const s = asStore(db);
   await retakeFlakeSlot(s, row, "reopen"); // OB-2230: the land freed it, and the fix is building again
-  const moved = await moveSpinoff(s, row.id, "reopen", {}, ["merged"]);
+  // OS-211 (OS-93): the landed row's verdict judged work that never merged; the next handoff reads a new one.
+  const moved = await moveSpinoff(s, row.id, "reopen", CLEARED_VERDICT, ["merged"]);
   await recordRowDecision(s, row, spinoffStatusWord("merged"), spinoffStatusWord("launched"), decision, "reopen");
   return moved;
 }
@@ -3867,11 +3869,33 @@ export async function markSpinoffReopened(db: Database | Store, row: SpinoffRow,
  * (by `markSpinoffReady`'s guard and the table) rather than stamped from a made-up `launched`. The CLI and the
  * API restore both call this.
  */
-export async function restoreSentBackRow(db: Database | Store, id: number, decision: DecisionOpts = {}): Promise<ReadySpinoffResult> {
-  const stored = await getSpinoffRow(db, id);
+export async function restoreSentBackRow(
+  db: Database | Store,
+  id: number,
+  decision: DecisionOpts = {},
+  /** OS-211: the verdict the send-back cleared, put back before the handoff so a needs-human row waits on the owner again. */
+  verdict?: RecordedVerdict,
+): Promise<ReadySpinoffResult> {
+  const s = asStore(db);
+  let stored = await getSpinoffRow(s, id);
   if (!stored) throw new AppError(`no spinoff #${id}`);
-  return markSpinoffReady(db, stored, decision);
+  if (verdict && stored.status === "launched" && stored.verdict === null) {
+    const put = { verdict: verdict.verdict ?? null, verdict_reason: verdict.verdict_reason ?? null, gate_line: verdict.gate_line ?? null };
+    await s.q
+      .update(s.t.spinoff)
+      .set(put)
+      // The WHERE re-checks the read: a verdict recorded since then is newer and stays.
+      .where(and(eq(s.t.spinoff.id, id), eq(s.t.spinoff.status, "launched"), isNull(s.t.spinoff.verdict)));
+    stored = (await getSpinoffRow(s, id)) ?? stored;
+  }
+  return markSpinoffReady(s, stored, decision);
 }
+
+/** The verdict columns a row records (`ob spinoff state`, OS-93). */
+export type RecordedVerdict = Pick<SpinoffRow, "verdict" | "verdict_reason" | "gate_line">;
+
+/** What a send-back, a resume and a reopen write: the next handoff reads the builder's new verdict (OS-211). */
+const CLEARED_VERDICT: RecordedVerdict = { verdict: null, verdict_reason: null, gate_line: null };
 
 /**
  * The worktree checks a handoff runs before it stamps (OB-1920: one function, so the local CLI, the API
@@ -3899,7 +3923,14 @@ export function assertHandoffCiForRow(
   unchecked?: string | null,
 ): HandoffCiResult {
   return assertHandoffCi(
-    { worktree: row.worktree, branch: row.branch, headSha: worktreeHeadSha(row.worktree), unchecked, sh },
+    {
+      worktree: row.worktree,
+      branch: row.branch,
+      headSha: worktreeHeadSha(row.worktree),
+      unchecked,
+      commitsPastMain: () => commitsPastMainFor(row.worktree, row.branch),
+      sh,
+    },
     (message) => new AppError(message),
   );
 }
@@ -3990,10 +4021,23 @@ export async function recordSpinoffVerdict(
     throw new AppError(`${row.ticket_ref} is an OmniSlash build: its verdict is the State: line in the commit, not 'ob spinoff state'`);
   }
   if (row.status === "merged") throw new AppError(`${row.ticket_ref} (#${row.id}) is already landed: its verdict is not recorded again`);
+  // OS-211: a verdict judges a build, so only a row with a builder (launching, building, handed-off) takes one, and
+  // the write holds to the status read: a row that moved meanwhile (landed, failed) is refused, never stamped.
+  if (row.status !== "launching" && row.status !== "launched" && row.status !== READY_FOR_GATE) {
+    throw new AppError(`${row.ticket_ref} (#${row.id}) is ${spinoffStatusWord(row.status)}: a verdict is recorded only on a row a builder is on`);
+  }
   const s = asStore(db);
   const reason = input.reason?.replace(/\s+/g, " ").trim() || null;
   const gate = input.gate?.replace(/\s+/g, " ").trim() || null;
-  await s.q.update(s.t.spinoff).set({ verdict, verdict_reason: reason, gate_line: gate }).where(eq(s.t.spinoff.id, row.id));
+  const wrote = (await s.q
+    .update(s.t.spinoff)
+    .set({ verdict, verdict_reason: reason, gate_line: gate })
+    .where(and(eq(s.t.spinoff.id, row.id), eq(s.t.spinoff.status, row.status)))
+    .returning({ id: s.t.spinoff.id })) as Array<{ id: number }>;
+  if (wrote.length === 0) {
+    const now = (await getSpinoffRow(s, row.id))?.status;
+    throw new AppError(`${row.ticket_ref} (#${row.id}) moved to ${now ? spinoffStatusWord(now) : "nothing"} while the verdict was being recorded; nothing changed, re-run`);
+  }
   // OS-183: on a handed-off row, a needs-human verdict waits on the owner's merge call, and any other verdict
   // recorded after one goes back to gating. A launched row is still building: its handoff reads the verdict.
   if (row.status === READY_FOR_GATE) {
@@ -4036,15 +4080,20 @@ export function cleanRepoLeakLines(
 ): string[] {
   if (isObRepo(row.repo)) return [];
   const lines: string[] = [];
-  const words = row.branch.split(/[^A-Za-z0-9]+/).filter(Boolean);
-  const branchLeaks = obLeaks(words.join(" "), keys).filter((l) => l.kind !== "ref");
-  const key = refKey(row.ticket_ref);
-  if (`-${row.branch.toLowerCase()}-`.replace(/[^a-z0-9.]+/g, "-").includes(`-${key}-`)) branchLeaks.unshift({ kind: "ref", match: key });
-  lines.push(...renderLeaks(`branch ${row.branch}`, branchLeaks));
+  const pr = readPrText(row.worktree, row.branch);
+  // OS-211 (OS-40): a run with no commit past main and no PR (a scan, a measurement) never publishes its branch:
+  // there is nothing to push or merge, so its name (`fl-10`, the lowercase ref) is not a leak.
+  const unpublished = pr === null && commitsPastMainFor(row.worktree, row.branch) === 0;
+  if (!unpublished) {
+    const words = row.branch.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    const branchLeaks = obLeaks(words.join(" "), keys).filter((l) => l.kind !== "ref");
+    const key = refKey(row.ticket_ref);
+    if (`-${row.branch.toLowerCase()}-`.replace(/[^a-z0-9.]+/g, "-").includes(`-${key}-`)) branchLeaks.unshift({ kind: "ref", match: key });
+    lines.push(...renderLeaks(`branch ${row.branch}`, branchLeaks));
+  }
   const log = sh(["git", "-C", row.worktree, "log", "--format=%B", `${mainRefFor(row.worktree)}..${row.branch}`]);
   if (log.ok) lines.push(...renderLeaks("commits", obLeaks(log.out ?? "", keys)));
   else lines.push(`  commits: could not read them (${(log.err ?? "").trim().split("\n")[0] || "git log failed"}), so they were not checked`);
-  const pr = readPrText(row.worktree, row.branch);
   if (pr && "error" in pr) lines.push(`  PR: could not read it (${pr.error}), so its title and body were not checked`);
   else if (pr) {
     lines.push(...renderLeaks("PR title", obLeaks(pr.title, keys)));
@@ -4197,6 +4246,18 @@ export function spikeDocFactsFor(row: Pick<SpinoffRow, "worktree" | "branch" | "
   if (!existsSync(row.worktree)) return { committed: false, prUrl: null };
   const committed = (changedPathsFor(row.worktree, row.branch, row.base_sha) ?? []).length > 0;
   return { committed, prUrl: committed ? openPrUrlFor(row.worktree, row.branch) : null };
+}
+
+/**
+ * OS-211: the commits `branch` has that main does not (`<main>..<branch>`, the range `readCommitState` reads), or
+ * null when git cannot count them. Not `base_sha..branch`: a branch rebased onto a newer main would count main's
+ * own commits as its work.
+ */
+export function commitsPastMainFor(worktree: string, branch: string): number | null {
+  const r = sh(["git", "-C", worktree, "rev-list", "--count", `${mainRefFor(worktree)}..${branch}`]);
+  if (!r.ok) return null;
+  const out = (r.out ?? "").trim();
+  return /^\d+$/.test(out) ? Number(out) : null;
 }
 
 export function commitsAheadFor(worktree: string, branch: string, baseSha: string | null): number | null {
@@ -4392,6 +4453,7 @@ async function announceReadyForRow(
     state,
     builderNote,
     commitsAhead: commitsAheadFor(row.worktree, row.branch, row.base_sha),
+    nothingToMerge: !spike && commitsPastMainFor(row.worktree, row.branch) === 0,
     tierFit,
     headSha: headShaFor(row.worktree, row.branch),
     repeat,
@@ -6316,7 +6378,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     // anything is stamped, and before the slower CI read; omitting it is allowed and only costs a hint.
     const tierFit = tierFitOf(flag(ctx, "tier-fit"), flag(ctx, "tier-fit-why"));
     // OB-2044: a builder hands off only once its PR's CI passes; refused before the stamp.
-    let ci: HandoffCiResult = { kind: "no-pr", line: null };
+    let ci: HandoffCiResult = { kind: "not-read", line: null };
     // OB-2227: a spike may now push a doc commit and open a PR, so its branch, commits and PR are checked too.
     if (!gone) {
       const leaks = cleanRepoLeakLines(found, await projectRefKeys(store));
@@ -6399,7 +6461,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
       },
       restore: async () => {
         // OB-1920: re-read the stored row after the flip rather than fabricating `status: "launched"`.
-        await restoreSentBackRow(store, row.id, { ...decisionOptsOf(ctx), note: "send-back undone: the builder thread could not be told" });
+        // OS-211: the flip cleared the verdict; the undo puts back the one the row carried before it.
+        await restoreSentBackRow(store, row.id, { ...decisionOptsOf(ctx), note: "send-back undone: the builder thread could not be told" }, row);
       },
       send: async (threadId, message, clientRequestId) => {
         await (await t3Seam()).send({ threadId, message, mode: "queue", clientRequestId });
