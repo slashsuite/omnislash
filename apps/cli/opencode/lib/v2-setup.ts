@@ -81,9 +81,14 @@ export async function bindV2Hooks(ctx: V2SetupCtx, hooks: FactoryHooks): Promise
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          await onEvent({
-            event: { ...defined("type", event.type), properties: defined("sessionID", sessionIDOf(event)) },
-          });
+          try {
+            await onEvent({
+              event: { ...defined("type", event.type), properties: defined("sessionID", sessionIDOf(event)) },
+            });
+          } catch (err) {
+            // One handler failure must not end the subscription: later events (session.idle) still need stamping.
+            console.error(`ob plugin: event handler failed on ${event.type ?? "event"}: ${(err as Error).message}`);
+          }
         }
       } catch {
         // aborted or stream closed

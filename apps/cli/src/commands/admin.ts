@@ -1,4 +1,6 @@
 import type { Database } from "bun:sqlite";
+import { existsSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
 import type { Ctx } from "../ctx.ts";
 import { AppError, UsageError } from "../errors.ts";
@@ -20,7 +22,7 @@ import {
 import { asStore, getStore, resetStore, type Store } from "../db/store.ts";
 import { resolveStoreKind } from "../db/store-kind.ts";
 import { configuredRemoteHost } from "../remote.ts";
-import { installOpencodeWiring, readProjectRules } from "../repo-private.ts";
+import { installOpencodeWiring, opencodeSourceDir, readProjectRules } from "../repo-private.ts";
 import { keyProblem } from "../refs.ts";
 import { parseStage, StageError, stageLine } from "../stage.ts";
 import { parseProjectStatus, PROJECT_STATUS_ALIASES, projectStatusOf, ProjectStatusError } from "../project-status.ts";
@@ -171,6 +173,14 @@ export async function projectRepoPrivate(
         : `${name}: installed ${res.installed.length}, kept ${res.kept.length} (already in ${dir}/.opencode)`,
     );
     if (res.excludeFailed) print(`warning: could not write ${dir}'s git info/exclude; the installed files will show in git status`);
+  }
+  // The plugin shims import from this checkout. A linked worktree (`.git` is a file) is removed when its branch
+  // lands, and the plugins then stop loading with no message, so say so while it can still be fixed.
+  const gitPath = join(opencodeSourceDir(), "..", "..", "..", ".git");
+  if (res.installed.length > 0 && existsSync(gitPath) && statSync(gitPath).isFile()) {
+    process.stderr.write(
+      `warning: the plugins point into ${resolve(opencodeSourceDir(), "..", "..", "..")}, a linked worktree; re-run 'ob project wire' from the main checkout before it is removed\n`,
+    );
   }
 }
 

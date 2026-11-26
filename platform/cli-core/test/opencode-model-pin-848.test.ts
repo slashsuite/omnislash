@@ -16,7 +16,6 @@ const PROVIDER = "opencode-go";
 
 // Answers GET /api/session/{id} with a fixed model (mismatched when
 // STUB_IGNORE_MODEL=1), records POST .../model, and records the final exec.
-// `ob` is stubbed too so the spinoff title lookup never touches the tracker.
 const OPENCODE_STUB = `#!/usr/bin/env bash
 set -euo pipefail
 state="\${STUB_STATE:?}"
@@ -46,11 +45,6 @@ printf 'EXEC_REACHED %s\\n' "$*"
 exit 0
 `;
 
-const OB_STUB = `#!/usr/bin/env bash
-printf '{}\\n'
-exit 0
-`;
-
 let dir: string;
 let env: Record<string, string | undefined>;
 
@@ -71,8 +65,8 @@ function run(script: string, args: string[], extraEnv: Record<string, string> = 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "ob848-"));
   writeStub("opencode", OPENCODE_STUB);
-  writeStub("ob", OB_STUB);
   env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, STUB_STATE: dir };
+  delete env.OB_ARCHITECT_MODEL;
 });
 
 afterEach(() => {

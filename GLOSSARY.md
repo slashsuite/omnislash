@@ -23,7 +23,7 @@ _Avoid_: maturity
 ## Roles and threads
 
 **Team**:
-One or more projects that share one architect, with an optional sentinel and muse.
+One or more projects that share one architect and one sentinel, with an optional muse.
 
 **Role**:
 One of the three standing seats of a team: architect, sentinel, muse.
@@ -43,7 +43,7 @@ implementation code.
 _Avoid_: planner, planning agent
 
 **Sentinel**:
-The optional role that gates, merges and deploys every pull request of its team.
+The role that gates, merges and deploys every pull request of its team. A handoff starts it when none is running.
 _Avoid_: lander, verifier
 
 **Muse**:
@@ -78,11 +78,11 @@ A ticket that answers questions by trying things and commits no code.
 _Avoid_: investigation ticket
 
 **Tier**:
-The size the architect gives a ticket at dispatch, complex, medium or simple, which picks the builder's
-model.
+The size label of the complexity score (1 to 10) the architect gives a ticket at dispatch: simple for 1-3,
+medium for 4-6, complex for 7-10. The score, not the label, picks the builder's model.
 
 **Priority band**:
-A ticket's priority: urgent, flake, high, medium, low or none, in that order.
+A ticket's priority: critical, urgent, flake, high, medium, low or none, in that order.
 _Avoid_: P0
 
 **Queue**:
@@ -121,7 +121,7 @@ The builder's declaration that its pull request is ready to gate, which sends th
 _Avoid_: hand-off
 
 **Readying note**:
-The message a handoff posts to the sentinel, or to the architect where there is none.
+The message a handoff posts to the team's sentinel.
 
 **Send-back**:
 A pull request returned to its builder with what to fix.

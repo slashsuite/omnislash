@@ -210,7 +210,7 @@ plists as a build step; the owner unloads those when he wants.
 | `creds-check` | `ob creds check --all` | daily 07:45, ahead of the 08:00 digest (1655). **Declared here and installed only on the server** as `omnislash-creds-check.timer`, enabled by hand after one manual run. Exits 1 and names the credentials when any verdict is FAILED | server (the API host); never a Mac plist |
 | `ci-main` | `ob ci main --notify` | hourly (OB-2276): the catch-up behind the GitHub webhook receiver, telling a red run on main the receiver missed and its recovery. **Declared here and installed only on the server** as `omnislash-ci-main.timer`, enabled by hand after one manual `ob ci main`. Exits 1 when a repo could not be read or a note not sent | server (the API host); never a Mac plist |
 | `web` | `ob web` | persistent (KeepAlive + RunAtLoad) | server (the API host) |
-| `whatsapp-bridge` | `ob whatsapp bridge run` | persistent (KeepAlive + RunAtLoad): `run` blocks (like `web`), so KeepAlive supervises the real bridge: crash → immediate restart. Moved to the Proxmox box (ob 193/202) as `omnislash-whatsapp-bridge.service` with `Restart=always`. | server (the API host); plist removed from the Mac |
+| `whatsapp-bridge` | `ob whatsapp bridge run` | persistent (KeepAlive + RunAtLoad): `run` blocks (like `web`), so KeepAlive supervises the real bridge: crash → immediate restart. Moved to the server (ob 193/202) as `omnislash-whatsapp-bridge.service` with `Restart=always`. | server (the API host); plist removed from the Mac |
 | `whatsapp-sync` | `ob whatsapp sync` | every 60s: poll the bridge → ob so the dashboard feed live-updates (184) | server (the API host); plist removed from the Mac |
 | `cert-renew` | `ob cert renew` | daily 03:40, renews the LAN certificate the dashboard serves (220). **Declared here and installed only on the server** as `omnislash-cert-renew.timer`, like `ha-health`: the certificate belongs to the box that serves the dashboard. Daily is deliberate for a 90-day certificate, because lego only acts inside the last 30 days: that leaves a month of daily attempts between the first failure and an expiry, each one counting toward the `JOB FAILING` alert. On a machine with no `tls_domain` it prints "nothing to renew" and exits 0, so it is inert rather than noisy on a laptop | server (the API host); never a Mac plist |
 | `backup` | `ob backup` | monthly, 1st at 03:15 | server (the API host) |
@@ -284,7 +284,7 @@ database or refuses:
 
 ```
 $ ob next
-error: no database at /home/ob/.local/share/omnislash/omnislash.sqlite, and creating one is deliberate: ob will not make a new tracker as a side effect of a command.
+error: no database at ~/.local/share/omnislash/omnislash.sqlite, and creating one is deliberate: ob will not make a new tracker as a side effect of a command.
   the real database is probably elsewhere: run with OMNISLASH_DB=<path>, or pass --db <path>
   a machine that genuinely has no database yet gets one with OMNISLASH_DB_CREATE=1 (honours --db and OMNISLASH_DB)
 ```
@@ -1655,7 +1655,7 @@ stores were live, and a revert had to be one variable rather than a code change.
 The cutover has now happened. Postgres holds the data; the SQLite file is a frozen copy that nothing
 writes. That turns an unset variable from "the safe default" into the **ob 237 failure class** — it opens
 fine, it answers, and every answer is months out of date. And the environment cannot be relied on to
-prevent it: `~/.zshrc` is not writable on this machine, so every fresh shell
+prevent it: a shell profile may not be writable, so every fresh shell
 tab, starts with nothing set.
 
 So the default moved into the build. **`ob` works in a fresh shell with no `OMNISLASH_*` variable at all**,

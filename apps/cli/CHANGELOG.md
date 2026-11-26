@@ -106,9 +106,6 @@ One sub-path inside it degrades LOUDLY rather than silently, because it needs a 
 credential path in `net.ts`: `ob status`'s **wayfinder frontier** would otherwise just vanish, and an
 absent frontier section reads exactly like an empty one. Under Postgres it prints the reason where the
 section would have been, and `--json` carries the same string as `frontier_note`.
-add  agent  agents  backup  block  close  config  daemon  db  focus  jobs  lease  link  list
-log  next  note  project  ready  reopen  search  show  spinoff  start  tag  today  unblock  untag
-```
 
 **`backup`, `db`, `daemon` and `jobs` are the ob 326 preconditions.** `ob backup` and `ob db snapshot`
 were the two commands whose whole job is to produce a second copy of the database, and both were written
@@ -160,7 +157,7 @@ nothing thrown and nothing on stderr. A dashboard that is down gets fixed; a das
 confidently stale does not get noticed.
 
 So the wrapper is gone and the server functions read through `getStore()`, the per-process singleton, so
-the whole server process shares one connection pool (capped at 3, idle-out 30s; see the store seam above) rather than opening a handle per request. The
+the whole server process shares one connection pool (capped at 3, idle-out 30s; see [the store seam](docs/guide.md#the-store-seam-and-how-the-cutover-is-switched-324-phase-4)) rather than opening a handle per request. The
 read-only / writable handle split went with it: it was a SQLite-*file* affordance (open the same file
 twice, once refusing writes), and a pooled Postgres connection has no such shape.
 

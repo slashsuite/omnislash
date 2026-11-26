@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { HANDLERS } from "../src/cli.ts";
-import { cliDocs } from "./support/cli-docs.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // 136 — docs-completeness backstop.
 // Enforces the house rule "CLI changes ship with their docs": every top-level
 // command registered in HANDLERS (apps/cli/src/cli.ts) MUST appear in the user
-// guide (apps/cli/docs/, via test/support/cli-docs.ts). Completeness against COMMAND_HELP and root help is
+// command reference (apps/cli/docs/commands.md); a changelog mention does not count. Completeness against COMMAND_HELP and root help is
 // enforced by apps/cli/test/help-system.test.ts.
 //
 // Matching is a whole-word check (so `add` does not match `address`). Only the
@@ -17,7 +18,7 @@ const IGNORE = new Set<string>([
   // (none) — every current command is documented.
 ]);
 
-const README = cliDocs();
+const README = readFileSync(join(import.meta.dir, "..", "docs", "commands.md"), "utf8");
 
 function documentedIn(haystack: string, command: string): boolean {
   const escaped = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
