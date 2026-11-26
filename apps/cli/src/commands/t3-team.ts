@@ -13,9 +13,10 @@ import { parseTeamRole, type TeamHandoff } from "../team-handoff.ts";
 import { forwardLateHandoff, RESTART_DEFAULT_TIMEOUT_MS, restartTeams, roleModelFor, type RestartBackend, type RoleRestartOutcome } from "../team-restart.ts";
 import { T3_THREAD_ENV } from "../../../../platform/cli-coord/src/lease-wait-title.ts";
 import { bodyFromFlags } from "./doc.ts";
+import { forwardToSeat, resolveForward } from "../team-forward.ts";
 import { ensureTeamThread, t3Seam, type AgentRegistry, type T3Seam, type TeamThreadOutcome } from "../t3/dispatch.ts";
 
-const TEAM_SUBCOMMANDS = "add|edit|join|leave|list|show|rm|handoff|restart";
+const TEAM_SUBCOMMANDS = "add|edit|join|leave|list|show|rm|handoff|restart|forward";
 
 /** Where a team's data lives: the store on this machine, or the API. The T3 half is the caller's. */
 export interface TeamBackend extends RestartBackend {
@@ -74,6 +75,7 @@ export function t3SubcommandReads(args: readonly string[]): string[] {
       if (t === "rm") return ["force"];
       if (t === "handoff") return ["role", "body", "body-file", "show"];
       if (t === "restart") return ["role", "force", "timeout", "all"];
+      if (t === "forward") return ["role", "thread", "body", "body-file"];
       return [];
     }
     default:
@@ -247,6 +249,28 @@ async function runRestart(ctx: TeamRunCtx, backend: TeamBackend, name: string | 
   if (outcomes.some((o) => o.result === "failed" || (o.result === "skipped" && !o.unbound))) ctx.exit = 1;
 }
 
+/**
+ * `ob t3 team forward [<team>] [--role <r>] [--thread <id>] (--body-file <f> | --body <text>)` (OS-212): queue a
+ * message into a seat's current thread. A `--thread` the seat retired is redirected there; one that is no seat's is
+ * refused by name and nothing is sent.
+ */
+async function runForward(ctx: TeamRunCtx, backend: TeamBackend, name: string | undefined, seam?: T3Seam): Promise<void> {
+  if (ctx.args.length > 3) throw new UsageError(`t3 team forward takes at most one <team>, got: ${ctx.args.slice(2).join(" ")}`);
+  const role = ctx.flags.role !== undefined ? parseTeamRole(ctx.flags.role) : undefined;
+  const thread = typeof ctx.flags.thread === "string" && ctx.flags.thread.trim() ? ctx.flags.thread.trim() : undefined;
+  if (ctx.flags.thread !== undefined && !thread) throw new UsageError("--thread needs a thread id");
+  const body = bodyFromFlags(ctx.flags);
+  if (body === undefined || !body.trim()) throw new UsageError("t3 team forward needs --body-file <file> (or --body <text>) with the message");
+  const target = await resolveForward(backend, { ...(name ? { team: name } : {}), ...(role ? { role } : {}), ...(thread ? { thread } : {}) });
+  await forwardToSeat(seam ?? (await t3Seam()), target, body);
+  if (ctx.mode === "json") print(JSON.stringify({ team: target.team, role: target.role, thread_id: target.threadId, redirected_from: target.redirectedFrom }, null, 2));
+  else if (ctx.mode === "quiet") print(target.threadId);
+  else {
+    const from = target.redirectedFrom ? ` (${target.redirectedFrom} is retired; redirected)` : "";
+    print(`${target.team} ${target.role}: forwarded to ${target.threadId}${from}`);
+  }
+}
+
 /** `ob t3 team <sub>`. */
 export async function runTeam(ctx: TeamRunCtx, backend: TeamBackend, seam?: T3Seam): Promise<void> {
   const sub = ctx.args[1] ?? "list";
@@ -303,6 +327,7 @@ export async function runTeam(ctx: TeamRunCtx, backend: TeamBackend, seam?: T3Se
   }
   if (sub === "handoff") return runHandoff(ctx, backend, name, seam);
   if (sub === "restart") return runRestart(ctx, backend, name, seam);
+  if (sub === "forward") return runForward(ctx, backend, name, seam);
   if (sub === "rm") {
     if (!name) throw new UsageError("t3 team rm requires a <name>");
     const force = ctx.flags.force === true;

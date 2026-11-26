@@ -514,7 +514,7 @@ describe("ob spinoff ready tells the sentinel (1133)", () => {
     expect((await runCli(dbPath, ["spinoff", "ready", "1133"])).code).toBe(0);
     expect((await runCli(dbPath, ["spinoff", "ready", "1133"])).code).toBe(0);
     expect(fake.sends).toHaveLength(1);
-    expect(fake.sends[0]!.clientRequestId).toBe("ob-role-msg-1");
+    expect(fake.sends[0]!.clientRequestId).toBe(`ob-role-msg-${fake.sends[0]!.threadId}-1`);
   });
 
   test("no sentinel thread: the handoff starts the sentinel's run (OS-56), exit 0, and the stamp still applied", async () => {

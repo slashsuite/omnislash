@@ -1369,7 +1369,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["t3 login"],
       },
       team: {
-        summary: "Create, edit, inspect, hand off, and restart project teams",
+        summary: "Create, edit, inspect, hand off, restart and message project teams",
         usage: [
           "t3 team add <name> [--projects <a,b>] [--icon <e>] [--display-name <t>]",
           "t3 team edit <name> [--icon <e>] [--display-name <t>]",
@@ -1377,6 +1377,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           "t3 team list | t3 team show <name> | t3 team rm <name> [--force]",
           "t3 team handoff <team> --role <r> (--body <t>|--body-file <f>|--show)",
           "t3 team restart <team>|--all [--role <r>] [--force] [--timeout <min>]",
+          "t3 team forward [<team>] [--role <r>] [--thread <id>] (--body <t>|--body-file <f>)",
         ],
         flags: [
           { flag: "--projects <csv>", description: "Initial member projects for team add" },
@@ -1389,11 +1390,13 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--all", description: "Restart all teams" },
           { flag: "--force", description: "Force remove team or interrupt busy threads on restart" },
           { flag: "--timeout <min>", description: "Minutes to wait for handoff on restart (default 15)" },
+          { flag: "--thread <id>", description: "forward: a thread id you had; retired ones are redirected, others refused" },
         ],
         examples: [
           "t3 team list",
           "t3 team join core web api",
           "t3 team handoff core --role architect --show",
+          "t3 team forward core --role sentinel --body-file note.md",
         ],
       },
       architect: {

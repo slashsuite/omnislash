@@ -107,7 +107,7 @@ describe("ob spinoff handoff stores its note in the role's inbox and delivers it
     expect(second.code).toBe(0);
     expect(second.err).not.toContain("inbox:");
     expect(second.out).toContain("nothing unread to deliver; this handoff was already given to its run");
-    expect(fake.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["slash-sentinel-thread", "queue", "ob-role-msg-1"]]);
+    expect(fake.sends.map((s) => [s.threadId, s.mode, s.clientRequestId])).toEqual([["slash-sentinel-thread", "queue", "ob-role-msg-slash-sentinel-thread-1"]]);
     const rows = messages(db);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ team: "slash", role: "sentinel", kind: "handoff", ref, from_actor: ref, read_by: "role-run-1" });
@@ -173,7 +173,7 @@ describe("ob spinoff handoff over the API", () => {
     const res = await runCli(freshDbPath(), ["spinoff", "handoff", ref, "--ci-unchecked", "test"], api(db, false));
     expect(res.err).not.toContain("inbox:");
     expect(res.code).toBe(0);
-    expect(fake.sends.map((s) => [s.threadId, s.clientRequestId])).toEqual([["slash-sentinel-thread", "ob-role-msg-1"]]);
+    expect(fake.sends.map((s) => [s.threadId, s.clientRequestId])).toEqual([["slash-sentinel-thread", "ob-role-msg-slash-sentinel-thread-1"]]);
     expect(messages(db).map((m) => [m.kind, m.role, m.ref, m.read_by])).toEqual([["handoff", "sentinel", ref, "role-run-1"]]);
   });
 
