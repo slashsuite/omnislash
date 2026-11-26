@@ -53,9 +53,13 @@ const sh = (cmd: string[]) => {
 
 /** A user manager this test process can start services under; without one the escape cannot happen. */
 const userManager = !!Bun.which("systemd-run") && sh(["systemd-run", "--user", "--wait", "--quiet", "--collect", "--", "true"]).code === 0;
-const limited = rttimeHardLimitFinite();
-/** The kernel kills the bare fixture only at a hard limit of 0; a finite non-zero limit (200000 us in some shells) lets it run. */
-const zeroLimit = /^Max realtime timeout\s+\S+\s+0\s/m.test(readFileSync("/proc/self/limits", "utf8"));
+/**
+ * The kernel kills the bare fixture only at a hard RLIMIT_RTTIME of 0: a non-realtime thread never accrues
+ * realtime time, so a finite non-zero limit (T3 shells now set 200000 us) never fires, and an unlimited one
+ * never does either. So the fixture test does not depend on the shell's limit: it lowers the hard limit to 0
+ * itself with prlimit (lowering needs no privilege), for the bare run and for `ob lease run` alike (OS-208).
+ */
+const ZERO_RTTIME = ["prlimit", "--rttime=0:0", "--"];
 const SKIP_NO_MANAGER = "no systemd user manager here (systemd-run --user failed or is missing)";
 
 function ob(db: string, args: string[], extra: Record<string, string> = {}) {
@@ -134,13 +138,20 @@ describe.skipIf(!userManager)("lease run escape: the command runs as a user serv
     expect(r.out).toMatch(/Max realtime timeout\s+unlimited\s+unlimited/);
   }, 30_000);
 
-  test.skipIf(!zeroLimit)("the timer_create fixture survives under it, where bare it is SIGKILLed", () => {
-    const bare = sh(["python3", TIMER]);
+  test("under a hard RTTIME limit of 0 the timer_create fixture is SIGKILLed bare, and survives `ob lease run`", () => {
+    const bare = sh([...ZERO_RTTIME, "python3", TIMER]);
     // Killed by the kernel before its first hit: exit 137 in a shell.
     expect(bare.signal).toBe("SIGKILL");
-    const r = escaped(temp("db.sqlite"), ["python3", TIMER]);
-    expect(r.code).toBe(0);
-    expect(r.out).toMatch(/^timer hits: [1-9]\d*\n$/);
+    // ob itself starts under the 0 limit, as it did in a T3 shell at 0/0, and decides to escape on its own
+    // (no OB_LEASE_RUN_ESCAPE): the command it starts must not inherit the limit.
+    const db = temp("db.sqlite");
+    const r = Bun.spawnSync([...ZERO_RTTIME, "bun", "run", INDEX, "lease", "run", "probe:escape", "--", "python3", TIMER], {
+      env: envFor(db),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect({ code: r.exitCode, out: r.stdout.toString() }).toMatchObject({ code: 0 });
+    expect(r.stdout.toString()).toMatch(/^timer hits: [1-9]\d*\n$/);
   }, 30_000);
 
   test("exit code, stdout, stderr and the caller's cwd and environment pass through", () => {

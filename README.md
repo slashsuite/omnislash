@@ -10,7 +10,7 @@ Alpha. Anything may change or break, and there is no compatibility promise yet.
 
 ## Requirements
 
-- Bun 1.4.2, the version pinned in `.bun-version`.
+- Bun 1.4.5, the version pinned in `.bun-version`.
 
 ## Getting started
 
