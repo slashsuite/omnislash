@@ -65,7 +65,7 @@ describe("OS-145: model routes", () => {
     expect(sourceLabel(resolveRoute(inputs, "job.nightly-sweep"))).toBe("default (builder.complex)");
     // a role thread with nothing set opens on the T3 project's default, as before
     expect(await teamRoleModelFrom(memIo(), "architect")).toBeUndefined();
-    // the review readers are the built-in legs: opus reads every score, neon is its fallback on no range (OS-238)
+    // the review readers are the built-in legs: opus reads every score, neon sits on no range and is no fallback (OS-238, OS-256)
     expect(Object.keys(resolveReview(inputs).value.readers)).toEqual(["neon", "opus"]);
     expect(resolveReview(inputs).value.tiers.map((r) => r.legs)).toEqual([[...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS]]);
     // spinoff_tier_models still sets the builder default layer

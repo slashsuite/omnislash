@@ -242,7 +242,7 @@ export function retiredReviewMessage(leg: string, model?: string): string | null
 
 /**
  * The default skeptical-review leg set when `review_readers` is unset: Opus alone (OS-238, Jacobus 2026-11-25: the
- * Neon leg spent about 48 Antigravity sessions a day). Neon stays a default reader on no range, as Opus's fallback.
+ * Neon leg spent about 48 Antigravity sessions a day). Neon stays a default reader on no range, and no reader's fallback (OS-256).
  */
 export const DEFAULT_REVIEW_LEGS = ["opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
 

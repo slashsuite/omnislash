@@ -1610,7 +1610,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         notes: [
           "The ranges cover 1-10 with no gap and no overlap; a range you set is carved out of the ones it overlaps.",
           "'tier <simple|medium|complex>' is the old spelling of the ranges 1-3, 4-6 and 7-10, kept for one release.",
-          "Default when unset: opus on every score; neon reads only as its fallback.",
+          "Default when unset: opus on every score, no fallback (readers are Opus only).",
         ],
       },
     },

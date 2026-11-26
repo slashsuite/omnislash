@@ -9,8 +9,8 @@
 // builder ranges of OS-177). The old `{"simple": [...], "medium": [...], "complex": [...]}` form still loads, as
 // the ranges 1-3, 4-6 and 7-10, and is written back as the list.
 //
-// Unset means opus alone on every score, with neon a reader on no range that stands in only when Opus is
-// unavailable (OS-238; neon and opus both read every score before). A reader may sit in no range (kept but off).
+// Unset means opus alone on every score and no fallback: readers are Opus only, so nothing stands in for an
+// unavailable Opus (OS-238, OS-256). Neon stays a reader on no range (kept but off). A reader may sit in no range (kept but off).
 // This module is PURE (no store, no ob imports beyond models-file's table) so review-leg.ts, a standalone bun
 // script, and the dashboard can both import it cheaply. Reads and writes go through a `ConfigIO` the caller
 // supplies: the store locally and on the dashboard, the API client in API mode.
@@ -51,19 +51,16 @@ export interface ReviewReaders {
 /** A leg name: lowercase letters, digits and dashes. */
 export const LEG_NAME = /^[a-z0-9-]+$/;
 
-/** The fallback an unset setting gives opus: neon stands in when Opus is unavailable (OS-206). Configurable per reader. */
-export const DEFAULT_REVIEW_FALLBACKS: Record<string, string> = { opus: "neon" };
-
 /**
- * The value an unset setting stands for: opus alone on every score (as the three old tier bands), and neon kept as
- * a reader on no range, so it runs only as opus's fallback (OS-238).
+ * The value an unset setting stands for: opus alone on every score (as the three old tier bands), no reader with a
+ * fallback (readers are Opus only, OS-256), and neon kept as a reader on no range.
  */
 export function defaultReviewReaders(): ReviewReaders {
   const legs = [...DEFAULT_REVIEW_LEGS];
   const readerLegs = Object.keys(DEFAULT_REVIEW_MODELS) as (keyof typeof DEFAULT_REVIEW_MODELS)[];
   return {
     readers: Object.fromEntries(
-      readerLegs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg], ...(DEFAULT_REVIEW_FALLBACKS[leg] ? { fallback: DEFAULT_REVIEW_FALLBACKS[leg] } : {}) }]),
+      readerLegs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg] }]),
     ),
     tiers: REVIEW_TIERS.map((t) => ({ ...TIER_BANDS[t], legs: [...legs] })),
   };
