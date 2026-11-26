@@ -5,8 +5,6 @@
 // through `createObApi` on a real Postgres store (the ob 325 harness: a local cluster, no network, no live
 // database), and the SAME script must print the same lines with the same exit codes both ways.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -17,10 +15,11 @@ import { API_ROUTED_COMMANDS } from "../../../apps/cli/src/api/routing.ts";
 import type { ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { renderCommandHelp, renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { appendToSection, emptySummary, localToday, summaryProblems } from "../../../apps/cli/src/overnight.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const NIGHT = "2026-11-17";
 
 type Run = (args: string[]) => Promise<{ code: number; out: string; err: string }>;

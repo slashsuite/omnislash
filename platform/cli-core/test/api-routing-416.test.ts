@@ -2,8 +2,6 @@
 //
 // CLIENT half: stubbed transport, no network, no token file, no database, no live Google.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { HANDLERS } from "../../../apps/cli/src/cli.ts";
 import { API_HANDLERS } from "../../../apps/cli/src/api/client-handlers.ts";
 import {
@@ -14,10 +12,11 @@ import {
 import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 interface Stub {
   transport: ApiTransport;

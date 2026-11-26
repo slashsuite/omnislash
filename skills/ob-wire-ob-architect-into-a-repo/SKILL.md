@@ -21,9 +21,9 @@ repo:
 So the repo-local work is the **conventions** and the **runtime plugins**, not
 the skills or commands.
 
-The OmniSlash `.opencode/` wiring this skill copies from (`architect-tui.sh`, `plugins/ob-*.ts`,
-`opencode.json`) is not in the public OmniSlash repository yet. Until it is, steps 3 and 4 need a
-checkout that carries it.
+`ob project wire <project>` builds the repo-local half from any OmniSlash checkout, a fresh clone
+included: the sources it builds from ship in `apps/cli/opencode/` (the four plugins, the launcher and
+the starting points for the agent, the command and the SOUL). No `.opencode/` is committed to OmniSlash.
 
 ## What is actually missing per repo
 
@@ -34,7 +34,7 @@ checkout that carries it.
 2. **No ob runtime plugins.** `ob-heartbeat`, `ob-memory`, `ob-skills` and
    `ob-soul` are configured only in OmniSlash's `opencode.json`, so sessions in
    other repos never register in `ob agents`, get no memory or SOUL injection,
-   and never file skills.
+   and never file skills. `ob project wire` fixes this (step 2).
 
 ## A repo that will go public keeps this half in OmniSlash
 
@@ -45,15 +45,14 @@ So your OmniSlash checkout owns that half, under `repos/<project>/` (the project
 - `repos/<project>/AGENTS.md`: the private rules. `ob project rules <project>` prints them (nothing, exit 0, when
   there are none); the architect's Step 0 reads that output next to the repo's own `AGENTS.md`, and every
   `ob spinoff` launch prompt for that repo ends with it.
-- `repos/<project>/opencode/`: the wiring, laid out as `.opencode/` is (`SOUL.md`, `agents/architect.md`,
-  `commands/ob-architect.md`, `plugins/ob-*.ts`). `ob project wire <project> [--dir <path>]` copies into
-  `<path>/.opencode/` every file the checkout does not TRACK, and git-excludes them; a spinoff launch does the
-  same for its worktree and fails the launch if the install or the exclude cannot be written (the manual
-  command only reports it). A tracked file is never overwritten, so a repo that still commits its own wiring keeps
-  working, while ob's own untracked copies are refreshed when `repos/<project>/opencode` changes.
+- `repos/<project>/opencode/`: optional overrides, laid out as `.opencode/` is (`SOUL.md`, `agents/architect.md`,
+  `commands/ob-architect.md`, anything else). `ob project wire` installs each one in place of the built file of the
+  same path, and a spinoff launch installs them into its worktree too (failing the launch if the install or the
+  exclude cannot be written). Put a repo's SOUL or architect agent here once it is worth keeping, since the
+  copies `ob project wire` writes into a checkout are untracked and a fresh worktree does not have them.
 
-Steps 1 to 4 below still describe what the files contain. For a repo going public, write them into
-`repos/<project>/` instead of the repo, and commit them in your OmniSlash checkout.
+Whatever is installed, only files the checkout does not TRACK are written, and each one is git-excluded. A repo
+that still commits its own wiring keeps it.
 
 ## Steps
 
@@ -77,50 +76,41 @@ Sections that matter, because the architect and every builder read them:
 - **Invariants.** The rules this codebase punishes you for breaking. This is
   where the repo's real knowledge goes; keep the ones that cost an actual bug.
 
-### 2. Add the repo-local agent, command and SOUL
+### 2. Run `ob project wire`
 
-- `.opencode/agents/architect.md`: `mode: primary`, deny the `subagent` action,
-  body loads the `ob-architect` skill and points Step 0 at this repo's `AGENTS.md`.
-  It overrides the global `architect` **for this repo only**; verify OmniSlash is
-  unaffected.
-- `.opencode/commands/ob-architect.md`: frontmatter `agent: architect`, body loads
-  the skill and passes `$ARGUMENTS`. Overrides the global command here.
-- `.opencode/SOUL.md`: injected into every request. Keep it short; it costs
-  tokens on every turn.
+From the repo checkout (or with `--dir <path>`):
 
-### 3. Provide a launcher
-
-The `ob-architect` skill sets `disable-model-invocation: true`, so the model cannot
-load it. A session must be switched to the `architect` agent **and** have the
-skill body injected. That is why a script is needed rather than
-`opencode --agent`. Copy the shape from `<your OmniSlash checkout>/.opencode/architect-tui.sh`:
-create a session at the repo root, `POST /api/session/{id}/agent`, pin the
-model, `POST /api/experimental/session/{id}/skill {"id":"ob-architect"}`, then
-`exec opencode --session "$id" --auto`. Verify the agent and model landed and
-exit non-zero if not: never open a TUI that is silently the wrong agent.
-
-### 4. Wire ob's four plugins
-
-**The trap.** A `plugins` entry in `opencode.json(c)` must name a
-**directory**, not individual `.ts` files. Naming the files logs
-`configured plugin path must be a directory` and loads nothing, with no other
-symptom: the session just silently drops out of `ob agents`. OmniSlash's own
-`opencode.json` has this defect; its plugins load anyway only because
-`.opencode/plugins/` is auto-discovered inside OmniSlash itself.
-
-**The fix.** One-line re-export shims in `<repo>/.opencode/plugins/`. Nothing
-to drift, and auto-discovery loads them. The path below assumes your OmniSlash
-checkout sits next to the repo; point it at yours:
-
-```ts
-// .opencode/plugins/ob-heartbeat.ts
-export { default } from "../../../omnislash/.opencode/plugins/ob-heartbeat.ts";
+```bash
+ob project wire <project>
 ```
 
-One file per plugin: `ob-heartbeat`, `ob-memory`, `ob-skills`, `ob-soul`. Then
-**no `opencode.jsonc` is needed at all** for this.
+It writes into `.opencode/`, untracked and git-excluded:
 
-### 5. Check the repo against the standard stack
+- `plugins/ob-heartbeat.ts`, `ob-memory.ts`, `ob-skills.ts`, `ob-soul.ts`: one-line shims that
+  re-export the plugin from your OmniSlash checkout by absolute path. Auto-discovery loads them, so
+  **no `opencode.jsonc` is needed**. Do not list plugin files in `opencode.json(c)` instead: a `plugins`
+  entry must name a directory, and naming files logs `configured plugin path must be a directory` and
+  loads nothing, so the session silently drops out of `ob agents`.
+- `architect-tui.sh`: the launcher. The `ob-architect` skill sets `disable-model-invocation: true`, so a
+  session must be switched to the `architect` agent **and** have the skill injected, which
+  `opencode --agent` cannot do. The script creates the session, sets the agent, pins the model
+  (`OB_ARCHITECT_MODEL=<provider>/<model id>`), injects the skill, verifies the agent and model landed
+  (exit 1 if not) and opens the TUI. Run it from the repo root.
+- `agents/architect.md` (`mode: primary`, the `subagent` action denied, loads `ob-architect` and points
+  Step 0 at this repo's `AGENTS.md` and `ob project rules <project>`), `commands/ob-architect.md`
+  (`agent: architect`, passes `$ARGUMENTS`) and `SOUL.md` (injected into every request, so keep it
+  short). These three are starting points, written only when missing: edit them, and a re-run keeps
+  your edits. They override the global `architect` and command for this repo only; check OmniSlash is
+  unaffected.
+
+Re-run it after moving or updating your OmniSlash checkout: the shims and launcher are refreshed.
+
+### 3. Keep what is worth keeping
+
+The files above live only in this checkout. Anything you edited and want in every future worktree goes
+into `repos/<project>/opencode/` in your OmniSlash checkout (see above), and commit it there.
+
+### 4. Check the repo against the standard stack
 
 Read `<your OmniSlash checkout>/skills/ob-new-project/STANDARD-STACK.md` and compare the repo with
 each of its sections. File **each deviation as its own ticket** on this repo's `ob` project (`ob add "<deviation>" --project <repo>
@@ -129,12 +119,12 @@ like any other ticket. Check `bunfig.toml` first and always: `linker = "isolated
 
 Done when: every section of the standard is either matched or ticketed, and you can name the tickets.
 
-### 6. Verify: both halves
+### 5. Verify: both halves
 
 Config that looks right and loads nothing is the whole failure mode here.
 
 ```bash
-# Plugins: expect 4 ids starting ob-, matching OmniSlash.
+# Plugins: expect the 4 ids ob-heartbeat, ob-memory, ob-skills, ob-soul.
 opencode api get "/api/plugin?location%5Bdirectory%5D=$PWD" \
   | python3 -c "import json,sys;print(sorted(p['id'] for p in json.load(sys.stdin)['data'] if p['id'].startswith('ob-')))"
 
@@ -155,7 +145,7 @@ that is where `configured plugin path must be a directory` appears.
 ### 6. Bind the repo's architect T3 thread
 
 T3 Code is the only harness, so the repo's architect is a T3 thread
-and the OpenCode launcher above is a fallback. Register the repo checkout as a
+and the OpenCode launcher from step 2 is a fallback. Register the repo checkout as a
 T3 project with a default model first. Put the project in a team: `ob t3 team join <team> <slug>` for an
 existing team (`ob t3 team list`), or let the next command make a team of one. Then, from the thread that will
 be the architect, read its own id with the T3 MCP tool `t3_thread_configuration` (no

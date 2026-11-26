@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import {
   formatAgentsReset,
@@ -14,6 +12,7 @@ import { acquireLease, leaseStatus, listAllLeaseResources, releaseAllLeases } fr
 import { enqueueSpinoff, listSpinoffs } from "../src/commands/spinoff.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const LEASES = [
   "app:widget",
@@ -182,7 +181,7 @@ describe("CLI: ob agents reset (437)", () => {
     expect(help).toContain("WIPE");
     expect(help).toContain("no --yes");
     expect(help).toContain("Live processes stay up");
-    const readme = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+    const readme = cliDocs();
     expect(readme).toContain("`agents reset [--dry-run]`");
     expect(readme).toContain("Full wipe of the agent registry AND every lease");
     expect(readme).toContain("/api/ob/agents/reset");

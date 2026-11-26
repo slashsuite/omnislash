@@ -2,7 +2,7 @@
 // transport (no network); the server half on a real store via the ob 325 harness with a fake Gmail drafts
 // client injected, so nothing real is edited, deleted or sent.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore } from "../../../apps/cli/src/db/store.ts";
@@ -13,9 +13,10 @@ import { renderSubcommandHelp } from "../../../apps/cli/src/cli.ts";
 import { freshDbPath, runCli, spawnBudget } from "../../../apps/cli/test/helpers.ts";
 import type { ApiRequest, ApiTransport } from "../../../apps/cli/src/api/client.ts";
 import { FakeDraftClient } from "../../cli-sources/test/fake-draft-client.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const PG_BUDGET = spawnBudget(2);
 
 const PREVIEW = {

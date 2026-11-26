@@ -12,7 +12,7 @@
 // and the API client, which share `pickSpinoffForReady` / `assertWorktreeGateable`.
 import { liveRead, openRunsOnSeats } from "../../../apps/cli/test/role-run-fixture.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli, omnislashTeamFor } from "../../../apps/cli/test/helpers.ts";
@@ -27,8 +27,9 @@ import {
 import { registerAgent } from "../src/agent.ts";
 import { alreadyLandedRefusal, enqueueSpinoff, type EnqueueInput } from "../src/commands/spinoff.ts";
 import { __setSh } from "./sh-no-pr.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 const restores: Array<() => void> = [];
 // OB-2172: a refused note is retried once after a wait; these tests do not wait for it.

@@ -3,7 +3,7 @@
 // shell: no network, no live store, no real box. That the box itself enforces its cpuset and memory is not ob's
 // code and was checked live by the architect.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeRepoDir, freshDb, freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
@@ -33,6 +33,7 @@ import {
   type SpinoffRow,
 } from "../src/commands/spinoff.ts";
 import { __setFlakeBoxPresent, FLAKE_SLOT_KEY, FLAKE_SLOT_TTL_S, recordNoFlakeSlot } from "../src/spinoff-flake.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const DIRECTIVE = "Run the `ob-spinoff` skill now and follow it end to end (it is in your skills; invoke it).";
 const NO_TOKENS = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 0 };
@@ -427,7 +428,7 @@ describe("ob agent heartbeat moves the expiry of every lease the agent holds (OB
 
 describe("the docs name flake:slot and --no-flake-slot (OB-2230)", () => {
   test("ob --help and the README", () => {
-    const readme = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+    const readme = cliDocs();
     for (const doc of [renderCommandHelp("spinoff"), readme]) {
       expect(doc).toContain("flake:slot");
       expect(doc).toContain("--no-flake-slot");

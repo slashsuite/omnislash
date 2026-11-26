@@ -6,8 +6,6 @@
 // The local half runs on a throwaway SQLite store through `runCli`; the API half sends the CLI's own requests through
 // `createObApi` on a leased local Postgres (no network, no live database) and must print the same lines.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openStore } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -21,10 +19,11 @@ import { Database } from "bun:sqlite";
 import { computeRaises, dependencyRaises, type PriorityNode } from "../../../apps/cli/src/dep-priority.ts";
 import { priorityRows } from "../../../apps/cli/src/items.ts";
 import { parseAt } from "../../../apps/cli/src/overnight.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 type Run = (args: string[]) => Promise<{ code: number; out: string; err: string }>;
 

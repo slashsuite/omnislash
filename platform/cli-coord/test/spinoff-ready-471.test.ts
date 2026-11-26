@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
@@ -14,8 +14,9 @@ import {
 import { __setSh } from "./sh-no-pr.ts";
 import { registerAgent } from "../src/agent.ts";
 import { assessGateable, isLandable } from "../src/spinoff-gateable.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 const input = (over: Partial<EnqueueInput> = {}): EnqueueInput => ({
   ticketRef: "471",

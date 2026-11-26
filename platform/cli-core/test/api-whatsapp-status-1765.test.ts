@@ -1,8 +1,6 @@
 // OB-1765 (OB-1760 phase 0d) -- the ob API reads the native WhatsApp screen needs: the Status tray + history
 // page and the chat list. Read-only: no send is reachable. Real Postgres via the 325 harness, no network.
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Store } from "../../../apps/cli/src/db/store.ts";
 import { freshPgStore } from "../../../apps/cli/test/pg/store.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
@@ -10,9 +8,10 @@ import { setConfig } from "../../../apps/cli/src/config.ts";
 import { OB_API_PREFIX, OB_API_ROUTES } from "../../../apps/cli/src/api/contract.ts";
 import { setChatHidden } from "../../cli-whatsapp/src/whatsapp/prefs.ts";
 import { STATUS_JID } from "../../cli-whatsapp/src/whatsapp/status.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const TOKEN = "a-test-bearer-token-that-is-long-enough";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const ALICE = "27000000003@s.whatsapp.net";
 const BOB = "27000000004@s.whatsapp.net";
 

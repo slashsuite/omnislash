@@ -3,8 +3,6 @@
 // CLIENT half: stubbed transport, no network, no token file, no database (api-client-353's seam).
 // SERVER half: real Postgres via the 325 harness; GitHub client stubbed (no live network).
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
@@ -18,10 +16,11 @@ import { __setCreateIssue, type CreatedIssue } from "../../../apps/cli/src/githu
 import { __setListIssues } from "../../../apps/cli/src/tracker-link.ts";
 import { __setSh, type Sh } from "../../../apps/cli/src/tracker-link.ts";
 import { createItem } from "../../../apps/cli/src/items.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const BASE = "https://ob.example.test";
 const TOKEN = "test-token-do-not-log";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 const REPO = "owner/acme";
 const REC = "\x1e";
 const FLD = "\x1f";

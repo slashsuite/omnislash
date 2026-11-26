@@ -2,8 +2,6 @@
 // screen need: snapshot, item transition / rank, alert ack + snooze, agenda. Real Postgres via the 325
 // harness, no network (GitHub sync is skipped with `github: false`), no live DB.
 import { describe, expect, setSystemTime, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { saDayBounds } from "../../cli-sources/src/sa-time.ts";
 import { openStore, type Store } from "../../../apps/cli/src/db/store.ts";
 import { leaseRealPgDb } from "../../../apps/cli/test/pg/real-schema.ts";
@@ -11,9 +9,10 @@ import { createObApi } from "../../../apps/cli/src/api/server.ts";
 import { OB_API_PREFIX, OB_API_ROUTES } from "../../../apps/cli/src/api/contract.ts";
 import { eq } from "drizzle-orm";
 import { createItem } from "../../../apps/cli/src/items.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 const TOKEN = "a-test-bearer-token-that-is-long-enough";
-const README = readFileSync(join(import.meta.dir, "../../../apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 interface Ctx {
   store: Store;

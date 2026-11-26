@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
@@ -27,8 +27,9 @@ import {
   reportGateable,
   type GateableSource,
 } from "../src/spinoff-gateable.ts";
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
-const README = readFileSync(join(import.meta.dir, "..", "..", "..", "apps/cli/README.md"), "utf8");
+const README = cliDocs();
 
 /** A path under an app the rebuild table does NOT know: reported by name, never guessed at (454). */
 const REBUILD_WIDGET = "apps/widget";

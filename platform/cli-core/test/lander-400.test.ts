@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { HELP, HANDLERS } from "../../../apps/cli/src/cli.ts";
-
-const ROOT = join(import.meta.dir, "../../..");
+import { cliDocs } from "../../../apps/cli/test/support/cli-docs.ts";
 
 describe("444: lander retired", () => {
   test("ob lander is an unknown command", async () => {
@@ -16,7 +13,7 @@ describe("444: lander retired", () => {
 
   test("HELP and README have no lander command entry", () => {
     expect(HELP).not.toMatch(/^\s*lander\b/m);
-    const readme = readFileSync(join(ROOT, "apps/cli/README.md"), "utf8");
+    const readme = cliDocs();
     expect(readme).not.toMatch(/^\| `lander /m);
   });
 
