@@ -174,14 +174,21 @@ export async function projectRepoPrivate(
     );
     if (res.excludeFailed) print(`warning: could not write ${dir}'s git info/exclude; the installed files will show in git status`);
   }
-  // The plugin shims import from this checkout. A linked worktree (`.git` is a file) is removed when its branch
-  // lands, and the plugins then stop loading with no message, so say so while it can still be fixed.
-  const gitPath = join(opencodeSourceDir(), "..", "..", "..", ".git");
-  if (res.installed.length > 0 && existsSync(gitPath) && statSync(gitPath).isFile()) {
-    process.stderr.write(
-      `warning: the plugins point into ${resolve(opencodeSourceDir(), "..", "..", "..")}, a linked worktree; re-run 'ob project wire' from the main checkout before it is removed\n`,
-    );
+  if (res.installed.length > 0) {
+    const warning = linkedWorktreeWarning(resolve(opencodeSourceDir(), "..", "..", ".."));
+    if (warning) process.stderr.write(warning);
   }
+}
+
+/**
+ * The plugin shims import from this checkout. A linked worktree (`.git` is a file) is removed when its branch
+ * lands, and the plugins then stop loading with no message, so say so while it can still be fixed. Null for a
+ * main checkout or no checkout. Exported for its test (OS-246).
+ */
+export function linkedWorktreeWarning(checkout: string): string | null {
+  const gitPath = join(checkout, ".git");
+  if (!existsSync(gitPath) || !statSync(gitPath).isFile()) return null;
+  return `warning: the plugins point into ${checkout}, a linked worktree; re-run 'ob project wire' from the main checkout before it is removed\n`;
 }
 
 /**

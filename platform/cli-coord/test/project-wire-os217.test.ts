@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { builtWiring, installOpencodeWiring, OB_PLUGINS, opencodeSourceDir } from "../../../apps/cli/src/repo-private.ts";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
+import { linkedWorktreeWarning } from "../../../apps/cli/src/commands/admin.ts";
 
 let tmp: string;
 let dir: string;
@@ -93,5 +94,20 @@ describe("ob project wire", () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain(`proj: installed ${ALL.length}, kept 0`);
     expect(existsSync(join(dir, ".opencode/plugins/ob-heartbeat.ts"))).toBe(true);
+  });
+});
+
+// OS-246: the linked-worktree warning `ob project wire` prints after installing.
+describe("linkedWorktreeWarning", () => {
+  test("a linked worktree (.git is a file) is warned about, naming the checkout", () => {
+    writeFileSync(join(tmp, ".git"), "gitdir: /elsewhere/.git/worktrees/x\n");
+    const w = linkedWorktreeWarning(tmp);
+    expect(w).toContain(`the plugins point into ${tmp}, a linked worktree`);
+    expect(w).toContain("re-run 'ob project wire' from the main checkout");
+  });
+
+  test("a main checkout (.git is a directory) and no checkout at all are not", () => {
+    expect(linkedWorktreeWarning(dir)).toBeNull();
+    expect(linkedWorktreeWarning(join(tmp, "nowhere"))).toBeNull();
   });
 });
