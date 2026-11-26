@@ -358,6 +358,10 @@ Both servers share one database, so a status written there is the status every r
 `/spinoffs/...` routes stay on `OMNISLASH_API`. So with a role base set, `ob next`, every `ob project`
 command and `ob spinoff` dispatch need the role server to answer.
 
+**Overnight and tag count routes go there too (OS-252).** The omnibus server has no `POST /overnight/backfill`
+and no `GET /tags` (both OS-216), and drops `at` on `POST /overnight/decide`. So with a role base set, every
+`/overnight` route and `GET /tags` go to the role server; an item's own `/items/:id/tags` stays on `OMNISLASH_API`.
+
 **Nothing waits forever (1616).** On 2026-10-20 a leaked Postgres pool slot left every `omnislash-web` write
 hanging for 43 minutes with no error. Now each side has a bound that names the call: the client gives up
 after `OB_API_TIMEOUT_MS` (default 150000) with `did not answer POST /items within 150000ms (timed out, not

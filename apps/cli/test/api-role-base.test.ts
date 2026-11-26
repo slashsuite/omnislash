@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ApiClient, ApiError, PROJECT_STATUS_ROUTE, ROLE_ROUTE } from "../src/api/client.ts";
+import { ApiClient, ApiError, OMNISLASH_ROUTE, PROJECT_STATUS_ROUTE, ROLE_ROUTE } from "../src/api/client.ts";
 import {
   ACCESS_CLIENT_ID_ENV,
   ACCESS_CLIENT_SECRET_ENV,
@@ -361,6 +361,57 @@ describe("project status routes go to the role server (OS-189)", () => {
     const client = new ApiClient({ base: main.url, token: TOKEN, roleBase: null });
     for (const { call } of STATUS_CALLS) await call(client).catch(() => undefined);
     expect(main.seen).toHaveLength(STATUS_CALLS.length);
+    expect(role.seen).toEqual([]);
+  });
+});
+
+// OS-252: the omnibus server on CT 130 has no `/overnight/backfill` and no `GET /tags` (OS-216), and drops OS-216's
+// `at` on `/overnight/decide`. Every overnight route and the tag counts go where the role routes go.
+const OMNISLASH_CALLS: Array<{ method: string; path: string; call: Call }> = [
+  { method: "POST", path: "/api/ob/overnight/backfill", call: (c) => c.overnightBackfill({ dry_run: true }) },
+  { method: "POST", path: "/api/ob/overnight/start", call: (c) => c.overnightStart({ project: "omnislash", date: "2026-11-25" }) },
+  { method: "POST", path: "/api/ob/overnight/decide", call: (c) => c.overnightDecide({ project: "omnislash", what: "w", why: "y", at: "2026-11-25" } as never) },
+  { method: "POST", path: "/api/ob/overnight/summary", call: (c) => c.overnightSummary({ project: "omnislash", date: "2026-11-25" } as never) },
+  { method: "POST", path: "/api/ob/overnight/show", call: (c) => c.overnightShow({ project: "omnislash" }) },
+  { method: "GET", path: "/api/ob/overnight/runs", call: (c) => c.overnightRuns() },
+  { method: "GET", path: "/api/ob/tags", call: (c) => c.tagCounts() },
+];
+
+describe("overnight and tag count routes go to the role server (OS-252)", () => {
+  test("the matcher takes every overnight route and the tag counts, and nothing near them", () => {
+    for (const route of ["/overnight/backfill", "/overnight/runs?project=os", "/tags", "/tags?project=os"]) {
+      expect(OMNISLASH_ROUTE.test(route), route).toBe(true);
+    }
+    for (const route of ["/overnightx", "/tagsx", "/items/OS-1/tags", "/items"]) {
+      expect(OMNISLASH_ROUTE.test(route), route).toBe(false);
+    }
+  });
+
+  test("with a role base set, each reaches the role server and nothing reaches the main one", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    for (const { method, path, call } of OMNISLASH_CALLS) {
+      await call(client).catch(() => undefined);
+      const last = role.seen.at(-1);
+      expect(last?.method, path).toBe(method);
+      expect(last?.path, path).toBe(path);
+    }
+    expect(role.seen).toHaveLength(OMNISLASH_CALLS.length);
+    expect(main.seen).toEqual([]);
+  });
+
+  test("an item's own tags stay on the main server", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    await client.tags("OS-1", { add: ["x"] } as never).catch(() => undefined);
+    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/items/OS-1/tags"]);
+    expect(role.seen).toEqual([]);
+  });
+
+  test("with no role base, they stay on the main server", async () => {
+    const client = new ApiClient({ base: main.url, token: TOKEN, roleBase: null });
+    for (const { call } of OMNISLASH_CALLS) await call(client).catch(() => undefined);
+    expect(main.seen).toHaveLength(OMNISLASH_CALLS.length);
     expect(role.seen).toEqual([]);
   });
 });
