@@ -52,4 +52,15 @@ describe("boxOfClick (OS-241)", () => {
     expect(boxOfClick(document.body)).toBeNull();
     box.remove();
   });
+
+  it("names the state of a uniform box, whose frame carries no key and holds its label's (OS-260)", () => {
+    const frame = document.createElement("div");
+    frame.innerHTML = '<div data-measure="l:backlog">Backlog</div><div data-measure="c:backlog"><i>dots</i><button>dot</button></div>';
+    document.body.append(frame);
+    expect(boxOfClick(frame)).toBe("backlog");
+    expect(boxOfClick(frame.querySelector('[data-measure="l:backlog"]'))).toBe("backlog");
+    expect(boxOfClick(frame.querySelector("i"))).toBe("backlog");
+    expect(boxOfClick(frame.querySelector("button"))).toBeNull();
+    frame.remove();
+  });
 });

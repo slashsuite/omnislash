@@ -221,6 +221,8 @@ export async function seedMachine(store: Store): Promise<void> {
     const [got] = (await store.q.select({ id: t.item.id }).from(t.item).where(eq(t.item.title, p.title)).limit(1)) as { id: string }[];
     const id = got?.id ?? (await createItem(store, { type: "task", title: p.title, projectId: MACHINE_PROJECT, priority: 2 }));
     await resetItem(store, id, null);
+    // OS-260: the body decides backlog or drilling (a `## Drilled` section), so a test's note on it is undone too.
+    await store.q.update(t.item).set({ body: p.body }).where(eq(t.item.id, id));
     if (!got && p.tags.length > 0) await addTags(store, id, [...p.tags]);
   }
 }

@@ -110,13 +110,15 @@ const NO_GO = "no-go";
  * - Tagged idea: a parked idea.
  * - A check on its current body that did not say no-go (go, waiting to be dispatched, or an older verdict still to
  *   resolve): the blind check.
- * - Otherwise, no check, a no-go or a check on an older body: drilling.
+ * - A no-go, or a `## Drilled` section with no check on its current body (none yet, or one on an older body): drilling.
+ * - Otherwise (no `## Drilled` section, no check): the backlog (OS-260).
  */
-export function placeOpen(input: { tags: readonly string[]; check: string | null }): string {
+export function placeOpen(input: { tags: readonly string[]; check: string | null; drilled: boolean }): string {
   if (input.tags.includes(OWNER_PLAN_TAG)) return "owner_plan_call";
   if (input.tags.includes(IDEA_TAG)) return "parked_idea";
   if (input.check && input.check !== NO_GO) return "checking";
-  return "drilling";
+  if (input.drilled || input.check === NO_GO) return "drilling";
+  return "backlog";
 }
 
 /** The terminal state the machine never leaves on its own: a landed row is done, not in flight. */

@@ -10,14 +10,23 @@ import type { MachineRow } from "../lib/machine.ts";
 /** The id the page scrolls to when a box is clicked: one per state. */
 export const stateListId = (state: string) => `state-tickets-${state}`;
 
-/** The prefix uislash's diagram puts on a state box's `data-measure` (useFlowLayout's nodeKey). */
-const BOX_KEY = "n:";
+/**
+ * The `data-measure` keys uislash's diagram puts in a state box (useFlowLayout's nodeKey, labelKey, contentKey). A
+ * box drawn uniform, as StateMachine draws every box since ui-react 0.15, marks its label and content, not its frame
+ * (OS-260), so a click on the frame finds the box by the label it holds.
+ */
+const BOX_KEYS = ["n:", "l:", "c:"] as const;
+const keyOf = (el: Element): string | null => el.getAttribute("data-measure") ?? el.querySelector(':scope > [data-measure^="l:"]')?.getAttribute("data-measure") ?? null;
 
 /** The state whose box a click landed in, or null for a click on a button or a link (a linked dot) or outside any box. */
 export function boxOfClick(target: EventTarget | null): string | null {
   if (!(target instanceof Element) || target.closest("a, button")) return null;
-  const key = target.closest(`[data-measure^="${BOX_KEY}"]`)?.getAttribute("data-measure");
-  return key ? key.slice(BOX_KEY.length) : null;
+  for (let el: Element | null = target; el; el = el.parentElement) {
+    const key = keyOf(el);
+    const prefix = key && BOX_KEYS.find((p) => key.startsWith(p));
+    if (key && prefix) return key.slice(prefix.length);
+  }
+  return null;
 }
 
 export function StateTickets({
