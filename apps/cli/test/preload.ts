@@ -248,6 +248,10 @@ process.env.OB_API_TOKENS_FILE ??= join(scratch, "no-such-api-tokens.json");
 // The env var outranks the file, so an inherited one would route the WHOLE suite over HTTP at a live host.
 // Deleted rather than defaulted: a test that wants API mode injects its own base and transport.
 delete process.env.OMNISLASH_API;
+// OS-76's role base, likewise (OS-208): a developer's ~/.omnislash_role_api_url sent every role and project
+// status route of the stubbed API tests to that live host, and failed 56 tests on any machine that has one.
+process.env.OMNISLASH_ROLE_API_URL_FILE ??= join(scratch, "no-such-role-api-url");
+delete process.env.OMNISLASH_ROLE_API;
 
 /**
  * The T3 credential (1589). `ob spinoff <ref>` now opens its T3 thread in the same invocation, so a test that
