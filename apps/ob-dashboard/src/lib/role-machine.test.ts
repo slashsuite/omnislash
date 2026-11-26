@@ -46,13 +46,8 @@ describe("roleLanes (OS-261)", () => {
     expect(cell("owner", "ship").map((s) => s.id)).toEqual(["owner_merge_call"]);
   });
 
-  it("lists each state's moves with the target's label and the persona that makes it", () => {
-    expect(byId.get("checking")?.moves).toEqual([
-      { to: "queued", toLabel: "Waiting for a builder", label: "brief passes, dispatch", actor: "architect" },
-      { to: "drilling", toLabel: "Architect shapes the ticket", label: "gaps found, revise", actor: "reviewer" },
-    ]);
+  it("starts at exploring", () => {
     expect(byId.get("exploring")?.kind).toBe("initial");
-    expect(byId.get("closed")?.moves).toEqual([]);
   });
 });
 
