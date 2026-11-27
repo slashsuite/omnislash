@@ -136,7 +136,7 @@ describe("the persona labels and stages (OS-261)", () => {
   test("every state sits in one of the five stages", () => {
     for (const id of STATE_IDS) expect(STAGES, id).toContain(meta(id).stage);
     expect(meta("exploring").stage).toBe("idea");
-    expect(meta("backlog")).toMatchObject({ label: "Waiting to be shaped", role: "system", stage: "plan" });
+    expect(meta("backlog")).toMatchObject({ label: "Waiting for the architect", role: "system", stage: "plan" });
     expect(meta("closed").stage).toBe("done");
     expect(meta("failed").stage).toBe("done");
   });

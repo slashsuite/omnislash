@@ -86,7 +86,7 @@ export type MirroredState = Exclude<(typeof ROW_STATE)[SpinoffState], "closed"> 
 /** What the row and phase machines do not say about the states that mirror them. */
 const MIRRORED: Readonly<Record<MirroredState, Omit<RoleStateMeta, "stored">>> = {
   queued: { label: "Waiting for a builder", role: "system", stage: "build", human_required: false },
-  launching: { label: "Starting the builder", role: "system", stage: "build", human_required: false },
+  launching: { label: "System starts the builder", role: "system", stage: "build", human_required: false },
   building: { label: "Builder builds", role: "builder", stage: "build", human_required: false },
   reviewing: { label: "Reviewer challenges the diff", role: "reviewer", stage: "build", human_required: false },
   pr_ci: { label: "Builder waits on CI", role: "builder", stage: "build", human_required: false },
@@ -94,7 +94,7 @@ const MIRRORED: Readonly<Record<MirroredState, Omit<RoleStateMeta, "stored">>> =
   gating: { label: "Sentinel checks the PR", role: "sentinel", stage: "ship", human_required: false },
   updating_pr: { label: "Builder fixes what was sent back", role: "builder", stage: "ship", human_required: false },
   owner_merge_call: { label: "Owner makes the merge call", role: "owner", stage: "ship", human_required: true },
-  failed: { label: "Work stopped", role: "system", stage: "done", human_required: false },
+  failed: { label: "Architect called it off, or it failed to start", role: "system", stage: "done", human_required: false },
 };
 
 /**
@@ -120,10 +120,10 @@ const mirrored = (id: MirroredState): StateDef => MIRRORED_STATES[id];
 const STATES: readonly StateDef[] = [
   { id: "exploring", label: "Muse explores the idea", role: "muse", stage: "idea", human_required: false, stored: null },
   { id: "confirm_complete", label: "Owner confirms the idea is complete", role: "owner", stage: "idea", human_required: true, stored: null },
-  { id: "parked_idea", label: "Idea parked", role: "muse", stage: "idea", human_required: false, stored: item("open") },
-  { id: "backlog", label: "Waiting to be shaped", role: "system", stage: "plan", human_required: false, stored: item("open") },
+  { id: "parked_idea", label: "Idea parked until the owner revisits it", role: "muse", stage: "idea", human_required: false, stored: item("open") },
+  { id: "backlog", label: "Waiting for the architect", role: "system", stage: "plan", human_required: false, stored: item("open") },
   { id: "drilling", label: "Architect shapes the ticket", role: "architect", stage: "plan", human_required: false, stored: item("open") },
-  { id: "checking", label: "Reviewer cold-reads the brief", role: "reviewer", stage: "plan", human_required: false, stored: item("open") },
+  { id: "checking", label: "Reviewer checks the brief for gaps", role: "reviewer", stage: "plan", human_required: false, stored: item("open") },
   { id: "owner_plan_call", label: "Owner answers a planning question", role: "owner", stage: "plan", human_required: true, stored: item("open") },
   { id: "spike", label: "Builder runs a spike", role: "builder", stage: "plan", human_required: false, stored: row("launched") },
   mirrored("queued"),
@@ -131,7 +131,7 @@ const STATES: readonly StateDef[] = [
   mirrored("building"),
   mirrored("reviewing"),
   mirrored("pr_ci"),
-  { id: "owner_call", label: "Owner unblocks or signs off the build", role: "owner", stage: "build", human_required: true, stored: row("launched") },
+  { id: "owner_call", label: "Owner answers the builder", role: "owner", stage: "build", human_required: true, stored: row("launched") },
   { id: "partial", label: "Builder stopped short", role: "builder", stage: "build", human_required: false, stored: row("launched") },
   mirrored("handed_off"),
   mirrored("gating"),
@@ -169,8 +169,8 @@ export const ROLE_TRANSITIONS: readonly RoleTransition[] = [
   { from: "launching", to: "building", label: "builder ready", event: "T3 thread opened; row stamped launched", actor: "system", source: rowEvent("stamp") },
   { from: "launching", to: "queued", label: "retry start", event: "spawn failure or stale claim, under MAX_LAUNCH_ATTEMPTS (2)", actor: "system", source: rowEvent("retry") },
   { from: "launching", to: "failed", label: "start failed", event: "spawn failure at the attempt cap", actor: "system", source: rowEvent("fail") },
-  { from: "queued", to: "failed", label: "cancelled", event: "abandoned before launch", actor: "architect", source: rowEvent("fail") },
-  { from: "building", to: "failed", label: "abandoned", event: "abandoned, or lost a trial pair", actor: "architect", source: rowEvent("fail") },
+  { from: "queued", to: "failed", label: "called off", event: "abandoned before launch", actor: "architect", source: rowEvent("fail") },
+  { from: "building", to: "failed", label: "called off or lost the trial", event: "abandoned, or lost a trial pair", actor: "architect", source: rowEvent("fail") },
   { from: "building", to: "reviewing", label: "send for diff review", event: "build and local gate done; review legs launched on git diff main...HEAD", actor: "builder", source: "skills/ob-spinoff/SKILL.md:181" },
   { from: "reviewing", to: "building", label: "issues found, fix", event: "a wrong finding, or a rejected answer, is open; fix and run the next (rebuttal) round", actor: "reviewer", source: "skills/ob-skeptical-review/SKILL.md:266" },
   { from: "reviewing", to: "pr_ci", label: "review clean, open PR", event: "0 open; rebase, push, gh pr create", actor: "builder", source: "skills/ob-spinoff/SKILL.md:212" },
@@ -178,7 +178,7 @@ export const ROLE_TRANSITIONS: readonly RoleTransition[] = [
   { from: "pr_ci", to: "handed_off", label: "CI green, hand off", event: "verdict landable and CI green: ob spinoff handoff (note to the team sentinel, else architect)", actor: "builder", source: rowEvent("handoff") },
   { from: "pr_ci", to: "owner_call", label: "needs owner sign-off", event: "verdict needs-human; builder asks with the question tool", actor: "builder", source: "skills/ob-spinoff/SKILL.md:114" },
   { from: "owner_call", to: "handed_off", label: "approved, hand off", event: "needs-human only (a blocked build has no PR): owner runs /ob-spinoff-handoff (the human yes)", actor: "owner", source: rowEvent("handoff") },
-  { from: "owner_call", to: "building", label: "unblocked, continue", event: "owner gives the decision or access, or answers with a change to make", actor: "owner", source: "skills/ob-architect/SKILL.md:103" },
+  { from: "owner_call", to: "building", label: "answered, keep building", event: "owner gives the decision or access, or answers with a change to make", actor: "owner", source: "skills/ob-architect/SKILL.md:103" },
   { from: "building", to: "owner_call", label: "blocked, ask owner", event: "verdict blocked: a decision or access is missing; no PR", actor: "builder", source: "skills/ob-spinoff/SKILL.md:117" },
   { from: "building", to: "partial", label: "stopped short", event: "verdict partial: some Done when items unmet; no PR", actor: "builder", source: "skills/ob-spinoff/SKILL.md:119" },
   { from: "partial", to: "building", label: "steer or restart", event: "architect redispatches or steers the rest", actor: "architect", source: "skills/ob-architect/SKILL.md:102" },

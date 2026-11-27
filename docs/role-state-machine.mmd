@@ -4,25 +4,25 @@
 stateDiagram-v2
     state "Muse explores the idea (muse)" as exploring
     state "Owner confirms the idea is complete (owner)" as confirm_complete
-    state "Idea parked (muse)" as parked_idea
-    state "Waiting to be shaped (system)" as backlog
+    state "Idea parked until the owner revisits it (muse)" as parked_idea
+    state "Waiting for the architect (system)" as backlog
     state "Architect shapes the ticket (architect)" as drilling
-    state "Reviewer cold-reads the brief (reviewer)" as checking
+    state "Reviewer checks the brief for gaps (reviewer)" as checking
     state "Owner answers a planning question (owner)" as owner_plan_call
     state "Builder runs a spike (builder)" as spike
     state "Waiting for a builder (system)" as queued
-    state "Starting the builder (system)" as launching
+    state "System starts the builder (system)" as launching
     state "Builder builds (builder)" as building
     state "Reviewer challenges the diff (reviewer)" as reviewing
     state "Builder waits on CI (builder)" as pr_ci
-    state "Owner unblocks or signs off the build (owner)" as owner_call
+    state "Owner answers the builder (owner)" as owner_call
     state "Builder stopped short (builder)" as partial
     state "Waiting for the sentinel (sentinel)" as handed_off
     state "Sentinel checks the PR (sentinel)" as gating
     state "Builder fixes what was sent back (builder)" as updating_pr
     state "Owner makes the merge call (owner)" as owner_merge_call
     state "Shipped (sentinel)" as closed
-    state "Work stopped (system)" as failed
+    state "Architect called it off, or it failed to start (system)" as failed
     [*] --> exploring
     exploring --> confirm_complete: idea looks complete
     confirm_complete --> exploring: needs more thought
@@ -44,8 +44,8 @@ stateDiagram-v2
     launching --> building: builder ready
     launching --> queued: retry start
     launching --> failed: start failed
-    queued --> failed: cancelled
-    building --> failed: abandoned
+    queued --> failed: called off
+    building --> failed: called off or lost the trial
     building --> reviewing: send for diff review
     reviewing --> building: issues found, fix
     reviewing --> pr_ci: review clean, open PR
@@ -53,7 +53,7 @@ stateDiagram-v2
     pr_ci --> handed_off: CI green, hand off
     pr_ci --> owner_call: needs owner sign-off
     owner_call --> handed_off: approved, hand off
-    owner_call --> building: unblocked, continue
+    owner_call --> building: answered, keep building
     building --> owner_call: blocked, ask owner
     building --> partial: stopped short
     partial --> building: steer or restart

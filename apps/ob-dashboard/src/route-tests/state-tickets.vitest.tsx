@@ -26,7 +26,7 @@ describe("StateTickets (OS-241)", () => {
     expect(screen.getByRole("button", { name: /^Owner answers a planning question/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Builder builds/ })).toBeTruthy();
     // A state with no tickets gets no list.
-    expect(screen.queryByRole("button", { name: /^Reviewer cold-reads the brief/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Reviewer checks the brief for gaps/ })).toBeNull();
     fireEvent.click(drilling);
     expect(onToggle).toHaveBeenCalledWith("drilling", true);
 
