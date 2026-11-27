@@ -97,7 +97,7 @@ ob spinoff "<id>" \
 - **`--brief -`** reads the brief from stdin.
 - **`--repo`** takes a path or a slug. Pass it when cwd is not the target repo.
 - **`--branch "$BRANCH"`** keeps the builder on the branch step 3 created.
-- **`--complexity`** (1 to 10) picks the builder's model from the profile's builder ranges: 1-3 Haiku, 4-6 Opus, 7-10 Opus by default. Rate it yourself with the rubric in the `ob-architect` skill ("Rate every dispatch"). Omitted = 5, and the queue line says so.
+- **`--complexity`** (1 to 10) picks the builder's model from the profile's builder ranges; the model is whatever `ob models get builder.<from>-<to>` prints for the range. Rate it yourself with the rubric in the `ob-architect` skill ("Rate every dispatch"). Omitted = 5, and the queue line says so.
 
 The session opens on the **ticket's own brief** (its title, what to build, acceptance and do not, then the directive to run `ob-spinoff`): the ask, never a self-gating procedure. You steer; you declare it done. `--agent` is a usage error.
 

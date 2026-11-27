@@ -1,6 +1,6 @@
 ---
 name: ob-marketing-copy
-description: Write or change the copy on any marketing site of an ob project (slashslash.build, the Hack Cove site, future ones). Facts first, then an outline the owner approves in a Claude Doc, several Opus drafts, a persona knockout, the owner's pick, and a builder who transcribes it word for word. Use for a new page, a rewrite, a headline, a pitch, a product claim or a share card on a marketing site, or when a ticket asks a builder to write site copy.
+description: Write or change the copy on any marketing site of an ob project (slashslash.build, the Hack Cove site, future ones). Facts first, then an outline the owner approves in a Claude Doc, several independent drafts, a persona knockout, the owner's pick, and a builder who transcribes it word for word. Use for a new page, a rewrite, a headline, a pitch, a product claim or a share card on a marketing site, or when a ticket asks a builder to write site copy.
 ---
 
 # ob-marketing-copy
@@ -33,9 +33,9 @@ No prose yet. Send the owner the doc link and ask whether the outline is approve
 
 **Done when:** the owner has said yes to the outline doc as it stands.
 
-## 3. Several Opus drafts
+## 3. Several drafts
 
-Write at least three drafts, each from a separate Opus run in its own T3 delegate (`delegate_task` on Opus, so the architect stays free to take messages) that gets only the approved outline, the `FACTS.md` files and its own **style brief**, and never sees another draft. Give each run a different style brief (for example: plain and direct; warm and story led; terse and technical), and say in each brief: no claim beyond the facts, no em or en dashes, never the word Tesla, one headline.
+Write at least three drafts, each from a separate run in its own T3 delegate (`delegate_task` on the model `ob models get job.marketing-draft` prints, so the architect stays free to take messages; if that route prints nothing, stop and tell Jacobus; read its output as ob-architect's Measure twice says: entries in order, moving to the next only on a model error; if an entry's provider `delegate_task` cannot run, stop and tell Jacobus) that gets only the approved outline, the `FACTS.md` files and its own **style brief**, and never sees another draft. Give each run a different style brief (for example: plain and direct; warm and story led; terse and technical), and say in each brief: no claim beyond the facts, no em or en dashes, never the word Tesla, one headline.
 
 Add each draft to the doc as its own tab, labelled with a neutral letter (Draft A, B, C), and keep the style briefs in a separate tab.
 

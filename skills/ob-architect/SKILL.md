@@ -72,9 +72,9 @@ shift, not in a spinoff brief. Session titles go stale; the owner does not want 
 - **Ticket-first:** no ticket/issue for what you're about to do? Create one on the repo's tracker first.
 - **Except skill text:** the architect edits a skill's `SKILL.md` or other prose files itself, on a `chart/…` branch and its PR, with no ticket and no spinoff. A script a skill runs, and code under `apps/` or `platform/`, still gets a ticket and a builder.
 - **A reviewer reads every skill change before it merges (Jacobus, 2026-11-27).** This covers any change to a skill's prose (`SKILL.md` and its other text files), whoever writes it (the architect runs it before merging a builder's PR that touches skill prose); a script under `skills/` gets the code review, and a PR with both gets both.
-  - **The reviewer is the `job.skill-review` model route**, read live each time with `ob models | rg '^job\.skill-review\b'`. Change the reviewer with `ob models set job.skill-review <model>,<fallback>`, never by editing this skill. It was first set on 2026-11-27 to Neon, then Opus, because Neon reads and writes prose well.
+  - **The reviewer is the `job.skill-review` model route**, read live each time with `ob models get job.skill-review`; if it prints nothing, stop and tell Jacobus. Change the reviewer with `ob models set job.skill-review <model>,<fallback>`, never by editing this skill.
   - **The prompt.** Commit your edits first. Then, before opening your PR (or before merging a builder's), write one prompt file under `$TMPDIR` (never in the repo). It holds the question "what in this change is wrong, unclear, contradicts the rest of the skill, or will make an agent do the wrong thing? Number each finding, quote the line, give the fix, end with a score out of 10. Do not use tools.", then the diff (`git fetch origin && git diff origin/main...HEAD` on your branch, `gh pr diff <n>` for a builder's PR), then each touched skill file in full as it is on that branch.
-  - **Running it.** Try the route's models in order. An `antigravity:<model>` entry runs as `agy -p "$(cat <file>)" --model <model>`, without `--mode plan` (that mode ends with no output). A `claude-*` entry runs as a fresh subagent set to that exact model, given the prompt file's text inline. An entry in neither form: stop and tell Jacobus, never guess a command. Over 100 KB, review one skill file at a time, since `Argument list too long` is your error, not the model's. Move to the next model only when the model itself errors or refuses, never on your own shell, path or quoting mistake (fix that and retry the same model). If the route is missing or every model fails, stop and tell Jacobus; never merge unreviewed.
+  - **Running it.** Try the route's models in order, reading its output as Measure twice says (comma-separated entries; a trailing ` (effort <level>)` belongs to the route and is not part of any entry). An `antigravity:<model>` entry runs as `agy -p "$(cat <file>)" --model <model>`, without `--mode plan` (that mode ends with no output). A `claude-*` or `claudeAgent:claude-*` entry runs as a fresh subagent set to that exact model with the `claudeAgent:` prefix removed, given the prompt file's text inline. An entry in neither form: stop and tell Jacobus, never guess a command. Over 100 KB, review one skill file at a time, since `Argument list too long` is your error, not the model's. Move to the next model only when the model itself errors or refuses, never on your own shell, path or quoting mistake (fix that and retry the same model). If the route is missing or every model fails, stop and tell Jacobus; never merge unreviewed.
   - **Findings.** Fix each one, or rebut it only with a file line or command output that shows it is wrong. A matter of taste is flagged in the PR body, and the merge waits for Jacobus. Run the review again after any fix beyond a wording tweak, at most 3 rounds in all; whatever is still open after that goes to Jacobus. The PR body names the exact model that reviewed (and any earlier model in the route that failed, with why), its score, and each finding's outcome, or "no findings".
 - Refer to tickets/work **by name**, not bare ids, in everything the human reads.
 - *(Example: asked to deploy an app, an architect ran `brew install` + started SDK setup itself, which was
@@ -161,7 +161,7 @@ The rules below are spread over this skill; this is their order, for every repo'
 1. **By priority band:** urgent, then flake, then high, medium, low, none (`ob next --project <slug>` already lists them in that order). Within a band, the order `ob order` set.
 2. **A flaky-test ticket goes ahead of everything but an urgent** (Flaky tests come first, below).
 3. **One regular builder per repo, unless the architect clears the 98% no-conflict bar** (One builder per repo by default, above). A flake fix is exempt and runs beside them, one flake fix on the whole machine at a time, holding `flake:slot`.
-4. **An urgent ticket builds at 7 or more (Opus):** `ob spinoff <ref> --complexity 7` or higher. `ob spinoff` raises any lower score for an urgent itself, so the flag is a statement, not the guard.
+4. **An urgent ticket builds at 7 or more (the 7-10 builder range):** `ob spinoff <ref> --complexity 7` or higher. `ob spinoff` raises any lower score for an urgent itself, so the flag is a statement, not the guard.
 5. Every dispatch still needs `## Drilled`, `## Done when` and a `go` from `ob spinoff check` (below).
 
 ## Claude usage pacing: ahead of the week means high and above only
@@ -301,7 +301,7 @@ While PixelSlash is being made stable, any time it fails, in UISlash or any othe
 
 ## Marketing copy goes through `ob-marketing-copy`
 
-Copy on any marketing site of an ob project is written by that skill: facts, an outline the owner approves in a Claude Doc, several Opus drafts, a persona knockout, the owner's pick, then a builder ticket that transcribes the approved text word for word. A brief never asks a builder to write or reword marketing copy, and a feature ticket that would change a site's words leaves them as they are and gets a copy ticket instead.
+Copy on any marketing site of an ob project is written by that skill: facts, an outline the owner approves in a Claude Doc, several drafts on the model `ob models get job.marketing-draft` prints, a persona knockout, the owner's pick, then a builder ticket that transcribes the approved text word for word. A brief never asks a builder to write or reword marketing copy, and a feature ticket that would change a site's words leaves them as they are and gets a copy ticket instead.
 
 ## Feature tickets name their marketing implication
 
@@ -358,7 +358,7 @@ Builders need clear definitions of done, goals they must reach so they can sign 
 
 **`ob spinoff` enforces this.** `ob spinoff <ref>` and `ob spinoff queue <ref>` refuse a new dispatch, leaving no row, with no `## Drilled` section, no `## Done when` item or no `go` recorded for the ticket's current body. Editing the body, `ob note` included, needs a new check. A re-dispatch or sendback of a ticket with a live row (queued, launching, building or handed-off) is not gated; a ticket whose only rows are failed or landed needs a fresh check. A ref that resolves to no ob item is refused first, row or no row.
 
-Measure twice, cut once. After the drill-down and before `ob spinoff`, score the ticket, then have a cheap model score the same text blind. In the first trial Haiku gave a ticket 57 to the architect's 93, and the objections that mattered were real, including a stale skill line telling builders to merge their own PRs. The value is in the reviewer's questions and file list: equal numbers can hide different plans. In the role machine this check is the reviewer role's first step (`checking`, which you run on the cheap model); the skeptical review round is its second (`reviewing`).
+Measure twice, cut once. After the drill-down and before `ob spinoff`, score the ticket, then have the `reviewer` route's model score the same text blind. In the first trial the reviewer gave a ticket 57 to the architect's 93, and the objections that mattered were real, including a stale skill line telling builders to merge their own PRs. The value is in the reviewer's questions and file list: equal numbers can hide different plans. In the role machine this check is the reviewer role's first step (`checking`, which you run on the `reviewer` route's model); the skeptical review round is its second (`reviewing`).
 
 **What the audit found, over 610 checks on 533 tickets.** 28 of 515 go tickets were planning misses, and on 24 of them both sides scored the criterion that should have caught it a 2: the misses are shared blind spots, not disagreements. Neither the percentage nor the gap separated the misses from the clean lands. What did carry signal: the reviewer's questions (7 misses were named there and answered away in one line) and file drift at the merge (4% misses when every planned file was touched, 12.5% when under half were). So read the questions and the file lists as the product of the check; the score is a prompt to read, not the value. The rules added under Drill down and Done when above are the audit's fixes.
 
@@ -375,7 +375,7 @@ Measure twice, cut once. After the drill-down and before `ob spinoff`, score the
 | size | clearly several builds | large for one PR | fits one PR |
 
 1. **Seal yours.** Write your scores, expected files and a two-sentence "does" in scratch, away from the ticket (`ob note` appends to the body) and away from the text the reviewer reads.
-2. **Run the reviewer.** On the model `ob models get reviewer` prints (route `reviewer`: this machine's `~/.config/ob/models.jsonc`, then the server's `model_routes`, else Haiku), through your harness (on Claude: `Agent`, type `Explore`, `model:` that model, foreground; this short read-only check is the one in-process subagent an architect runs), or the cheapest model on another provider. A reviewer that fails says so and never counts as a pass. Give it exactly the text the builder's launch gets (`ob spinoff brief <ref>`; no architect score appears in it), then:
+2. **Run the reviewer.** On the model `ob models get reviewer` prints (this machine's `~/.config/ob/models.jsonc`, then the server's `model_routes`). A route prints its entries in order on one line, separated by `, `, followed by ` (effort <level>)` when the route sets an effort (for example `claudeAgent:claude-opus-5-5`, `antigravity:gemini-4-neon`, or a bare `claude-opus-5-5`). Each entry is `<model>` or `<provider>:<model>`; the effort belongs to the route, not to an entry. Use the entries in order, moving to the next only when one fails on a model error. A `claudeAgent:` entry runs on Claude with the prefix removed (`model:` gets `claude-opus-5-5`, never the prefixed string); an error from passing a prefixed or malformed id is your mistake, fixed and retried on the same entry, never a model error. An entry whose provider your harness tool cannot run (an `antigravity:` or `opencode:` model inside the `Agent` tool) means stop and tell Jacobus: this check must be read-only, and no other CLI here is guaranteed read-only (`agy -p` runs shell writes without asking). Never guess another model. Every other route this skill or another skill reads with `ob models get` is read the same way. Run it through your harness (on Claude: `Agent`, type `Explore`, `model:` that model, foreground; this short read-only check is the one in-process subagent an architect runs). If the route is missing or prints nothing, stop and tell Jacobus; never pick a model yourself. A reviewer that fails says so and never counts as a pass. Give it exactly the text the builder's launch gets (`ob spinoff brief <ref>`; no architect score appears in it), then:
 
    ```
    You are checking a ticket before a builder starts it. You have only the text below, and read-only access to
@@ -411,14 +411,14 @@ A spike is a bounded investigation for what cannot be found by reading: it takes
 - It answers with `ob note` on the parent: each question with answer and evidence, what is still unknown, the size it now expects, whether to split. A new question goes in that note for you to decide. "Cannot be known yet" and "this is several builds" are good results. Running out of box stops it, and it reports what it has.
 - You edit the parent with the findings, rescore with a fresh blind check, then go, split or spike again. A second spike on the same question goes to the owner first.
 - The spike's handoff skips the dirty check and refuses a branch that changes anything but documentation past `base_sha`, naming each path (a deleted or moved code file counts). A docs-only commit hands off, and the readying note names its open PR's URL: merge that PR like a chart, then close the spike. It leaves the row `building`, so it is never on `ob spinoff gateable`; the readying note tells you the answers are on the parent. Read them with `ob show <parent>`.
-- Read the `claims-review: <N> cut, 0 open (opus: <a>, neon: <b>)` line on the spike's trail (`ob show <spike>`) before you act on its verdict (OS-180). The handoff refuses a spike without one, so its absence means the answers predate the rule: run the claims review yourself (`ob-skeptical-review`, `## Claims review (spikes)`) before they drive a ticket. A review that ran with one leg, or with legs skipped, is weaker evidence; say so when you rescore.
+- Read the `claims-review: <N> cut, 0 open (<leg>: <n>, ...)` line on the spike's trail (`ob show <spike>`) before you act on its verdict (OS-180). The handoff refuses a spike without one, so its absence means the answers predate the rule: run the claims review yourself (`ob-skeptical-review`, `## Claims review (spikes)`) before they drive a ticket. A review that ran with one leg, or with legs skipped, is weaker evidence; say so when you rescore.
 - Close it with `ob close <spike> --note '<what it settled>'`: the row ends `failed` with a `spike: …` error (not `landed`), `ob spinoff mix` leaves it out, and the builder thread is told it is closed. Then remove what it left: `git worktree remove --force <wt>` and `git branch -D <branch>`; the close does not.
 - The parent's score before and after goes in the close note.
 
 ## Rate every dispatch
 
 Every `ob spinoff <ref>` carries **`--complexity <1-10>`**, and the score picks the builder's model from the
-profile's builder ranges. The defaults: 1-3 Haiku (`claudeAgent:claude-haiku-5-5`), 4-6 Opus, 7-10 Opus.
+profile's builder ranges. The model is whatever the range's route prints; never assume it.
 `ob models show` prints the ranges, `ob models get builder.4-6` one of them, and `ob models set builder.<from>-<to> <model>,<fallback>`
 changes one for everyone (the dashboard's Models page edits, splits and merges them). Rate it yourself; do not ask the owner to.
 
@@ -430,28 +430,28 @@ changes one for everyone (the dashboard's Models page edits, splits and merges t
 
 No score means 5. `--tier` is an alias for one release (simple=2, medium=5, complex=8): it prints `ob: --tier is now --complexity; simple=2 medium=5 complex=8`, and passing both is refused.
 
-**No Sonnet anywhere.** Sonnet's results were unimpressive, so Opus on the default effort level replaces it. The 4-6 range runs Opus, and every Opus build runs at its default effort: send no `--effort` unless a failed build earns one more level (below). A machine whose `models.jsonc` still names Sonnet for a builder range or a review leg is changed to Opus.
+**The 4-10 ranges build at their model's default effort:** send no `--effort` unless the owner explicitly asks for a higher level (below).
 
-**No builder runs on OpenCode Go.** The OpenCode subscription was running out too fast: low-score builders on DeepSeek were a large share of its spend (the review legs were most of the rest), so the 1-3 range moved to Haiku. A machine whose `models.jsonc` still names
-`opencode:opencode-go/...` for a builder range is changed to Haiku, not left as is.
+**No builder runs on OpenCode Go** (its subscription ran out too fast, 2026). A machine whose `models.jsonc` names
+`opencode:opencode-go/...` for a builder range is reported to Jacobus, who sets the range with `ob models set`.
 
 **Urgent is 7 or more.** A ticket at priority `urgent` builds at complexity 7 or more in every repo: the row records `max(score, 7)`, a lower score is raised and the queue line says so, and a ticket made urgent after queueing is raised at launch. `flake`, `high` and lower keep the score you give. A builder already running when its ticket turns urgent keeps its model; move it by hand with `t3_thread_configure`.
 
 **Score low when the rubric allows it.** Most drilled tickets are copy (1-3) or foreseeable functionality (4-6). Do not leave `--complexity` off: no score runs at **5**
-(Opus), and the queue line says so. Haiku has no trial record yet, so a 1-3 build that misses its Done when is redispatched at 4 or more (Opus) and noted in the close.
+(the 4-6 range), and the queue line says so. A 1-3 build that misses its Done when is redispatched at 4 or more and noted in the close.
 
-**Target mix: 70% in 1-3 (Haiku), 20% in 4-6 (Opus), 10% in 7-10 (Opus).** Check it with
-`ob spinoff mix`, which counts the bands 1-3, 4-6 and 7-10. Opus is for genuinely difficult work, not the default.
+**Target mix: 70% in 1-3, 20% in 4-6, 10% in 7-10.** Check it with
+`ob spinoff mix`, which counts the bands 1-3, 4-6 and 7-10. The top range is for genuinely difficult work, not the default.
 
 **Decompose first, then rate.** Before scoring, split the ticket until each piece is **one concern**,
 with an explicit Done when list and the exact files in scope. A ticket that can be split gets
 split, not scored higher. Each piece is its own ticket on the repo's tracker (your main repo: `ob add`) and its own
 `ob spinoff` row, dispatched in the order the **One builder per repo by default** rule sets.
 
-- **1-3** (Haiku): a drilled copy change with its design calls made, following the existing design: wording, labels,
-  docs and config text. Haiku keeps to the brief; what it misses is structure it has to invent, so the brief names
+- **1-3**: a drilled copy change with its design calls made, following the existing design: wording, labels,
+  docs and config text. A 1-3 builder keeps to the brief; what it misses is structure it has to invent, so the brief names
   the files and the calls. Its brief follows the **low-score brief rule** below.
-- **4-6** (Opus, default effort): a functionality change where everything is foreseeable: bug fixes, UI and design
+- **4-6** (default effort): a functionality change where everything is foreseeable: bug fixes, UI and design
   system work, tests, scripts, a feature in one area, new code that has to find its own structure (a new module,
   SDK, service or package), and a refactor that cuts across several areas.
 - **7-10**: only for real open questions: a design call the brief cannot settle, concurrency or leases, DB
@@ -463,7 +463,7 @@ to add, the value to set), and the **gate command** (e.g. `bunx moon run cli:tes
 not have to make a design call: if the brief leaves a choice open, the piece is not 1-3 yet. Decide it in the
 brief, or split it again.
 
-Say the score in your dispatch message to the owner ("dispatched <ref> · complexity 8 (Opus): migration + leases").
+Say the score in your dispatch message to the owner ("dispatched <ref> · complexity 8 (<model ob spinoff show printed>): migration + leases").
 
 **Rate the effort with the score.** Every dispatch also decides the reasoning level: `ob spinoff <ref> --complexity 5 --effort medium`.
 The reference is Anthropic's tutorial, [Choosing the right effort level in Claude Code](https://academy.claude.com/tutorials/choosing-the-right-effort-level-in-claude-code)
@@ -471,17 +471,17 @@ The reference is Anthropic's tutorial, [Choosing the right effort level in Claud
 [model and effort post](https://claude.com/blog/claude-model-and-effort-level-in-claude-code)). **Start at the model's own default
 (send no `--effort`) and move one level, with the reason in `--note`.** `ob spinoff show <n>` prints what the launch ran at.
 
-- **Opus stays at its default.** The owner asked for Opus on the default effort level, so a dispatch at 4 or more sends no `--effort`.
-- **Opus on `high`, `xhigh` or `max` only when the owner explicitly asks for it.** No architect, builder or reviewer raises Opus above its default on its own judgment, not for hard work and not after a failed build. Quote the owner's ask in `--note`. The raises below apply to Haiku (1-3); an Opus build that falls short gets a better brief, and a raise only on the owner's yes.
-- **Up one level (Haiku only)** when the work takes many turns and double-checking, or nobody can quickly check the result (migrations, leases, live infra, security). For that kind of work, score it 4 or more (Opus at default) instead of raising Haiku.
-- **Down one level** only for a task type already run at the default with no drop in quality. `low` on Haiku needs that evidence first: the docs warn it skips checks.
-- **`xhigh` or `max`** on Haiku only after a level below fell short, and back to the default on the next ticket. On Opus, only on the owner's explicit ask (above).
-- **A failed build:** first ask whether the brief lacked context, and fix that. On Haiku, then raise the effort one level and rerun (`ob spinoff <ref> --effort <next>`
-  re-rates a pending row; a launched one needs its thread settled first), and raise the **score** (to 4 or more, Opus at default) only if more effort did not fix it. On Opus, rerun at the default with the better brief; raising the effort is the owner's call.
-- **Say the effort beside the score** in the dispatch message to the owner ("dispatched <ref> · complexity 5 (Opus), effort default: one feature, spec'd").
+- **The 4-10 ranges stay at their default.** A dispatch at 4 or more sends no `--effort`.
+- **`high`, `xhigh` or `max` at 4 or more only when the owner explicitly asks for it.** No architect, builder or reviewer raises a 4-10 build above its default on its own judgment, not for hard work and not after a failed build. Quote the owner's ask in `--note`. The raises below apply to the 1-3 range; a 4-10 build that falls short gets a better brief, and a raise only on the owner's yes.
+- **Up one level (1-3 only)** when the work takes many turns and double-checking, or nobody can quickly check the result (migrations, leases, live infra, security). For that kind of work, score it 4 or more instead of raising the effort.
+- **Down one level** only for a task type already run at the default with no drop in quality. `low` on the 1-3 range needs that evidence first: the docs warn it skips checks.
+- **`xhigh` or `max`** on the 1-3 range only after a level below fell short, and back to the default on the next ticket. At 4 or more, only on the owner's explicit ask (above).
+- **A failed build:** first ask whether the brief lacked context, and fix that. At 1-3, then raise the effort one level and rerun (`ob spinoff <ref> --effort <next>`
+  re-rates a pending row; a launched one needs its thread settled first), and raise the **score** (to 4 or more) only if more effort did not fix it. At 4 or more, rerun at the default with the better brief; raising the effort is the owner's call.
+- **Say the effort beside the score** in the dispatch message to the owner ("dispatched <ref> · complexity 5 (<model ob spinoff show printed>), effort default: one feature, spec'd").
 - **When a new model arrives, revisit these choices.**
 - **The levels `--effort` takes:** `low|medium|high|xhigh|max`. A model that does not list the one you name refuses by name before anything is queued; read the
-  levels it lists off the refusal. `ultrathink` is not a level. The architect thread's own effort and the reviews (Opus at default effort) are not rated this way.
+  levels it lists off the refusal. `ultrathink` is not a level. The architect thread's own effort and the reviews (default effort) are not rated this way.
 
 **Pass the rationale on the command, not only in chat:** `ob spinoff <ref> --complexity 8 --note '<why this
 score>'` records it on the ticket's Decisions trail, which `ob show <ref>` prints. One line (the shape that decided
@@ -492,14 +492,14 @@ place; a launched one needs its old thread settled first (the launch refuses by 
 than adopting it on the old model). `ob spinoff show <n>` prints the score and the model the launch actually ran on.
 The score picks builders only: this architect thread's own model is not scored, and the reviews pick their readers from the review ranges (`ob review readers --complexity <n>`).
 
-**Role threads run Opus at medium, the default effort.** Every architect, sentinel and muse thread, in every team, runs `claude-opus-5-5` with effort `medium` and fast mode off. `ob t3 team restart` and `ob t3 <role>` launch on the project's default model and send no effort, so a new role thread starts there. A role thread found on another model or a higher effort (read it with `t3_thread_configure` and no selection) is set back with `t3_thread_configure` and that `modelSelection`; raising it is the owner's call.
+**Role threads run on their route.** Every architect, sentinel and muse thread, in every team, runs the model and effort `ob models get role.<role>` prints (`role.architect`, `role.sentinel`, `role.muse`), with fast mode off; if the route prints nothing, stop and tell Jacobus. `ob t3 team restart` and `ob t3 <role>` open a new role thread on the first model of `role.<role>`, or on the T3 project's default model when no layer above the built-in defaults sets that route, and send no effort; a route that prints no effort means the model's default effort. The target depends on who set the route (Jacobus, 2026-11-27: "T3 default"). `ob models` tags each route with the layer that set it. When the tag is `[default]`, no one set `role.<role>`, and the target model is the T3 project's default model, for new and existing role threads alike; never reset a role thread to the built-in default. When any other layer set it, the target is the route's first entry: its model (the `claudeAgent:` or other provider prefix tells `t3_thread_configure` the provider) and the route's effort if it prints one. When the route sets an effort, `ob t3` sends none, so set the effort on a freshly launched thread with `t3_thread_configure` right after launch. A role thread found on another model or effort than that target (read it with `t3_thread_configure` and no selection) is set back with `t3_thread_configure` and that model and effort; raising it is the owner's call.
 
 ## Model trial
 
 **No trial runs by default.** Every dispatch is a single build. Start a trial only when the owner asks for one. `ob spinoff trial report` reads past pairs. The rest of this section describes the tooling.
 
 A trial runs the next N dispatches in one complexity range twice, to compare two builder models on real tickets.
-`ob spinoff trial start --target 20 --a claudeAgent:claude-sonnet-5-5 --b 'opencode:opencode-go/qwen3.8-flash#high' --a-price <in,out,cw,cr> --b-price <...>`
+`ob spinoff trial start --target 20 --a <model-a> --b <model-b> --a-price <in,out,cw,cr> --b-price <...>`
 starts one (medium by default; list prices per million tokens). The count is read from the store, so every architect and repo feeds the same total.
 
 - **Dispatch as usual.** `ob spinoff <ref> --complexity 5` (or no `--complexity`) makes two rows: `<branch>` (leg a) and `<branch>-b` (leg b), each with its own

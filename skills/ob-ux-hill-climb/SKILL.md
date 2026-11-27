@@ -12,8 +12,8 @@ A **climb** compares our site against rivals until ours wins every cell. The cal
 - **Cell**: one metric, in one theme, for one site.
 - **Leg**: steps 1 to 6. **A climb is one kit per leg**: a leg captures afresh into its own kit and reads no earlier kit's PNGs.
 - **Kit**: `~/dev/ux-hill-climb/<us>-vs-<rival>-<date>/`, outside any repo, because many repos are public and scores must not reach them. The PNGs sit in `shots/`; briefs, `rounds/` and `report.md` sit beside it.
-- **Stage**: how many readers a leg runs. Stage 1 is `opus` alone (`sonnet` is its old name), round 1 only. Stage 2 adds `neon` and runs round 1 and round 2. DeepSeek and Luna are retired (OS-206) and no stage runs them.
-- **Reader swap.** Older kits may have run `deepseek` or `luna` as readers. Their comparisons stand until a new first leg re-baselines with `neon` and `opus`.
+- **Stage**: how many readers a leg runs. Stage 1 is the first reader alone, the model `ob models get job.ux-hill-climb-first` prints, round 1 only. Stage 2 adds the second reader, the model `ob models get job.ux-hill-climb-second` prints, and runs round 1 and round 2. If either route prints nothing, stop and tell Jacobus; never pick a reader yourself.
+- **Reader swap.** Older kits may have run `deepseek` or `luna` as readers. Their comparisons stand until a new first leg re-baselines with the two routes' readers.
 - **Comparison**: the latest two-reader result, from stage 2 or from a first leg. **First leg**: a leg while no comparison exists yet (no earlier kit, or only provisional ones). It runs stage 2 outright, and its result is the comparison once both readers ran.
 - **Bar**: for each theme, the best rival's cell in the comparison. A theme where a rival is `n/a` skips that rival; a theme where our site is `n/a` (or every rival is) is skipped in the bar check and the stop test.
 - **Our score** for a cell: stage 1, the one reader's round 1 score. Stage 2, the median of the readers' round 2 scores (with two readers, their midpoint). When a reader did not run, the round 1 scores of the readers that did (the median again).
@@ -60,12 +60,16 @@ Stage: a first leg runs stage 2. A re-score starts at stage 1.
 
 Fill the round 1 template in `briefs.md` once per leg into `brief-round1.md` in the kit, and reuse that file for every stage of the leg. The brief is blind: which site is ours is not disclosed, the sites appear in random order, and it carries no earlier score, target, ticket, PR or repo name. Readers run from a copy of `shots/` under a neutral name (`cp -r <kit>/shots $TMPDIR/uxr-$RANDOM`), because the kit path names our site. That keeps the briefs, `rounds/` and the report out of the working directory; the OpenCode readers can still open any path by name, so the brief names no path outside it.
 
-Run each reader the leg has not yet run, independently, on the same brief, in the background:
+Run each reader the leg has not yet run, independently, on the same brief, in the background. Each reader uses only the first entry of its route, on purpose: a fallback model would score differently, so its scores could not be compared with earlier legs. A reader that fails is reported failed, never retried on a later entry. The route check runs before the scratch copy exists, so a missing route leaves nothing behind:
 
 ```bash
+R1=$(ob models get job.ux-hill-climb-first); R2=$(ob models get job.ux-hill-climb-second)
+[ -n "$R1" ] && [ -n "$R2" ] || { echo "missing ux-hill-climb route: tell Jacobus" >&2; exit 1; }
+R1=${R1%%,*}; R2=${R2%%,*}; R1=${R1%%" (effort"*}; R2=${R2%%" (effort"*}   # first entry only, on purpose; review-leg.ts takes any id a route prints (OS-295)
 K=<kit>; W=$TMPDIR/uxr-$RANDOM; cp -r $K/shots $W; cd $W
-for leg in opus neon; do   # only the readers of this stage that have no round 1 answer yet
-  { bun ~/.claude/skills/ob-skeptical-review/review-leg.ts $leg < $K/brief-round1.md > $K/rounds/r1-$leg.txt 2> $K/rounds/r1-$leg.err; echo "$leg exit $?" >> $K/rounds/r1.status; } &
+for leg in "$R1" "$R2"; do   # stage 1 loops over "$R1" only; only readers with no round 1 answer yet
+  safe=${leg//[^a-zA-Z0-9._-]/_}
+  { bun ~/.claude/skills/ob-skeptical-review/review-leg.ts "$leg" < $K/brief-round1.md > $K/rounds/r1-$safe.txt 2> $K/rounds/r1-$safe.err; echo "$leg exit $?" >> $K/rounds/r1.status; } &
 done; wait; cd; rm -rf $W
 ```
 
@@ -120,7 +124,7 @@ Rests on: rival.com light is docs only
 
 | Reader | Round 1 | Round 2 |
 | --- | --- | --- |
-| claude-sonnet-5-5 (high) | 7/10 | n/a |
+| <model-a> | 7/10 | n/a |
 
 | Metric | Us light (first leg) | Us light | Us dark (first leg) | Us dark | Rival light | Rival dark | Bar light | Bar dark |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
