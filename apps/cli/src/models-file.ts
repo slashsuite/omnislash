@@ -212,7 +212,7 @@ export function parseTierModels(raw: string | null | undefined): { models: Recor
   return { models, error: null };
 }
 
-/** The skeptical-review legs' built-in models. `review-leg.ts` and `ob models show` both read this one table. */
+/** ob's default skeptical-review readers, which `ob review readers` prints when no profile sets any. `review-leg.ts` reads them from there, never from here (OS-295). */
 export const DEFAULT_REVIEW_MODELS = {
   neon: "antigravity:gemini-4-neon",
   opus: "claude-opus-5-5",

@@ -1,27 +1,31 @@
 #!/usr/bin/env bun
 // Run ONE skeptical-review leg under a read-only tool profile.
 //
-//   bun review-leg.ts <neon|opus|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md   (`sonnet` is an alias of `opus`)
+//   bun review-leg.ts <a reader from `ob review readers`|a model id `ob models get` prints> < brief.md
+//
+// A reader name runs on the model `ob review readers --json` gives it, and on its fallback reader (the route's
+// chain) after a credit or quota error. A model id (claude-*, <provider>:<model>, antigravity:<model>,
+// opencode/<model>[#variant]) runs on that model, once. This script names no model of its own (OS-295).
 //
 // The brief arrives on stdin; the reader's findings go to stdout. Readers used to be read-only by
 // instruction only: in one review a reader leg shell-executed `ob spinoff cleanup` through an
 // unescaped backtick, and in another a reader left edits in six files. `delegate_task` cannot pick a
 // tool profile (T3 runs every OpenCode child on the `build` agent with a session-wide allow in
 // full-access, and gives a Claude child no tool list), so the legs launch here instead:
-//   - Antigravity legs (`antigravity:<model>`, default `neon`) run `agy --sandbox --output-format json`
+//   - Antigravity legs (`antigravity:<model>`) run `agy --sandbox --output-format json`
 //     with `--settings` allowing only read-only tools/commands and denying writes, reading the brief
 //     from a temp file under `$TMPDIR` via a short `-p` prompt, printing `response` as
 //     plain text and recording `usage` tokens.
 //   - OpenCode legs run the `ob-reviewer` agent (ob-reviewer.md beside this file): every tool denied
 //     but read/grep/glob and a read-only shell allowlist, with shell metacharacters denied.
-//   - The Opus leg (once `sonnet`) runs `claude -p --restricted` (no user/project settings, no MCP) in `dontAsk`
+//   - Claude legs run `claude -p --restricted` (no user/project settings, no MCP) in `dontAsk`
 //     mode with only Read/Grep/Glob/Bash, Bash narrowed to the same allowlist.
 
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_REVIEW_MODELS, activeProfile, canonicalLeg, reviewModelFor, loadModelsFile, retiredReviewMessage, splitTierModel, type ModelsFile } from "../../apps/cli/src/models-file.ts";
-import { creditErrorOf, parseAntigravityJson, profileOrder, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
+import { canonicalLeg, retiredReviewMessage, splitTierModel } from "../../apps/cli/src/models-file.ts";
+import { creditErrorOf, parseAntigravityJson } from "../../apps/cli/src/models-credit.ts";
 import { parseReviewReaders, type ReviewReaders } from "../../apps/cli/src/review-readers.ts";
 import {
   antigravityUsageTokens,
@@ -102,46 +106,50 @@ export function legTimeoutS(env: Record<string, string | undefined> = process.en
 export const PROFILE_PATH = join(import.meta.dir, "ob-reviewer.md");
 export const AGENT = "ob-reviewer";
 
-/**
- * The named legs. A Claude leg runs at the model's default effort: no `--effort` flag at all
- * (Opus at its default, higher only on the owner's explicit ask).
- */
-type LegSpec = { kind: LegKind; model: string };
-
-export const LEGS = {
-  neon: { kind: "antigravity", model: DEFAULT_REVIEW_MODELS.neon },
-  opus: { kind: "claude", model: DEFAULT_REVIEW_MODELS.opus },
-} as const satisfies Record<string, LegSpec>;
+/** The runner and model a leg resolves to. A Claude leg runs at the model's default effort: no `--effort` flag at all. */
+export type ResolvedLeg = { kind: LegKind; model: string };
 
 export type LegCommand = { argv: string[]; env: Record<string, string> };
 
-type ResolvedLeg = LegSpec;
-
-/** An `antigravity:<model>` id runs through `agy` with the prefix stripped before `--model`. */
-function isAntigravityModel(model: string): boolean {
-  return model.startsWith("antigravity:") && model.slice("antigravity:".length).trim().length > 0;
-}
-
-/** An `opencode/` or `opencode-go/` id runs through opencode, anything else through claude. */
+/** An `opencode/` or `opencode-go/` id runs through opencode. */
 function isOpencodeModel(model: string): boolean {
   return model.startsWith("opencode/") || model.startsWith("opencode-go/");
 }
 
-function classifyModel(value: string): ResolvedLeg | undefined {
+/**
+ * Whether `value` is a model id rather than a reader name: `antigravity:<model>`, `opencode/<model>`,
+ * `opencode-go/<model>`, a bare `claude-*` id, or any `<provider>:<model>` (the form builder routes print).
+ * A reader name is lowercase letters, digits and dashes, so it never holds `:` or `/`. Pure.
+ */
+export function isModelId(value: string): boolean {
+  return value.startsWith("claude-") || value.includes(":") || isOpencodeModel(value);
+}
+
+/**
+ * The runner for a model id: `antigravity:<model>` through agy (the prefix stripped), `opencode/` and
+ * `opencode-go/` through opencode, anything else through claude. A `<provider>:<model>` value names the model
+ * after the colon. Undefined for an id with an empty half. Pure.
+ */
+export function classifyModel(value: string): ResolvedLeg | undefined {
   if (value.startsWith("antigravity:")) {
     const model = value.slice("antigravity:".length).trim();
     return model ? { kind: "antigravity", model } : undefined;
   }
-  // A `<provider>:<model>` value (the form builder tiers use) names the model after the colon here.
-  const model = splitTierModel(value)?.model ?? value;
-  if (!model.trim()) return undefined;
+  const model = splitTierModel(value.trim())?.model;
+  if (!model) return undefined;
   return { kind: isOpencodeModel(model) ? "opencode" : "claude", model };
 }
 
-/** The raw model review_readers gives `leg` (or its old name), when the setting is stored and names it. */
+/** The raw model the readers give `leg` (or its old name), when they name it. */
 function readerModel(readers: ReviewReaders | null, leg: string): string | undefined {
   if (!readers) return undefined;
   return readers.readers[leg]?.model ?? readers.readers[canonicalLeg(leg)]?.model;
+}
+
+/** The reader `leg` falls back to on a credit or quota error (the route's fallback), when one is set. */
+function readerFallback(readers: ReviewReaders | null, leg: string): string | undefined {
+  if (!readers) return undefined;
+  return (readers.readers[leg] ?? readers.readers[canonicalLeg(leg)])?.fallback;
 }
 
 /** What runs `ob review readers --json`: exit code and stdout. A seam so tests need no ob. */
@@ -161,10 +169,10 @@ function runObReaders(env: Record<string, string | undefined> = process.env): { 
 export class ReaderSettingError extends Error {}
 
 /**
- * The configured readers, read once per leg run through `ob review readers --json` (the store or the API,
- * whichever this machine uses). Null when nothing is stored (the built-in table decides). When it cannot be read
- * it throws ReaderSettingError: the leg fails, it never guesses (OS-238). OB_REVIEW_READERS_SKIP=1 skips the read
- * (the test preload sets it).
+ * The readers in force, read once per leg run through `ob review readers --json` (the store or the API, whichever
+ * this machine uses), stored or ob's own defaults: whatever ob prints is what runs (OS-295). Null when the answer
+ * names no readers at all. When it cannot be read it throws ReaderSettingError: the leg fails, it never guesses
+ * (OS-238). OB_REVIEW_READERS_SKIP=1 skips the read (the test preload sets it), leaving only model-id legs.
  */
 export function loadReaderSetting(
   env: Record<string, string | undefined> = process.env,
@@ -183,8 +191,8 @@ export function loadReaderSetting(
     throw new ReaderSettingError(`ob review readers exited ${result.code}${first ? `: ${first}` : ""}`);
   }
   try {
-    const parsed = JSON.parse(result.out) as { stored?: boolean };
-    if (!parsed.stored) return null;
+    const parsed = JSON.parse(result.out) as { readers?: unknown };
+    if (!parsed.readers || typeof parsed.readers !== "object" || Object.keys(parsed.readers).length === 0) return null;
     return parseReviewReaders(result.out);
   } catch (e) {
     throw new ReaderSettingError(`ob review readers gave an unreadable answer: ${e instanceof Error ? e.message : String(e)}`);
@@ -192,30 +200,53 @@ export function loadReaderSetting(
 }
 
 /**
- * The model and runner for `leg`. A named leg (`neon`, `opus`; `sonnet` is read as `opus`) takes its model from
- * the active profile's `review` map in the machine's models file (`ob models show`), else from LEGS; the kind
- * follows the value, so a profile may move a leg between providers. A raw `antigravity:<model>` or
- * `opencode/<model>` id is its own model. A models file that does not parse throws: no silent fallback to the table.
- * Undefined when `leg` is neither a known leg nor a raw provider id.
+ * The model and runner for `leg`. A reader name (`sonnet` is read as `opus`) runs on the model the readers give
+ * it; a model id is its own model. Throws for a retired reader (OS-206). Undefined when `leg` is neither a reader
+ * the readers name nor a model id, or its model is malformed: `legCommand` turns that into the error.
  */
-export function resolveLeg(
-  leg: string,
-  env: Record<string, string | undefined> = process.env,
-  profile?: string,
-  readers: ReviewReaders | null = null,
-): ResolvedLeg | undefined {
+export function resolveLeg(leg: string, readers: ReviewReaders | null = null): ResolvedLeg | undefined {
   // OS-206: a retired reader (deepseek, luna) or a model id naming one is refused, never run.
-  const refused = retiredReviewMessage(leg, leg);
-  if (refused) throw new Error(refused);
-  // A reader the owner set in review_readers (the Reviewers page) wins over the machine's file.
   const fromSetting = readerModel(readers, leg);
+  const refused = retiredReviewMessage(leg, fromSetting ?? leg);
+  if (refused) throw new Error(refused);
   if (fromSetting !== undefined) return classifyModel(fromSetting);
-  const known = (LEGS as Record<string, LegSpec>)[canonicalLeg(leg)];
-  const file = loadModelsFile(env);
-  const fromFile = reviewModelFor((profile !== undefined ? file?.profiles[profile] : activeProfile(file))?.review, leg);
-  const value = fromFile ?? known?.model ?? (isOpencodeModel(leg) || isAntigravityModel(leg) ? leg : undefined);
-  if (value === undefined) return undefined;
-  return classifyModel(value);
+  return isModelId(leg) ? classifyModel(leg) : undefined;
+}
+
+/** Why `leg` resolves to nothing, naming the route it was looked up in (OS-295). Pure. */
+export function unknownLegMessage(leg: string, readers: ReviewReaders | null): string {
+  const model = readerModel(readers, leg);
+  if (model !== undefined) return `reader '${leg}' in \`ob review readers\` has model '${model}', which names no model to run`;
+  const names = readers ? Object.keys(readers.readers) : [];
+  const route = names.length
+    ? `\`ob review readers\` has no reader '${leg}' (its readers: ${names.join(", ")})`
+    : `\`ob review readers\` names no readers, so there is no reader '${leg}'`;
+  return `${route}: set one with \`ob review readers set ${leg} --model <id>\`, or pass a model id \`ob models get\` prints (claude-*, antigravity:<model>, opencode/<model>)`;
+}
+
+/**
+ * The legs a run tries, in order: `leg` itself, then its fallback reader, that reader's fallback and on (the
+ * route's chain, `ob review readers fallback`), each kept only when it gives a (kind, model) not already in the
+ * list (the same model on the same provider would hit the same empty balance), stopping at a loop. A leg with no
+ * fallback, which is every reader by default, gets one attempt: nothing stands in for it unless its route says so
+ * (OS-256, OS-295). A model id gets one attempt.
+ */
+export function legAttempts(leg: string, readers: ReviewReaders | null = null): string[] {
+  const out = [leg];
+  const seen = new Set<string>();
+  const first = resolveLeg(leg, readers);
+  if (first) seen.add(`${first.kind}\u0000${first.model}`);
+  const visited = new Set([canonicalLeg(leg)]);
+  for (let next = readerFallback(readers, leg); next !== undefined && !visited.has(next); next = readerFallback(readers, next)) {
+    visited.add(next);
+    const resolved = resolveLeg(next, readers);
+    if (resolved === undefined) continue;
+    const key = `${resolved.kind}\u0000${resolved.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(next);
+  }
+  return out;
 }
 
 // Characters no allowed argument may hold: whitespace (so no newline), the shell's control, redirect,
@@ -261,19 +292,9 @@ export function antigravitySettings(): { agentMode: string; permissions: { allow
  * `ob-reviewer` agent; it travels with the launch (OPENCODE_CONFIG_DIR) so the profile applies in
  * any repo under review, not only one whose checkout carries it.
  */
-export function legCommand(
-  leg: string,
-  configDir: string,
-  env: Record<string, string | undefined> = process.env,
-  profile?: string,
-  readers: ReviewReaders | null = null,
-): LegCommand {
-  const resolved = resolveLeg(leg, env, profile, readers);
-  if (resolved === undefined) {
-    throw new Error(
-      `unknown leg '${leg}': use a reader from \`ob review readers\`, neon, opus (or its old name sonnet), antigravity:<model> or an opencode/<model>[#variant] id`,
-    );
-  }
+export function legCommand(leg: string, configDir: string, readers: ReviewReaders | null = null): LegCommand {
+  const resolved = resolveLeg(leg, readers);
+  if (resolved === undefined) throw new Error(unknownLegMessage(leg, readers));
   if (resolved.kind === "antigravity") {
     return {
       argv: [
@@ -369,33 +390,6 @@ export function legSpawn(
   };
 }
 
-/**
- * The profiles a leg tries, in order: the active one, then `fallback`, each kept only when it
- * gives the leg a (kind, model) pair not already in the list (the same model on the same provider would hit
- * the same empty balance). For the opus leg (or its old name sonnet) a fallback profile is kept only when it runs
- * an Opus model on claude: readers are Opus only, so an Opus quota error never moves to another model (OS-256). The
- * active profile is the owner's own choice and is always tried. `[undefined]` with no models file: the one
- * built-in model.
- */
-export function legProfiles(leg: string, env: Record<string, string | undefined> = process.env, readers: ReviewReaders | null = null): Array<string | undefined> {
-  // A leg whose model comes from review_readers gets one attempt; there is no other profile to try.
-  if (readerModel(readers, leg) !== undefined) return [undefined];
-  const file: ModelsFile | null = loadModelsFile(env);
-  if (!file) return [undefined];
-  const seen = new Set<string>();
-  const out: Array<string | undefined> = [];
-  for (const profile of profileOrder(file)) {
-    const resolved = resolveLeg(leg, env, profile);
-    if (resolved === undefined) continue;
-    if (profile !== file.active && canonicalLeg(leg) === "opus" && (resolved.kind !== "claude" || !/opus/i.test(resolved.model))) continue;
-    const key = `${resolved.kind}\u0000${resolved.model}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(profile);
-  }
-  return out.length > 0 ? out : [undefined];
-}
-
 export interface LegRun {
   code: number;
   /** What the run printed. It has already been passed through; these copies are only read for the error. */
@@ -482,30 +476,30 @@ function finish(
 }
 
 /**
- * Run a leg on each profile in turn until one does not end on a credit or quota error. Any other
- * failure, or a success, is the result. Each credit hit is recorded. Only stderr and the tail of stdout are
- * read, so a transcript that merely quotes a credit error does not count as one. Every attempt writes one
- * leg record, a thrown spawn included. An attempt that timed out is recorded with
- * `signal: "timeout"`, says so on stderr and returns TIMEOUT_EXIT without trying another profile: the profiles
- * exist for an empty balance, and a leg that used its whole time has had its run.
+ * Run a leg on each attempt in turn (`legAttempts`: the leg, then its route's fallback readers) until one does not
+ * end on a credit or quota error. Any other failure, or a success, is the result. Only stderr and the tail of
+ * stdout are read, so a transcript that merely quotes a credit error does not count as one. Every attempt writes
+ * one leg record, a thrown spawn included; a stand-in attempt names its reader in the record's `profile`. An
+ * attempt that timed out is recorded with `signal: "timeout"`, says so on stderr and returns TIMEOUT_EXIT without
+ * trying the fallback: the fallback exists for an empty balance, and a leg that used its whole time has had its run.
  */
-export async function runAcrossProfiles(
+export async function runAcrossFallbacks(
   leg: string,
-  profiles: ReadonlyArray<string | undefined>,
-  run: (profile: string | undefined) => Promise<LegRun>,
+  attempts: ReadonlyArray<string>,
+  run: (attempt: string) => Promise<LegRun>,
   log: (line: string) => void = (l) => console.error(l),
   env: Record<string, string | undefined> = process.env,
   opts: RecordOptions = {},
-): Promise<{ code: number; profile: string | undefined }> {
+): Promise<{ code: number; attempt: string }> {
   const record = opts.record ?? ((r: LegRecord) => appendLegRecord(r, env));
   const now = opts.now ?? (() => new Date());
   const cwd = opts.cwd ?? process.cwd();
   const diff = opts.diff !== undefined ? opts.diff : diffSize(cwd, env);
-  for (let i = 0; i < profiles.length; i++) {
-    const profile = profiles[i];
+  for (let i = 0; i < attempts.length; i++) {
+    const attempt = attempts[i]!;
     let resolved: ResolvedLeg | undefined;
     try {
-      resolved = resolveLeg(leg, env, profile, opts.readers ?? null);
+      resolved = resolveLeg(attempt, opts.readers ?? null);
     } catch {
       resolved = undefined;
     }
@@ -514,7 +508,7 @@ export async function runAcrossProfiles(
       kind: resolved?.kind ?? null,
       model: resolved?.model ?? null,
       variant: variantOf(resolved?.model),
-      profile: profile ?? null,
+      profile: attempt === leg ? null : attempt,
       cwd,
       start: now().toISOString(),
       diff,
@@ -529,7 +523,7 @@ export async function runAcrossProfiles(
     inFlightBytes.err = 0;
     let result: LegRun;
     try {
-      result = await run(profile);
+      result = await run(attempt);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       safeRecord(record, finish(base, now(), { exit_code: null, signal: `spawn-error: ${message}`, out_bytes: 0, err_bytes: 0, tokens: null, credit: false }), log);
@@ -553,7 +547,7 @@ export async function runAcrossProfiles(
       // agy prints its JSON only when it finishes, so a killed agy attempt has no partial text to point at.
       const partial = base.kind === "antigravity" ? "no partial output (agy prints only when it finishes)" : "partial output above";
       log(`review-leg: ${leg} timed out after ${legTimeoutS(env)}s; ${partial}`);
-      return { code: TIMEOUT_EXIT, profile };
+      return { code: TIMEOUT_EXIT, attempt };
     }
     const stop = capStopOf(base.kind, `${result.err}\n${result.out}`);
     if (stop) log(`review-leg: ${leg} stopped at its turn cap (${stop === "steps" ? "steps" : "--max-turns"} ${MAX_TURNS}); its findings may be incomplete`);
@@ -577,17 +571,16 @@ export async function runAcrossProfiles(
       log,
     );
     inFlight = null;
-    if (!credit) return { code: result.code, profile };
-    if (profile !== undefined) recordCreditHit(profile, new Date(), env);
-    const next = profiles[i + 1];
+    if (!credit) return { code: result.code, attempt };
+    const next = attempts[i + 1];
     if (next !== undefined) {
-      log(`review-leg: ${leg}: ${profile ?? "built-in model"} out of credits (${credit.match}), retrying on ${next}`);
+      log(`review-leg: ${leg}: ${attempt} out of credits (${credit.match}), retrying on its fallback ${next}`);
       continue;
     }
-    log(`review-leg: ${leg}: out of credits on every profile tried (${profiles.filter((p) => p !== undefined).join(", ") || "built-in model"})`);
-    return { code: result.code || 1, profile };
+    log(`review-leg: ${leg}: out of credits on every reader tried (${attempts.join(", ")})`);
+    return { code: result.code || 1, attempt };
   }
-  throw new Error(`review-leg: ${leg}: no profile to run on`);
+  throw new Error(`review-leg: ${leg}: nothing to run on`);
 }
 
 const SIGNAL_NUMBERS = { SIGINT: 2, SIGTERM: 15 } as const;
@@ -758,7 +751,7 @@ export function reviewerConfigDir(): string {
 if (import.meta.main) {
   const leg = process.argv[2];
   if (!leg) {
-    console.error("usage: bun review-leg.ts <neon|opus|<a reader from `ob review readers`>|antigravity:<model>|opencode/<model>[#variant]> < brief.md");
+    console.error("usage: bun review-leg.ts <a reader from `ob review readers`|a model id `ob models get` prints> < brief.md");
     process.exit(2);
   }
   // The readers the owner chose (review_readers), read once for this leg.
@@ -770,7 +763,11 @@ if (import.meta.main) {
     process.exit(1);
   }
   const fromSetting = readerModel(readers, leg);
-  if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review_readers)`);
+  if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review readers)`);
+  else if (!isModelId(leg)) {
+    console.error(`review-leg: ${leg} failed: exit 1: ${unknownLegMessage(leg, readers)}`);
+    process.exit(1);
+  }
   const brief = await Bun.stdin.text();
   if (brief.trim() === "") {
     console.error("review-leg: empty brief on stdin");
@@ -797,15 +794,15 @@ if (import.meta.main) {
   }
   // The last attempt's run, so a failed leg can name its child's first stderr line.
   let last: LegRun | null = null;
-  // A leg that fails on a credit or quota error retries on the next profile's model for that leg.
+  // A leg that fails on a credit or quota error retries on its route's fallback reader, when one is set.
   // Output streams through as it comes (or `response` is printed from `agy` JSON) and a copy is kept so the error can be read.
   let result: { code: number };
   try {
-    result = await runAcrossProfiles(
+    result = await runAcrossFallbacks(
       leg,
-      legProfiles(leg, process.env, readers),
-      async (profile) => {
-        const { argv, env } = legCommand(leg, configDir, process.env, profile, readers);
+      legAttempts(leg, readers),
+      async (attempt) => {
+        const { argv, env } = legCommand(attempt, configDir, readers);
         const isAgy = argv[0] === "agy";
         // A fixed session id lets the Claude leg's token use be read from its transcript afterwards,
         // without changing what it prints. Antigravity returns usage in its JSON payload; standalone
