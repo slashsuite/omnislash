@@ -139,7 +139,7 @@ type (`feat` / `fix` / `chore` / …; the scope may be the per-project ref, `fea
 is the commit body: what changed and why, the `State:` and `Gate:` lines. **No AI attribution** in the
 title or the body. A builder on a T3 thread then registers the PR with `link_pull_request`. The CI wait below
 (`pr-wait`) marks the row as waiting on CI (phase `pr_ci`, OS-285) when it starts on a building row's PR, so a
-push after a review round or a sendback fix marks it again; a refusal is one stderr line, not a stop.
+push after a review round marks it again. A sent-back row stays in `updating_pr`; a refusal is one stderr line, not a stop.
 
 **Every repo except OmniSlash: nothing of ob in the PR.** The title is `<type>(<area>): <subject>` with no ticket ref.
 The body is the problem, the change and how it was tested, with no `State:`, `Gate:` or `Visual:` line, no architect, builder, spinoff, OmniSlash, `ob` or `AGENTS.md`.

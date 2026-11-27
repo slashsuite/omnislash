@@ -120,8 +120,10 @@ def mark_pr_ci(repo: str, pr: int) -> None:
     """OS-285: an open PR whose head branch is a building spinoff row puts that row in phase pr_ci.
 
     pr-wait is what a builder runs right after `gh pr create` and after every later push, so this is the
-    PR-opened hook for `spinoff.phase`. A handed-off or landed row (the architect watching it) is left alone,
-    and any failure is one stderr line: the watch never stops for it.
+    PR-opened hook for `spinoff.phase`. The row is found by its branch and repo among the building rows, never
+    by ticket (a trial's leg b shares the ticket on another branch). A handed-off or landed row (the architect
+    watching it) is left alone, and so is a sent-back row in `updating_pr`: the role map moves that one
+    straight to handed-off once its fix is green. Any failure is one stderr line: the watch never stops for it.
     """
     try:
         head = json.loads(gh(["pr", "view", str(pr), "-R", repo, "--json", "state,headRefName"]))
@@ -130,15 +132,22 @@ def mark_pr_ci(repo: str, pr: int) -> None:
     if not isinstance(head, dict) or head.get("state") != "OPEN" or not head.get("headRefName"):
         return
     branch = head["headRefName"]
-    shown = ob(["spinoff", "show", branch, "--json"])
-    if shown is None or shown.returncode != 0:
-        return  # no row for this branch: not a spinoff's PR
+    listed = ob(["spinoff", "list", "--status", "building", "--json"])
+    if listed is None or listed.returncode != 0:
+        return
     try:
-        row = json.loads(shown.stdout[shown.stdout.index("{"):])
+        rows = json.loads(listed.stdout[listed.stdout.index("["):])
     except ValueError:
         return
-    if row.get("branch") != branch or row.get("status") != "building":
-        return
+    name = repo.rsplit("/", 1)[-1].lower()
+    mine = [
+        r for r in rows
+        if isinstance(r, dict) and r.get("branch") == branch and r.get("status") == "building"
+        and str(r.get("repo") or "").rstrip("/").rsplit("/", 1)[-1].lower() == name
+    ]
+    if len(mine) != 1 or mine[0].get("phase") == "updating_pr":
+        return  # not a spinoff's PR, ambiguous, or a send-back being fixed
+    row = mine[0]
     done = ob(["spinoff", "phase", str(row["id"]), "pr_ci", "-q"])
     if done is None or done.returncode != 0:
         why = (done.stderr or done.stdout).strip().splitlines()[-1:] if done else ["ob did not run"]
