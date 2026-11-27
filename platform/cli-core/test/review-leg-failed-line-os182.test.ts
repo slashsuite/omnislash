@@ -110,4 +110,24 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, spawnBudget(2));
+
+  test("OS-295: a retired leg on the command line gets the retired message, not the unknown-reader one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ob-os182-leg-"));
+    try {
+      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "deepseek"], {
+        cwd: REPO_ROOT,
+        stdin: new Blob(["review this small diff"]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, TMPDIR: dir, OB_MODELS_FILE: join(dir, "models.jsonc"), OB_REVIEW_READERS_SKIP: "1" },
+      });
+      expect(proc.exitCode).toBe(1);
+      const last = proc.stderr.toString().trim().split("\n").at(-1) ?? "";
+      expect(last).toStartWith("review-leg: deepseek failed: exit 1: ");
+      expect(last).toMatch(/retired/);
+      expect(last).not.toMatch(/no reader/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, spawnBudget(2));
 });

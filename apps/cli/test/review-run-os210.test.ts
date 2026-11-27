@@ -161,6 +161,16 @@ describe("reviewRun", () => {
     expect(readRunRecords(env)).toHaveLength(1);
   });
 
+  test("OS-295: every leg it runs gets OB_REVIEW_NO_FALLBACK=1, so review-leg.ts never runs a reader's fallback (OS-247)", async () => {
+    const envs: Array<Record<string, string | undefined>> = [];
+    const { d } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", "opus-2": "score: 9/10" });
+    const leg = d.leg;
+    d.leg = async (reader, brief, outPath, legEnv) => (envs.push(legEnv), leg(reader, brief, outPath, legEnv));
+    await reviewRun("OS-1", {}, d);
+    expect(envs.length).toBe(2);
+    for (const e of envs) expect(e.OB_REVIEW_NO_FALLBACK).toBe("1");
+  });
+
   test("a round 1 that calls for it escalates to a second Opus seat, never neon, with the same brief and its own tokens", async () => {
     const { d, ran } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", "opus-2": "ok\nscore: 9/10", neon: "score: 8/10" });
     const r = await reviewRun("OS-1", { complexity: "5" }, d);

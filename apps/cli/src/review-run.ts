@@ -8,7 +8,8 @@
 //      `wrong` or `unproven`, or scored under 8. The extra reader is an Opus reader, never neon or any other
 //      model (OS-247, per OS-238: review readers are Opus only): the range's other Opus reader, then any other
 //      configured Opus reader, else a second seat of the round-1 Opus reader (`opus-2`). This command never runs a
-//      reader's `fallback`: an unavailable Opus fails its seats, and neon does not stand in.
+//      reader's `fallback`: every leg gets OB_REVIEW_NO_FALLBACK=1, so review-leg.ts makes one attempt and an
+//      unavailable Opus fails its seats; neon does not stand in.
 // `--answers <file>` makes the run the next round, the rebuttal pass: the previous round's legs run again, each
 // with its own previous findings and its own `## <leg>` section of the builder's answers, and nothing else's.
 //
@@ -279,7 +280,7 @@ async function runLegs(
       writeFileSync(join(ctx.dir, `${l.leg}.brief.md`), l.brief);
       d.log(`review: ${l.leg} (${l.phase}) running; findings to ${out}`);
       // OB_REVIEW_SEAT names the seat on the leg record, so a second seat's tokens are not summed with the first's.
-      const r = await d.leg(l.reader ?? l.leg, l.brief, out, { ...d.env, OB_REVIEW_RUN_ID: ctx.run, OB_REVIEW_SEAT: l.leg });
+      const r = await d.leg(l.reader ?? l.leg, l.brief, out, { ...d.env, OB_REVIEW_RUN_ID: ctx.run, OB_REVIEW_SEAT: l.leg, OB_REVIEW_NO_FALLBACK: "1" });
       const text = existsSync(out) ? readFileSync(out, "utf8") : "";
       return {
         leg: l.leg,

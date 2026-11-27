@@ -218,6 +218,16 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     );
     expect(legAttempts("a", chain)).toEqual(["a", "c", "d"]);
     expect(legAttempts("d", chain)).toEqual(["d", "a", "c"]);
+    // `ob review run` (OB_REVIEW_NO_FALLBACK=1): one attempt, no reader stands in (OS-247).
+    expect(legAttempts("a", chain, true)).toEqual(["a"]);
+  });
+
+  test("OS-295: a model id on a provider no leg runs is refused by name, never sent to claude", () => {
+    expect(resolveLeg("codex:gpt-6")).toBeUndefined();
+    expect(() => legCommand("codex:gpt-6", "/tmp/oc")).toThrow(/model 'codex:gpt-6' is on provider 'codex', which no review leg runs/);
+    const codex = parseReviewReaders(JSON.stringify({ readers: { opus: { model: "codex:gpt-6" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }));
+    expect(() => legCommand("opus", "/tmp/oc", codex)).toThrow(/reader 'opus' in `ob review readers` has model 'codex:gpt-6' is on provider 'codex'/);
+    expect(resolveLeg("claude:claude-opus-5-5")).toEqual({ kind: "claude", model: "claude-opus-5-5" });
   });
 
   test("creditErrorOf recognises agy quota, rate limit, RESOURCE_EXHAUSTED, 429 and non-SUCCESS JSON without loosening non-agy rate limit", () => {

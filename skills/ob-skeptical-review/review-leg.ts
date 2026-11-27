@@ -107,7 +107,7 @@ export const PROFILE_PATH = join(import.meta.dir, "ob-reviewer.md");
 export const AGENT = "ob-reviewer";
 
 /** The runner and model a leg resolves to. A Claude leg runs at the model's default effort: no `--effort` flag at all. */
-export type ResolvedLeg = { kind: LegKind; model: string };
+type ResolvedLeg = { kind: LegKind; model: string };
 
 export type LegCommand = { argv: string[]; env: Record<string, string> };
 
@@ -116,28 +116,38 @@ function isOpencodeModel(model: string): boolean {
   return model.startsWith("opencode/") || model.startsWith("opencode-go/");
 }
 
+/** The `<provider>:` prefixes a leg runs on: agy for antigravity, claude for the two Claude spellings. */
+const LEG_PROVIDERS: Readonly<Record<string, LegKind>> = { antigravity: "antigravity", claudeAgent: "claude", claude: "claude" };
+
 /**
- * Whether `value` is a model id rather than a reader name: `antigravity:<model>`, `opencode/<model>`,
- * `opencode-go/<model>`, a bare `claude-*` id, or any `<provider>:<model>` (the form builder routes print).
- * A reader name is lowercase letters, digits and dashes, so it never holds `:` or `/`. Pure.
+ * Whether `value` is a model id rather than a reader name: a bare `claude-*` id, `opencode/<model>`,
+ * `opencode-go/<model>`, or any `<provider>:<model>` (the form builder routes print; a provider this script
+ * cannot run is refused by name in `unknownLegMessage`). A reader name is lowercase letters, digits and dashes,
+ * so it never holds `:` or `/`. Pure.
  */
-export function isModelId(value: string): boolean {
+function isModelId(value: string): boolean {
   return value.startsWith("claude-") || value.includes(":") || isOpencodeModel(value);
+}
+
+/** The provider of a `<provider>:<model>` id this script cannot run (`codex` in `codex:gpt-6`). Pure. */
+function unrunnableProvider(value: string): string | undefined {
+  const provider = splitTierModel(value.trim())?.providerInstanceId ?? null;
+  return provider !== null && !Object.hasOwn(LEG_PROVIDERS, provider) ? provider : undefined;
 }
 
 /**
  * The runner for a model id: `antigravity:<model>` through agy (the prefix stripped), `opencode/` and
- * `opencode-go/` through opencode, anything else through claude. A `<provider>:<model>` value names the model
- * after the colon. Undefined for an id with an empty half. Pure.
+ * `opencode-go/` through opencode, a bare id or `claudeAgent:` / `claude:` through claude. Undefined for an id
+ * with an empty half or on a provider this script cannot run (`codex:gpt-6`). Pure.
  */
-export function classifyModel(value: string): ResolvedLeg | undefined {
-  if (value.startsWith("antigravity:")) {
-    const model = value.slice("antigravity:".length).trim();
-    return model ? { kind: "antigravity", model } : undefined;
+function classifyModel(value: string): ResolvedLeg | undefined {
+  const split = splitTierModel(value.trim());
+  if (!split?.model) return undefined;
+  if (split.providerInstanceId !== null) {
+    const kind = Object.hasOwn(LEG_PROVIDERS, split.providerInstanceId) ? LEG_PROVIDERS[split.providerInstanceId] : undefined;
+    return kind ? { kind, model: split.model } : undefined;
   }
-  const model = splitTierModel(value.trim())?.model;
-  if (!model) return undefined;
-  return { kind: isOpencodeModel(model) ? "opencode" : "claude", model };
+  return { kind: isOpencodeModel(split.model) ? "opencode" : "claude", model: split.model };
 }
 
 /** The raw model the readers give `leg` (or its old name), when they name it. */
@@ -216,6 +226,12 @@ export function resolveLeg(leg: string, readers: ReviewReaders | null = null): R
 /** Why `leg` resolves to nothing, naming the route it was looked up in (OS-295). Pure. */
 export function unknownLegMessage(leg: string, readers: ReviewReaders | null): string {
   const model = readerModel(readers, leg);
+  const provider = unrunnableProvider(model ?? leg);
+  const runs = "review-leg.ts runs claude-*, claudeAgent:<model>, antigravity:<model> and opencode/<model>";
+  if (provider !== undefined) {
+    const what = model !== undefined ? `reader '${leg}' in \`ob review readers\` has model '${model}'` : `model '${leg}'`;
+    return `${what} is on provider '${provider}', which no review leg runs: ${runs}`;
+  }
   if (model !== undefined) return `reader '${leg}' in \`ob review readers\` has model '${model}', which names no model to run`;
   const names = readers ? Object.keys(readers.readers) : [];
   const route = names.length
@@ -229,10 +245,12 @@ export function unknownLegMessage(leg: string, readers: ReviewReaders | null): s
  * route's chain, `ob review readers fallback`), each kept only when it gives a (kind, model) not already in the
  * list (the same model on the same provider would hit the same empty balance), stopping at a loop. A leg with no
  * fallback, which is every reader by default, gets one attempt: nothing stands in for it unless its route says so
- * (OS-256, OS-295). A model id gets one attempt.
+ * (OS-256, OS-295). A model id gets one attempt, and so does every leg when `noFallback` is set (`ob review run`
+ * sets OB_REVIEW_NO_FALLBACK=1: its seats are Opus only, OS-247, so no fallback reader may stand in).
  */
-export function legAttempts(leg: string, readers: ReviewReaders | null = null): string[] {
+export function legAttempts(leg: string, readers: ReviewReaders | null = null, noFallback = false): string[] {
   const out = [leg];
+  if (noFallback) return out;
   const seen = new Set<string>();
   const first = resolveLeg(leg, readers);
   if (first) seen.add(`${first.kind}\u0000${first.model}`);
@@ -762,12 +780,20 @@ if (import.meta.main) {
     console.error(`review-leg: ${leg} failed: exit 1: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
-  const fromSetting = readerModel(readers, leg);
-  if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review readers)`);
-  else if (!isModelId(leg)) {
+  // A retired reader (OS-206), an unknown one or a provider no leg runs fails here, by name, before any brief is read.
+  let resolvedLeg: ResolvedLeg | undefined;
+  try {
+    resolvedLeg = resolveLeg(leg, readers);
+  } catch (e) {
+    console.error(`review-leg: ${leg} failed: exit 1: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
+  if (resolvedLeg === undefined) {
     console.error(`review-leg: ${leg} failed: exit 1: ${unknownLegMessage(leg, readers)}`);
     process.exit(1);
   }
+  const fromSetting = readerModel(readers, leg);
+  if (fromSetting !== undefined) console.error(`review-leg: ${leg} runs ${fromSetting} (review readers)`);
   const brief = await Bun.stdin.text();
   if (brief.trim() === "") {
     console.error("review-leg: empty brief on stdin");
@@ -800,7 +826,8 @@ if (import.meta.main) {
   try {
     result = await runAcrossFallbacks(
       leg,
-      legAttempts(leg, readers),
+      // OB_REVIEW_NO_FALLBACK=1 (set by `ob review run`, OS-247): one attempt, no reader stands in for another.
+      legAttempts(leg, readers, process.env.OB_REVIEW_NO_FALLBACK === "1"),
       async (attempt) => {
         const { argv, env } = legCommand(attempt, configDir, readers);
         const isAgy = argv[0] === "agy";

@@ -86,7 +86,7 @@ Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall tim
   rule below.
 - **Fallback first.** `review-leg.ts` already reruns a reader that ends on a credit or quota error on its route's
   fallback reader (`ob review readers fallback <leg> <other>`), then that reader's, skipping one with the same (kind, model),
-  and says so on stderr. No reader has a fallback by default, so nothing stands in for an unavailable Opus unless the route says so. For `agy` (`antigravity:` legs), quota, rate limit, `RESOURCE_EXHAUSTED`, `429` or a JSON `status` other than `SUCCESS` with such text triggers the same fallback. The rule below applies only once the leg has exited non-zero after that.
+  and says so on stderr. That is only for a leg run by hand: `ob review run` sets OB_REVIEW_NO_FALLBACK=1, so each of its seats makes one attempt (OS-247). No reader has a fallback by default. A review leg's credit hit is no longer written to `models-state.json` (OS-295): its fallback is a reader on its route, not a models profile, so `ob models list` does not mark a profile out of credits for it. For `agy` (`antigravity:` legs), quota, rate limit, `RESOURCE_EXHAUSTED`, `429` or a JSON `status` other than `SUCCESS` with such text triggers the same fallback. The rule below applies only once the leg has exited non-zero after that.
 - **Out of credits rule.** No required reader is paid, so a paid
   leg (an `opencode-go/` reader, when a profile names one) out of credits reports `skipped (no credits)` and files nothing; the owed-review
   steps below apply only if a paid reader is made required again. When a required `opencode-go/...` reader

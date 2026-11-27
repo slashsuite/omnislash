@@ -257,18 +257,6 @@ export function canonicalLeg(leg: string): string {
   return REVIEW_LEG_ALIASES[leg] ?? leg;
 }
 
-/**
- * A profile's model for `leg`, under its own name first and then under any alias of it (OB-2107), so
- * `review.sonnet` still feeds the `opus` leg. Undefined when the profile names neither. Pure.
- */
-export function reviewModelFor(review: Readonly<Record<string, string>> | undefined, leg: string): string | undefined {
-  if (!review) return undefined;
-  const canonical = canonicalLeg(leg);
-  if (review[canonical] !== undefined) return review[canonical];
-  for (const [alias, target] of Object.entries(REVIEW_LEG_ALIASES)) if (target === canonical && review[alias] !== undefined) return review[alias];
-  return undefined;
-}
-
 /** The reviewer route's model when no profile names one (the measure-twice step runs Haiku). */
 export const DEFAULT_REVIEWER = "claude-haiku-5-5";
 
