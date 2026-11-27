@@ -352,8 +352,8 @@ describe("project status routes go to the role server (OS-189)", () => {
   test("the other spinoff routes stay on the main server", async () => {
     process.env[ROLE_API_ENV] = role.url;
     const client = new ApiClient({ base: main.url, token: TOKEN });
-    await client.recordSpinoffTokens({ id: 1 } as never).catch(() => undefined);
-    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/spinoffs/tokens"]);
+    await client.landSpinoff({ id: 1 } as never).catch(() => undefined);
+    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/spinoffs/land"]);
     expect(role.seen).toEqual([]);
   });
 
@@ -378,24 +378,19 @@ const OMNISLASH_CALLS: Array<{ method: string; path: string; call: Call }> = [
 ];
 
 
-describe("the spinoff writes that set or clear a phase go to the role server (OS-285)", () => {
+describe("the spinoff writes that set a phase go to the role server (OS-285)", () => {
   const PHASE_CALLS: Array<{ path: string; call: (c: ApiClient) => Promise<unknown> }> = [
     { path: "/api/ob/spinoffs/phase", call: (c) => c.setSpinoffPhase({ id: 1, phase: "pr_ci" }) },
     { path: "/api/ob/spinoffs/ready", call: (c) => c.readySpinoff({ id: 1 } as never) },
     { path: "/api/ob/spinoffs/sendback", call: (c) => c.sendBackSpinoff({ id: 1 } as never) },
     { path: "/api/ob/spinoffs/verdict", call: (c) => c.recordSpinoffVerdict({ id: 1 } as never) },
-    { path: "/api/ob/spinoffs/claim", call: (c) => c.claimSpinoff({ id: 1 } as never) },
-    { path: "/api/ob/spinoffs/stamp", call: (c) => c.stampSpinoff({ id: 1 } as never) },
-    { path: "/api/ob/spinoffs/land", call: (c) => c.landSpinoff({ id: 1 } as never) },
-    { path: "/api/ob/spinoffs/reopen", call: (c) => c.reopenSpinoff({ id: 1 } as never) },
-    { path: "/api/ob/spinoffs/resume", call: (c) => c.resumeSpinoff({ id: 1 } as never) },
   ];
 
-  test("the matcher takes each phase write and status move, and no other spinoff route", () => {
-    for (const route of ["/spinoffs/phase", "/spinoffs/ready", "/spinoffs/sendback", "/spinoffs/verdict", "/spinoffs/land", "/spinoffs/reclaim"]) {
+  test("the matcher takes each phase write, and no other spinoff route", () => {
+    for (const route of ["/spinoffs/phase", "/spinoffs/ready", "/spinoffs/sendback", "/spinoffs/verdict"]) {
       expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(true);
     }
-    for (const route of ["/spinoffs", "/spinoffs/tokens", "/spinoffs/check", "/spinoffs/phasex", "/spinoffs/landx"]) {
+    for (const route of ["/spinoffs", "/spinoffs/land", "/spinoffs/stamp", "/spinoffs/claim", "/spinoffs/phasex", "/spinoffs/readyx"]) {
       expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(false);
     }
   });
