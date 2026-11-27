@@ -10,7 +10,8 @@
 //                            "review": {"readers": {...}, "tiers": {...}}}}}
 //
 // Each route resolves in three layers, the first that names it winning:
-//   1. local:   this machine's `~/.config/ob/models.jsonc` (its `routes`, or the old `builder` / `reviewer` keys);
+//   1. local:   this machine's `~/.config/ob/models.jsonc` (its `routes`, or the old `builder` / `reviewer`
+//               keys, where `checker` still reads as `reviewer` since OS-243);
 //   2. server:  the `model_routes` setting;
 //   3. default: what ob ran before OS-145 (the `spinoff_tier_models` setting over the built-in tiers, Haiku for the
 //               reviewer, the builder.complex model for role threads, Haiku/Opus for the sweep).
@@ -226,7 +227,7 @@ export function profileOrderOf(inputs: RouteInputs): string[] {
   return [...new Set([...(active ? [active] : []), ...fallback])];
 }
 
-/** The local file's own spec for a non-builder `route` in `profile`: its `routes`, else the old `reviewer` key. */
+/** The local file's own spec for a non-builder `route` in `profile`: its `routes`, else the old `reviewer` key (`checker` before OS-243). */
 function localSpec(file: ModelsFile | null, profile: string | null, route: string): RouteSpec | null {
   if (!file || profile === null || !Object.hasOwn(file.profiles, profile)) return null;
   const p = file.profiles[profile]!;
