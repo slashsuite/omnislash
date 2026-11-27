@@ -13,7 +13,7 @@ import { saveFavorites } from "../../cli/src/t3-favorites.ts";
 import { configIo } from "../../../platform/dashboard-kit/src/server/config-io.ts";
 import { eq, inArray } from "../../cli/src/db/orm.ts";
 import { DECISION_SOURCE, DECISION_TYPE } from "../../cli/src/decisions.ts";
-import { addTags, createItem } from "../../cli/src/items.ts";
+import { addTags, createItem, setDecidedAt } from "../../cli/src/items.ts";
 import { registerProject } from "../../cli/src/project.ts";
 import { addTeam } from "../../cli/src/team.ts";
 import { assignRef } from "../../cli/src/refs.ts";
@@ -136,6 +136,9 @@ export async function seedTimeline(store: Store): Promise<void> {
       .set({ ...set, block_reason: null, block_owner: null, today_rank: null, updated_at: set.closed_at ?? set.created_at })
       .where(eq(t.item.id, id));
   }
+  // OS-277: the timeline places a decision at its decided_at, which createItem stamps with now; pin it to the
+  // seeded filing time, as a real filing would have it, so the world holds at any hour.
+  await setDecidedAt(store, ids.decision, items.find(([id]) => id === ids.decision)![1].created_at);
 
   await store.q.delete(t.event).where(inArray(t.event.item_id, Object.values(ids)));
   const move = (item_id: string, ts: string, payload: Record<string, unknown>) => ({
