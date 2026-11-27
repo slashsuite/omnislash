@@ -53,6 +53,8 @@ export interface T3SpinoffRow {
    *  `ticket_ref` is only the ref the row was DISPATCHED with, which for a hand-charted ticket is its
    *  wayfinder number rather than the mirror item's id. Optional: a row from an older API host lacks it. */
   item_id?: string | null;
+  /** OB-1991: `b` for a trial's leg b, whose lease and builder id carry `-b`. Optional, as `item_id`. */
+  trial_leg?: string | null;
 }
 
 /** The agent row fields the join reads. Structural, so an `AgentRow` satisfies it as it is. */

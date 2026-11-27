@@ -63,6 +63,8 @@ export function t3SubcommandReads(args: readonly string[]): string[] {
       return ["base-url"];
     case "broadcast":
       return ["message-file", "dry-run"];
+    case "settle-sweep":
+      return ["dry-run"];
     case "architect":
       return ["thread"];
     case "sentinel":

@@ -51,5 +51,5 @@ directory and a temp SQLite store. This package has no Postgres preload. Its Pos
   limited to runtime calls.
 - A move of a spinoff row must go through the state machine. `state-machine`'s parity test reads this
   package, so a new edge needs a matching change there.
-- `ob daemon install` writes only the client jobs (today `role-tick`), not the whole list in
+- `ob daemon install` writes only the client jobs (today `role-tick` and `settle-sweep`), not the whole list in
   `daemonJobs()`.

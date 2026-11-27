@@ -1,4 +1,4 @@
-import { T3Error, type T3LaunchInput, type T3SendInput, type T3Thread } from "../src/t3/client.ts";
+import { T3Error, type T3LaunchInput, type T3QueuedMessage, type T3SendInput, type T3Thread, type T3ThreadRead } from "../src/t3/client.ts";
 import { __setT3Seam, type T3Seam } from "../src/t3/dispatch.ts";
 
 /**
@@ -24,6 +24,12 @@ export interface FakeT3Install {
   sends: T3SendInput[];
   /** Every thread id `interrupt` was called with (OS-259: a conflict's loser is stopped before it is told to wait). */
   interrupts: string[];
+  /** A thread's items in the `messages` view, by thread id (OS-288); a read without that view returns none. */
+  messages: Map<string, T3ThreadRead["items"]>;
+  /** The messages T3 holds queued for a thread, by thread id (OS-288). */
+  queued: Map<string, T3QueuedMessage[]>;
+  /** The installed seam, for a test that calls a function taking one. */
+  seam: T3Seam;
   restore: () => void;
 }
 
@@ -49,6 +55,8 @@ export function installFakeT3(
   const threads: T3Thread[] = [];
   const sends: T3SendInput[] = [];
   const interrupts: string[] = [];
+  const messages = new Map<string, T3ThreadRead["items"]>();
+  const queued = new Map<string, T3QueuedMessage[]>();
   const projects = repoPaths.map((workspaceRoot, i) => ({
     id: `proj-${i}`,
     title: `repo-${i}`,
@@ -91,10 +99,15 @@ export function installFakeT3(
         })),
       nextCursor: null,
     }),
-    read: async (threadId) => {
+    read: async (threadId, opts) => {
       const thread = threads.find((t) => t.threadId === threadId);
       if (!thread) throw new T3Error("refused", `t3_thread_read: thread ${threadId} not found`);
-      return { thread, recentRuns: [], items: [], nextPosition: 0, hasMore: false };
+      if (opts?.view !== "messages") return { thread, recentRuns: [], items: [], nextPosition: 0, hasMore: false };
+      // The messages view keeps the timeline's own positions, so a page starts after a position, not at an index.
+      const after = opts.afterPosition ?? -1;
+      const rest = (messages.get(threadId) ?? []).filter((m) => m.position > after);
+      const items = rest.slice(0, opts.limit ?? 1);
+      return { thread, recentRuns: [], items, nextPosition: items.at(-1)?.position ?? after, hasMore: rest.length > items.length };
     },
     launch: async (input) => {
       launches.push(input);
@@ -137,7 +150,7 @@ export function installFakeT3(
       sends.push(input);
     },
     wait: async () => ({ runId: null, status: "idle", timedOut: false }),
-    queue: async () => ({ items: [], complete: true }),
+    queue: async (threadId) => ({ items: queued.get(threadId) ?? [], complete: true }),
     pin: async (threadId) => {
       pinned.push(threadId);
     },
@@ -150,5 +163,5 @@ export function installFakeT3(
     queueCancel: async () => {},
   };
   const restore = __setT3Seam(seam);
-  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, sends, interrupts, restore };
+  return { launches, pinned, unpinned, renamed, autoSettleOff, threads, sends, interrupts, messages, queued, seam, restore };
 }

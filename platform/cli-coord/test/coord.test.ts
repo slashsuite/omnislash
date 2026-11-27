@@ -77,8 +77,11 @@ describe("daemonJobs registry (via `ob daemon status`)", () => {
     expect(daemonJobs("/Users/nobody").find((j) => j.job === "backup")!.args.slice(1)).toEqual(["backup"]);
   });
 
-  test("the only Mac client job is role-tick since the drain retired (457, 1589, OS-67)", () => {
-    expect(macDaemonJobs("/Users/nobody").map((j) => [j.job, j.opts.interval, j.args.slice(1)])).toEqual([["role-tick", 900, ["role", "tick"]]]);
+  test("the Mac client jobs are role-tick and settle-sweep since the drain retired (457, 1589, OS-67, OS-288)", () => {
+    expect(macDaemonJobs("/Users/nobody").map((j) => [j.job, j.opts.interval, j.args.slice(1)])).toEqual([
+      ["role-tick", 900, ["role", "tick"]],
+      ["settle-sweep", 1800, ["t3", "settle-sweep"]],
+    ]);
     const chunks: string[] = [];
     const orig = console.log;
     console.log = (m?: unknown) => {
@@ -98,6 +101,6 @@ describe("daemonJobs registry (via `ob daemon status`)", () => {
       console.log = orig;
     }
     const jobs = JSON.parse(chunks.join("\n")).jobs as Array<{ job: string }>;
-    expect(jobs.map((j) => j.job)).toEqual(["role-tick"]);
+    expect(jobs.map((j) => j.job)).toEqual(["role-tick", "settle-sweep"]);
   });
 });

@@ -142,10 +142,11 @@ list of what should run and when:
 | `tunnel-check` | daily 07:30 |
 | `creds-check --all` | daily 07:45 |
 | `role-tick` | every 15 minutes |
+| `t3 settle-sweep` | every 30 minutes |
 | `ci-main --notify` | hourly |
 
 The server runs most of these from its own service units, which are not part of this repo. On a
-workstation, `ob daemon install` writes only the client jobs (today just `role-tick`, which needs the
+workstation, `ob daemon install` writes only the client jobs (today `role-tick` and `settle-sweep`, which need the
 local T3 Code): one launchd agent per job on macOS (label `com.omnislash.<job>`), or a systemd user
 service and timer on Linux. `ob daemon status` and `ob daemon uninstall` manage them.
 
