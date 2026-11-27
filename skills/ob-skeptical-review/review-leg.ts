@@ -359,8 +359,9 @@ export function legSpawn(
   const prompt =
     `Read ${briefPath} in full and follow every instruction in it. Return only the findings and score requested by the brief. ` +
     `The checkout under review is ${cwd}; read files with your file-read tool. A shell command may only be one of ` +
-    `${READ_COMMANDS.join(", ")}, one per call, with plain arguments: no ; | & > < $ \` ( ) or quotes. Any other ` +
-    `command is refused and ends your review with no output.`;
+    `${READ_COMMANDS.join(", ")}, one per call, with plain arguments: no ; | & > < $ \` ( ) or quotes. A git flag may not ` +
+    `start with -o or --o, so write git log --pretty=oneline --abbrev-commit, never --oneline. Any other command is refused ` +
+    `and ends your review with no output.`;
   return {
     cmd: [...argv, "-p", prompt],
     stdin: "",
@@ -716,9 +717,13 @@ export function finishAntigravityRun(
   if (run.code === 0 && text.trim().length === 0) {
     // A command outside the allow list ends the headless turn: SUCCESS, an empty response and `denied_actions`
     // (OS-210's live run). That is a failed leg, never a clean one with nothing to say.
-    const denied = Array.isArray(parsed.denied_actions) ? parsed.denied_actions.length : 0;
+    // Name every denied action with all the fields agy gave, so the refused command can be found (OS-286).
+    const deniedList: unknown[] = Array.isArray(parsed.denied_actions) ? parsed.denied_actions : [];
+    const denied = deniedList.length;
+    // agy's JSON names no command; the conversation id finds the refused one in agy's conversation store.
+    const conv = typeof parsed.conversation_id === "string" && parsed.conversation_id.trim() ? ` (conversation ${parsed.conversation_id.trim()})` : "";
     const reason = denied > 0
-      ? `agy refused ${denied} action(s) outside the read-only allow list and returned no findings`
+      ? `agy refused ${denied} action(s) outside the read-only allow list and returned no findings${conv}: ${deniedList.map((a) => JSON.stringify(a)).join(" ")}`
       : "agy returned an empty response";
     log(`review-leg: ${reason}`);
     return { ...run, code: 1, err: run.err.trim() ? `${reason}\n${run.err}` : reason, out: "", rawOut: run.out, tokens };
