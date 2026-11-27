@@ -592,12 +592,12 @@ export const PROJECT_STATUS_ROUTE = /^\/(projects|next)(\/|\?|$)|^\/spinoffs(\/l
 export const OMNISLASH_ROUTE = /^\/overnight(\/|\?|$)|^\/tags(\?|$)/;
 
 /**
- * OS-285: the spinoff writes that set `spinoff.phase` (OS-183), which the omnibus server on CT 130 does not set:
- * `/spinoffs/phase` (it does not serve it), the handoff (`/spinoffs/ready`, gating or owner_merge_call), the send-back
- * (`/spinoffs/sendback`, updating_pr) and the verdict (`/spinoffs/verdict`). The dashboard reads the phase back, so they
- * go to the same server as the role routes, which shares the database. The other spinoff writes stay.
+ * OS-285: the spinoff writes that set or clear `spinoff.phase` (OS-183), which the omnibus server on CT 130 does not
+ * write: `/spinoffs/phase` (it does not serve it), the verdict, and every status move (claim, stamp, land, the handoff
+ * `/ready`, sendback, reopen, resume, reclaim), since a move sets or clears the phase. The dashboard reads the phase back,
+ * so they go to the same server as the role routes, which shares the database. The other spinoff routes stay.
  */
-export const SPINOFF_PHASE_ROUTE = /^\/spinoffs\/(phase|ready|sendback|verdict)(\?|$)/;
+export const SPINOFF_PHASE_ROUTE = /^\/spinoffs\/(phase|verdict|claim|stamp|land|ready|sendback|reopen|resume|reclaim)(\?|$)/;
 
 export class ApiClient {
 	private readonly base: string;

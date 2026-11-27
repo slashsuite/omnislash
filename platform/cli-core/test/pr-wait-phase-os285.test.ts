@@ -91,6 +91,11 @@ describe("pr-wait marks a building row pr_ci (OS-285)", () => {
     }
   });
 
+  test("a building row on the branch in another repo is named on stderr", async () => {
+    const f = fakes([row({ repo: "other" })]);
+    expect((await prWait(f.dir)).err).toContain("pr-wait: a building row is on os-9 but its repo is not r; not marking it pr_ci");
+  });
+
   test("a refused phase is one stderr line and the watch still runs to green", async () => {
     const f = fakes([row()], 1);
     const r = await prWait(f.dir);

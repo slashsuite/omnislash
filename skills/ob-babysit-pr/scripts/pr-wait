@@ -145,6 +145,8 @@ def mark_pr_ci(repo: str, pr: int) -> None:
         if isinstance(r, dict) and r.get("branch") == branch and r.get("status") == "building"
         and str(r.get("repo") or "").rstrip("/").rsplit("/", 1)[-1].lower() == name
     ]
+    if not mine and any(isinstance(r, dict) and r.get("branch") == branch for r in rows):
+        print(f"pr-wait: a building row is on {branch} but its repo is not {name}; not marking it pr_ci", file=sys.stderr, flush=True)
     if len(mine) != 1 or mine[0].get("phase") == "updating_pr":
         return  # not a spinoff's PR, ambiguous, or a send-back being fixed
     row = mine[0]
