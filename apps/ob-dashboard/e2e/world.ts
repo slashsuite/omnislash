@@ -105,8 +105,9 @@ export const MACHINE_ROWS = {
 
 /** OS-241: MACHINE_PROJECT's open tickets with no row: one waiting on the owner's planning call, one still being drilled. */
 export const MACHINE_PLANNING = {
-  owner: { title: "Machine: a planning call for the owner", tags: ["needs-jacobus"] },
-  drilled: { title: "Machine: still being drilled", tags: [] },
+  owner: { title: "Machine: a planning call for the owner", tags: ["needs-jacobus"], body: "Need stated." },
+  drilled: { title: "Machine: still being drilled", tags: [], body: "Need stated.\n\n## Drilled\n- cause read in the code" },
+  backlog: { title: "Machine: not drilled yet", tags: [], body: "Need stated." },
 } as const;
 
 /** This host's file: no `active` (the server's stands), and one route it overrides in `claude`. */

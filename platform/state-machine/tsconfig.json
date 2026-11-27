@@ -4,5 +4,5 @@
     "lib": ["ESNext"],
     "types": ["bun-types"]
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "model/mutants.ts", "vitest.config.ts"]
 }

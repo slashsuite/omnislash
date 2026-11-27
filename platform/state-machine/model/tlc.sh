@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# OS-211 (OS-112): run TLC on the spinoff row model (Spinoff.tla, Spinoff.cfg). Exits non-zero when an
-# invariant or property breaks, printing TLC's shortest trace. `bunx moon run state-machine:tlc` runs it, and
+# OS-211 (OS-112): run TLC on each model here: the spinoff row (Spinoff.tla) and, since OS-249, the team
+# restart (TeamRestart.tla), each with its own .cfg. `tlc.sh <Model>...` runs only those. Exits non-zero when
+# an invariant or property breaks, printing TLC's shortest trace. `bunx moon run state-machine:tlc` runs it, and
 # CI's `tla` job runs it on every PR.
 #
 # TLC is tla2tools.jar v1.7.4 from github.com/tlaplus/tlaplus, fetched once into ~/.cache/tla and checked
 # against its sha256; TLA2TOOLS_JAR points at another copy. Java is `java` on PATH, else mise's temurin-17.
-# `-deadlock` turns the deadlock check off: `failed` is terminal by design, so a behaviour that ends there is not a fault.
+# `-deadlock` turns the deadlock check off: `failed` is terminal by design, and the restart model's sends and runs
+# are bounded, so a behaviour that ends there is not a fault.
 set -euo pipefail
-cd "$(dirname "$0")"
+# --here runs the models in the current directory (mutants.ts's mutated copies) instead of this one.
+if [ "${1:-}" = "--here" ]; then shift; else cd "$(dirname "$0")"; fi
 
 VERSION=1.7.4
 SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
@@ -29,7 +32,14 @@ fi
 
 tmp="${TMPDIR:-$HOME/.cache/tmp}"
 mkdir -p "$tmp"
-meta="$(mktemp -d "$tmp/tlc-spinoff-XXXXXX")"
-trap 'rm -rf "$meta"' EXIT
-"${JAVA[@]}" -Djava.io.tmpdir="$tmp" -XX:+UseParallelGC -cp "$JAR" tlc2.TLC \
-  -deadlock -workers auto -metadir "$meta" -config Spinoff.cfg Spinoff.tla
+MODELS=("$@")
+[ ${#MODELS[@]} -gt 0 ] || MODELS=(Spinoff TeamRestart)
+for model in "${MODELS[@]}"; do
+  meta="$(mktemp -d "$tmp/tlc-$model-XXXXXX")"
+  echo "tlc.sh: $model"
+  status=0
+  "${JAVA[@]}" -Djava.io.tmpdir="$tmp" -XX:+UseParallelGC -cp "$JAR" tlc2.TLC \
+    -deadlock -workers auto -metadir "$meta" -config "$model.cfg" "$model.tla" || status=$?
+  rm -rf "$meta"
+  [ "$status" -eq 0 ] || exit "$status"
+done

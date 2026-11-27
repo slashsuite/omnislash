@@ -30,6 +30,7 @@
 // commands/spinoff.ts (`launchNotReadyIn`, `prepareLaunchIn`, `launchRowIn`), which are the same functions
 // the store-backed drain reaches through `settingFor` -- one decision procedure, two ways in.
 import { stageIn } from "../stage.ts";
+import { parsePriority } from "../priority.ts";
 import { teamMembersIn, teamOfIn, teamHandoffTarget, type HandoffRoute } from "../team.ts";
 import { builderIdOf, isObRepo, legRef } from "../../../../platform/cli-coord/src/clean-repo.ts";
 import { dispatchTrialPair, legBranch } from "../../../../platform/cli-coord/src/spinoff-trial.ts";
@@ -1131,6 +1132,10 @@ export async function apiConflictSource(ctx: ApiCtx): Promise<ConflictSource> {
     rows: async (team) => apiTeamRows(ctx, cfg, team, (await ctx.client.spinoffs({})).spinoffs),
     note: async (side, text) => {
       await ctx.client.note(side.item_id ?? side.ref, { text });
+    },
+    priority: async (side) => {
+      const name = await apiItemPriority(ctx.client, side.item_id ?? side.ref);
+      return name === null ? null : parsePriority(name);
     },
   };
 }

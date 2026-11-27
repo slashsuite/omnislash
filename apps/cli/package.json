@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@omnislash/state-machine": "workspace:*",
-    "@sentry/bun": "11.13.0",
+    "@sentry/bun": "11.17.0",
     "drizzle-orm": "catalog:"
   },
   "optionalDependencies": {

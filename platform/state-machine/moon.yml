@@ -20,10 +20,11 @@ tasks:
     options:
       cache: false
   # OS-211 (OS-112): TLC on the spinoff row model (model/Spinoff.tla); test/tla-parity.test.ts keeps its edges
-  # equal to SPINOFF_EDGES. Needs java and fetches tla2tools.jar once (model/tlc.sh), so it is not part of
-  # :test; CI's `tla` job runs it on every PR.
+  # equal to SPINOFF_EDGES. OS-249: and on the team restart model (model/TeamRestart.tla), then on one mutant per
+  # guard it models (model/mutants.ts), each of which TLC must break. Needs java and fetches tla2tools.jar once
+  # (model/tlc.sh), so it is not part of :test; CI's `tla` job runs it on every PR.
   tlc:
-    command: 'bash model/tlc.sh'
+    script: 'bash model/tlc.sh && bun model/mutants.ts'
     inputs:
       - 'model/**/*'
     options:

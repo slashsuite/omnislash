@@ -82,7 +82,7 @@ function Machine() {
         </Cluster>
         {/* A click in a box opens its list below; the keyboard reaches the same lists there. */}
         {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-        <div onClick={onDiagramClick} className="[&_[data-measure^='n:']]:cursor-pointer">
+        <div onClick={onDiagramClick} className="[&_[data-measure^='n:']]:cursor-pointer [&_div:has(>[data-measure^='l:'])]:cursor-pointer">
           <RoleMachine tickets={view.rows} />
         </div>
         <StateTickets states={DEFINITION.states} tickets={view.rows} open={open} onToggle={toggle} onOpenTicket={setOpenId} />

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ApiClient, ApiError, OMNISLASH_ROUTE, PROJECT_STATUS_ROUTE, ROLE_ROUTE } from "../src/api/client.ts";
+import { ApiClient, ApiError, OMNISLASH_ROUTE, PROJECT_STATUS_ROUTE, ROLE_ROUTE, SPINOFF_PHASE_ROUTE } from "../src/api/client.ts";
 import {
   ACCESS_CLIENT_ID_ENV,
   ACCESS_CLIENT_SECRET_ENV,
@@ -331,7 +331,7 @@ describe("project status routes go to the role server (OS-189)", () => {
     for (const route of ["/next?project=aq", "/spinoffs?status=building", "/projects/aq/edit"]) {
       expect(PROJECT_STATUS_ROUTE.test(route), route).toBe(true);
     }
-    for (const route of ["/projectsx", "/nextx", "/spinoffs/claim", "/spinoffs/phase", "/spinoffs/launchablex", "/items"]) {
+    for (const route of ["/projectsx", "/nextx", "/spinoffs/tokens", "/spinoffs/phase", "/spinoffs/launchablex", "/items"]) {
       expect(PROJECT_STATUS_ROUTE.test(route), route).toBe(false);
     }
   });
@@ -352,8 +352,8 @@ describe("project status routes go to the role server (OS-189)", () => {
   test("the other spinoff routes stay on the main server", async () => {
     process.env[ROLE_API_ENV] = role.url;
     const client = new ApiClient({ base: main.url, token: TOKEN });
-    await client.setSpinoffPhase({ id: 1, phase: "gating" }).catch(() => undefined);
-    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/spinoffs/phase"]);
+    await client.landSpinoff({ id: 1 } as never).catch(() => undefined);
+    expect(main.seen.map((s) => s.path)).toEqual(["/api/ob/spinoffs/land"]);
     expect(role.seen).toEqual([]);
   });
 
@@ -377,6 +377,36 @@ const OMNISLASH_CALLS: Array<{ method: string; path: string; call: Call }> = [
   { method: "GET", path: "/api/ob/tags", call: (c) => c.tagCounts() },
 ];
 
+
+describe("the spinoff writes that set a phase, and the moves into building, go to the role server (OS-285)", () => {
+  const PHASE_CALLS: Array<{ path: string; call: (c: ApiClient) => Promise<unknown> }> = [
+    { path: "/api/ob/spinoffs/phase", call: (c) => c.setSpinoffPhase({ id: 1, phase: "pr_ci" }) },
+    { path: "/api/ob/spinoffs/ready", call: (c) => c.readySpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/sendback", call: (c) => c.sendBackSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/verdict", call: (c) => c.recordSpinoffVerdict({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/claim", call: (c) => c.claimSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/stamp", call: (c) => c.stampSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/reopen", call: (c) => c.reopenSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/resume", call: (c) => c.resumeSpinoff({ id: 1 } as never) },
+  ];
+
+  test("the matcher takes each phase write and move into building, and no other spinoff route", () => {
+    for (const route of ["/spinoffs/phase", "/spinoffs/ready", "/spinoffs/sendback", "/spinoffs/verdict", "/spinoffs/claim", "/spinoffs/stamp", "/spinoffs/reopen", "/spinoffs/resume"]) {
+      expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(true);
+    }
+    for (const route of ["/spinoffs", "/spinoffs/land", "/spinoffs/trial", "/spinoffs/tokens", "/spinoffs/phasex", "/spinoffs/readyx"]) {
+      expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(false);
+    }
+  });
+
+  test("with a role base set, each phase write reaches the role server and nothing reaches the main one", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    for (const { call } of PHASE_CALLS) await call(client).catch(() => undefined);
+    expect(role.seen.map((s) => s.path)).toEqual(PHASE_CALLS.map((c) => c.path));
+    expect(main.seen).toEqual([]);
+  });
+});
 describe("overnight and tag count routes go to the role server (OS-252)", () => {
   test("the matcher takes every overnight route and the tag counts, and nothing near them", () => {
     for (const route of ["/overnight/backfill", "/overnight/runs?project=os", "/tags", "/tags?project=os"]) {

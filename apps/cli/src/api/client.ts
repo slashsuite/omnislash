@@ -591,6 +591,17 @@ export const PROJECT_STATUS_ROUTE = /^\/(projects|next)(\/|\?|$)|^\/spinoffs(\/l
  */
 export const OMNISLASH_ROUTE = /^\/overnight(\/|\?|$)|^\/tags(\?|$)/;
 
+/**
+ * OS-285: the spinoff writes that set `spinoff.phase` (OS-183), which the omnibus server on CT 130 does not write:
+ * `/spinoffs/phase` (it does not serve it), the handoff (`/spinoffs/ready`, gating or owner_merge_call), the send-back
+ * (`/spinoffs/sendback`, updating_pr), the verdict, and every move into building (`claim`, `stamp`, `reopen`, `resume`),
+ * which must clear or keep the phase on purpose: building holds phases, so a stale one would read back. The dashboard reads
+ * the phase, so they go to the same server as the role routes, which shares the database (the enqueue already does, OS-189).
+ * The moves out of building and handed-off (land, `ob close`, a fail, a trial verdict) may stay on CT 130: a phase the row's
+ * status does not hold reads as null (heldPhase, spinoff-phase.ts).
+ */
+export const SPINOFF_PHASE_ROUTE = /^\/spinoffs\/(phase|ready|sendback|verdict|claim|stamp|reopen|resume)(\?|$)/;
+
 export class ApiClient {
 	private readonly base: string;
 	private readonly roleOption: string | null | undefined;
@@ -619,11 +630,11 @@ export class ApiClient {
 
 	/**
 	 * OS-76: the server a route is sent to. Only a team role route (or, OS-189, a project status route, or, OS-252, an
-	 * overnight or tag count route) can go to the role base, and the role base is read on the first such call (not at
+	 * overnight or tag count route, or, OS-285, a spinoff phase write) can go to the role base, and the role base is read on the first such call (not at
 	 * construction), so a bad role setting fails those routes and nothing else.
 	 */
 	private baseFor(route: string): string {
-		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route) && !OMNISLASH_ROUTE.test(route)) return this.base;
+		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route) && !OMNISLASH_ROUTE.test(route) && !SPINOFF_PHASE_ROUTE.test(route)) return this.base;
 		return this.roleBaseUrl() ?? this.base;
 	}
 

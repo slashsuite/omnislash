@@ -5,6 +5,7 @@ stateDiagram-v2
     state "Exploring the design (muse)" as exploring
     state "Is the thought complete? (owner)" as confirm_complete
     state "Parked idea (tag idea) (muse)" as parked_idea
+    state "Backlog (open, not drilled yet) (architect)" as backlog
     state "Drilling (## Drilled, ## Done when) (architect)" as drilling
     state "Blind check (measure twice) (reviewer)" as checking
     state "Planning call only the owner can make (owner)" as owner_plan_call
@@ -25,14 +26,17 @@ stateDiagram-v2
     [*] --> exploring
     exploring --> confirm_complete: looks whole
     confirm_complete --> exploring: no, keep going
-    confirm_complete --> drilling: yes, ticket it
+    confirm_complete --> backlog: yes, ticket it
     exploring --> parked_idea: note a raw idea
     parked_idea --> confirm_complete: picks it up
+    backlog --> drilling: drill it
     drilling --> checking: seal score, run checker
     checking --> queued: go, ob spinoff
     checking --> drilling: no-go, change ticket
     drilling --> owner_plan_call: owner's call
     owner_plan_call --> drilling: answer
+    backlog --> spike: only by trying
+    backlog --> queued: no-check with reason
     drilling --> spike: only by trying
     spike --> drilling: answers on parent
     spike --> closed: spike closed

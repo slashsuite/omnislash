@@ -8,7 +8,7 @@ import { listAgents } from "../../../../platform/cli-coord/src/agent.ts";
 import { builderIdOf, legRef, rowStateText } from "../../../../platform/cli-coord/src/clean-repo.ts";
 import { listSpinoffs, rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { currentCheckVerdicts } from "../../../../platform/cli-coord/src/spinoff-check.ts";
-import { isSpikeTagged } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
+import { isSpikeTagged, sectionItems } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
 import { providedStore } from "../../provided-store.ts";
 import { inFlight, landed, machineStamp, phaseOf, placeOpen, placeRow, type MachineItem, type MachineRow, type MachineView } from "../lib/machine.ts";
 
@@ -70,7 +70,7 @@ async function machineView(): Promise<MachineView> {
     itemId: i.id,
     ref: i.ref ?? i.id,
     title: i.title,
-    state: placeOpen({ tags: openTags.get(i.id) ?? [], check: checks.get(i.id) ?? null }),
+    state: placeOpen({ tags: openTags.get(i.id) ?? [], check: checks.get(i.id) ?? null, drilled: sectionItems(i.body, "Drilled").length > 0 }),
   }));
   return { rows: [...rows, ...planning], stamp: machineStamp(spinoffs, agents, itemStamp, await decisionsStamp(store)) };
 }

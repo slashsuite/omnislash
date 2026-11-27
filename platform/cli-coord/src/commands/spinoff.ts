@@ -8,7 +8,7 @@ import type { Ctx } from "../../../../apps/cli/src/ctx.ts";
 import { UsageError, AppError, TransitionRefused } from "../../../../apps/cli/src/errors.ts";
 import { SPINOFF_TRANSITIONS, spinoffMachine, type SpinoffEvent } from "../../../state-machine/src/spinoff.ts";
 import { applyMove } from "../../../state-machine/src/apply.ts";
-import { PHASE_EVENT, PHASE_ON_MOVE, PHASES_BY_STATUS, SPINOFF_PHASES, isSpinoffPhase, phaseOfState, phaseStateOf, spinoffPhaseMachine, type SpinoffPhase } from "../../../state-machine/src/spinoff-phase.ts";
+import { PHASE_EVENT, PHASE_ON_MOVE, PHASES_BY_STATUS, SPINOFF_PHASES, heldPhase, isSpinoffPhase, phaseOfState, phaseStateOf, spinoffPhaseMachine, type SpinoffPhase } from "../../../state-machine/src/spinoff-phase.ts";
 import { recordEventFor } from "../../../../apps/cli/src/events.ts";
 import { MACHINE_SHADOW_SOURCE, MACHINE_WOULD_REFUSE } from "../../../../apps/cli/src/machine-shadow.ts";
 import type { RefusalWhy } from "../../../state-machine/src/decide.ts";
@@ -612,11 +612,10 @@ export async function setSpinoffPhase(
   const moved = await applyMove<SpinoffRow>(spinoffPhaseMachine, {
     event,
     read: async () => {
-      const r = await getSpinoffRow(s, id);
+      const r = await storedSpinoffRow(s, id);
       if (!r) return null;
       stored = r.phase ?? null;
-      const held = (PHASES_BY_STATUS[r.status as SpinoffStatus] ?? []) as readonly string[];
-      return phaseStateOf(r.status, stored !== null && held.includes(stored) ? stored : null);
+      return phaseStateOf(r.status, heldPhase(r.status, stored));
     },
     write: async (state, to) => {
       const status = state.split("/")[0] ?? state;
@@ -651,8 +650,14 @@ async function recordPhaseRefusal(s: Store, id: number, from: string, phase: Spi
   }
 }
 
-/** The stored row by id, or null. */
+/** The stored row by id, or null; its phase as read (readPhase). */
 export async function getSpinoffRow(db: Database | Store, id: number): Promise<SpinoffRow | null> {
+  const row = await storedSpinoffRow(db, id);
+  return row ? readPhase(row) : null;
+}
+
+/** The row exactly as stored, a stale phase included: for a write guarded on the stored phase. */
+async function storedSpinoffRow(db: Database | Store, id: number): Promise<SpinoffRow | null> {
   const s = asStore(db);
   const rows = (await s.q.select().from(s.t.spinoff).where(eq(s.t.spinoff.id, id)).limit(1)) as SpinoffRow[];
   return rows[0] ?? null;
@@ -1093,7 +1098,12 @@ export async function listSpinoffs(db: Database | Store, status?: string): Promi
   const filtered = status ? q.where(eq(s.t.spinoff.status, status)) : q;
   // id is the primary key, so it is NOT NULL and DESC orders identically on both engines (the NULLS
   // FIRST/LAST split only shows up on a nullable ordering column).
-  return (await filtered.orderBy(desc(s.t.spinoff.id))) as SpinoffRow[];
+  return ((await filtered.orderBy(desc(s.t.spinoff.id))) as SpinoffRow[]).map(readPhase);
+}
+
+/** OS-285: a row as read, its phase null when its status does not hold it (heldPhase). */
+function readPhase(row: SpinoffRow): SpinoffRow {
+  return row.phase == null || heldPhase(row.status, row.phase) !== null ? row : { ...row, phase: null };
 }
 
 /**
@@ -1243,6 +1253,10 @@ export function storeConflictSource(db: Database | Store): ConflictSource {
     note: async (side, text) => {
       const id = side.item_id ?? (await ticketItemIdFor(db, side.ref));
       if (id) await appendNote(db, id, text);
+    },
+    priority: async (side) => {
+      const id = side.item_id ?? (await ticketItemIdFor(db, side.ref));
+      return id ? ((await getItem(db, id))?.priority ?? null) : null;
     },
   };
 }
