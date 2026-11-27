@@ -27,7 +27,7 @@ test("each in-flight row sits in its state, and the one that waits on a person i
   await expect(page.getByText(/^3 in flight · \d+ in planning$/)).toBeVisible();
   await expect(dot(page, MACHINE_ROWS.queued.title, "Waiting for a builder")).toHaveCount(1);
   await expect(dot(page, MACHINE_ROWS.handed.title, "Waiting for the sentinel")).toHaveCount(1);
-  await expect(dot(page, MACHINE_ROWS.failed.title, "Abandoned")).toHaveCount(1);
+  await expect(dot(page, MACHINE_ROWS.failed.title, "Work stopped")).toHaveCount(1);
   // The failed end and the owner's planning call are the states a person must act on.
   await expect(page.getByText("2 need a person", { exact: true })).toBeVisible();
 });
@@ -45,7 +45,7 @@ test("a claim from the CLI moves its dot to launching without a reload", async (
 
 test("closing a failed row's ticket from the CLI takes its dot off without a reload", async ({ page }) => {
   await openPage(page, "/machine");
-  const failed = dot(page, MACHINE_ROWS.failed.title, "Abandoned");
+  const failed = dot(page, MACHINE_ROWS.failed.title, "Work stopped");
   await expect(failed).toHaveCount(1);
   // The dot's name starts with its ticket ref ("OS-12 <title>, in ..."), which is what `ob close` takes.
   const name = await failed.evaluate((el) => el.getAttribute("aria-label") ?? el.textContent ?? "");

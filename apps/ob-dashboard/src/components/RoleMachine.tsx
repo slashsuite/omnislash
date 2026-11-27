@@ -87,7 +87,7 @@ function StateCard({
                 title={`${t.ref} ${t.title}`}
                 aria-label={`${t.ref} ${t.title}, in ${state.label}`}
                 onClick={() => onOpenTicket?.(t.ref)}
-                className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-1.5 font-mono text-xs text-slate-700 hover:bg-slate-100"
+                className="cursor-pointer rounded-full border border-slate-200 bg-slate-50 px-1.5 font-mono text-sm text-slate-700 hover:bg-slate-100"
               >
                 {t.ref}
               </button>
@@ -96,11 +96,11 @@ function StateCard({
           {rest > 0 && (
             <li>
               {onOpenState ? (
-                <button type="button" onClick={() => onOpenState(state.id)} className="cursor-pointer px-1 text-xs text-slate-500 hover:underline" aria-label={`${rest} more in ${state.label}`}>
+                <button type="button" onClick={() => onOpenState(state.id)} className="cursor-pointer px-1 text-sm text-slate-500 hover:underline" aria-label={`${rest} more in ${state.label}`}>
                   +{rest}
                 </button>
               ) : (
-                <span className="px-1 text-xs text-slate-500">+{rest}</span>
+                <span className="px-1 text-sm text-slate-500">+{rest}</span>
               )}
             </li>
           )}
@@ -109,7 +109,7 @@ function StateCard({
       {state.moves.length > 0 && (
         <ul aria-label={`Moves from ${state.label}`} className="flex flex-col gap-1 border-t border-slate-100 pt-1.5">
           {state.moves.map((m) => (
-            <li key={`${m.to}:${m.label}`} className="flex items-baseline gap-1.5 text-xs leading-snug">
+            <li key={`${m.to}:${m.label}`} className="flex items-baseline gap-1.5 text-sm leading-snug">
               <Swatch className={`translate-y-[-1px] ${roleColour(m.actor)}`} />
               <span className="min-w-0">
                 <span className="text-slate-700">{m.label}</span>
@@ -156,7 +156,7 @@ export function RoleMachine({
         ))}
         {stages.map((stage, c) => (
           <div key={stage} role="group" aria-label={`${STAGE_NAMES[stage]} stage`} className="contents">
-            <h3 style={at(1, c + 2)} className={`mt-3 border-b border-slate-200 pb-1 text-xs font-semibold tracking-wide text-slate-500 uppercase @4xl:mt-0 ${PLACED}`}>
+            <h3 style={at(1, c + 2)} className={`mt-3 border-b border-slate-200 pb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase @4xl:mt-0 ${PLACED}`}>
               {STAGE_NAMES[stage]}
             </h3>
             {lanes.map((role, r) => {
@@ -164,7 +164,7 @@ export function RoleMachine({
               if (states.length === 0) return null;
               return (
                 <div key={`${role}-${stage}`} style={at(r + 2, c + 2)} className={`flex flex-col gap-1.5 @4xl:py-2 ${PLACED}`}>
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 @4xl:hidden">
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 @4xl:hidden">
                     <Swatch className={roleColour(role)} />
                     {ROLE_NAMES[role]}
                   </span>

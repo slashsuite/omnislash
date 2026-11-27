@@ -54,7 +54,6 @@ async function machineView(): Promise<MachineView> {
       phase: phaseOf(row as { phase?: unknown }),
       builderStatus: statusOf.get(builderIdOf(row)) ?? null,
       spike: isSpikeTagged(tags.get(item.id) ?? []),
-      error: row.error ?? null,
       verdict: row.status === "ready-for-gate" ? verdictOf(row) : null,
     }),
   }));

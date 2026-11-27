@@ -32,14 +32,14 @@
     { "id": "building", "label": "Builder builds", "role": "builder", "stage": "build", "human_required": false, "terminal": false },
     { "id": "reviewing", "label": "Reviewer challenges the diff", "role": "reviewer", "stage": "build", "human_required": false, "terminal": false },
     { "id": "pr_ci", "label": "Builder waits on CI", "role": "builder", "stage": "build", "human_required": false, "terminal": false },
-    { "id": "owner_call", "label": "Owner unblocks the builder", "role": "owner", "stage": "build", "human_required": true, "terminal": false },
+    { "id": "owner_call", "label": "Owner unblocks or signs off the build", "role": "owner", "stage": "build", "human_required": true, "terminal": false },
     { "id": "partial", "label": "Builder stopped short", "role": "builder", "stage": "build", "human_required": false, "terminal": false },
     { "id": "handed_off", "label": "Waiting for the sentinel", "role": "sentinel", "stage": "ship", "human_required": false, "terminal": false },
     { "id": "gating", "label": "Sentinel checks the PR", "role": "sentinel", "stage": "ship", "human_required": false, "terminal": false },
     { "id": "updating_pr", "label": "Builder fixes what was sent back", "role": "builder", "stage": "ship", "human_required": false, "terminal": false },
     { "id": "owner_merge_call", "label": "Owner makes the merge call", "role": "owner", "stage": "ship", "human_required": true, "terminal": false },
     { "id": "closed", "label": "Shipped", "role": "sentinel", "stage": "done", "human_required": false, "terminal": true },
-    { "id": "failed", "label": "Abandoned", "role": "system", "stage": "done", "human_required": false, "terminal": true }
+    { "id": "failed", "label": "Work stopped", "role": "system", "stage": "done", "human_required": false, "terminal": true }
   ],
   "transitions": [
     { "from": "exploring", "to": "confirm_complete", "label": "idea looks complete", "event": "thought looks whole; muse asks with the question tool", "actor": "muse", "source": "skills/ob-muse/SKILL.md:22" },

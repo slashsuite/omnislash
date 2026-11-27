@@ -34,7 +34,7 @@ describe("RoleMachine (OS-187, OS-261)", () => {
     expect(back.textContent).toContain("gaps found, revise, by the reviewer, → Architect shapes the ticket");
     // The two ends have no moves.
     expect(within(card("Shipped")).queryByRole("list", { name: /^Moves from/ })).toBeNull();
-    expect(within(card("Abandoned")).queryByRole("list", { name: /^Moves from/ })).toBeNull();
+    expect(within(card("Work stopped")).queryByRole("list", { name: /^Moves from/ })).toBeNull();
   });
 
   it("puts a ticket on its state with a live count, and opens it or its state's list on a click", () => {
@@ -45,16 +45,16 @@ describe("RoleMachine (OS-187, OS-261)", () => {
       ...Array.from({ length: 8 }, (_, i) => ({ ref: `OS-${300 + i}`, title: `Backlog ${i}`, state: "backlog" })),
     ];
     render(<RoleMachine tickets={tickets} onOpenState={onOpenState} onOpenTicket={onOpenTicket} />);
-    const owner = card("Owner unblocks the builder");
+    const owner = card("Owner unblocks or signs off the build");
     expect(within(owner).getByLabelText("1 ticket")).toBeTruthy();
-    fireEvent.click(within(owner).getByRole("button", { name: "OS-170 Empty state, in Owner unblocks the builder" }));
+    fireEvent.click(within(owner).getByRole("button", { name: "OS-170 Empty state, in Owner unblocks or signs off the build" }));
     expect(onOpenTicket).toHaveBeenCalledWith("OS-170");
     const backlog = card("Waiting to be shaped");
     expect(within(backlog).getByLabelText("8 tickets")).toBeTruthy();
     expect(within(backlog).getAllByRole("button", { name: /, in Waiting to be shaped$/ })).toHaveLength(6);
     fireEvent.click(within(backlog).getByRole("button", { name: "2 more in Waiting to be shaped" }));
     expect(onOpenState).toHaveBeenCalledWith("backlog");
-    fireEvent.click(within(owner).getByRole("button", { name: "List the tickets in Owner unblocks the builder" }));
+    fireEvent.click(within(owner).getByRole("button", { name: "List the tickets in Owner unblocks or signs off the build" }));
     expect(onOpenState).toHaveBeenCalledWith("owner_call");
     // An empty state has no list to open.
     expect(within(card("Builder builds")).getByLabelText("0 tickets")).toBeTruthy();

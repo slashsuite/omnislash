@@ -6,7 +6,7 @@ import { roleDefinition } from "./role-machine.ts";
 // OS-165: the Machine page's placement of in-flight spinoff rows on the role machine, and its live stamp.
 
 const ROLE_STATES = new Set(machine.states.map((s) => s.id));
-const base = { phase: null, builderStatus: null, spike: false, error: null } as const;
+const base = { phase: null, builderStatus: null, spike: false } as const;
 
 describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
   it("has a base placement for every row status, and each one exists in the machine", () => {
@@ -40,10 +40,9 @@ describe("placeRow (OS-165, section 7 of the role machine doc)", () => {
     expect(placeRow({ ...base, status: "ready-for-gate", phase: "owner_merge_call" })).toBe("owner_merge_call");
   });
 
-  it("draws a spike's build on the spike state, and a spike that ended back on drilling (OS-261)", () => {
+  it("draws a spike's build on the spike state, and a failed spike on failed", () => {
     for (const status of ["pending", "launching", "launched"]) expect(placeRow({ ...base, status, spike: true })).toBe("spike");
-    expect(placeRow({ ...base, status: "failed", spike: true, error: "spike: answered" })).toBe("drilling");
-    expect(placeRow({ ...base, status: "failed", spike: true, error: "launch refused" })).toBe("failed");
+    expect(placeRow({ ...base, status: "failed", spike: true })).toBe("failed");
   });
 
   it("puts a handed-off row whose verdict is needs-human on the owner's merge call, a human state", () => {
@@ -100,6 +99,10 @@ describe("inFlight (OS-165)", () => {
   it("does not bring an older row back when the newest one was abandoned", () => {
     const rows = [row({ id: 1, status: "failed", error: "launch refused" }), row({ id: 2, status: "failed", error: "abandoned: retired" })];
     expect(inFlight(rows, items)).toEqual([]);
+  });
+
+  it("leaves out a spike that has ended, so a reopened spike ticket is back in planning (OS-261)", () => {
+    expect(inFlight([row({ id: 1, status: "failed", error: "spike: answered" })], items)).toEqual([]);
   });
 
   it("keeps one row per leg of a model trial", () => {

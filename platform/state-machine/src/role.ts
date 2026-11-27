@@ -94,7 +94,7 @@ const MIRRORED: Readonly<Record<MirroredState, Omit<RoleStateMeta, "stored">>> =
   gating: { label: "Sentinel checks the PR", role: "sentinel", stage: "ship", human_required: false },
   updating_pr: { label: "Builder fixes what was sent back", role: "builder", stage: "ship", human_required: false },
   owner_merge_call: { label: "Owner makes the merge call", role: "owner", stage: "ship", human_required: true },
-  failed: { label: "Abandoned", role: "system", stage: "done", human_required: false },
+  failed: { label: "Work stopped", role: "system", stage: "done", human_required: false },
 };
 
 /**
@@ -131,7 +131,7 @@ const STATES: readonly StateDef[] = [
   mirrored("building"),
   mirrored("reviewing"),
   mirrored("pr_ci"),
-  { id: "owner_call", label: "Owner unblocks the builder", role: "owner", stage: "build", human_required: true, stored: row("launched") },
+  { id: "owner_call", label: "Owner unblocks or signs off the build", role: "owner", stage: "build", human_required: true, stored: row("launched") },
   { id: "partial", label: "Builder stopped short", role: "builder", stage: "build", human_required: false, stored: row("launched") },
   mirrored("handed_off"),
   mirrored("gating"),

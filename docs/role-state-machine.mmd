@@ -15,14 +15,14 @@ stateDiagram-v2
     state "Builder builds (builder)" as building
     state "Reviewer challenges the diff (reviewer)" as reviewing
     state "Builder waits on CI (builder)" as pr_ci
-    state "Owner unblocks the builder (owner)" as owner_call
+    state "Owner unblocks or signs off the build (owner)" as owner_call
     state "Builder stopped short (builder)" as partial
     state "Waiting for the sentinel (sentinel)" as handed_off
     state "Sentinel checks the PR (sentinel)" as gating
     state "Builder fixes what was sent back (builder)" as updating_pr
     state "Owner makes the merge call (owner)" as owner_merge_call
     state "Shipped (sentinel)" as closed
-    state "Abandoned (system)" as failed
+    state "Work stopped (system)" as failed
     [*] --> exploring
     exploring --> confirm_complete: idea looks complete
     confirm_complete --> exploring: needs more thought
