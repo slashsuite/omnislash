@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { freshDbPath, runCli } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { T3Error, type T3LaunchInput, type T3SendInput, type T3Thread } from "../../../apps/cli/src/t3/client.ts";
-import { __setT3Seam, storeAgentRegistry, worktreeRepoOf, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
+import { __setT3Seam, storeAgentRegistry, teamHandoffRequestMessage, worktreeRepoOf, type T3Seam } from "../../../apps/cli/src/t3/dispatch.ts";
 import { checkoutOf } from "../../../apps/cli/src/commands/t3-team.ts";
 import { busyReason, restartTeamRole, restartTeams, type RestartBackend } from "../../../apps/cli/src/team-restart.ts";
 import { consumeTeamHandoff, latestTeamHandoff, recordTeamHandoff } from "../../../apps/cli/src/team-handoff.ts";
@@ -805,6 +805,60 @@ describe("a retired seat stays retired (OS-212)", () => {
     expect(f.sends[1]).toMatchObject({ threadId: "new-1", mode: "queue", clientRequestId: "ob-retired-move-thr-a-q0" });
     expect(f.sends[1]!.message).toBe("Moved from the retired thread thr-a:\n\nx");
     expect(cancelled).toEqual(["thr-a/q0"]);
+    db.close();
+  });
+
+  test("a handoff request still queued in the old thread is withdrawn, never moved to the new one (OS-249)", async () => {
+    // A second restart (or a --force re-run) asked thr-a again; that ask is still queued when the first restart moves
+    // thr-a's queue. Moved, it would tell new-1 to hand off and delete its scheduled tasks (TeamRestart.tla, NoStrayHandoff).
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const ask = teamHandoffRequestMessage("omni", "architect");
+    let held: { queuedRunId: string; text: string }[] = [];
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      held = [{ queuedRunId: "q0", text: ask }, { queuedRunId: "q1", text: "for the seat" }];
+    });
+    const cancelled: string[] = [];
+    f.seam.queue = async (id) => ({ items: (id === "thr-a" ? held : []).map((m) => ({ ...m, truncated: false })) as never, complete: true });
+    f.seam.queueCancel = async (id, runId) => {
+      cancelled.push(`${id}/${runId}`);
+      held = held.filter((m) => m.queuedRunId !== runId);
+    };
+    const out = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", { seam: f.seam, self: null, log: () => {} });
+    expect(out.result).toBe("restarted");
+    const moved = f.sends.filter((s) => s.message.startsWith("Moved from"));
+    expect(moved.map((s) => s.message)).toEqual(["Moved from the retired thread thr-a:\n\nfor the seat"]);
+    expect(f.sends.filter((s) => s.threadId === "new-1" && s.message.includes(ask))).toEqual([]);
+    expect(cancelled).toEqual(["thr-a/q0", "thr-a/q1"]);
+    db.close();
+  });
+
+  test("a retired notice still queued in the old thread stays there, never moved to the new one (OS-249)", async () => {
+    // An earlier run queued the notice and its settle ran out; moved, it would tell the seat's current thread it is
+    // retired (TeamRestart.tla, NoNoticeToSeat). The old thread runs it, so its queue drains after the move.
+    const { dbPath } = await seededTeam({ architect: "thr-a" });
+    const db = openDb(dbPath);
+    const notice = "This thread is retired: the current omni architect is [x](t3-thread://v1/new-0).";
+    let held: { queuedRunId: string; text: string }[] = [];
+    const f = fakeT3([thread("thr-a")], async () => {
+      await recordTeamHandoff(db, { team: "omni", role: "architect", body: "carry on" });
+      held = [{ queuedRunId: "q0", text: notice }, { queuedRunId: "q1", text: "for the seat" }];
+    });
+    const cancelled: string[] = [];
+    f.seam.queue = async (id) => {
+      // once the move has run (q1 withdrawn), the old thread runs the notice and its queue drains
+      if (id === "thr-a" && cancelled.includes("thr-a/q1")) held = held.filter((m) => m.text !== notice);
+      return { items: (id === "thr-a" ? held : []).map((m) => ({ ...m, truncated: false })) as never, complete: true };
+    };
+    f.seam.queueCancel = async (id, runId) => {
+      cancelled.push(`${id}/${runId}`);
+      held = held.filter((m) => m.queuedRunId !== runId);
+    };
+    const out = await restartTeamRole(backendOf(db), (await backendOf(db).show("omni"))!, "architect", { seam: f.seam, self: null, log: () => {} });
+    expect(out.result).toBe("restarted");
+    expect(f.sends.filter((s) => s.message.startsWith("Moved from")).map((s) => s.message)).toEqual(["Moved from the retired thread thr-a:\n\nfor the seat"]);
+    expect(cancelled).toEqual(["thr-a/q1"]);
     db.close();
   });
 });

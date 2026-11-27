@@ -69,13 +69,16 @@ export interface RestartOptions {
 export const RESTART_DEFAULT_TIMEOUT_MS = 15 * 60_000;
 const RETIRE_DEFAULT_TIMEOUT_MS = 10 * 60_000;
 
+/** The first words of the retired notice, so a re-run's move can tell one still queued (OS-249). */
+const RETIRED_NOTICE_PREFIX = "This thread is retired: the current ";
+
 /**
  * OS-212: the line a retired seat thread is sent before it is settled, so whoever opens it later sees where the seat
  * went. The link is T3's documented shape for handing a human a thread. Pure.
  */
 function retiredNoticeMessage(team: string, role: TeamRole, newThreadId: string, title: string): string {
   return [
-    `This thread is retired: the current ${team} ${role} is [${title}](t3-thread://v1/${newThreadId}).`,
+    `${RETIRED_NOTICE_PREFIX}${team} ${role} is [${title}](t3-thread://v1/${newThreadId}).`,
     "",
     "Do no more work here and run nothing: reply with the one word `retired` and end your turn. ob settles this thread next.",
     `Anything meant for this seat goes to the current thread: \`ob t3 team forward ${team} --role ${role} --body-file <file>\`.`,
@@ -136,8 +139,14 @@ async function settleWhenIdle(
  * OS-212: move what a retiring thread still holds queued to the seat's current thread, then withdraw it there, so a
  * message sent to the old seat is neither lost nor run by a thread that no longer holds it. Returns one line per
  * problem; never throws.
+ *
+ * OS-249: a queued handoff request (`handoffAsk`, the text step (b) sends) is withdrawn and never moved. One is still
+ * queued when a second restart asked the same thread, or a --force re-run asked again; moved, it would tell the
+ * replacement to hand off and delete its own scheduled tasks. TLC found this (model/TeamRestart.tla, NoStrayHandoff).
+ * A queued retired notice stays where it is: an earlier run's notice is still queued when its settle ran out and a
+ * re-run resumes the retire, and moved, it would tell the seat's current thread it is retired (NoNoticeToSeat).
  */
-async function moveQueuedMessages(seam: T3Seam, fromThreadId: string, toThreadId: string): Promise<{ moved: number; problems: string[] }> {
+async function moveQueuedMessages(seam: T3Seam, fromThreadId: string, toThreadId: string, handoffAsk: string): Promise<{ moved: number; problems: string[] }> {
   const problems: string[] = [];
   let moved = 0;
   let items: Awaited<ReturnType<T3Seam["queue"]>>["items"];
@@ -147,6 +156,15 @@ async function moveQueuedMessages(seam: T3Seam, fromThreadId: string, toThreadId
     return { moved, problems: [`could not read ${fromThreadId}'s queue (${(err as Error).message}); anything it holds stays there`] };
   }
   for (const m of items) {
+    if (m.text === handoffAsk) {
+      try {
+        await seam.queueCancel(fromThreadId, m.queuedRunId);
+      } catch (err) {
+        problems.push(`queued handoff request ${m.queuedRunId} was not withdrawn from ${fromThreadId} (${(err as Error).message})`);
+      }
+      continue;
+    }
+    if (m.text.startsWith(RETIRED_NOTICE_PREFIX)) continue;
     if (m.truncated) {
       // T3 read it back cut short: it stays queued whole, and the retired thread forwards it (its skill says so).
       problems.push(`queued message ${m.queuedRunId} is longer than T3's queue read: left queued in ${fromThreadId}, which forwards it`);
@@ -283,7 +301,7 @@ type RetireOptions = {
  * Never throws; `settled: false` names why.
  */
 async function retireThread(seam: T3Seam, o: RetireOptions): Promise<SettleWhenIdleOutcome> {
-  const moved = await moveQueuedMessages(seam, o.oldThreadId, o.newThreadId);
+  const moved = await moveQueuedMessages(seam, o.oldThreadId, o.newThreadId, teamHandoffRequestMessage(o.team, o.role));
   if (moved.moved) o.log(`moved ${moved.moved} queued message(s) from ${o.oldThreadId} to ${o.newThreadId}`);
   for (const p of moved.problems) o.log(p);
   try {
