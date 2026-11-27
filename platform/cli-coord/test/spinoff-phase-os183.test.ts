@@ -61,10 +61,10 @@ describe("OS-183 spinoff.phase", () => {
     const { d } = dbAt();
     const id = await rowAt(d, "launched");
     const seen: (string | null)[] = [];
-    // skeptical review start (the review skill runs `ob spinoff phase <ref> reviewing`)
+    // skeptical review start (`ob review run` runs `ob spinoff phase <ref> reviewing`, review-run.ts)
     await setSpinoffPhase(d, id, "reviewing");
     seen.push(await phaseOf(d, id));
-    // PR opened (the land step runs `ob spinoff phase <ref> pr_ci` after `gh pr create`)
+    // PR opened (pr-wait, run after `gh pr create`, runs `ob spinoff phase <id> pr_ci`: pr-wait-phase-os285.test.ts)
     await setSpinoffPhase(d, id, "pr_ci");
     seen.push(await phaseOf(d, id));
     // ob spinoff handoff

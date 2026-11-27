@@ -71,6 +71,8 @@ It prints one line per real event and exits: `0` when the `--until` condition is
 needs action (a check failed, a failed PixelSlash status included, conflicts, BEHIND, closed); `green` and `ready` print a `PixelSlash review owed:` line for each pending PixelSlash status before the last line, `2` on bad input or when another `pr-wait` already watches
 the PR. Run it under a monitor, or as one long command; it ends on its own. Start it again after a push or a resume;
 it remembers what it already reported. A second `pr-wait` on the same PR exits at once. Do not start a second one.
+On start it moves a building spinoff row whose branch is the PR head to phase `pr_ci` (OS-285); a handed-off row is
+left alone, so the architect's watch changes nothing.
 
 **Only the architect runs it as a watch**, and never beside `watch_pull_request` on the same PR. The one builder use is the CI wait before its handoff: `pr-wait <N> --until green` in the foreground (`ob-spinoff` §3).
 
