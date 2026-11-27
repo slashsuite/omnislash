@@ -35,6 +35,10 @@ export interface LegRecord {
   kind: LegKind | null;
   model: string | null;
   variant: string | null;
+  /**
+   * Which stand-in ran: a spinoff's models profile, or for a review leg (OS-295) the fallback reader from its
+   * route that took the attempt. Null on the leg's own first attempt.
+   */
   profile: string | null;
   cwd: string;
   start: string;
@@ -47,7 +51,7 @@ export interface LegRecord {
   out_bytes: number;
   err_bytes: number;
   tokens: LegTokens | null;
-  /** The attempt ended on a credit or quota error, so it was retried on the next profile (or gave up). */
+  /** The attempt ended on a credit or quota error, so it was retried on the reader's route fallback (or gave up). */
   credit: boolean;
   /**
    * The attempt stopped on its turn cap (OB-2140): `max-turns` for the claude leg, `steps` for an OpenCode leg

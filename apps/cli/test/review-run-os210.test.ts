@@ -17,7 +17,7 @@ import {
   skillBrief,
   type ReviewRunDeps,
 } from "../src/review-run.ts";
-import { runAcrossProfiles } from "../../../skills/ob-skeptical-review/review-leg.ts";
+import { runAcrossFallbacks } from "../../../skills/ob-skeptical-review/review-leg.ts";
 
 const REPO = join(import.meta.dir, "../../..");
 const SKILL = readFileSync(join(REPO, "skills/ob-skeptical-review/SKILL.md"), "utf8");
@@ -161,6 +161,16 @@ describe("reviewRun", () => {
     expect(readRunRecords(env)).toHaveLength(1);
   });
 
+  test("OS-295: every leg it runs gets OB_REVIEW_NO_FALLBACK=1, so review-leg.ts never runs a reader's fallback (OS-247)", async () => {
+    const envs: Array<Record<string, string | undefined>> = [];
+    const { d } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", "opus-2": "score: 9/10" });
+    const leg = d.leg;
+    d.leg = async (reader, brief, outPath, legEnv) => (envs.push(legEnv), leg(reader, brief, outPath, legEnv));
+    await reviewRun("OS-1", {}, d);
+    expect(envs.length).toBe(2);
+    for (const e of envs) expect(e.OB_REVIEW_NO_FALLBACK).toBe("1");
+  });
+
   test("a round 1 that calls for it escalates to a second Opus seat, never neon, with the same brief and its own tokens", async () => {
     const { d, ran } = deps({ opus: "wrong: a.ts:1 x\nscore: 5/10", "opus-2": "ok\nscore: 9/10", neon: "score: 8/10" });
     const r = await reviewRun("OS-1", { complexity: "5" }, d);
@@ -252,19 +262,19 @@ describe("reviewRun", () => {
 
 test("review-leg.ts stamps each attempt with OB_REVIEW_RUN_ID, so the driver can read its tokens back", async () => {
   const recs: LegRecord[] = [];
-  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "score: 9/10", err: "", tokens: { input: 5, output: 1, reasoning: 0 } }), () => {}, { ...env, OB_REVIEW_RUN_ID: "os-1-r1-x" }, {
+  await runAcrossFallbacks("opus", ["opus"], async () => ({ code: 0, out: "score: 9/10", err: "", tokens: { input: 5, output: 1, reasoning: 0 } }), () => {}, { ...env, OB_REVIEW_RUN_ID: "os-1-r1-x" }, {
     record: (r) => recs.push(r),
     diff: null,
     readers: defaultReviewReaders(),
   });
   expect(recs[0]).toMatchObject({ run: "os-1-r1-x", tokens: { input: 5 } });
   const bare: LegRecord[] = [];
-  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, env, { record: (r) => bare.push(r), diff: null, readers: defaultReviewReaders() });
+  await runAcrossFallbacks("opus", ["opus"], async () => ({ code: 0, out: "", err: "" }), () => {}, env, { record: (r) => bare.push(r), diff: null, readers: defaultReviewReaders() });
   expect(bare[0]!.run).toBeUndefined();
   expect(bare[0]!.seat).toBeUndefined();
   // OS-247: a second seat stamps its seat, so its tokens are read back apart from the first seat's
   const seat: LegRecord[] = [];
-  await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_RUN_ID: "r", OB_REVIEW_SEAT: "  opus-2 " }, {
+  await runAcrossFallbacks("opus", ["opus"], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_RUN_ID: "r", OB_REVIEW_SEAT: "  opus-2 " }, {
     record: (r) => seat.push(r),
     diff: null,
     readers: defaultReviewReaders(),
@@ -273,7 +283,7 @@ test("review-leg.ts stamps each attempt with OB_REVIEW_RUN_ID, so the driver can
   // OS-248: a seat equal to the leg, or blank, stamps nothing
   for (const s of ["opus", "   "]) {
     const same: LegRecord[] = [];
-    await runAcrossProfiles("opus", [undefined], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_SEAT: s }, {
+    await runAcrossFallbacks("opus", ["opus"], async () => ({ code: 0, out: "", err: "" }), () => {}, { ...env, OB_REVIEW_SEAT: s }, {
       record: (r) => same.push(r),
       diff: null,
       readers: defaultReviewReaders(),

@@ -1,10 +1,9 @@
 // OB-1970: fall back to the next models profile when an account is out of credits.
 //
-// Three small pieces every caller shares (the spinoff launch, the run mirror's relaunch, the skeptical
+// Two small pieces every caller shares (the spinoff launch, the run mirror's relaunch, the skeptical
 // review legs and `ob models show`):
 //   - `creditErrorOf`: is this failure a credit or quota exhaustion? Provider error codes first, message
 //     text only as a named last resort. A rate limit, an auth failure or anything else is NOT one.
-//   - `profileOrder`: the active profile, then the file's `fallback` list in order.
 //   - the state file beside the models file (`models-state.json`): when each profile last hit a credit
 //     error, and which profiles each spinoff row has already been launched on. Local, not the DB.
 //
@@ -12,7 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { modelsFilePath, type ModelsFile } from "./models-file.ts";
+import { modelsFilePath } from "./models-file.ts";
 
 /** A credit hit counts as recent for this many hours (`ob models show` marks it). */
 export const CREDIT_HIT_WINDOW_HOURS = 6;
@@ -162,11 +161,6 @@ export function creditErrorOf(err: CreditErrorInput | null | undefined): CreditM
   const code = err.code?.trim().toLowerCase();
   if (code && (CREDIT_ERROR_CODES as readonly string[]).includes(code)) return { by: "code", match: code };
   return matchCreditMessage(err.message ?? "", false);
-}
-
-/** The profiles a launch tries, in order: the active one, then `fallback` (duplicates dropped). Pure. */
-export function profileOrder(file: ModelsFile): string[] {
-  return [...new Set([...(file.active ? [file.active] : []), ...file.fallback])];
 }
 
 // --- the state file ---------------------------------------------------------

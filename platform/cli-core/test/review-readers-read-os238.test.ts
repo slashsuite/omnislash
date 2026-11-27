@@ -12,7 +12,11 @@ describe("OS-238: the leg reads the configured readers or fails", () => {
   test("unreadable JSON throws", () => {
     expect(() => loadReaderSetting(env, () => ({ code: 0, out: "nope" }))).toThrow(ReaderSettingError);
   });
-  test("nothing stored returns null", () => {
+  test("an answer naming no readers returns null", () => {
     expect(loadReaderSetting(env, () => ({ code: 0, out: '{"stored":false}' }))).toBeNull();
+  });
+  test("OS-295: ob's own defaults (nothing stored) are what runs, not a table in the leg", () => {
+    const out = JSON.stringify({ stored: false, readers: { opus: { model: "claude-opus-5-5" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] });
+    expect(loadReaderSetting(env, () => ({ code: 0, out }))?.readers.opus).toEqual({ model: "claude-opus-5-5" });
   });
 });

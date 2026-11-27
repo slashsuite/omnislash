@@ -72,22 +72,21 @@ A reader the owner left on is run; it is not skipped in advance because `ob cred
 
 Every leg run is recorded: `review-leg.ts` writes one line per attempt (wall time, model, diff size, exit, tokens where the tool leaves them) to `review-legs.jsonl` beside the models file, and `ob models legs` prints the trend per model per day. Run the leg from your rebased worktree so the diff size is right.
 
-- **Where a leg's model comes from.** `review-leg.ts` reads the readers in force once
-  (`ob review readers --json`: the active profile's `review` in `model_routes`, set with `ob models reader`, else the
-  old `review_readers` key): a leg named there runs on that model, with one attempt (no profile fallback).
-  Otherwise the machine's `~/.config/ob/models.jsonc` (`ob models show`, the active profile's `review` map), then the
-  built-in table. An `antigravity:` model runs through `agy`, an `opencode/` or `opencode-go/` model runs through opencode, anything else through claude. A leg
-  whose model comes from the setting prints `review-leg: <leg> runs <model> (review_readers)` on stderr. If the setting cannot be read (API down) it says so
-  in one stderr line and uses the models file. A models file that does not parse makes the leg fail by name; report
-  that leg as failed.
+- **Where a leg's model comes from.** `review-leg.ts` names no model (OS-295). It takes a reader name or a model id.
+  A reader name runs on the model `ob review readers --json` gives it (the active profile's `review` in `model_routes`
+  with the local models file laid over it, else ob's defaults) and prints `review-leg: <leg> runs <model> (review readers)`
+  on stderr; a name the readers do not hold fails, naming `ob review readers`. A model id any route prints
+  (`ob models get <route>`: `claude-*`, `<provider>:<model>`, `antigravity:<model>`, `opencode/<model>`) runs on that
+  model. An `antigravity:` model runs through `agy`, an `opencode/` or `opencode-go/` model runs through opencode,
+  anything else through claude. If the readers cannot be read (API down) the leg fails by name; report it as failed.
 - **Skip (independence).** If the builder itself ran a reader's model, that leg is skipped and reported as
   `+ <leg>: skipped (builder)`; do not add a fallback reader in its place. The **required leg** is the first leg `ob review readers --complexity <n> -q` prints, the round-1 reader `ob review run` starts; any other leg is secondary. The required leg is never skipped on this rule, and a secondary leg is skipped only when the builder ran that leg's own model (on a range with two legs, a builder on one still gets the other independent reader; with the other down, the unavailable rule below applies).
 - **Failure.** A failed leg ends on one stderr line, `review-leg: <leg> failed: exit <n>: <reason>`. Copy its `exit <n>: <reason>` into the review line: `+ <leg>: failed (exit <n>: <reason>)` (`+ <leg>: failed (exit 1: model <model> unavailable)`), never a bare `failed`. It is never retried around and
   never blocks the land; the review still stands on the readers that ran. A required leg failing is handled by the unavailable
   rule below.
-- **Profiles first.** `review-leg.ts` already reruns a leg that ends on a credit or quota error on the
-  next models profile that gives that leg another (kind, model) (`ob models show`, the `fallback` list), and says so on
-  stderr. For `agy` (`antigravity:` legs), quota, rate limit, `RESOURCE_EXHAUSTED`, `429` or a JSON `status` other than `SUCCESS` with such text triggers the same fallback. The rule below applies only once the leg has exited non-zero after that.
+- **Fallback first.** `review-leg.ts` already reruns a reader that ends on a credit or quota error on its route's
+  fallback reader (`ob review readers fallback <leg> <other>`), then that reader's, skipping one with the same (kind, model),
+  and says so on stderr. That is only for a leg run by hand: `ob review run` sets OB_REVIEW_NO_FALLBACK=1, so each of its seats makes one attempt (OS-247). No reader has a fallback by default. A review leg's credit hit is no longer written to `models-state.json` (OS-295): its fallback is a reader on its route, not a models profile, so `ob models list` does not mark a profile out of credits for it. For `agy` (`antigravity:` legs), quota, rate limit, `RESOURCE_EXHAUSTED`, `429` or a JSON `status` other than `SUCCESS` with such text triggers the same fallback. The rule below applies only once the leg has exited non-zero after that.
 - **Out of credits rule.** No required reader is paid, so a paid
   leg (an `opencode-go/` reader, when a profile names one) out of credits reports `skipped (no credits)` and files nothing; the owed-review
   steps below apply only if a paid reader is made required again. When a required `opencode-go/...` reader

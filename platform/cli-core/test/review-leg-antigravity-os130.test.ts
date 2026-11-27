@@ -5,18 +5,19 @@ import { join } from "node:path";
 import { creditErrorOf } from "../../../apps/cli/src/models-credit.ts";
 import { DEFAULT_REVIEW_LEGS, DEFAULT_REVIEW_MODELS } from "../../../apps/cli/src/models-file.ts";
 import { antigravityUsageTokens, readLegRecords } from "../../../apps/cli/src/review-legs.ts";
-import { defaultReviewReaders, loadReviewReaders, type ConfigIO } from "../../../apps/cli/src/review-readers.ts";
+import { defaultReviewReaders, loadReviewReaders, parseReviewReaders, type ConfigIO } from "../../../apps/cli/src/review-readers.ts";
 import {
   agyCommandPattern,
   antigravitySettings,
   DENIED_COMMANDS,
   failedLegLine,
   finishAntigravityRun,
+  legAttempts,
   legCommand,
-  legProfiles,
   legSpawn,
   READ_COMMANDS,
   resolveLeg,
+  unknownLegMessage,
 } from "../../../skills/ob-skeptical-review/review-leg.ts";
 
 const REPO_ROOT = join(import.meta.dir, "../../..");
@@ -30,6 +31,20 @@ function withScratch<T>(fn: (dir: string) => T | Promise<T>): Promise<T> {
     .finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
+/** The readers `ob review readers --json` would print: the leg reads every model from here (OS-295). */
+const READERS = parseReviewReaders(
+  JSON.stringify({ readers: { neon: { model: "antigravity:gemini-4-neon" }, opus: { model: "claude-opus-5-5" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }),
+);
+
+/** A fake `ob` that prints `readers` for `ob review readers --json`, so a spawned leg reads them as it would live. */
+function writeFakeOb(binDir: string, readers: unknown): string {
+  mkdirSync(binDir, { recursive: true });
+  const path = join(binDir, "fake-ob");
+  writeFileSync(path, `#!/usr/bin/env bash\ncat <<'EOF'\n${JSON.stringify(readers)}\nEOF\n`, "utf8");
+  chmodSync(path, 0o755);
+  return path;
+}
+
 function writeFakeAgy(binDir: string, scriptBody: string): string {
   mkdirSync(binDir, { recursive: true });
   const path = join(binDir, "agy");
@@ -40,13 +55,13 @@ function writeFakeAgy(binDir: string, scriptBody: string): string {
 
 describe("OS-130: antigravity (agy) skeptical-review leg", () => {
   test("antigravity: prefix routes to agy with stripped --model, --sandbox, json output, read-only --settings, no --mode plan or skip-permissions", () => {
-    const resolved = resolveLeg("neon", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
+    const resolved = resolveLeg("neon", READERS);
     expect(resolved).toEqual({ kind: "antigravity", model: "gemini-4-neon" });
 
-    const raw = resolveLeg("antigravity:gemini-4-neon-preview", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
+    const raw = resolveLeg("antigravity:gemini-4-neon-preview");
     expect(raw).toEqual({ kind: "antigravity", model: "gemini-4-neon-preview" });
 
-    const cmd = legCommand("neon", "/tmp/unused-oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
+    const cmd = legCommand("neon", "/tmp/unused-oc", READERS);
     expect(cmd.env).toEqual({});
     expect(cmd.argv[0]).toBe("agy");
     expect(cmd.argv.slice(1, 3)).toEqual(["--model", "gemini-4-neon"]);
@@ -88,7 +103,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
       const bigBrief = `${marker}\n${"x".repeat(205 * 1024)}\nEND`;
       expect(Buffer.byteLength(bigBrief)).toBeGreaterThan(200 * 1024);
 
-      const { argv } = legCommand("neon", "/tmp/unused", { OB_MODELS_FILE: "/nonexistent/models.jsonc" });
+      const { argv } = legCommand("antigravity:gemini-4-neon", "/tmp/unused");
       const spawn = legSpawn(argv, bigBrief, { TMPDIR: customTmp });
       try {
         expect(spawn.stdin).toBe("");
@@ -136,10 +151,10 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     expect(Object.keys(loaded.value.readers)).toEqual(["neon", "opus"]);
 
     // deepseek and luna are retired: naming either as a leg, or a model id that names one, is refused with a clear message.
-    expect(() => legCommand("deepseek", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired \(OS-206\)/);
-    expect(() => legCommand("luna", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired \(OS-206\)/);
-    expect(() => legCommand("opencode-go/gpt-6-luna#high", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired/);
-    expect(() => legCommand("opencode-go/deepseek-v4.1-flash#high", "/tmp/oc", { OB_MODELS_FILE: "/nonexistent/models.jsonc" })).toThrow(/retired/);
+    expect(() => legCommand("deepseek", "/tmp/oc")).toThrow(/retired \(OS-206\)/);
+    expect(() => legCommand("luna", "/tmp/oc")).toThrow(/retired \(OS-206\)/);
+    expect(() => legCommand("opencode-go/gpt-6-luna#high", "/tmp/oc")).toThrow(/retired/);
+    expect(() => legCommand("opencode-go/deepseek-v4.1-flash#high", "/tmp/oc")).toThrow(/retired/);
 
     // End-to-end `ob review readers` CLI with review_readers unset.
     await withScratch((dir) => {
@@ -164,50 +179,55 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     });
   });
 
-  test("legProfiles dedupes by (kind, model) so same model name on a different kind is kept", async () => {
-    await withScratch((dir) => {
-      const modelsPath = join(dir, "models.jsonc");
-      writeFileSync(
-        modelsPath,
-        JSON.stringify({
-          active: "p1",
-          fallback: ["p2", "p3", "p4"],
-          profiles: {
-            p1: { review: { neon: "antigravity:shared-model" } },
-            // Same kind + same model -> deduped
-            p2: { review: { neon: "antigravity:shared-model" } },
-            // Different kind (claude) + same bare model name -> kept
-            p3: { review: { neon: "shared-model" } },
-            // Different antigravity model -> kept
-            p4: { review: { neon: "antigravity:other-model" } },
-          },
-        }),
-        "utf8",
-      );
-      expect(legProfiles("neon", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3", "p4"]);
-    });
+  test("OS-295: a bare id any route prints runs as its own model; a reader name runs on its route's model, else it errors naming the route", () => {
+    // `ob models get job.ux-hill-climb-first` prints a bare id: it runs on claude, on that model, with no reader named.
+    expect(resolveLeg("claude-opus-5-5")).toEqual({ kind: "claude", model: "claude-opus-5-5" });
+    expect(legCommand("claude-opus-5-5", "/tmp/oc").argv.slice(0, 4)).toEqual(["claude", "-p", "--model", "claude-opus-5-5"]);
+    expect(resolveLeg("antigravity:gemini-4-neon")).toEqual({ kind: "antigravity", model: "gemini-4-neon" });
+    expect(legCommand("antigravity:gemini-4-neon", "/tmp/oc").argv.slice(0, 3)).toEqual(["agy", "--model", "gemini-4-neon"]);
+    expect(resolveLeg("opencode-go/glm-5#high")).toEqual({ kind: "opencode", model: "opencode-go/glm-5#high" });
+    expect(resolveLeg("claudeAgent:claude-sonnet-5-5")).toEqual({ kind: "claude", model: "claude-sonnet-5-5" });
+    // The leg runs on whatever the reader's route says, not on a name it knows.
+    const moved = parseReviewReaders(JSON.stringify({ readers: { opus: { model: "antigravity:gemini-5" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }));
+    expect(resolveLeg("opus", moved)).toEqual({ kind: "antigravity", model: "gemini-5" });
+    expect(resolveLeg("sonnet", moved)).toEqual({ kind: "antigravity", model: "gemini-5" });
+    // No model nickname is a default: with no readers, `opus` and `neon` are unknown, and the error names the route.
+    expect(resolveLeg("opus")).toBeUndefined();
+    expect(() => legCommand("opus", "/tmp/oc")).toThrow(/`ob review readers` names no readers, so there is no reader 'opus'/);
+    expect(() => legCommand("glm", "/tmp/oc", READERS)).toThrow(/`ob review readers` has no reader 'glm' \(its readers: neon, opus\)/);
+    expect(unknownLegMessage("glm", READERS)).toContain("ob review readers set glm --model <id>");
   });
 
-  test("OS-256: the opus leg never moves to a profile that maps opus to a non-Claude model", async () => {
-    await withScratch((dir) => {
-      const modelsPath = join(dir, "models.jsonc");
-      writeFileSync(
-        modelsPath,
-        JSON.stringify({
-          active: "p1",
-          fallback: ["p2", "p3", "p4"],
-          profiles: {
-            p1: { review: { opus: "claude-opus-5-5" } },
-            p2: { review: { opus: "antigravity:gemini-4-neon" } },
-            p3: { review: { opus: "claudeAgent:claude-opus-5-5-other" } },
-            p4: { review: { opus: "claude-sonnet-5-5" } },
-          },
-        }),
-        "utf8",
-      );
-      expect(legProfiles("opus", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
-      expect(legProfiles("sonnet", { OB_MODELS_FILE: modelsPath })).toEqual(["p1", "p3"]);
-    });
+  test("OS-295: a leg moves along its route's fallback chain only, deduped by (kind, model), stopping at a loop", () => {
+    // By default no reader has a fallback: opus gets one attempt and nothing stands in for it (OS-256).
+    expect(legAttempts("opus", READERS)).toEqual(["opus"]);
+    expect(legAttempts("claude-opus-5-5", READERS)).toEqual(["claude-opus-5-5"]);
+    const chain = parseReviewReaders(
+      JSON.stringify({
+        readers: {
+          a: { model: "antigravity:shared", fallback: "b" },
+          // Same kind + same model as a: skipped
+          b: { model: "antigravity:shared", fallback: "c" },
+          // Same bare name on another kind: kept
+          c: { model: "shared", fallback: "d" },
+          // Loops back to a: the walk stops
+          d: { model: "antigravity:other", fallback: "a" },
+        },
+        tiers: [{ from: 1, to: 10, legs: ["a"] }],
+      }),
+    );
+    expect(legAttempts("a", chain)).toEqual(["a", "c", "d"]);
+    expect(legAttempts("d", chain)).toEqual(["d", "a", "c"]);
+    // `ob review run` (OB_REVIEW_NO_FALLBACK=1): one attempt, no reader stands in (OS-247).
+    expect(legAttempts("a", chain, true)).toEqual(["a"]);
+  });
+
+  test("OS-295: a model id on a provider no leg runs is refused by name, never sent to claude", () => {
+    expect(resolveLeg("codex:gpt-6")).toBeUndefined();
+    expect(() => legCommand("codex:gpt-6", "/tmp/oc")).toThrow(/model 'codex:gpt-6' is on provider 'codex', which no review leg runs/);
+    const codex = parseReviewReaders(JSON.stringify({ readers: { opus: { model: "codex:gpt-6" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }));
+    expect(() => legCommand("opus", "/tmp/oc", codex)).toThrow(/reader 'opus' in `ob review readers` has model 'codex:gpt-6' is on provider 'codex'/);
+    expect(resolveLeg("claude:claude-opus-5-5")).toEqual({ kind: "claude", model: "claude-opus-5-5" });
   });
 
   test("creditErrorOf recognises agy quota, rate limit, RESOURCE_EXHAUSTED, 429 and non-SUCCESS JSON without loosening non-agy rate limit", () => {
@@ -388,6 +408,7 @@ bun -e '
 `,
       );
 
+      const fakeOb = writeFakeOb(binDir, { stored: true, ...READERS });
       const bigBrief = `BIG-BRIEF-E2E-OS130\n${"z".repeat(205 * 1024)}\n`;
       const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "neon"], {
         cwd: REPO_ROOT,
@@ -399,12 +420,14 @@ bun -e '
           PATH: `${binDir}:${process.env.PATH ?? ""}`,
           TMPDIR: tmpDir,
           OB_MODELS_FILE: modelsPath,
-          OB_REVIEW_READERS_SKIP: "1",
+          OB_REVIEW_READERS_SKIP: "",
+          OB_REVIEW_OB: fakeOb,
           CAPTURE_PATH: capturePath,
         },
       });
       expect(proc.exitCode, proc.stderr.toString()).toBe(0);
       expect(proc.stdout.toString()).toBe("wrong apps/cli/src/foo.ts:12\n  off-by-one\n\nscore: 5/10\n");
+      expect(proc.stderr.toString()).toContain("review-leg: neon runs antigravity:gemini-4-neon (review readers)");
 
       const captured = JSON.parse(readFileSync(capturePath, "utf8")) as {
         args: string[];
@@ -431,7 +454,7 @@ bun -e '
     });
   });
 
-  test("end-to-end: agy quota failure (stderr non-zero AND exit-0 non-SUCCESS JSON) moves leg to next profile", async () => {
+  test("end-to-end: agy quota failure (stderr non-zero AND exit-0 non-SUCCESS JSON) moves the leg to its route's fallback reader", async () => {
     await withScratch((dir) => {
       const binDir = join(dir, "bin");
       const tmpDir = join(dir, "tmp");
@@ -439,19 +462,15 @@ bun -e '
       const callsFile = join(dir, "calls.log");
       mkdirSync(tmpDir, { recursive: true });
 
-      writeFileSync(
-        modelsPath,
-        JSON.stringify({
-          active: "first",
-          fallback: ["second", "third"],
-          profiles: {
-            first: { review: { neon: "antigravity:gemini-4-neon-a" } },
-            second: { review: { neon: "antigravity:gemini-4-neon-b" } },
-            third: { review: { neon: "antigravity:gemini-4-neon-c" } },
-          },
-        }),
-        "utf8",
-      );
+      const fakeOb = writeFakeOb(binDir, {
+        stored: true,
+        readers: {
+          neon: { model: "antigravity:gemini-4-neon-a", fallback: "second" },
+          second: { model: "antigravity:gemini-4-neon-b", fallback: "third" },
+          third: { model: "antigravity:gemini-4-neon-c" },
+        },
+        tiers: [{ from: 1, to: 10, legs: ["neon"] }],
+      });
 
       writeFakeAgy(
         binDir,
@@ -492,7 +511,8 @@ bun -e '
           PATH: `${binDir}:${process.env.PATH ?? ""}`,
           TMPDIR: tmpDir,
           OB_MODELS_FILE: modelsPath,
-          OB_REVIEW_READERS_SKIP: "1",
+          OB_REVIEW_READERS_SKIP: "",
+          OB_REVIEW_OB: fakeOb,
           CALLS_FILE: callsFile,
         },
       });
@@ -506,9 +526,10 @@ bun -e '
 
       const records = readLegRecords({ OB_MODELS_FILE: modelsPath });
       expect(records).toHaveLength(3);
-      expect(records[0]).toMatchObject({ profile: "first", model: "gemini-4-neon-a", credit: true, exit_code: 1 });
-      expect(records[1]).toMatchObject({ profile: "second", model: "gemini-4-neon-b", credit: true, exit_code: 1 });
+      expect(records[0]).toMatchObject({ leg: "neon", profile: null, model: "gemini-4-neon-a", credit: true, exit_code: 1 });
+      expect(records[1]).toMatchObject({ leg: "neon", profile: "second", model: "gemini-4-neon-b", credit: true, exit_code: 1 });
       expect(records[2]).toMatchObject({
+        leg: "neon",
         profile: "third",
         model: "gemini-4-neon-c",
         credit: false,

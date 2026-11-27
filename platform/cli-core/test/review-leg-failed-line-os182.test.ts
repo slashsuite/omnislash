@@ -36,7 +36,7 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
       const agy = join(binDir, "agy");
       writeFileSync(agy, "#!/usr/bin/env bash\necho 'model gemini-4-neon unavailable' >&2\necho 'detail' >&2\nexit 1\n");
       chmodSync(agy, 0o755);
-      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "neon"], {
+      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "antigravity:gemini-4-neon"], {
         cwd: REPO_ROOT,
         stdin: new Blob(["review this small diff"]),
         stdout: "pipe",
@@ -51,7 +51,7 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
       });
       expect(proc.exitCode).toBe(1);
       const lines = proc.stderr.toString().trim().split("\n");
-      expect(lines.at(-1)).toBe("review-leg: neon failed: exit 1: model gemini-4-neon unavailable");
+      expect(lines.at(-1)).toBe("review-leg: antigravity:gemini-4-neon failed: exit 1: model gemini-4-neon unavailable");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -65,7 +65,7 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
       const agy = join(binDir, "agy");
       writeFileSync(agy, `#!/usr/bin/env bash\necho '{"status":"ERROR","error":"model gemini-4-neon unavailable"}'\nexit 0\n`);
       chmodSync(agy, 0o755);
-      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "neon"], {
+      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "antigravity:gemini-4-neon"], {
         cwd: REPO_ROOT,
         stdin: new Blob(["review this small diff"]),
         stdout: "pipe",
@@ -80,7 +80,7 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
       });
       expect(proc.exitCode).toBe(1);
       expect(proc.stderr.toString().trim().split("\n").at(-1)).toBe(
-        "review-leg: neon failed: exit 1: agy status ERROR: model gemini-4-neon unavailable",
+        "review-leg: antigravity:gemini-4-neon failed: exit 1: agy status ERROR: model gemini-4-neon unavailable",
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -90,7 +90,7 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
   test("a tool that is not installed is a failed leg that says why", () => {
     const dir = mkdtempSync(join(tmpdir(), "ob-os182-leg-"));
     try {
-      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "neon"], {
+      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "antigravity:gemini-4-neon"], {
         cwd: REPO_ROOT,
         stdin: new Blob(["review this small diff"]),
         stdout: "pipe",
@@ -105,7 +105,27 @@ describe("OS-182: review-leg.ts ends a failed leg on that line", () => {
         },
       });
       expect(proc.exitCode).toBe(1);
-      expect(proc.stderr.toString().trim().split("\n").at(-1)).toMatch(/^review-leg: neon failed: exit 1: .*agy/);
+      expect(proc.stderr.toString().trim().split("\n").at(-1)).toMatch(/^review-leg: antigravity:gemini-4-neon failed: exit 1: .*agy/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, spawnBudget(2));
+
+  test("OS-295: a retired leg on the command line gets the retired message, not the unknown-reader one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ob-os182-leg-"));
+    try {
+      const proc = Bun.spawnSync(["bun", REVIEW_LEG_SCRIPT, "deepseek"], {
+        cwd: REPO_ROOT,
+        stdin: new Blob(["review this small diff"]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, TMPDIR: dir, OB_MODELS_FILE: join(dir, "models.jsonc"), OB_REVIEW_READERS_SKIP: "1" },
+      });
+      expect(proc.exitCode).toBe(1);
+      const last = proc.stderr.toString().trim().split("\n").at(-1) ?? "";
+      expect(last).toStartWith("review-leg: deepseek failed: exit 1: ");
+      expect(last).toMatch(/retired/);
+      expect(last).not.toMatch(/no reader/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
