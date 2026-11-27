@@ -47,6 +47,15 @@ export const PHASE_ON_MOVE: Readonly<Record<Exclude<SpinoffEvent, "stamp">, Spin
   reopen: null,
 };
 
+/**
+ * OS-285: the phase a stored (status, phase) pair reads as: the phase when the status holds it, else null. A row an
+ * older writer moved (the omnibus server on CT 130 lands or fails a row without clearing its phase) keeps a stale
+ * phase in the column; every reader goes through this, so a merged row never shows `gating`.
+ */
+export function heldPhase(status: string, phase: string | null | undefined): SpinoffPhase | null {
+  return phase && isSpinoffPhase(phase) && (PHASES_BY_STATUS[status as SpinoffState] ?? []).includes(phase) ? phase : null;
+}
+
 /** True when `s` is one of the five phase words. */
 export function isSpinoffPhase(s: string): s is SpinoffPhase {
   return (SPINOFF_PHASES as readonly string[]).includes(s);

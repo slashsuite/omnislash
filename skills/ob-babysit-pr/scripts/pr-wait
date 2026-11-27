@@ -26,6 +26,9 @@ Events, one line each on stdout: gate failed or passed; merged or closed; DIRTY 
 review or inline review comment from someone other than the PR author or the gh user. Bot logins and
 edits are not events. State lives in ~/.local/state/pr-wait/: a restarted watcher reports what arrived
 since it last ran, and the first run records what already exists and reports nothing.
+
+On start, an open PR whose head branch is a building spinoff row moves that row to phase pr_ci
+(`ob spinoff phase <id> pr_ci`, OS-285); a handed-off or landed row is left alone.
 """
 
 from __future__ import annotations
@@ -103,6 +106,56 @@ def parse_target(raw: str | None, repo: str | None) -> tuple[str, int]:
     except GhError as error:
         fail(f"cannot read {repo}#{pr}: {error}")
     return repo, pr
+
+
+def ob(args: list[str]) -> subprocess.CompletedProcess | None:
+    """Run `ob` (PR_WAIT_OB overrides the command, for tests). None when it cannot be run at all."""
+    try:
+        return subprocess.run([os.environ.get("PR_WAIT_OB") or "ob", *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def mark_pr_ci(repo: str, pr: int) -> None:
+    """OS-285: an open PR whose head branch is a building spinoff row puts that row in phase pr_ci.
+
+    pr-wait is what a builder runs right after `gh pr create` and after every later push, so this is the
+    PR-opened hook for `spinoff.phase`. The row is found by its branch and repo among the building rows, never
+    by ticket (a trial's leg b shares the ticket on another branch). A handed-off or landed row (the architect
+    watching it) is left alone, and so is a sent-back row in `updating_pr`: the role map moves that one
+    straight to handed-off once its fix is green. Any failure is one stderr line: the watch never stops for it.
+    """
+    try:
+        head = json.loads(gh(["pr", "view", str(pr), "-R", repo, "--json", "state,headRefName"]))
+    except (GhError, ValueError):
+        return
+    if not isinstance(head, dict) or head.get("state") != "OPEN" or not head.get("headRefName"):
+        return
+    branch = head["headRefName"]
+    listed = ob(["spinoff", "list", "--status", "building", "--json"])
+    if listed is None or listed.returncode != 0:
+        return
+    try:
+        rows = json.loads(listed.stdout[listed.stdout.index("["):])
+    except ValueError:
+        return
+    name = repo.rsplit("/", 1)[-1].lower()
+    mine = [
+        r for r in rows
+        if isinstance(r, dict) and r.get("branch") == branch and r.get("status") == "building"
+        and str(r.get("repo") or "").rstrip("/").rsplit("/", 1)[-1].lower() == name
+    ]
+    if not mine and any(isinstance(r, dict) and r.get("branch") == branch for r in rows):
+        print(f"pr-wait: a building row is on {branch} but its repo is not {name}; not marking it pr_ci", file=sys.stderr, flush=True)
+    if len(mine) != 1 or mine[0].get("phase") == "updating_pr":
+        return  # not a spinoff's PR, ambiguous, or a send-back being fixed
+    row = mine[0]
+    done = ob(["spinoff", "phase", str(row["id"]), "pr_ci", "-q"])
+    if done is None or done.returncode != 0:
+        why = (done.stderr or done.stdout).strip().splitlines()[-1:] if done else ["ob did not run"]
+        print(f"pr-wait: could not mark {row.get('ticket_ref')} pr_ci ({' '.join(why) or 'no output'}); watching anyway", file=sys.stderr, flush=True)
+        return
+    print(f"pr-wait: {row.get('ticket_ref')} is in phase pr_ci", file=sys.stderr, flush=True)
 
 
 def lock(repo: str, pr: int):
@@ -259,6 +312,7 @@ def main() -> None:
     args = parser.parse_args()
     repo, pr = parse_target(args.pr, args.repo)
     _lock = lock(repo, pr)
+    mark_pr_ci(repo, pr)
     Watcher(repo, pr, args.until, max(args.interval, 5), args.gate).run()
 
 
