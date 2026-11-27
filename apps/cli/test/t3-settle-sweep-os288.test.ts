@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { T3Thread } from "../src/t3/client.ts";
-import { renderSettleSweep, settleSweep, type SweepReport, type SweepRows } from "../src/t3/settle-sweep.ts";
+import { refuseSweepArgs, renderSettleSweep, settleSweep, type SweepReport, type SweepRows } from "../src/t3/settle-sweep.ts";
 import type { T3AgentRow, T3SpinoffRow } from "../src/t3/read.ts";
 import { installFakeT3, type FakeT3Install } from "./fake-t3.ts";
 
@@ -44,7 +44,7 @@ function agent(id: string, sessionId: string): T3AgentRow {
   return { id, ticket: null, branch: null, worktree: null, launcher: "t3", session_id: sessionId };
 }
 
-const NO_ROWS: SweepRows = { spinoffs: [], agents: [], leases: [] };
+const NO_ROWS: SweepRows = { spinoffs: [], agents: [], leases: [], roleThreads: [] };
 
 function world(threads: T3Thread[]): FakeT3Install {
   fake = installFakeT3(["/r/omnislash"]);
@@ -237,5 +237,124 @@ describe("settle-sweep settles what no rule keeps (OS-288)", () => {
     expect(rowOf(r, "gone")).toMatchObject({ action: "failed" });
     expect(rowOf(r, "idle").action).toBe("settled");
     expect(r.failed).toBe(1);
+  });
+});
+
+describe("settle-sweep send-back cases (OS-288)", () => {
+  const msg = (position: number, createdBy: string, updatedAt?: string) => ({ position, type: "message", status: "completed", createdBy, ...(updatedAt === undefined ? {} : { updatedAt }) });
+
+  test("parent: a subagent reads idle while its parent runs, so it is kept with its parent; an idle parent's subagent settles", async () => {
+    const f = world([
+      thread("p", { status: "running", activeRunId: "run-1" }),
+      thread("sub", { parentThreadId: "p" }),
+      thread("p2"),
+      thread("sub2", { parentThreadId: "p2" }),
+    ]);
+    const r = await sweep(f);
+    expect(rowOf(r, "sub")).toMatchObject({ action: "kept", rule: "parent", reason: "its parent p is kept (run)" });
+    expect(settledIds(f).sort()).toEqual(["p2", "sub2"]);
+  });
+
+  test("parent: a subagent whose parent is off the unsettled list is kept while the parent's header shows a run", async () => {
+    const f = world([thread("p", { status: "running", activeRunId: "run-1" }), thread("sub", { parentThreadId: "p" })]);
+    const list = f.seam.list;
+    f.seam.list = async (o) => {
+      const page = await list(o);
+      return { ...page, threads: page.threads.filter((x) => x.threadId !== "p") };
+    };
+    expect(rowOf(await sweep(f), "sub")).toMatchObject({ action: "kept", rule: "parent", reason: "its parent p is kept (run)" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("run: every live status keeps the thread, though no run id is set yet", async () => {
+    const ids = ["preparing", "queued", "starting"] as const;
+    const f = world(ids.map((s) => thread(s, { status: s })));
+    const r = await sweep(f);
+    for (const s of ids) expect(rowOf(r, s)).toMatchObject({ action: "kept", rule: "run" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("recent: an empty messages page that says more is coming is paged past, not read as the end", async () => {
+    const f = world([thread("t", { updatedAt: ago(5) })]);
+    f.messages.set("t", [msg(0, "agent", ago(90)), msg(5, "user", ago(4))]);
+    const read = f.seam.read;
+    let first = true;
+    f.seam.read = async (id, o) => {
+      if (o?.view === "messages" && first) {
+        first = false;
+        const page = await read(id, o);
+        return { ...page, items: [], nextPosition: 2, hasMore: true };
+      }
+      return read(id, o);
+    };
+    expect(rowOf(await sweep(f), "t")).toMatchObject({ action: "kept", rule: "recent", reason: "you wrote 4 min ago" });
+  });
+
+  test("recent: a message of Jacobus's with no readable time keeps the thread (fail closed)", async () => {
+    const f = world([thread("t", { updatedAt: ago(5) })]);
+    f.messages.set("t", [msg(0, "user", "not a time"), msg(1, "agent", ago(60))]);
+    expect(rowOf(await sweep(f), "t")).toMatchObject({ action: "kept", rule: "recent" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("recent: a recent message in the first tail window ends the read there", async () => {
+    const f = world([thread("t", { updatedAt: ago(1), itemCount: 1000 })]);
+    f.messages.set("t", Array.from({ length: 1000 }, (_, i) => msg(i, i === 999 ? "user" : "agent", ago(2))));
+    const starts: Array<number | undefined> = [];
+    const read = f.seam.read;
+    f.seam.read = async (id, o) => {
+      if (o?.view === "messages") starts.push(o.afterPosition);
+      return read(id, o);
+    };
+    expect(rowOf(await sweep(f), "t")).toMatchObject({ action: "kept", rule: "recent" });
+    expect(starts[0]).toBe(700);
+    expect(starts.every((s) => s !== undefined && s >= 700)).toBe(true);
+  });
+
+  test("row: an in-flight spinoff row with no thread stamped is matched by the thread's worktree", async () => {
+    const f = world([thread("t", { worktreePath: "/r/os-7" })]);
+    const rows: SweepRows = { ...NO_ROWS, spinoffs: [spinoff(7, "", "launching", { t3_thread_id: null, worktree: "/r/os-7" })] };
+    expect(rowOf(await sweep(f, rows), "t")).toMatchObject({ action: "kept", rule: "row" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("lease: a builder registered by hand on the thread, with no spinoff row, holding a ticket lease", async () => {
+    const f = world([thread("t")]);
+    const rows: SweepRows = { ...NO_ROWS, agents: [agent("hc-9", "t")], leases: [{ resource: "ticket:hc-9", holder: "hc-9", expired: false }] };
+    expect(rowOf(await sweep(f, rows), "t")).toMatchObject({ action: "kept", rule: "lease", reason: "ticket:hc-9 is still leased to hc-9" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("role: an open role run's thread, though no seat row points at it", async () => {
+    const f = world([thread("t", { title: "renamed" })]);
+    expect(rowOf(await sweep(f, { ...NO_ROWS, roleThreads: ["t"] }), "t")).toMatchObject({ action: "kept", rule: "role" });
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("an archived thread is skipped: no row, no settle, no failure", async () => {
+    const f = world([thread("t", { archived: true })]);
+    const r = await sweep(f);
+    expect(r.rows).toEqual([]);
+    expect(r.failed).toBe(0);
+    expect(settledIds(f)).toEqual([]);
+  });
+
+  test("the settle is asked once: a run started since the checks keeps the thread, any other refusal fails it", async () => {
+    const f = world([thread("raced"), thread("stuck")]);
+    let asks = 0;
+    f.seam.settle = async (id) => {
+      asks += 1;
+      if (id === "raced") f.threads[0]!.status = "running";
+      throw new Error("Thread " + id + " is still running");
+    };
+    const r = await sweep(f);
+    expect(asks).toBe(2);
+    expect(rowOf(r, "raced")).toMatchObject({ action: "kept", rule: "run" });
+    expect(rowOf(r, "stuck")).toMatchObject({ action: "failed" });
+  });
+
+  test("a stray positional (dry-run without its dashes) is refused, so it never runs a live sweep", () => {
+    expect(() => refuseSweepArgs(["settle-sweep", "dry-run"])).toThrow(/takes no arguments/);
+    expect(() => refuseSweepArgs(["settle-sweep"])).not.toThrow();
   });
 });

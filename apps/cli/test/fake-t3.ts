@@ -95,7 +95,7 @@ export function installFakeT3(
           providerInstanceId: t.providerInstanceId,
           model: t.model,
           settled: t.settled,
-          parentThreadId: null,
+          parentThreadId: t.parentThreadId ?? null,
         })),
       nextCursor: null,
     }),
