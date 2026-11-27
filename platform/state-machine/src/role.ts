@@ -11,7 +11,7 @@ import { SPINOFF_EDGES, type SpinoffEvent, type SpinoffState } from "./spinoff.t
  *
  * Only the item and spinoff machines underneath are enforced. This one rides on them: each state's
  * `meta.stored` names the item or row status it sits on, or null before any item exists (the muse phase).
- * Several role states share one stored status (parked_idea, drilling and checking are all `item:open`; building,
+ * Several role states share one stored status (parked_idea, backlog, drilling and checking are all `item:open`; building,
  * the owner's call, partial and review are all `spinoff:launched`; the sentinel's sub-states are all `spinoff:ready-for-gate`), so
  * stored data cannot tell them apart. Nothing calls `decide` on it yet.
  *
@@ -26,6 +26,9 @@ import { SPINOFF_EDGES, type SpinoffEvent, type SpinoffState } from "./spinoff.t
  *
  * OS-236: there is one reviewer role with two steps, the blind brief check (`checking`) and the skeptical review
  * round (`reviewing`). They stay separate states; the old `checker` role is gone.
+ *
+ * OS-260: an open ticket with no `## Drilled` section and no check is in `backlog`, not `drilling`, so Drilling
+ * holds only the tickets the architect is drilling. A ticket the muse opens starts there.
  */
 
 export const ROLES = ["owner", "muse", "architect", "builder", "reviewer", "sentinel", "system"] as const;
@@ -108,6 +111,7 @@ const STATES: readonly StateDef[] = [
   { id: "exploring", label: "Exploring the design", role: "muse", human_required: false, stored: null },
   { id: "confirm_complete", label: "Is the thought complete?", role: "owner", human_required: true, stored: null },
   { id: "parked_idea", label: "Parked idea (tag idea)", role: "muse", human_required: false, stored: item("open") },
+  { id: "backlog", label: "Backlog (open, not drilled yet)", role: "architect", human_required: false, stored: item("open") },
   { id: "drilling", label: "Drilling (## Drilled, ## Done when)", role: "architect", human_required: false, stored: item("open") },
   { id: "checking", label: "Blind check (measure twice)", role: "reviewer", human_required: false, stored: item("open") },
   { id: "owner_plan_call", label: "Planning call only the owner can make", role: "owner", human_required: true, stored: item("open") },
@@ -137,14 +141,17 @@ export type RoleTransition = RoleTransitionMeta & { from: string; to: string; ev
 export const ROLE_TRANSITIONS: readonly RoleTransition[] = [
   { from: "exploring", to: "confirm_complete", label: "looks whole", event: "thought looks whole; muse asks with the question tool", actor: "muse", source: "skills/ob-muse/SKILL.md:22" },
   { from: "confirm_complete", to: "exploring", label: "no, keep going", event: "owner says no or let me think", actor: "owner", source: "skills/ob-muse/SKILL.md:24" },
-  { from: "confirm_complete", to: "drilling", label: "yes, ticket it", event: "owner says yes; ob add, then t3_thread_send (queue) to the team architect", actor: "muse", source: "skills/ob-muse/SKILL.md:23" },
+  { from: "confirm_complete", to: "backlog", label: "yes, ticket it", event: "owner says yes; ob add, then t3_thread_send (queue) to the team architect", actor: "muse", source: "skills/ob-muse/SKILL.md:23" },
   { from: "exploring", to: "parked_idea", label: "note a raw idea", event: "owner asks to note a raw idea; ob add + ob tag idea", actor: "muse", source: "skills/ob-muse/SKILL.md:24" },
   { from: "parked_idea", to: "confirm_complete", label: "picks it up", event: "owner returns to the idea", actor: "owner", source: "skills/ob-architect/SKILL.md:261" },
+  { from: "backlog", to: "drilling", label: "drill it", event: "architect picks the ticket up and writes its ## Drilled section", actor: "architect", source: "skills/ob-architect/SKILL.md:320" },
   { from: "drilling", to: "checking", label: "seal score, run checker", event: "architect seals its score; runs the Haiku checker on ob spinoff brief", actor: "architect", source: "skills/ob-architect/SKILL.md:401" },
   { from: "checking", to: "queued", label: "go, ob spinoff", event: "ob spinoff check: every checker question resolved (go); ob spinoff <ref>", actor: "architect", source: DISPATCH_CHECK },
   { from: "checking", to: "drilling", label: "no-go, change ticket", event: "ob spinoff check: an unresolved question (no-go); change the ticket, at most twice", actor: "architect", source: "skills/ob-architect/SKILL.md:418" },
   { from: "drilling", to: "owner_plan_call", label: "owner's call", event: "the open question is the owner's call", actor: "architect", source: "skills/ob-architect/SKILL.md:422" },
   { from: "owner_plan_call", to: "drilling", label: "answer", event: "owner answers", actor: "owner", source: "skills/ob-architect/SKILL.md:422" },
+  { from: "backlog", to: "spike", label: "only by trying", event: "a spike is exempt from ## Drilled: dispatched straight from the backlog", actor: "architect", source: DISPATCH_CHECK },
+  { from: "backlog", to: "queued", label: "no-check with reason", event: "--no-check is exempt from ## Drilled: ob spinoff <ref> --no-check '<why>'", actor: "architect", source: DISPATCH_CHECK },
   { from: "drilling", to: "spike", label: "only by trying", event: "unknown only by trying; spike ticket dispatched (no score, needs Questions, Box, Done when)", actor: "architect", source: DISPATCH_CHECK },
   { from: "spike", to: "drilling", label: "answers on parent", event: "spike answers with ob note on the parent; architect rescores", actor: "builder", source: "skills/ob-architect/SKILL.md:434" },
   { from: "spike", to: "closed", label: "spike closed", event: "ob close on the spike; row ends failed with a spike error", actor: "architect", source: rowEvent("fail") },

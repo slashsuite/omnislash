@@ -20,6 +20,8 @@ const busy: RoleTicket[] = [
   { ref: "OS-171", title: "Can moon cache the e2e build?", state: "spike" },
   { ref: "OS-172", title: "Item machine is the item check", state: "closed" },
   { ref: "OS-165", title: "Live state machine view", state: "drilling" },
+  { ref: "OS-260", title: "A Backlog state for the role machine", state: "backlog" },
+  { ref: "OS-261", title: "Undrilled idea for the queue", state: "backlog" },
 ];
 
 const onePerson: RoleTicket[] = [{ ref: "OS-170", title: "Empty state on the queue", state: "owner_call" }];

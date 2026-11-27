@@ -140,28 +140,33 @@ describe("machineStamp (OS-165)", () => {
 
 describe("placeOpen (OS-241): an open ticket with no row in flight, on its planning state", () => {
   it("places every planning state it returns on a state of the machine", () => {
-    for (const state of ["drilling", "checking", "owner_plan_call", "parked_idea"]) expect(ROLE_STATES.has(state)).toBe(true);
+    for (const state of ["backlog", "drilling", "checking", "owner_plan_call", "parked_idea"]) expect(ROLE_STATES.has(state)).toBe(true);
   });
 
-  it("puts an unchecked ticket in drilling", () => {
-    expect(placeOpen({ tags: [], check: null })).toBe("drilling");
+  it("puts an undrilled, unchecked ticket in the backlog (OS-260)", () => {
+    expect(placeOpen({ tags: [], check: null, drilled: false })).toBe("backlog");
+  });
+
+  it("puts a drilled ticket with no check on its current body in drilling", () => {
+    expect(placeOpen({ tags: [], check: null, drilled: true })).toBe("drilling");
   });
 
   it("puts a ticket whose check on its current body ran and did not say no-go in the blind check", () => {
-    expect(placeOpen({ tags: [], check: "go" })).toBe("checking");
-    expect(placeOpen({ tags: [], check: "investigate" })).toBe("checking");
+    expect(placeOpen({ tags: [], check: "go", drilled: true })).toBe("checking");
+    expect(placeOpen({ tags: [], check: "investigate", drilled: true })).toBe("checking");
   });
 
   it("sends a no-go ticket back to drilling, as the machine's no-go move does", () => {
-    expect(placeOpen({ tags: [], check: "no-go" })).toBe("drilling");
+    expect(placeOpen({ tags: [], check: "no-go", drilled: true })).toBe("drilling");
+    expect(placeOpen({ tags: [], check: "no-go", drilled: false })).toBe("drilling");
   });
 
   it("puts a ticket tagged needs-jacobus on the owner's planning call, checked or not", () => {
-    expect(placeOpen({ tags: ["needs-jacobus"], check: null })).toBe("owner_plan_call");
-    expect(placeOpen({ tags: ["ui", "needs-jacobus"], check: "go" })).toBe("owner_plan_call");
+    expect(placeOpen({ tags: ["needs-jacobus"], check: null, drilled: true })).toBe("owner_plan_call");
+    expect(placeOpen({ tags: ["ui", "needs-jacobus"], check: "go", drilled: true })).toBe("owner_plan_call");
   });
 
   it("parks a ticket tagged idea", () => {
-    expect(placeOpen({ tags: ["idea"], check: null })).toBe("parked_idea");
+    expect(placeOpen({ tags: ["idea"], check: null, drilled: true })).toBe("parked_idea");
   });
 });
