@@ -378,19 +378,23 @@ const OMNISLASH_CALLS: Array<{ method: string; path: string; call: Call }> = [
 ];
 
 
-describe("the spinoff writes that set a phase go to the role server (OS-285)", () => {
+describe("the spinoff writes that set a phase, and the moves into building, go to the role server (OS-285)", () => {
   const PHASE_CALLS: Array<{ path: string; call: (c: ApiClient) => Promise<unknown> }> = [
     { path: "/api/ob/spinoffs/phase", call: (c) => c.setSpinoffPhase({ id: 1, phase: "pr_ci" }) },
     { path: "/api/ob/spinoffs/ready", call: (c) => c.readySpinoff({ id: 1 } as never) },
     { path: "/api/ob/spinoffs/sendback", call: (c) => c.sendBackSpinoff({ id: 1 } as never) },
     { path: "/api/ob/spinoffs/verdict", call: (c) => c.recordSpinoffVerdict({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/claim", call: (c) => c.claimSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/stamp", call: (c) => c.stampSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/reopen", call: (c) => c.reopenSpinoff({ id: 1 } as never) },
+    { path: "/api/ob/spinoffs/resume", call: (c) => c.resumeSpinoff({ id: 1 } as never) },
   ];
 
-  test("the matcher takes each phase write, and no other spinoff route", () => {
-    for (const route of ["/spinoffs/phase", "/spinoffs/ready", "/spinoffs/sendback", "/spinoffs/verdict"]) {
+  test("the matcher takes each phase write and move into building, and no other spinoff route", () => {
+    for (const route of ["/spinoffs/phase", "/spinoffs/ready", "/spinoffs/sendback", "/spinoffs/verdict", "/spinoffs/claim", "/spinoffs/stamp", "/spinoffs/reopen", "/spinoffs/resume"]) {
       expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(true);
     }
-    for (const route of ["/spinoffs", "/spinoffs/land", "/spinoffs/stamp", "/spinoffs/claim", "/spinoffs/phasex", "/spinoffs/readyx"]) {
+    for (const route of ["/spinoffs", "/spinoffs/land", "/spinoffs/trial", "/spinoffs/tokens", "/spinoffs/phasex", "/spinoffs/readyx"]) {
       expect(SPINOFF_PHASE_ROUTE.test(route), route).toBe(false);
     }
   });

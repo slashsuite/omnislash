@@ -615,8 +615,7 @@ export async function setSpinoffPhase(
       const r = await storedSpinoffRow(s, id);
       if (!r) return null;
       stored = r.phase ?? null;
-      const held = (PHASES_BY_STATUS[r.status as SpinoffStatus] ?? []) as readonly string[];
-      return phaseStateOf(r.status, stored !== null && held.includes(stored) ? stored : null);
+      return phaseStateOf(r.status, heldPhase(r.status, stored));
     },
     write: async (state, to) => {
       const status = state.split("/")[0] ?? state;
