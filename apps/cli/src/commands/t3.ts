@@ -7,12 +7,16 @@ import { listProjects } from "../project.ts";
 import { storeAgentRegistry, worktreeRepoOf } from "../t3/dispatch.ts";
 import { resolveRepoFor } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { doneAgent } from "../../../../platform/cli-coord/src/agent.ts";
-import { addTeam, editTeam, getTeam, joinTeam, leaveTeam, listTeamViews, removeTeam, teamInUseRefusal, teamView } from "../team.ts";
+import { addTeam, editTeam, getTeam, joinTeam, leaveTeam, listTeams, listTeamViews, removeTeam, teamInUseRefusal, teamView } from "../team.ts";
 import { refuseUnreadFlags } from "./capture.ts";
 import { storeConfigIo } from "../model-routes-io.ts";
 import { consumeTeamHandoff, latestTeamHandoff, recordTeamHandoff } from "../team-handoff.ts";
 import { checkoutOf, runRole, runTeam, t3SubcommandReads, type TeamBackend } from "./t3-team.ts";
 import { BROADCAST_AUDIENCES, broadcast, renderBroadcast, type BroadcastAudience, type BroadcastReport } from "../t3/broadcast.ts";
+import { refuseSweepArgs, renderSettleSweep, settleSweep, type SweepReport, type SweepRows } from "../t3/settle-sweep.ts";
+import { openRoleRuns } from "../role-run.ts";
+import { listSpinoffs } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { leaseStatus } from "../../../../platform/cli-coord/src/lease.ts";
 import {
   T3_PINNED_BUILD,
   T3_PINNED_CHANNEL,
@@ -362,6 +366,25 @@ export function emitBroadcast(ctx: { mode: Ctx["mode"]; exit?: number | undefine
   if (report.failed > 0) ctx.exit = 1;
 }
 
+/** The rows `ob t3 settle-sweep` reads, from this machine's store (OS-288). Expired agent rows included: a retired seat's thread stays a role thread. */
+async function storeSweepRows(store: Ctx["db"] | NonNullable<Ctx["store"]>): Promise<SweepRows> {
+  const [spinoffs, agents, leases, teams] = await Promise.all([listSpinoffs(store), listAgents(store, { includeExpired: true }), leaseStatus(store), listTeams(store)]);
+  const runs = (await Promise.all(teams.map((t) => openRoleRuns(store, t.name)))).flat();
+  return { spinoffs, agents, leases, roleThreads: runs.flatMap((r) => (r.thread_id ? [r.thread_id] : [])) };
+}
+
+/** Print a settle-sweep report in the run's mode; exit 1 if any thread could not be read or settled. Shared by the local and API paths. */
+export function emitSettleSweep(ctx: { mode: Ctx["mode"]; exit?: number | undefined }, report: SweepReport): void {
+  print(
+    ctx.mode === "json"
+      ? JSON.stringify(report, null, 2)
+      : ctx.mode === "quiet"
+        ? report.rows.filter((r) => r.action === "settled" || r.action === "would-settle").map((r) => r.threadId).join("\n")
+        : renderSettleSweep(report),
+  );
+  if (report.failed > 0) ctx.exit = 1;
+}
+
 // -----------------------------------------------------------------------------
 // `ob t3 status` (1124) — the health stages doctor computes, then the threads.
 // -----------------------------------------------------------------------------
@@ -656,6 +679,12 @@ export async function cmdT3(ctx: Ctx): Promise<void> {
     return;
   }
 
+  if (sub === "settle-sweep") {
+    refuseSweepArgs(ctx.args);
+    emitSettleSweep(ctx, await settleSweep({ seam: await readT3Seam(), rows: await storeSweepRows(store), dryRun: ctx.flags["dry-run"] === true }));
+    return;
+  }
+
   if (sub === "team") {
     await runTeam(ctx, storeTeamBackend(store));
     return;
@@ -666,5 +695,5 @@ export async function cmdT3(ctx: Ctx): Promise<void> {
     return;
   }
 
-  throw new UsageError(`unknown t3 subcommand '${sub}' (doctor, login, team, architect, sentinel, muse, broadcast, status, projects, tree, open)`);
+  throw new UsageError(`unknown t3 subcommand '${sub}' (doctor, login, team, architect, sentinel, muse, broadcast, settle-sweep, status, projects, tree, open)`);
 }

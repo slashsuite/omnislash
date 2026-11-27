@@ -718,6 +718,19 @@ async function apiT3(ctx: ApiCtx): Promise<void> {
 		emitBroadcast(ctx, await broadcast({ audience, text, rows, dryRun: ctx.flags["dry-run"] === true }));
 		return;
 	}
+	if (sub === "settle-sweep") {
+		// OS-288: the rows come over the API, the threads are read and settled here, where T3 is.
+		const { emitSettleSweep } = await import("../commands/t3.ts");
+		const { refuseSweepArgs, settleSweep } = await import("../t3/settle-sweep.ts");
+		refuseSweepArgs(ctx.args);
+		const { readT3Seam } = await import("../t3/read.ts");
+		const [spinoffs, agents, leases, teams] = await Promise.all([ctx.client.spinoffs({}), ctx.client.agents(true), ctx.client.leases(), ctx.client.teams()]);
+		const runs = (await Promise.all(teams.teams.map((t) => ctx.client.roleRuns(t.name)))).flatMap((r) => r.runs);
+		const roleThreads = runs.flatMap((r) => (r.thread_id ? [r.thread_id] : []));
+		const rows = { spinoffs: spinoffs.spinoffs, agents: agents.agents, leases: leases.leases, roleThreads };
+		emitSettleSweep(ctx, await settleSweep({ seam: await readT3Seam(), rows, dryRun: ctx.flags["dry-run"] === true }));
+		return;
+	}
 	if (sub === "team") {
 		await runTeam(ctx, apiTeamBackend(ctx));
 		return;

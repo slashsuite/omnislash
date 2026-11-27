@@ -64,10 +64,10 @@ describe("retired leftover laptop commands (457)", () => {
   });
 });
 
-describe("Mac daemon install holds only role-tick since the drain retired (457, 1589, OS-67)", () => {
-  test("macDaemonJobs is role-tick alone", () => {
+describe("Mac daemon install holds only the client jobs since the drain retired (457, 1589, OS-67, OS-288)", () => {
+  test("macDaemonJobs is role-tick and settle-sweep", () => {
     const mac = macDaemonJobs("/Users/nobody").map((j) => j.job);
-    expect(mac).toEqual(["role-tick"]);
+    expect(mac).toEqual(["role-tick", "settle-sweep"]);
     for (const job of MAC_MUST_NOT_INSTALL) {
       expect(mac, job).not.toContain(job);
     }
@@ -85,7 +85,7 @@ describe("Mac daemon install holds only role-tick since the drain retired (457, 
     const r = await runCli(freshDbPath(), ["daemon", "status", "--json"]);
     expect(r.code).toBe(0);
     const jobs = JSON.parse(r.out).jobs as Array<{ job: string }>;
-    expect(jobs.map((j) => j.job)).toEqual(["role-tick"]);
+    expect(jobs.map((j) => j.job)).toEqual(["role-tick", "settle-sweep"]);
     for (const job of MAC_MUST_NOT_INSTALL) {
       expect(jobs.find((j) => j.job === job), job).toBeUndefined();
     }

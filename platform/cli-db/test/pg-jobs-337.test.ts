@@ -274,7 +274,10 @@ describe("ob 337 pass 6: `ob jobs` and `ob daemon` served from Postgres", () => 
         expect(daemon.code).toBe(0);
         const jobs = JSON.parse(daemon.out) as { action: string; jobs: Array<{ job: string; schedule: string }> };
         expect(jobs.action).toBe("status");
-        expect(jobs.jobs.map((j) => [j.job, j.schedule])).toEqual([["role-tick", "every 900s"]]); // the one client job (OS-67)
+        expect(jobs.jobs.map((j) => [j.job, j.schedule])).toEqual([
+          ["role-tick", "every 900s"],
+          ["settle-sweep", "every 1800s"],
+        ]); // the client jobs (OS-67, OS-288)
 
         // `ob jobs` reads job_run plus three settings, both on Postgres.
         const empty = await ob("jobs", "--json");

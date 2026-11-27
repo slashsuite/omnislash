@@ -94,7 +94,7 @@ export interface T3Seam {
     cursor?: number;
   }): Promise<T3ThreadListResult>;
   /** `afterPosition`/`limit` page the timeline from a position (T3 lists oldest first); the default is one item. */
-  read(threadId: string, opts?: { afterPosition?: number; limit?: number }): Promise<T3ThreadRead>;
+  read(threadId: string, opts?: { afterPosition?: number; limit?: number; view?: "messages" | "activity" }): Promise<T3ThreadRead>;
   launch(input: T3LaunchInput): Promise<T3LaunchResult>;
   /** Put a thread on the pinned list (`t3_thread_organize pin`): every team thread, on every bind (OB-2255). */
   pin(threadId: string): Promise<void>;
@@ -140,7 +140,13 @@ export async function connectedT3Seam(): Promise<T3Seam> {
     projects: () => client.projects(),
     capabilities: (search) => client.capabilities(search),
     list: (opts) => client.list(opts),
-    read: (threadId, opts) => client.read(threadId, { limit: opts?.limit ?? 1, runLimit: 5, ...(opts?.afterPosition === undefined ? {} : { afterPosition: opts.afterPosition }) }),
+    read: (threadId, opts) =>
+      client.read(threadId, {
+        limit: opts?.limit ?? 1,
+        runLimit: 5,
+        ...(opts?.afterPosition === undefined ? {} : { afterPosition: opts.afterPosition }),
+        ...(opts?.view === undefined ? {} : { view: opts.view }),
+      }),
     launch: (input) => client.launch(input),
     // A re-pin of a pinned thread is a no-op, not an error (checked live 2026-11-17, OB-2251: pin, pin, unpin
     // on a builder thread all answered with a sequence), so every bind can pin without reading first.

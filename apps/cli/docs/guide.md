@@ -184,9 +184,10 @@ external sources ──(read-only poll)──▶ connectors ──▶ [ Postgres
 
 ### The daemon jobs (`daemonJobs`)
 
-`ob daemon install` writes **GUI-local jobs only** (457/664). Since OS-67 that is one job,
+`ob daemon install` writes **GUI-local jobs only** (457/664). Since OS-288 that is two jobs:
 `role-tick` (`ob role tick` every 900s), which runs on the client because a pass may open a role
-run and runs open on the caller's own T3. Since ob 1589 `ob spinoff <ref>` launches its T3 thread
+run and runs open on the caller's own T3, and `settle-sweep` (`ob t3 settle-sweep` every 1800s),
+which settles finished threads on that same T3. Since ob 1589 `ob spinoff <ref>` launches its T3 thread
 immediately, so the 45s `spinoff-drain` poll is retired. `ob daemon install` and `ob daemon uninstall`
 both **remove** a leftover drain unit
 (`com.omnislash.spinoff-drain` on macOS, `omnislash-spinoff-drain.{service,timer}` under
@@ -202,6 +203,7 @@ plists as a build step; the owner unloads those when he wants.
 | Job | Command | Cadence | Placement |
 |---|---|---|---|
 | `role-tick` | `ob role tick` | every 900s (15 min, OS-67): writes what needs each team's architect into its inbox and delivers it; nothing new is one line, delivers nothing and starts no run. It also test-merges the team's running branches and posts each conflicting pair to the sentinel (OS-48). It also ends idle (15 minutes) and over-cap (200k context) role runs after asking each for its note (OS-57). The server's `ob jobs` never sees its runs, so it is never reported stale or never-ran there | **client** (`omnislash-role-tick.timer` on Linux, `com.omnislash.role-tick` on macOS) |
+| `settle-sweep` | `ob t3 settle-sweep` | every 1800s (30 min, OS-288): settles every unsettled T3 thread no keep rule names (role threads, live builder rows and leases, a run or question in flight, queued messages, a thread you wrote in within 30 minutes, a subagent of a kept or running parent; archived threads are skipped). Exit 1 when a thread could not be read or settled. Its log is `~/.local/share/omnislash/logs/settle-sweep.log` (launchd) or the user journal (`journalctl --user -u omnislash-settle-sweep`) | **client** (`omnislash-settle-sweep.timer` on Linux, `com.omnislash.settle-sweep` on macOS) |
 | ~~`spinoff-drain`~~ | `ob spinoff drain` | **retired (1589)** | No longer installed anywhere; install/uninstall remove a leftover unit. `ob spinoff drain` is still a manual one-shot. |
 | `sync` | `ob sync` | every 3600s (hourly) | server (the API host) |
 | `gmail-sync` | `ob gmail sync` | every 300s (5 min) | server (the API host) |
@@ -215,11 +217,11 @@ plists as a build step; the owner unloads those when he wants.
 | `cert-renew` | `ob cert renew` | daily 03:40, renews the LAN certificate the dashboard serves (220). **Declared here and installed only on the server** as `omnislash-cert-renew.timer`, like `ha-health`: the certificate belongs to the box that serves the dashboard. Daily is deliberate for a 90-day certificate, because lego only acts inside the last 30 days: that leaves a month of daily attempts between the first failure and an expiry, each one counting toward the `JOB FAILING` alert. On a machine with no `tls_domain` it prints "nothing to renew" and exits 0, so it is inert rather than noisy on a laptop | server (the API host); never a Mac plist |
 | `backup` | `ob backup` | monthly, 1st at 03:15 | server (the API host) |
 
-**Client vs server after cutover (448/457/664).** Client = GUI-local only: `role-tick` since OS-67
-(the `spinoff-drain` job it used to hold is retired in 1589). `ob daemon install` / `status` / `uninstall`
+**Client vs server after cutover (448/457/664).** Client = GUI-local only: `role-tick` since OS-67 and
+`settle-sweep` since OS-288 (the `spinoff-drain` job it used to hold is retired in 1589). `ob daemon install` / `status` / `uninstall`
 talk about that client set, not the old full launchd fleet. Server = everything else (`sync`, `backup`, `gmail-sync`, `cal-sync`, `alerts`,
 `net-pull`, `web`, the WhatsApp pair, `ha-health`, `cert-renew`). The pg-cutover
-runbook's unfreeze step reloads **the Mac set**, which is `role-tick`; `ob daemon status` lists it.
+runbook's unfreeze step reloads **the Mac set**, which is `role-tick` and `settle-sweep`; `ob daemon status` lists them.
 
 This table is the **only** declaration of the fleet: the server's job list and the systemd units are
 asserted against it by `apps/cli/test/proxmox-units.test.ts`, and since ob 218 the per-job health signal

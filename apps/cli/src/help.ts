@@ -1466,6 +1466,12 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         ],
         examples: ['t3 broadcast architects "Freeze merges for deploy" --dry-run'],
       },
+      "settle-sweep": {
+        summary: "Settle every unsettled T3 thread whose work is over, in every T3 project",
+        usage: ["t3 settle-sweep [--dry-run]"],
+        flags: [{ flag: "--dry-run", description: "List what would be settled and what is kept, settle nothing" }],
+        examples: ["t3 settle-sweep --dry-run", "t3 settle-sweep"],
+      },
       status: {
         summary: "Show T3 health, active threads, and threads needing attention",
         usage: ["t3 status"],
@@ -1951,11 +1957,11 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
 
   daemon: {
     section: "Deploy & Ops",
-    summary: "Install, uninstall, or check the client role-tick scheduler",
+    summary: "Install, uninstall, or check the client role-tick and settle-sweep jobs",
     usage: ["daemon install | uninstall | status"],
     subcommands: {
       install: {
-        summary: "Install the 15-minute client role-tick timer (launchd or systemd user)",
+        summary: "Install the role-tick (15 min) and settle-sweep (30 min) client timers",
         usage: ["daemon install"],
         examples: ["daemon install"],
       },

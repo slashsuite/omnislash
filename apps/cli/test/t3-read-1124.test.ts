@@ -704,7 +704,7 @@ describe("ob t3 subcommand surface (1124)", () => {
   test("an unknown subcommand names every one it does know", async () => {
     const r = await runCli(freshDbPath(), ["t3", "nope"]);
     expect(r.code).toBe(2);
-    expect(r.err).toContain("doctor, login, team, architect, sentinel, muse, broadcast, status, projects, tree, open");
+    expect(r.err).toContain("doctor, login, team, architect, sentinel, muse, broadcast, settle-sweep, status, projects, tree, open");
   });
 
   test("`t3 projects` reads live and prints the project table", async () => {
