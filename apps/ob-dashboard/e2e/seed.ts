@@ -136,6 +136,9 @@ export async function seedTimeline(store: Store): Promise<void> {
       .set({ ...set, block_reason: null, block_owner: null, today_rank: null, updated_at: set.closed_at ?? set.created_at })
       .where(eq(t.item.id, id));
   }
+  // OS-277: the timeline places a decision at its decided_at, which createItem stamps with now; pin it to the
+  // seeded decision time so the world holds at any hour.
+  await store.q.update(t.decisionDetail).set({ decided_at: "2026-11-10T01:00:00.000Z" }).where(eq(t.decisionDetail.item_id, ids.decision));
 
   await store.q.delete(t.event).where(inArray(t.event.item_id, Object.values(ids)));
   const move = (item_id: string, ts: string, payload: Record<string, unknown>) => ({
