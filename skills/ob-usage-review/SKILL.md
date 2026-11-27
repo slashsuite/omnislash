@@ -17,7 +17,7 @@ The review itself must be cheap. Run it in a fresh thread, start no subagents, a
 2. **Read the last levers.** The levers log in your main repo (for example `docs/usage-levers.md`): what was adopted on which day, and the numbers it was meant to move. If a lever's figure did not move in the `--compare` deltas, say so; it is a candidate to drop or redo.
 3. **Name at most three levers**, largest dollar size first. Each one is:
    - the figure it moves, with its dollars and its share of the day from today's report (`cache read $516, 65%`); state the saving as a share of the day's usage too, not only dollars, and say it is the total across threads, not per ticket,
-   - the cause read off the report (a session whose peak context sits at 360k, one thread doing most of the cost, subagents above 15%, Opus on work a cheaper tier could do),
+   - the cause read off the report (a session whose peak context sits at 360k, one thread doing most of the cost, subagents above 15%, a higher-range model on work a lower range could do),
    - one concrete change: a rule (compact or start fresh past a context size, a tier for a kind of ticket), a polling or watchdog loop to cut or slow, a role thread to retire, a skill to make shorter.
    A lever with no dollar figure behind it is not a lever. Skip anything under 5% of the day.
 4. **Ask the owner about each lever** through the question tool (`AskUserQuestion`, `skills/ob-ask-one-by-one`), one question per lever: adopt, change, or skip. Put your recommendation first.
@@ -43,7 +43,7 @@ The review itself must be cheap. Run it in a fresh thread, start no subagents, a
 | cache write is high | contexts rebuilt often (new threads, cache expiry) | fewer short-lived threads; avoid idle gaps longer than the cache life |
 | one architect session leads | the planning thread rides a big context all day | hand off to a fresh thread at a context size |
 | subagents above 15% | review legs or explorers fanned out | fewer legs, or a cheaper model for them |
-| Opus on most calls | builders on medium or complex by default | a lower tier for a kind of ticket |
+| a higher-range model on most calls | builders on 4-6 or 7-10 by default | a lower range for a kind of ticket |
 | a session named by its slug | a thread `ob` cannot map (scratch, another tool) | find out what it was before calling it waste |
 | `not an ob project` is large | scratch threads and repos outside `ob project list` | ask the owner whether the repo should become an `ob` project (only the owner adds one), or move that work into a project |
 
