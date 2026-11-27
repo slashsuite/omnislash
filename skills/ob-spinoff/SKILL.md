@@ -69,6 +69,8 @@ never `ob lease release <resource> --force` a live holder.
 
 ## 2. COMMIT with a state line; push only your branch, never merge
 Commit your work on your own branch. You push only that branch and open its PR (§4, `ob-land`); the architect merges it.
+
+**Commit and push after every step (Jacobus, 2026-11-27).** Each step that leaves the tree working (a test passing, a file reworked, a review finding fixed) is its own commit, pushed to your branch at once, so the architect's conflict check (`git merge-tree` against `origin/<branch>`) sees what you touch while you build, not only at handoff. Use a Conventional Commit subject with your ref (`refactor(PS-12): split the upload loop`). The `State:` line goes on the last commit only; the squash merge folds the steps into one.
 You never merge, never push to `main` and never commit on it. **Never `git reset --soft main` or `commit-tree` onto `main` yourself**: that keeps your
 stale tree and turns what `main` gained since your fork into your own diff, which is how one land once undid an earlier one. Leave your commits as they are;
 the PR's GitHub squash merge folds them into one (except the rebase below). Stage with `git add -A` or explicit paths, **NEVER `git commit -am`**, which stages
