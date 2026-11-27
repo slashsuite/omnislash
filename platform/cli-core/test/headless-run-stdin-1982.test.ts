@@ -82,6 +82,9 @@ async function drive(prompt: string, extraEnv: Record<string, string> = {}) {
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
+      // OS-280: runHeadless spawns with cwd: homedir(). An inherited HOME that another test file
+      // pointed at a since-deleted dir made posix_spawn fail with ENOENT, so pin HOME to this scratch.
+      HOME: scratch,
       OB_1982_REPORT: report,
       OB_1982_STDIN: received,
       ...extraEnv,
