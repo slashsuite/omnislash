@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 import type { RoleTicket } from "../lib/role-machine.ts";
 import { RoleMachine } from "./RoleMachine.tsx";
 
-// OS-187: the role state machine (platform/state-machine, through fromXState) with tickets on it. Each look has a light and a
-// dark story, so both are one click (and one screenshot) away. Replay walks real OmniSlash tickets along the
-// path a landed ticket took, so the dots move between states.
+// OS-187: the role state machine (platform/state-machine) with tickets on it, drawn as persona swimlanes (OS-261). Each
+// look has a light and a dark story, so both are one click (and one screenshot) away. Replay walks real OmniSlash
+// tickets along the path a landed ticket took, so their chips move between states.
 
 const busy: RoleTicket[] = [
   { ref: "OS-187", title: "RoleMachine diagram component", state: "building" },

@@ -4,19 +4,19 @@
 // Writes docs/role-state-machine.json and docs/role-state-machine.mmd from `roleMachine` (src/role.ts). With
 // --check it writes nothing and exits 1, naming each file, when a committed copy differs from what the machine
 // gives (OS-174). The JSON keeps the v1 schema slashslash's hand-kept file had (SS-130): version, roles, states,
-// transitions with from, to, label, event, actor and source.
+// transitions with from, to, label, event, actor and source. OS-261 adds each state's `stage` (idea, plan, build, ship, done).
 import { join } from "node:path";
 import { ROLE_TRANSITIONS, ROLES, type RoleStateMeta, type RoleTransitionMeta, roleMachine, SKILLS_READ_AT } from "./role.ts";
 
 /** The shapes OS-165 and slashslash read: one per JSON state and transition. */
-export type ExportState = { id: string; label: string; role: string; human_required: boolean; terminal: boolean };
+export type ExportState = { id: string; label: string; role: string; stage: string; human_required: boolean; terminal: boolean };
 export type ExportTransition = { from: string; to: string; label: string; event: string; actor: string; source: string };
 
 /** Every state of the machine, in definition order, with its meta. */
 export function exportStates(): ExportState[] {
   return Object.entries(roleMachine.states).map(([id, node]) => {
     const meta = node.meta as RoleStateMeta;
-    return { id, label: meta.label, role: meta.role, human_required: meta.human_required, terminal: node.type === "final" };
+    return { id, label: meta.label, role: meta.role, stage: meta.stage, human_required: meta.human_required, terminal: node.type === "final" };
   });
 }
 

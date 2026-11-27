@@ -56,7 +56,7 @@ const SPIKE_END = "spike:";
  * The role state a row is in. Pure.
  *
  * - A spike (tagged `spike`) runs its own row: pending, launching and launched are all the spike's build (it never
- *   reaches ready-for-gate), and a failed one that ended as a spike is closed.
+ *   reaches ready-for-gate). A spike that has ended is history, not in flight (inFlight, OS-261).
  * - A launched row whose builder is needs-human or blocked is on the owner's call, whatever its phase.
  * - A handed-off row whose verdict is needs-human waits on the owner's merge call, a human state, even though the
  *   handoff stamped phase `gating`. The verdict is read only for handed-off rows: a sendback moves the row back to
@@ -72,13 +72,11 @@ export function placeRow(input: {
   phase: string | null;
   builderStatus: string | null;
   spike: boolean;
-  error: string | null;
   /** The row's verdict, `State: needs-human - …` as rowVerdictState reads it, or null. */
   verdict?: string | null;
 }): string {
-  const { status, phase, builderStatus, spike, error, verdict } = input;
+  const { status, phase, builderStatus, spike, verdict } = input;
   if (spike && (status === "pending" || status === "launching" || status === "launched")) return "spike";
-  if (spike && status === "failed" && (error ?? "").startsWith(SPIKE_END)) return "closed";
   if (status === "launched" && (builderStatus === "needs-human" || builderStatus === "blocked")) return "owner_call";
   if (status === "ready-for-gate" && isNeedsHuman(verdict)) return "owner_merge_call";
   if ((status === "launched" || status === "ready-for-gate") && phase && PHASE_STATES.includes(phase)) return phase;
@@ -136,8 +134,11 @@ export function inFlight<R extends MachineRowInput>(rows: readonly R[], items: r
   const out: { row: R; item: MachineItem }[] = [];
   for (const { item, legs } of newestDispatches(rows, items)) {
     for (const r of legs) {
-      // A retired newest row retires its ticket's dispatch: an older row behind it is history, not back in flight.
-      if (r.status === LANDED || (r.status === "failed" && (r.error ?? "").startsWith(ABANDONED))) continue;
+      // A retired newest row retires its ticket's dispatch: an older row behind it is history, not back in flight. So
+      // does a spike that has ended (OS-261): it is written only once its ticket is done, so a reopened spike ticket is
+      // back on its planning state, not drawn as shipped or as the architect's.
+      const ended = r.status === "failed" && ((r.error ?? "").startsWith(ABANDONED) || (r.error ?? "").startsWith(SPIKE_END));
+      if (r.status === LANDED || ended) continue;
       // No ticket at all: a mis-dispatch whose ref is a CLI verb (`status`, `abandon`) or a scratch id (`9999999`).
       if (!item || item.closed) continue;
       out.push({ row: r, item });
