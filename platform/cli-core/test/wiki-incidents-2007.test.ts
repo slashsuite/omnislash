@@ -9,6 +9,7 @@ import { incidentProblems, parseIncidents, wikiDir } from "../../../apps/cli/src
 const REPO = join(import.meta.dir, "..", "..", "..");
 let tmp: string;
 let db: string;
+const realHome = process.env.HOME;
 
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "wiki-inc-"));
@@ -20,6 +21,9 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.OB_WIKI_DIR;
   delete process.env.OB_REPOS_DIR;
+  // OS-280: a HOME left pointing at the removed tmp dir broke later files that spawn with cwd: homedir().
+  if (realHome === undefined) delete process.env.HOME;
+  else process.env.HOME = realHome;
   rmSync(tmp, { recursive: true, force: true });
 });
 
