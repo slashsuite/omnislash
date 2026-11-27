@@ -10,6 +10,7 @@ import {
   agyCommandPattern,
   antigravitySettings,
   DENIED_COMMANDS,
+  failedLegLine,
   finishAntigravityRun,
   legCommand,
   legProfiles,
@@ -103,6 +104,10 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
         const briefFile = join(spawn.briefDir!, "brief.md");
         expect(prompt).toContain(briefFile);
         expect(Buffer.byteLength(prompt)).toBeLessThan(1024);
+        // Neon reached for `git log --oneline` on the OS-261 brief, which the --o ban refuses (OS-286).
+        expect(prompt).toContain("--pretty=oneline");
+        expect(new RegExp(agyCommandPattern("git log")).test("git log -n 5 --pretty=oneline --abbrev-commit")).toBe(true);
+        expect(new RegExp(agyCommandPattern("git log")).test("git log -n 5 --oneline")).toBe(false);
 
         for (const arg of spawn.cmd) {
           expect(arg).not.toContain(marker);
@@ -334,7 +339,9 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
     expect(r.code).toBe(1);
     expect(r.out).toBe("");
     expect(written).toEqual([]);
-    expect(r.err.split("\n")[0]).toBe("agy refused 1 action(s) outside the read-only allow list and returned no findings");
+    // Every field agy gave for each denied action is on the failed line (OS-286), not just the count.
+    expect(r.err.split("\n")[0]).toBe('agy refused 1 action(s) outside the read-only allow list and returned no findings (conversation 303133a3): {"action":"command","display_name":"Bash"}');
+    expect(failedLegLine("neon", r.code, r.err)).toContain('{"action":"command","display_name":"Bash"}');
     expect(r.tokens).toEqual({ input: 11134, output: 813, reasoning: 691 });
     expect(logs.some((l) => l.includes("refused 1 action"))).toBe(true);
     const empty = finishAntigravityRun({ code: 0, out: JSON.stringify({ status: "SUCCESS", response: " " }), err: "", signal: null, timedOut: false }, { write: () => {} }, () => {});
