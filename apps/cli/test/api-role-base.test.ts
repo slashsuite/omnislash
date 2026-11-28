@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ApiClient, ApiError, OMNISLASH_ROUTE, PROJECT_STATUS_ROUTE, ROLE_ROUTE, SPINOFF_PHASE_ROUTE } from "../src/api/client.ts";
+import { ApiClient, ApiError, OMNISLASH_ROUTE, PROJECT_STATUS_ROUTE, ROLE_ROUTE, SCHEDULE_ROUTE, SPINOFF_PHASE_ROUTE } from "../src/api/client.ts";
 import {
   ACCESS_CLIENT_ID_ENV,
   ACCESS_CLIENT_SECRET_ENV,
@@ -90,6 +90,18 @@ const ROLE_CALLS: Array<{ method: string; path: string; call: Call }> = [
     path: "/api/ob/teams/omnibus/inbox/read",
     call: (c) => c.roleMessagesRead("omnibus", "architect", [1], "architect"),
   },
+];
+
+// OS-311: the scheduled job routes, which live on the role base with the role inbox a role job writes into.
+const SCHEDULE_CALLS: Array<{ method: string; path: string; call: Call }> = [
+  { method: "GET", path: "/api/ob/schedules", call: (c) => c.schedules(true) },
+  { method: "POST", path: "/api/ob/schedules", call: (c) => c.scheduleCreate({ name: "nightly", schedule_kind: "cron", schedule_expr: "0 3 * * *", target_kind: "command", command: "true" }) },
+  { method: "GET", path: "/api/ob/schedules/nightly", call: (c) => c.scheduleShow("nightly", 5) },
+  { method: "POST", path: "/api/ob/schedules/nightly", call: (c) => c.scheduleUpdate("nightly", { enabled: false }) },
+  { method: "POST", path: "/api/ob/schedules/nightly/run", call: (c) => c.scheduleRun("nightly") },
+  { method: "DELETE", path: "/api/ob/schedules/nightly", call: (c) => c.scheduleDelete("nightly") },
+  { method: "POST", path: "/api/ob/schedules/tick", call: (c) => c.scheduleTick({ host: "desk" }) },
+  { method: "POST", path: "/api/ob/schedules/runs/7/finish", call: (c) => c.scheduleRunFinish(7, { status: "succeeded", exit_code: 0, output_tail: "" }) },
 ];
 
 // Routes that are NOT role routes: the team itself, its handoffs, and a non-team route.
@@ -181,6 +193,36 @@ describe("with a role base set, the role routes go to the role server (OS-76)", 
     }
     expect(main.seen).toHaveLength(MAIN_CALLS.length);
     expect(role.seen, "no non-role route may reach the role server").toEqual([]);
+  });
+});
+
+describe("the scheduled job routes go to the role base (OS-311)", () => {
+  test("the matcher takes /schedules and every path under it, and nothing that only starts with it", () => {
+    for (const { path } of SCHEDULE_CALLS) expect(SCHEDULE_ROUTE.test(path.replace("/api/ob", "")), path).toBe(true);
+    expect(SCHEDULE_ROUTE.test("/schedules?all=1")).toBe(true);
+    expect(SCHEDULE_ROUTE.test("/schedulesx")).toBe(false);
+    expect(SCHEDULE_ROUTE.test("/teams/omnibus/schedules")).toBe(false);
+  });
+
+  test("with a role base set, each schedule route reaches the role server and nothing reaches the main server", async () => {
+    process.env[ROLE_API_ENV] = role.url;
+    const client = new ApiClient({ base: main.url, token: TOKEN });
+    for (const { method, path, call } of SCHEDULE_CALLS) {
+      await call(client);
+      const last = role.seen.at(-1);
+      expect(last?.method, path).toBe(method);
+      expect(last?.path, path).toBe(path);
+    }
+    expect(role.seen).toHaveLength(SCHEDULE_CALLS.length);
+    expect(main.seen).toEqual([]);
+  });
+
+  test("with no role base, they reach the main server", async () => {
+    process.env[ROLE_API_ENV] = "";
+    const client = new ApiClient({ base: main.url, token: TOKEN, roleBase: undefined });
+    for (const { call } of SCHEDULE_CALLS) await call(client);
+    expect(main.seen).toHaveLength(SCHEDULE_CALLS.length);
+    expect(role.seen).toEqual([]);
   });
 });
 

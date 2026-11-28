@@ -5,9 +5,14 @@
 // OS-213: a building builder whose thread is past the same cap is one architect message asking for its relaunch.
 // OS-48: before delivering, it test-merges the team's running branches here; each conflicting pair goes to the sentinel.
 // OS-259: the pair's loser is paused, and told to go on once its winner has landed.
+// OS-311: first of all it claims the due scheduled jobs (`ob schedule`): a role job's prompt lands in the team role's
+// inbox and is delivered by the same pass (architect, sentinel or muse), and a command job claimed for this host runs
+// here, `sh -c`, its outcome recorded back on its run. A failing job never stops the rest of the tick.
 //
 // One procedure serves the store and the API client: each passes a `TickBackend` for the data. T3 is the caller's.
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
+import type { ClaimedCommand, ScheduleTickResult } from "../scheduled-jobs.ts";
+import { runClaimedCommand, type CommandOutcome } from "../schedule-run.ts";
 import type { Flags } from "../ctx.ts";
 import { UsageError } from "../errors.ts";
 import { print, warn, type Mode } from "../output.ts";
@@ -45,6 +50,32 @@ import type { RoleBackend } from "./role.ts";
 const TICK_ROLE = "architect" as const;
 /** OS-48: who a branch conflict goes to. */
 const CONFLICT_ROLE = "sentinel" as const;
+/** OS-311: the third role a scheduled job can prompt; delivered when it has unread messages. */
+const MUSE_ROLE = "muse" as const;
+
+/** OS-311: the scheduled job claim and finish, on the store or over the API. */
+export interface ScheduleBackend {
+  tick(input: { host: string; night_locked: boolean }): Promise<ScheduleTickResult>;
+  finish(runId: number, outcome: CommandOutcome): Promise<unknown>;
+}
+
+/** OS-311: what the tick's scheduled job pass did. */
+export interface ScheduleTickSummary {
+  host: string;
+  night_locked: boolean;
+  fired: ScheduleTickResult["fired"];
+  skipped: ScheduleTickResult["skipped"];
+  deferred: ScheduleTickResult["deferred"];
+  failed: ScheduleTickResult["failed"];
+  commands: Array<ClaimedCommand & CommandOutcome & { finish_error: string | null }>;
+  error: string | null;
+}
+
+/** OS-311: what the schedule pass may be given in a test: the host, the command runner. */
+export interface ScheduleDeps {
+  host?: string;
+  runCommand?: (job: ClaimedCommand) => Promise<CommandOutcome>;
+}
 
 /** Where a tick's data lives: the store on this machine, or the API. */
 export interface TickBackend {
@@ -56,6 +87,8 @@ export interface TickBackend {
   findings(team: string): Promise<TickFinding[]>;
   /** OS-48: the branch conflict check's rows, checkouts and notes; absent, the tick checks no branches. */
   conflicts: () => Promise<ConflictSource>;
+  /** OS-311: the scheduled jobs; absent, the tick claims none. */
+  schedules?: ScheduleBackend;
 }
 
 interface TickCtx {
@@ -80,6 +113,9 @@ interface TickTeamResult {
   /** OS-48: the sentinel's unread messages after the writes, and what delivering them did. */
   sentinel_unread: number;
   sentinel_delivery: DeliverOutcome | null;
+  /** OS-311: the muse's unread messages (a scheduled prompt) and what delivering them did. */
+  muse_unread: number;
+  muse_delivery: DeliverOutcome | null;
   /** OS-57: what the end pass did with each of the team's open role runs. */
   ended: EndPassResult[];
   error: string | null;
@@ -267,14 +303,71 @@ async function tickTeam(
   }
   result.unread = (await backend.inbox.list(team, TICK_ROLE, false)).length;
   result.sentinel_unread = (await backend.inbox.list(team, CONFLICT_ROLE, false)).length;
+  result.muse_unread = (await backend.inbox.list(team, MUSE_ROLE, false)).length;
   result.night_lock_until = nightLockedUntil();
-  if (result.unread + result.sentinel_unread === 0 || result.night_lock_until) return;
+  if (result.unread + result.sentinel_unread + result.muse_unread === 0 || result.night_lock_until) return;
   // A run opens in the team's checkout, not the job's cwd (a timer runs from $HOME).
   const role: RoleBackend = { ...backend.role, team: { ...backend.role.team, cwdRepo: async () => checkout } };
   if (result.unread > 0) result.delivery = await deliverToRole(role, backend.inbox, seam, team, TICK_ROLE);
   // OS-48: the sentinel's unread messages (a conflict, a held handoff) are delivered as the architect's are; this
   // starts a sentinel when the team has none (OS-181).
   if (result.sentinel_unread > 0) result.sentinel_delivery = await deliverToRole(role, backend.inbox, seam, team, CONFLICT_ROLE);
+  // OS-311: a muse receives only what was sent to it (a scheduled prompt); it is delivered to its bound thread.
+  if (result.muse_unread > 0) result.muse_delivery = await deliverToRole(role, backend.inbox, seam, team, MUSE_ROLE);
+}
+
+/**
+ * OS-311: one scheduled job pass for this machine, before the teams: claim the due jobs (the server, or the store, fires
+ * the role jobs into their inboxes), then run each claimed command here and record its outcome. A failure is recorded
+ * on the summary; it never throws, so the teams' pass always runs.
+ */
+export async function tickSchedules(schedules: ScheduleBackend, deps: ScheduleDeps = {}): Promise<ScheduleTickSummary> {
+  const host = deps.host ?? hostname();
+  const nightLocked = nightLockedUntil() !== null;
+  const summary: ScheduleTickSummary = { host, night_locked: nightLocked, fired: [], skipped: [], deferred: [], failed: [], commands: [], error: null };
+  let claim: ScheduleTickResult;
+  try {
+    claim = await schedules.tick({ host, night_locked: nightLocked });
+  } catch (err) {
+    summary.error = oneLine(err);
+    return summary;
+  }
+  summary.fired = claim.fired;
+  summary.skipped = claim.skipped;
+  summary.deferred = claim.deferred;
+  summary.failed = claim.failed;
+  const run = deps.runCommand ?? ((job: ClaimedCommand) => runClaimedCommand(job));
+  for (const job of claim.commands) {
+    let outcome: CommandOutcome;
+    try {
+      outcome = await run(job);
+    } catch (err) {
+      outcome = { status: "failed", exit_code: null, output_tail: `could not run: ${oneLine(err)}` };
+    }
+    let finishError: string | null = null;
+    try {
+      await schedules.finish(job.run_id, outcome);
+    } catch (err) {
+      finishError = oneLine(err);
+    }
+    summary.commands.push({ ...job, ...outcome, finish_error: finishError });
+  }
+  return summary;
+}
+
+/** The schedule pass as lines: one per job it touched, none when nothing was due. Pure. */
+export function renderSchedules(s: ScheduleTickSummary): string[] {
+  const lines: string[] = [];
+  if (s.error) return lines;
+  for (const f of s.fired) lines.push(`role tick schedule: fired ${f.name} -> ${f.team} ${f.role} (message #${f.message_id}, run ${f.run_id})`);
+  for (const c of s.commands) {
+    const how = c.exit_code === null ? "no exit code" : `exit ${c.exit_code}`;
+    lines.push(`role tick schedule: ran ${c.name} on ${s.host}: ${c.status} (${how}, run ${c.run_id})`);
+  }
+  for (const k of s.skipped) lines.push(`role tick schedule: skipped ${k.name} for good night; next ${k.next_run_at ?? "none"}`);
+  for (const d of s.deferred) lines.push(`role tick schedule: held ${d.name} for good night; it runs after the lock`);
+  for (const f of s.failed) lines.push(`role tick schedule: ${f.name} failed: ${f.error}`);
+  return lines;
 }
 
 function renderTeam(r: TickTeamResult): string[] {
@@ -282,11 +375,12 @@ function renderTeam(r: TickTeamResult): string[] {
   const lines = r.written.map((w) => `role tick ${r.team}: wrote #${w.id} ${w.kind} ${w.ref}`);
   for (const c of [...r.conflicts, ...r.resumed]) lines.push(`role tick ${r.team}: wrote #${c.id} ${c.line}`);
   if (r.error) return [...lines, ...r.ended.flatMap((e) => renderEndResult(r.team, e))];
-  const unread = r.unread + r.sentinel_unread;
+  const unread = r.unread + r.sentinel_unread + r.muse_unread;
   if (unread === 0) lines.push(`role tick ${r.team}: nothing new`);
   else if (r.night_lock_until) lines.push(`role tick ${r.team}: good night until ${r.night_lock_until}; ${unread} unread kept, nothing started or sent`);
   if (r.delivery) lines.push(`role tick ${r.team} ${TICK_ROLE}: ${renderDelivery(r.delivery)}`);
   if (r.sentinel_delivery) lines.push(`role tick ${r.team} ${CONFLICT_ROLE}: ${renderDelivery(r.sentinel_delivery)}`);
+  if (r.muse_delivery) lines.push(`role tick ${r.team} ${MUSE_ROLE}: ${renderDelivery(r.muse_delivery)}`);
   for (const e of r.ended) lines.push(...renderEndResult(r.team, e));
   return lines;
 }
@@ -297,8 +391,18 @@ export async function runRoleTick(
   backend: TickBackend,
   seam: () => Promise<T3Seam>,
   endDeps: Omit<EndPassDeps, "nightLocked"> = {},
+  scheduleDeps: ScheduleDeps = {},
 ): Promise<void> {
   const named = teamNames(ctx.flags.team);
+  // OS-311: the scheduled jobs first, so a role job fired now is delivered by this same pass.
+  const schedules = backend.schedules ? await tickSchedules(backend.schedules, scheduleDeps) : null;
+  if (schedules) {
+    if (ctx.mode === "human" || ctx.mode === "table") for (const line of renderSchedules(schedules)) print(line);
+    if (schedules.error) warn(`role tick schedule: ${schedules.error}`);
+    for (const c of schedules.commands) if (c.finish_error) warn(`role tick schedule: ${c.name} ran but its run ${c.run_id} was not recorded: ${c.finish_error}`);
+    // A claim or a record that failed is the tick failing (the teams still run); a command's own exit is its run's.
+    if (schedules.error || schedules.commands.some((c) => c.finish_error)) ctx.exit = 1;
+  }
   const views = await backend.teams();
   const checkouts = await backend.checkouts();
   const results: TickTeamResult[] = [];
@@ -316,6 +420,8 @@ export async function runRoleTick(
       delivery: null,
       sentinel_unread: 0,
       sentinel_delivery: null,
+      muse_unread: 0,
+      muse_delivery: null,
       ended: [],
       error: null,
     };
@@ -331,7 +437,7 @@ export async function runRoleTick(
       // The end pass runs on every tick, whatever delivery did; the night lock is when ending runs matters most.
       try {
         const d = r.delivery;
-        const justDelivered = new Set([d, r.sentinel_delivery].flatMap((x) => (x && (x.kind === "queued" || x.kind === "started") ? [x.run.id] : [])));
+        const justDelivered = new Set([d, r.sentinel_delivery, r.muse_delivery].flatMap((x) => (x && (x.kind === "queued" || x.kind === "started") ? [x.run.id] : [])));
         r.ended = await endPass(backend.role, backend.inbox, seam, name, { ...endDeps, nightLocked: nightLockedUntil() !== null, justDelivered });
       } catch (err) {
         r.error = [r.error, `end pass: ${oneLine(err)}`].filter(Boolean).join("; ");
@@ -345,12 +451,13 @@ export async function runRoleTick(
       ctx.exit = 1;
     }
     if (r.ended.some((e) => e.result === "error")) ctx.exit = 1;
-    for (const d of [r.delivery, r.sentinel_delivery]) {
+    for (const d of [r.delivery, r.sentinel_delivery, r.muse_delivery]) {
       if (d?.kind === "started" && d.auto_settle_warning) {
         warn(d.auto_settle_warning);
         ctx.exit = 1;
       }
     }
   }
-  if (ctx.mode === "json") print(JSON.stringify(results, null, 2));
+  // OS-311: the JSON is the teams and the schedule pass ({teams, schedules}); schedules is null with no schedule backend.
+  if (ctx.mode === "json") print(JSON.stringify({ teams: results, schedules }, null, 2));
 }

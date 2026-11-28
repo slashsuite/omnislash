@@ -234,6 +234,10 @@ type SpinoffsQuery,
   type ScheduleCreateRequest,
   type ScheduleResponse,
   type ScheduleShowResponse,
+  type ScheduleTickRequest,
+  type ScheduleTickResponse,
+  type ScheduleRunFinishRequest,
+  type ScheduleRunFinishResponse,
   type SchedulesResponse,
   type ScheduleUpdateRequest,
   type CursorGetResponse,
@@ -608,6 +612,12 @@ export const OMNISLASH_ROUTE = /^\/overnight(\/|\?|$)|^\/tags(\?|$)/;
  */
 export const SPINOFF_PHASE_ROUTE = /^\/spinoffs\/(phase|ready|sendback|verdict|claim|stamp|reopen|resume)(\?|$)/;
 
+/**
+ * OS-311: every scheduled job route (OS-310's `/schedules` and its tick and finish). The omnibus server on CT 130 does
+ * not serve them (a 404); the jobs live with the role routes' server, whose `role_inbox` a fired role job writes into.
+ */
+export const SCHEDULE_ROUTE = /^\/schedules(\/|\?|$)/;
+
 export class ApiClient {
 	private readonly base: string;
 	private readonly roleOption: string | null | undefined;
@@ -636,11 +646,11 @@ export class ApiClient {
 
 	/**
 	 * OS-76: the server a route is sent to. Only a team role route (or, OS-189, a project status route, or, OS-252, an
-	 * overnight or tag count route, or, OS-285, a spinoff phase write) can go to the role base, and the role base is read on the first such call (not at
+	 * overnight or tag count route, or, OS-285, a spinoff phase write, or, OS-311, a scheduled job route) can go to the role base, and the role base is read on the first such call (not at
 	 * construction), so a bad role setting fails those routes and nothing else.
 	 */
 	private baseFor(route: string): string {
-		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route) && !OMNISLASH_ROUTE.test(route) && !SPINOFF_PHASE_ROUTE.test(route)) return this.base;
+		if (!ROLE_ROUTE.test(route) && !PROJECT_STATUS_ROUTE.test(route) && !OMNISLASH_ROUTE.test(route) && !SPINOFF_PHASE_ROUTE.test(route) && !SCHEDULE_ROUTE.test(route)) return this.base;
 		return this.roleBaseUrl() ?? this.base;
 	}
 
@@ -1551,6 +1561,16 @@ export class ApiClient {
 
 	scheduleDelete(ref: string): Promise<ScheduleResponse> {
 		return this.call("DELETE", `${path.schedules}/${encodeURIComponent(ref)}`);
+	}
+
+	/** OS-311: claim this machine's due jobs (`ob role tick`). */
+	scheduleTick(body: ScheduleTickRequest): Promise<ScheduleTickResponse> {
+		return this.call("POST", `${path.schedules}/tick`, body);
+	}
+
+	/** OS-311: record how a claimed command run ended. */
+	scheduleRunFinish(runId: number, body: ScheduleRunFinishRequest): Promise<ScheduleRunFinishResponse> {
+		return this.call("POST", `${path.schedules}/runs/${runId}/finish`, body);
 	}
 
 	/** OS-170: `ob machine audit`. */

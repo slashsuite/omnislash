@@ -386,7 +386,17 @@ import {
   type GmailMessageRead,
 } from "../../../../platform/cli-sources/src/gmail-message.ts";
 import { ApiFault } from "./fault.ts";
-import type { ScheduleCreateRequest, ScheduleResponse, ScheduleShowResponse, SchedulesResponse, ScheduleUpdateRequest } from "./contract.ts";
+import type {
+  ScheduleCreateRequest,
+  ScheduleResponse,
+  ScheduleRunFinishRequest,
+  ScheduleRunFinishResponse,
+  ScheduleShowResponse,
+  SchedulesResponse,
+  ScheduleTickRequest,
+  ScheduleTickResponse,
+  ScheduleUpdateRequest,
+} from "./contract.ts";
 import {
   createScheduledJob,
   deleteScheduledJob,
@@ -395,6 +405,9 @@ import {
   runScheduledJobNow,
   ScheduledJobNotFoundError,
   updateScheduledJob,
+  finishScheduledJobRun,
+  ScheduledJobRunNotFoundError,
+  tickScheduledJobs,
 } from "../scheduled-jobs.ts";
 import { InvalidScheduleError } from "../schedule.ts";
 import { inScope, type ProjectScope } from "../project-scope.ts";
@@ -2826,7 +2839,7 @@ async function scheduleFault<T>(run: () => Promise<T>): Promise<T> {
     return await run();
   } catch (e) {
     if (e instanceof InvalidScheduleError || e instanceof UsageError) throw new ApiFault("invalid_request", 400, e.message);
-    if (e instanceof ScheduledJobNotFoundError || e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
+    if (e instanceof ScheduledJobNotFoundError || e instanceof ScheduledJobRunNotFoundError || e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
     if (e instanceof AppError) throw new ApiFault("refused", 409, e.message);
     throw e;
   }
@@ -2854,4 +2867,18 @@ export async function scheduleRun(store: Store, ref: string): Promise<ScheduleRe
 
 export async function scheduleDelete(store: Store, ref: string): Promise<ScheduleResponse> {
   return { job: await scheduleFault(() => deleteScheduledJob(store, ref)) };
+}
+
+/** OS-311: claim the due jobs for the caller. Role jobs are enqueued here; command jobs are returned, never run. */
+export async function scheduleTick(store: Store, req: ScheduleTickRequest): Promise<ScheduleTickResponse> {
+  let now: Date | undefined;
+  if (req.now !== undefined) {
+    now = new Date(req.now);
+    if (Number.isNaN(now.getTime())) throw new ApiFault("invalid_request", 400, `now '${req.now}' is not an ISO time`);
+  }
+  return scheduleFault(() => tickScheduledJobs(store, { host: req.host, now, night_locked: req.night_locked }));
+}
+
+export async function scheduleRunFinish(store: Store, runId: number, req: ScheduleRunFinishRequest): Promise<ScheduleRunFinishResponse> {
+  return { run: await scheduleFault(() => finishScheduledJobRun(store, runId, req)) };
 }

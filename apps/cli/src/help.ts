@@ -1539,7 +1539,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: ["role note core architect --body-file note.md"],
       },
       tick: {
-        summary: "Run one pass checking stale builders/flakes/idle repos/branch conflicts and ending quiet runs",
+        summary: "Run one pass: due scheduled jobs, stale builders, flakes, idle repos, conflicts, quiet runs",
         usage: ["role tick [--team <t>[,<t>...]]"],
         flags: [{ flag: "--team <csv>", description: "Limit tick pass to named team(s)" }],
         examples: ["role tick", "role tick --team core"],
@@ -1547,6 +1547,9 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           "A conflicting pair's loser (lower priority; at equal priority the later row) is stopped and told to wait.",
           "Once every ticket it yields to has landed or stopped, it is told to rebase onto origin/main and go on.",
           "A resumed pair that conflicts again on new commits is posted and paused again; an unchanged pair is not.",
+          "First it claims due `ob schedule` jobs; a role job's prompt goes to that role's inbox, delivered now.",
+          "A command job for this host (or any) runs here: sh -c in its cwd, 5 minutes at most, last 4000 chars kept.",
+          "A failing job never stops the tick. --json prints {teams, schedules}.",
         ],
       },
     },
@@ -2147,6 +2150,9 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     notes: [
       "Pass one of --once, --every, or --cron and one target (--team/--role/--prompt or --cmd).",
       "Admin-only over the API (/schedules): scoped API tokens are refused with 403.",
+      "`ob role tick` (every 15 min) runs due jobs; the server only claims, a command runs where it was claimed.",
+      "Under good night an interval/cron job is skipped to its next time; a --once job waits for the lock to end.",
+      "The names tick and runs are reserved.",
     ],
   },
 
