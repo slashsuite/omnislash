@@ -16,7 +16,8 @@ says otherwise). It has its own Home Screen app (manifest `id` `/ob`). See
   `vite dev` has no `serve.ts`, so a page that reads the store (`/alerts`) throws there; run the built app.
 - Pages: `/` (To review and the ranked focus), `/queue`, `/alerts` (with ack and snooze), `/tokens` (the
   credential inventory with Check now and paste, and the WhatsApp pairing panel), `/models` (model routes and
-  review readers), `/timeline` and `/machine`. `components/ObFrame.tsx` is the header: the nav, the alert bell
+  review readers), `/timeline`, `/machine` (the role state machine as a graph) and `/overview` (the same machine
+  as persona swimlanes). `components/ObFrame.tsx` is the header: the nav, the alert bell
   (live count from the realtime snapshot) and the live badge.
 
 Commands (moon): `bunx moon run ob-dashboard:build`, `ob-dashboard:test` (builds first; `bun test` over `test/`

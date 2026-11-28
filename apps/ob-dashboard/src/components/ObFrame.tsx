@@ -6,7 +6,7 @@ import { AlertBell } from "./AlertBell.tsx";
 
 // OB-2207: the OB dashboard's header: the app name (the way home), the page nav, then the alert bell and the
 // live badge. OS-24 (OB-2199 step 8): the nav lists only the pages that exist; OS-25 added Queue and OS-27
-// Timeline. Below `md` AppShell moves the nav into its Menu, so every page stays reachable on a phone.
+// Timeline, and OS-308 Overview. Below `md` AppShell moves the nav into its Menu, so every page stays reachable on a phone.
 const PAGES = [
   { label: "Home", href: "/" },
   { label: "Queue", href: "/queue" },
@@ -15,6 +15,7 @@ const PAGES = [
   { label: "Models", href: "/models" },
   { label: "Timeline", href: "/timeline" },
   { label: "Machine", href: "/machine" },
+  { label: "Overview", href: "/overview" },
 ] as const;
 
 export function ObFrame({ children }: { children: ReactNode }) {

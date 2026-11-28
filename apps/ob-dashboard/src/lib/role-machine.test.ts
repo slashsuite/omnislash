@@ -1,8 +1,8 @@
 // OS-214: the role and spinoff xstate machines as StateMachine definitions, through fromXState. OS-261: the role
-// machine as persona swimlanes.
+// machine as persona swimlanes. OS-308: its tickets as the graph's dots, and the graph's pinned persona colours.
 import { describe, expect, it } from "bun:test";
 import { ROLE_TRANSITIONS, ROLES, STAGES } from "../../../../platform/state-machine/src/role.ts";
-import { roleDefinition, roleLanes, spinoffDefinition } from "./role-machine.ts";
+import { GRAPH_TONES, roleDefinition, roleItems, roleLanes, spinoffDefinition } from "./role-machine.ts";
 
 describe("roleDefinition (fromXState over roleMachine)", () => {
   const { states, transitions } = roleDefinition();
@@ -26,6 +26,16 @@ describe("roleDefinition (fromXState over roleMachine)", () => {
     for (const t of ROLE_TRANSITIONS) {
       expect(transitions.find((d) => d.from === t.from && d.to === t.to && d.event === t.label)?.actor).toBe(t.actor);
     }
+  });
+});
+
+describe("roleItems and GRAPH_TONES (OS-308)", () => {
+  it("makes each ticket a dot: its ref on the dot, ref and title as its name, on its state", () => {
+    expect(roleItems([{ ref: "OS-1", title: "First", state: "building" }])).toEqual([{ id: "OS-1", label: "OS-1 First", state: "building" }]);
+  });
+
+  it("pins every persona but the system, which takes a colour no persona has", () => {
+    expect(GRAPH_TONES).toEqual({ owner: "cat2", muse: "cat1", architect: "cat3", builder: "cat4", reviewer: "cat5", sentinel: "cat6" });
   });
 });
 

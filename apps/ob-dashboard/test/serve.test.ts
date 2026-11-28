@@ -203,7 +203,7 @@ describe("Alerts on the OB dashboard (OB-2207)", () => {
 // OS-214: this store has items but no projects, as a fresh SQLite tracker does. Every page must render; /queue and
 // /timeline used to answer 500 because the group scope refused a store with no projects.
 describe("every ob page renders on a store with no projects (OS-214)", () => {
-  for (const path of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline", "/machine"]) {
+  for (const path of ["/", "/queue", "/alerts", "/tokens", "/models", "/timeline", "/machine", "/overview"]) {
     test(`GET ${path} is 200`, async () => {
       const res = await fetch(`${base}${path}`);
       expect(res.status).toBe(200);

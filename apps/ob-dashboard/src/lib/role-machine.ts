@@ -1,8 +1,9 @@
-// OS-187, OS-214: the role and spinoff xstate machines (platform/state-machine). OS-261: the role machine is drawn as
-// persona swimlanes, one lane per role and one column per stage, each state a card in its lane and stage that lists
-// the moves out of it, so the page says which persona does what, where. The spinoff machine is still drawn by uislash's
-// StateMachine, through fromXState. Pure: nothing here reads a file or the store.
-import { type CategoryTone, fromXState, type StateMachineDefinition, type XStateMachineLike } from "@slashsuite/ui-react";
+// OS-187, OS-214: the role and spinoff xstate machines (platform/state-machine). OS-308: the role machine is drawn two
+// ways. On /machine uislash's StateMachine draws it through fromXState, every state a box and every move an arrow
+// (roleDefinition, roleItems). On /overview (OS-261) it is persona swimlanes, one lane per role and one column per
+// stage, each state a card in its lane and stage that lists the moves out of it (roleLanes). Pure: nothing here reads
+// a file or the store.
+import { type CategoryTone, fromXState, type StateMachineDefinition, type StateMachineItem, type XStateMachineLike } from "@slashsuite/ui-react";
 import { ROLE_TRANSITIONS, ROLES, type Role, type RoleStateMeta, roleMachine, STAGES, type Stage } from "../../../../platform/state-machine/src/role.ts";
 import { spinoffMachine } from "../../../../platform/state-machine/src/spinoff.ts";
 
@@ -22,6 +23,14 @@ const ROLE_TONES: Readonly<Record<Role, CategoryTone | "neutral">> = {
   sentinel: "cat6",
   system: "neutral",
 };
+
+/**
+ * OS-308: the same colours pinned for uislash's StateMachine, which takes only the categorical scale: the system,
+ * grey on the swimlanes, is left out and takes the next colour no persona has.
+ */
+export const GRAPH_TONES: Readonly<Partial<Record<Role, CategoryTone>>> = Object.fromEntries(
+  Object.entries(ROLE_TONES).filter((e): e is [Role, CategoryTone] => e[1] !== "neutral"),
+);
 
 /** The text colour utility each tone paints in (uislash's VIZ_TONE, which it does not export). */
 const TONE_CLASS: Readonly<Record<CategoryTone | "neutral", string>> = {
@@ -112,4 +121,9 @@ export function roleDefinition(): StateMachineDefinition {
 /** The spinoff machine as a StateMachine definition: its states and the events that move a row between them. */
 export function spinoffDefinition(): StateMachineDefinition {
   return fromXState(spinoffMachine as unknown as XStateMachineLike);
+}
+
+/** Each ticket as a dot on the StateMachine graph: its ref on the dot, the ref and title as its name. */
+export function roleItems(tickets: readonly RoleTicket[]): StateMachineItem[] {
+  return tickets.map((t) => ({ id: t.ref, label: `${t.ref} ${t.title}`, state: t.state }));
 }
