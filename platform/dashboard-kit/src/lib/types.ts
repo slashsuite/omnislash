@@ -53,8 +53,9 @@ export interface Spinoff {
    *  host older than 0032 has no such field. */
   item_id?: string | null;
   branch: string;
-  status: string; // stored pending|launching|launched|ready-for-gate|merged|failed (printed queued|launching|building|handed-off|landed|failed, 1513)
-  error?: string | null;
+  status: string; // stored pending|launching|launched|ready-for-gate (printed queued|launching|building|handed-off, 1513): the snapshot carries in-flight rows only (OS-316)
+  phase?: string | null;
+  verdict?: string | null;
 }
 
 export interface StandupDoc {

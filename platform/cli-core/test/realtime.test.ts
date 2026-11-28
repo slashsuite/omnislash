@@ -4,6 +4,7 @@ import { openDb } from "../../../apps/cli/src/db.ts";
 import { sqliteStoreFor } from "../../../apps/cli/src/db/store.ts";
 import { createSidecar, REALTIME_WS_PATH, sameSnapshot, snapshotFrom, type Snapshot } from "../../../apps/cli/src/realtime.ts";
 import { createItem, setBlocked } from "../../../apps/cli/src/items.ts";
+import { machineStamp } from "../../../apps/ob-dashboard/src/lib/machine.ts";
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
@@ -261,5 +262,55 @@ describe("sameSnapshot (OB-1944)", () => {
       ({ ...a, whatsapp: [{ chat_jid: "x", ts: "t", at }] }) as unknown as Snapshot;
     expect(sameSnapshot(withAt("2026-11-12T08:00:00Z"), withAt("2026-11-12T09:00:00Z"))).toBe(false);
     expect(sameSnapshot(withAt("2026-11-12T08:00:00Z"), withAt("2026-11-12T08:00:00Z"))).toBe(true);
+  });
+});
+
+// OS-316: the snapshot used to carry every spinoff row ever dispatched, brief and all (23 MB live, pushed to every
+// open dashboard and stringified on every poll tick). It carries the in-flight rows only, cut to what a page reads.
+describe("realtime snapshot size (OS-316)", () => {
+  const PROMPT = "PROMPT-OS316-".padEnd(20_000, "x");
+  const insert = (db: ReturnType<typeof freshDb>, ref: string, status: string, extra = "") =>
+    db.query(
+      `INSERT INTO spinoff(ticket_ref,repo,branch,worktree,mode,brief,status,request_at,error${extra ? ",phase" : ""})
+       VALUES(?,?,?,?,?,?,?,?,?${extra ? ",?" : ""})`,
+    ).run(...([ref, "r", ref.toLowerCase(), "/w", "agent", PROMPT, status, "t", status === "failed" ? PROMPT : null, ...(extra ? [extra] : [])] as string[]));
+
+  test("hundreds of historical rows with 20 KB prompts make a small snapshot that leaks no prompt", async () => {
+    const db = freshDb();
+    for (let i = 0; i < 200; i++) insert(db, `OS-${i}`, i % 4 === 0 ? "failed" : "merged");
+    insert(db, "OS-900", "launched", "reviewing");
+    insert(db, "OS-901", "ready-for-gate");
+    const snap = await snapshotFrom(sqliteStoreFor(db), noFrontier);
+    const frame = JSON.stringify(snap);
+    expect(frame.length).toBeLessThan(50_000);
+    expect(frame).not.toContain("PROMPT-OS316");
+    expect(snap.spinoffs.map((s) => [s.ticket_ref, s.status, s.phase])).toEqual([
+      ["OS-901", "ready-for-gate", null],
+      ["OS-900", "launched", "reviewing"],
+    ]);
+    expect("completed_spinoffs" in snap.status).toBe(false);
+  });
+
+  test("the machine stamp still moves on an in-flight row's status, phase or verdict, and on a land", async () => {
+    const db = freshDb();
+    for (let i = 0; i < 20; i++) insert(db, `OS-${i}`, "merged");
+    insert(db, "OS-900", "launched");
+    const store = sqliteStoreFor(db);
+    const stamp = async () => {
+      const s = await snapshotFrom(store, noFrontier);
+      return machineStamp(s.spinoffs, s.agents, s.itemsStamp, s.decisionsStamp);
+    };
+    const id = (db.query("SELECT id FROM spinoff WHERE ticket_ref='OS-900'").get() as { id: number }).id;
+    const seen = new Set([await stamp()]);
+    const step = async (sql: string) => {
+      db.query(sql).run();
+      const next = await stamp();
+      expect(seen.has(next)).toBe(false);
+      seen.add(next);
+    };
+    await step(`UPDATE spinoff SET phase='reviewing' WHERE id=${id}`);
+    await step(`UPDATE spinoff SET status='ready-for-gate', phase=NULL WHERE id=${id}`);
+    await step(`UPDATE spinoff SET verdict='landable' WHERE id=${id}`);
+    await step(`UPDATE spinoff SET status='merged' WHERE id=${id}`);
   });
 });
