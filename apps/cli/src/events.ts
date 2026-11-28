@@ -19,8 +19,9 @@ export interface EventInput {
  * Append an event. Events are the append-only raw measurement store keyed by the
  * external identifier inside `payload` (payload.entity for linear, payload.pr for
  * github). `itemId` is set only when a local item mirrors the external entity.
- * Idempotent per (source, type, ts, payload.key): a matching row is not duplicated,
- * so re-syncing the same window is safe.
+ * Idempotent per (source, type, ts, item, payload): a matching row is not duplicated,
+ * so re-syncing the same window is safe. The item is part of the key (OS-298): two items given the same
+ * decision in the same millisecond carry identical payloads, and without it the second item's event was dropped.
  */
 export function recordEvent(db: Database, e: EventInput): void {
   const payload = e.payload === undefined ? null : JSON.stringify(e.payload);
@@ -33,6 +34,7 @@ export function recordEvent(db: Database, e: EventInput): void {
         eq(event.source, e.source),
         eq(event.type, e.type),
         eq(event.ts, e.ts),
+        sql`IFNULL(${event.item_id}, '') = IFNULL(${e.itemId ?? null}, '')`,
         sql`IFNULL(${event.payload}, '') = IFNULL(${payload}, '')`,
       ),
     )
@@ -128,6 +130,7 @@ export async function recordEventFor(db: Database | Store, e: EventInput): Promi
         eq(s.t.event.source, e.source),
         eq(s.t.event.type, e.type),
         eq(s.t.event.ts, e.ts),
+        sql`COALESCE(${s.t.event.item_id}, '') = COALESCE(${e.itemId ?? null}, '')`,
         sql`COALESCE(${s.t.event.payload}, '') = COALESCE(${payload}, '')`,
       ),
     )

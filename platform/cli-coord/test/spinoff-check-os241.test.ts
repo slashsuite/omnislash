@@ -1,7 +1,7 @@
 // OS-241: the Machine page places an undispatched ticket by its newest check on its current body
 // (currentCheckVerdicts), and re-reads when one is recorded (decisionsStamp). In-process against a fresh SQLite
 // database: no network, no live store.
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { freshDbPath } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { decisionsStamp } from "../../../apps/cli/src/decisions.ts";
@@ -13,6 +13,11 @@ const ALL_TWO = { problem: 2, scope: 2, done: 2, design: 2, proof: 2, unknowns: 
 const side = (questions: string[] = []) => ({ does: "x", files: ["a.ts"], questions, scores: ALL_TWO });
 
 describe("currentCheckVerdicts (OS-241)", () => {
+  // OS-298: a fast runner records several checks in one millisecond, and identical checks on two items once
+  // collapsed into one event. The frozen clock makes every run that runner.
+  beforeAll(() => setSystemTime(new Date("2026-11-28T00:00:00.000Z")));
+  afterAll(() => setSystemTime());
+
   test("reads each item's newest check on its current body, and nothing for an unchecked or since-edited one", async () => {
     const db = openDb(freshDbPath());
     try {
