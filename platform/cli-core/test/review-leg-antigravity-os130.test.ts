@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { creditErrorOf } from "../../../apps/cli/src/models-credit.ts";
-import { DEFAULT_REVIEW_LEGS, DEFAULT_REVIEW_MODELS } from "../../../apps/cli/src/models-file.ts";
+import { creditErrorOf, recentCreditHits } from "../../../apps/cli/src/models-credit.ts";
 import { antigravityUsageTokens, readLegRecords } from "../../../apps/cli/src/review-legs.ts";
 import { defaultReviewReaders, loadReviewReaders, parseReviewReaders, type ConfigIO } from "../../../apps/cli/src/review-readers.ts";
 import {
@@ -17,6 +16,7 @@ import {
   legSpawn,
   READ_COMMANDS,
   resolveLeg,
+  runAcrossFallbacks,
   unknownLegMessage,
 } from "../../../skills/ob-skeptical-review/review-leg.ts";
 
@@ -136,19 +136,16 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
   });
 
   test("default review readers run opus alone with no fallback (OS-256); deepseek and luna are refused when named (OS-206, OS-238)", async () => {
-    expect([...DEFAULT_REVIEW_LEGS]).toEqual(["opus"]);
-    expect(DEFAULT_REVIEW_MODELS.neon).toBe("antigravity:gemini-4-neon");
-    expect(DEFAULT_REVIEW_MODELS.opus).toBe("claude-opus-5-5");
-
+    // OS-299: the one default reader runs on the default `builder.complex` route's model; ob keeps no review model table.
     const defaults = defaultReviewReaders();
-    expect(Object.keys(defaults.readers)).toEqual(["neon", "opus"]);
+    expect(defaults.readers).toEqual({ opus: { model: "claude-opus-5-5" } });
     expect(defaults.tiers.map((r) => r.legs)).toEqual([["opus"], ["opus"], ["opus"]]);
     expect(defaults.readers.opus!.fallback).toBeUndefined();
 
     const emptyIO: ConfigIO = { get: async () => null, set: async () => {} };
     const loaded = await loadReviewReaders(emptyIO);
     expect(loaded.stored).toBe(false);
-    expect(Object.keys(loaded.value.readers)).toEqual(["neon", "opus"]);
+    expect(Object.keys(loaded.value.readers)).toEqual(["opus"]);
 
     // deepseek and luna are retired: naming either as a leg, or a model id that names one, is refused with a clear message.
     expect(() => legCommand("deepseek", "/tmp/oc")).toThrow(/retired \(OS-206\)/);
@@ -172,9 +169,10 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
 
       const j = Bun.spawnSync(["bun", CLI_ENTRY, "review", "readers", "--json"], { env, stdout: "pipe", stderr: "pipe" });
       expect(j.exitCode).toBe(0);
-      const parsed = JSON.parse(j.stdout.toString()) as { stored: boolean; readers: Record<string, { model: string }>; tiers: Array<{ from: number; to: number; legs: string[] }> };
+      const parsed = JSON.parse(j.stdout.toString()) as { stored: boolean; profile: string | null; readers: Record<string, { model: string }>; tiers: Array<{ from: number; to: number; legs: string[] }> };
       expect(parsed.stored).toBe(false);
-      expect(Object.keys(parsed.readers)).toEqual(["neon", "opus"]);
+      expect(Object.keys(parsed.readers)).toEqual(["opus"]);
+      expect(parsed.profile).toBeNull();
       expect(parsed.tiers.at(-1)).toEqual({ from: 7, to: 10, legs: ["opus"] });
     });
   });
@@ -224,9 +222,9 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
 
   test("OS-295: a model id on a provider no leg runs is refused by name, never sent to claude", () => {
     expect(resolveLeg("codex:gpt-6")).toBeUndefined();
-    expect(() => legCommand("codex:gpt-6", "/tmp/oc")).toThrow(/model 'codex:gpt-6' is on provider 'codex', which no review leg runs/);
+    expect(() => legCommand("codex:gpt-6", "/tmp/oc")).toThrow(/^model 'codex:gpt-6' is on provider 'codex'\. No review leg runs that provider\. /);
     const codex = parseReviewReaders(JSON.stringify({ readers: { opus: { model: "codex:gpt-6" } }, tiers: [{ from: 1, to: 10, legs: ["opus"] }] }));
-    expect(() => legCommand("opus", "/tmp/oc", codex)).toThrow(/reader 'opus' in `ob review readers` has model 'codex:gpt-6' is on provider 'codex'/);
+    expect(() => legCommand("opus", "/tmp/oc", codex)).toThrow(/reader 'opus' in `ob review readers` has model 'codex:gpt-6'\. That model is on provider 'codex'\. No review leg runs that provider\. /);
     expect(resolveLeg("claude:claude-opus-5-5")).toEqual({ kind: "claude", model: "claude-opus-5-5" });
   });
 
@@ -464,6 +462,7 @@ bun -e '
 
       const fakeOb = writeFakeOb(binDir, {
         stored: true,
+        profile: "work",
         readers: {
           neon: { model: "antigravity:gemini-4-neon-a", fallback: "second" },
           second: { model: "antigravity:gemini-4-neon-b", fallback: "third" },
@@ -536,6 +535,49 @@ bun -e '
         exit_code: 0,
         tokens: { input: 600, output: 40, reasoning: 12 },
       });
+      // OS-299: a leg run by hand records its credit hit on the readers' profile again, for `ob models list`.
+      expect(Object.keys(recentCreditHits(new Date(), { OB_MODELS_FILE: modelsPath }))).toEqual(["work"]);
     });
   });
+
+  test("OS-299: a model id that runs out of credit, or a reader with no profile, records no credit hit; a hit that cannot be written is logged", async () => {
+    const credit = { code: 1, out: "", err: "Your credit balance is too low to access the API" };
+    const ok = { code: 0, out: "score: 9/10", err: "" };
+    const run = async (a: string) => (a === "opus" || a === "claude-sonnet-5-5" ? credit : ok);
+    const at = new Date("2026-11-28T01:00:00Z");
+    const go = async (attempts: string[], profile: string | null) => {
+      const hits: Array<[string, string]> = [];
+      const res = await runAcrossFallbacks("opus", attempts, run, () => {}, {}, {
+        record: () => {},
+        diff: null,
+        now: () => at,
+        readers: READERS,
+        profile,
+        creditHit: (p, when) => hits.push([p, when.toISOString()]),
+      });
+      return { res, hits };
+    };
+
+    // The reader's hit on its profile is proven end to end above (the quota chain); these are the cases that record none.
+    // A bare model id is no reader of the profile, so its credit error is no hit on it.
+    expect((await go(["claude-sonnet-5-5", "neon"], "work")).hits).toEqual([]);
+
+    // With no profile named there is nothing to record against.
+    expect((await go(["opus", "neon"], null)).hits).toEqual([]);
+
+    // A hit that cannot be written is one stderr line; the leg goes on to its fallback.
+    const lines: string[] = [];
+    const res = await runAcrossFallbacks("opus", ["opus", "neon"], run, (l) => lines.push(l), {}, {
+      record: () => {},
+      diff: null,
+      readers: READERS,
+      profile: "work",
+      creditHit: () => {
+        throw new Error("disk full");
+      },
+    });
+    expect(res).toEqual({ code: 0, attempt: "neon" });
+    expect(lines.some((l) => l.includes("could not record the credit hit on profile work: disk full"))).toBe(true);
+  });
+
 });

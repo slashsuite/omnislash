@@ -12,16 +12,19 @@ import {
 
 // The fallback a reader runs when it is unavailable is a setting (per reader), not a constant: the default is
 // no fallback (readers are Opus only, OS-256), and the dashboard or `ob review readers fallback` sets or clears it.
+/** The defaults with neon added: since OS-299 the defaults name opus alone. */
+const withNeon = () => withReader(defaultReviewReaders(), "neon", "antigravity:gemini-4-neon");
+
 describe("configurable review fallbacks", () => {
   test("OS-256: the default gives no reader a fallback, so neon never stands in for opus", () => {
     const v = defaultReviewReaders();
+    expect(Object.keys(v.readers)).toEqual(["opus"]);
     expect(fallbackOf(v, "opus")).toBeNull();
-    expect(fallbackOf(v, "neon")).toBeNull();
     expect(readersForComplexity(v, 5).find((r) => r.leg === "opus")!.fallback).toBeNull();
   });
 
   test("a fallback is set, changed and cleared, and changing a model keeps it", () => {
-    let v = withFallback(defaultReviewReaders(), "neon", "opus");
+    let v = withFallback(withNeon(), "neon", "opus");
     expect(fallbackOf(v, "neon")).toBe("opus");
     v = withReader(v, "neon", "antigravity:gemini-4-neon-2");
     expect(fallbackOf(v, "neon")).toBe("opus");
@@ -32,7 +35,7 @@ describe("configurable review fallbacks", () => {
   test("a fallback must name another reader that exists", () => {
     expect(() => withFallback(defaultReviewReaders(), "opus", "opus")).toThrow(/cannot fall back to itself/);
     expect(() => withFallback(defaultReviewReaders(), "opus", "qwen")).toThrow(/is not a reader/);
-    expect(() => withFallback(defaultReviewReaders(), "ghost", "neon")).toThrow(ReviewReadersError);
+    expect(() => withFallback(withNeon(), "ghost", "neon")).toThrow(ReviewReadersError);
   });
 
   test("the stored setting carries the fallback and refuses one that names no reader", () => {
@@ -54,7 +57,7 @@ describe("configurable review fallbacks", () => {
   });
 
   test("removing a reader clears any fallback that named it", () => {
-    const v = withoutReader(withFallback(defaultReviewReaders(), "opus", "neon"), "neon");
+    const v = withoutReader(withFallback(withNeon(), "opus", "neon"), "neon");
     expect(fallbackOf(v, "opus")).toBeNull();
   });
 });

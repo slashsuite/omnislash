@@ -77,17 +77,18 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
   try {
     if (sub === undefined) {
       // OS-145: the active models profile's readers (`model_routes`), the local file's legs laid over them.
-      const { stored, value } = resolveReview(await loadRouteInputs(io));
+      const { stored, value, profile } = resolveReview(await loadRouteInputs(io));
       const c = scoreOf(flags);
       if (c !== null) {
         const range = rangeText(reviewRangeAt(value, c));
         const list = readersForComplexity(value, c);
-        if (mode === "json") print(JSON.stringify({ complexity: c, range, stored, readers: list }, null, 2));
+        if (mode === "json") print(JSON.stringify({ complexity: c, range, stored, profile, readers: list }, null, 2));
         else if (mode === "quiet") print(list.map((r) => r.leg).join("\n"));
         else print(list.map((r) => `${r.leg} ${r.model}`).join("\n"));
         return;
       }
-      if (mode === "json") print(JSON.stringify({ stored, ...value }, null, 2));
+      // `profile` is the active models profile: review-leg.ts records a reader's credit hit against it (OS-299).
+      if (mode === "json") print(JSON.stringify({ stored, profile, ...value }, null, 2));
       else if (mode === "quiet") print(Object.keys(value.readers).join("\n"));
       else print(table(value, stored));
       return;

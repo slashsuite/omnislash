@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_REVIEWER, DEFAULT_REVIEW_LEGS, DEFAULT_TIER_MODELS, FIXED_ROUTES } from "../../../apps/cli/src/models-file.ts";
+import { DEFAULT_REVIEWER, DEFAULT_TIER_MODELS, FIXED_ROUTES } from "../../../apps/cli/src/models-file.ts";
 import { emptyRouteInputs, resolveReview, resolveRoute, sourceLabel, type ModelRoutes } from "../../../apps/cli/src/model-routes.ts";
 import { loadRouteInputs, teamRoleModelFrom } from "../../../apps/cli/src/model-routes-io.ts";
 import { pickUnderLimit } from "../../../apps/cli/src/commands/models.ts";
@@ -65,9 +65,9 @@ describe("OS-145: model routes", () => {
     expect(sourceLabel(resolveRoute(inputs, "job.nightly-sweep"))).toBe("default (builder.complex)");
     // a role thread with nothing set opens on the T3 project's default, as before
     expect(await teamRoleModelFrom(memIo(), "architect")).toBeUndefined();
-    // the review readers are the built-in legs: opus reads every score, neon sits on no range and is no fallback (OS-238, OS-256)
-    expect(Object.keys(resolveReview(inputs).value.readers)).toEqual(["neon", "opus"]);
-    expect(resolveReview(inputs).value.tiers.map((r) => r.legs)).toEqual([[...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS], [...DEFAULT_REVIEW_LEGS]]);
+    // the review readers are the one built-in leg: opus reads every score, on the default builder.complex model (OS-256, OS-299)
+    expect(resolveReview(inputs).value.readers).toEqual({ opus: { model: DEFAULT_TIER_MODELS.complex } });
+    expect(resolveReview(inputs).value.tiers.map((r) => r.legs)).toEqual([["opus"], ["opus"], ["opus"]]);
     // spinoff_tier_models still sets the builder default layer
     const tiered = await loadRouteInputs(memIo({ spinoff_tier_models: '{"medium":"claude-opus-5-5"}' }));
     expect(resolveRoute(tiered, "builder.medium")).toMatchObject({ chain: ["claude-opus-5-5"], source: "default" });
@@ -193,7 +193,7 @@ describe("OS-145: model routes", () => {
       const refused = run(["models", "reader", "remove", "glm"]);
       expect(refused.code).not.toBe(0);
       expect(refused.err).toContain("range 1-3");
-      expect(run(["models", "reader", "tier", "simple", "neon"]).code).toBe(0);
+      expect(run(["models", "reader", "tier", "simple", "opus"]).code).toBe(0);
       expect(run(["models", "reader", "remove", "glm"]).code).toBe(0);
       expect(Object.keys((JSON.parse(run(["review", "readers", "--json"]).out) as { readers: object }).readers)).not.toContain("glm");
     });
