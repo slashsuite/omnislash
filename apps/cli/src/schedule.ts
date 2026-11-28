@@ -46,7 +46,8 @@ export function parseOnce(expr: string): Date {
   if (month < 1 || month > 12 || day < 1 || day > maxDay || Number(h) > 23 || Number(mi) > 59 || (s !== undefined && Number(s) > 59)) {
     throw new InvalidScheduleError(`once '${expr}' is not a real time`);
   }
-  const at = new Date(raw);
+  const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  const at = new Date(withZone);
   if (Number.isNaN(at.getTime())) throw new InvalidScheduleError(`once '${expr}' is not a real time`);
   return at;
 }

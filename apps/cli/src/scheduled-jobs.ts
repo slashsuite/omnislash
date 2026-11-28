@@ -4,7 +4,7 @@
 // Every write is checked before anything is stored: the name, the schedule (an invalid one is refused and nothing
 // is written), one target, and for a role job the team and role by `ob send`'s rules.
 import type { Database } from "bun:sqlite";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { asStore, type Store } from "./db/store.ts";
 import { AppError, UsageError } from "./errors.ts";
@@ -16,11 +16,7 @@ import type { TeamRole } from "./team.ts";
 export const JOB_TARGET_KINDS = ["role", "command"] as const;
 export type JobTargetKind = (typeof JOB_TARGET_KINDS)[number];
 
-export const JOB_RUN_STATUSES = ["running", "succeeded", "failed", "skipped"] as const;
-export type JobRunStatus = (typeof JOB_RUN_STATUSES)[number];
-
-/** The most of a command's output a run keeps: the last this many characters. */
-export const OUTPUT_TAIL_MAX = 4000;
+export type JobRunStatus = "running" | "succeeded" | "failed" | "skipped";
 
 export interface ScheduledJob {
   id: number;
@@ -102,9 +98,14 @@ export function parseJobName(raw: string): string {
   return name;
 }
 
-/** The last `max` characters of a command's output. Pure. */
-export function tailOutput(output: string, max = OUTPUT_TAIL_MAX): string {
-  return output.length <= max ? output : output.slice(output.length - max);
+const MAX_INT4 = 2_147_483_647;
+
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; errno?: unknown; message?: unknown; cause?: unknown };
+  if (e.code === "23505" || e.code === "SQLITE_CONSTRAINT_UNIQUE" || e.errno === 2067) return true;
+  if (typeof e.message === "string" && /UNIQUE constraint failed|duplicate key value violates unique constraint/i.test(e.message)) return true;
+  return e.cause ? isUniqueViolation(e.cause) : false;
 }
 
 function blankToNull(v: string | null | undefined): string | null {
@@ -161,7 +162,14 @@ export async function getScheduledJob(db: Database | Store, ref: string): Promis
   const s = asStore(db);
   const t = s.t.scheduledJob;
   const raw = ref.trim();
-  const where = /^\d+$/.test(raw) ? eq(t.id, Number(raw)) : eq(t.name, raw);
+  let where;
+  if (/^\d+$/.test(raw)) {
+    const id = Number(raw);
+    if (!Number.isSafeInteger(id) || id < 1 || id > MAX_INT4) return null;
+    where = eq(t.id, id);
+  } else {
+    where = eq(t.name, raw);
+  }
   const rows = (await s.q.select().from(t).where(where).limit(1)) as Row[];
   return rows[0] ? toJob(rows[0]) : null;
 }
@@ -192,11 +200,16 @@ export async function createScheduledJob(db: Database | Store, input: ScheduledJ
   if (await getScheduledJob(s, name)) throw new AppError(`a scheduled job named '${name}' already exists (see \`ob schedule show ${name}\`)`);
   const stamp = nowIso();
   const t = s.t.scheduledJob;
-  const rows = (await s.q
-    .insert(t)
-    .values({ name, enabled: 1, ...job, respect_good_night: job.respect_good_night ? 1 : 0, next_run_at: nextRunAt, created_at: stamp, updated_at: stamp })
-    .returning()) as Row[];
-  return toJob(rows[0]!);
+  try {
+    const rows = (await s.q
+      .insert(t)
+      .values({ name, enabled: 1, ...job, respect_good_night: job.respect_good_night ? 1 : 0, next_run_at: nextRunAt, created_at: stamp, updated_at: stamp })
+      .returning()) as Row[];
+    return toJob(rows[0]!);
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new AppError(`a scheduled job named '${name}' already exists (see \`ob schedule show ${name}\`)`);
+    throw err;
+  }
 }
 
 /**
@@ -244,12 +257,10 @@ export async function runScheduledJobNow(db: Database | Store, ref: string, now:
   return toJob(rows[0]!);
 }
 
-/** Delete a job and its runs. Returns the job as it was. */
+/** Delete a job; its runs go via `ON DELETE CASCADE`. Returns the job as it was. */
 export async function deleteScheduledJob(db: Database | Store, ref: string): Promise<ScheduledJob> {
   const s = asStore(db);
   const cur = await requireScheduledJob(s, ref);
-  // The runs go first rather than by the foreign key's cascade: SQLite enforces it only with foreign_keys on.
-  await s.q.delete(s.t.scheduledJobRun).where(eq(s.t.scheduledJobRun.job_id, cur.id));
   await s.q.delete(s.t.scheduledJob).where(eq(s.t.scheduledJob.id, cur.id));
   return cur;
 }
@@ -261,52 +272,4 @@ export async function listScheduledJobRuns(db: Database | Store, ref: string, li
   const t = s.t.scheduledJobRun;
   const runs = (await s.q.select().from(t).where(eq(t.job_id, job.id)).orderBy(desc(t.id)).limit(limit)) as ScheduledJobRun[];
   return { job, runs };
-}
-
-/** Open a run of a job (the runner, OS-311): status `running` unless given, on `host`. */
-export async function startScheduledJobRun(
-  db: Database | Store,
-  jobId: number,
-  opts: { host?: string | null; status?: JobRunStatus; startedAt?: string } = {},
-): Promise<ScheduledJobRun> {
-  const s = asStore(db);
-  const t = s.t.scheduledJobRun;
-  const rows = (await s.q
-    .insert(t)
-    .values({ job_id: jobId, started_at: opts.startedAt ?? nowIso(), status: opts.status ?? "running", host: opts.host ?? null })
-    .returning()) as ScheduledJobRun[];
-  return rows[0]!;
-}
-
-/**
- * Close a run with its outcome and stamp the job's last run: the output is cut to its last 4000 characters, and
- * `nextRunAt` (null for a `once` job that ran) becomes the job's next due time.
- */
-export async function finishScheduledJobRun(
-  db: Database | Store,
-  runId: number,
-  outcome: { status: Exclude<JobRunStatus, "running">; exitCode?: number | null; output?: string | null; roleMessageId?: number | null; error?: string | null; nextRunAt: string | null },
-): Promise<ScheduledJobRun> {
-  const s = asStore(db);
-  const t = s.t.scheduledJobRun;
-  const finished = nowIso();
-  const rows = (await s.q
-    .update(t)
-    .set({
-      finished_at: finished,
-      status: outcome.status,
-      exit_code: outcome.exitCode ?? null,
-      output_tail: outcome.output == null ? null : tailOutput(outcome.output),
-      role_message_id: outcome.roleMessageId ?? null,
-    })
-    .where(and(eq(t.id, runId), eq(t.status, "running")))
-    .returning()) as ScheduledJobRun[];
-  const run = rows[0];
-  if (!run) throw new AppError(`scheduled job run ${runId} is not running, so it was not finished`);
-  const j = s.t.scheduledJob;
-  await s.q
-    .update(j)
-    .set({ last_run_at: run.started_at, last_status: outcome.status, last_error: outcome.error ?? null, next_run_at: outcome.nextRunAt, updated_at: finished })
-    .where(eq(j.id, run.job_id));
-  return run;
 }

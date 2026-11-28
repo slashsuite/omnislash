@@ -20,7 +20,6 @@ import {
   type ScheduledJobPatch,
   type ScheduledJobRun,
 } from "../scheduled-jobs.ts";
-import { parseTeamRole } from "../team-handoff.ts";
 import { refuseUnreadFlags } from "./capture.ts";
 
 /** Where the jobs live: the store on this machine, or the API. */
@@ -82,7 +81,7 @@ function parseRuns(raw: string | undefined): number {
   return Number(raw);
 }
 
-/** The new job from `add`'s flags: exactly one schedule flag and exactly one target. Pure. */
+/** The new job from `add`'s flags: checks flag shape (one schedule, one target); field rules live in `checkJob`. Pure. */
 export function scheduleInputFromFlags(name: string | undefined, flags: Flags): ScheduledJobInput {
   if (!name) throw new UsageError(`schedule add needs a <name>\n${SCHEDULE_USAGE}`);
   const jobName = parseJobName(name);
@@ -102,16 +101,14 @@ export function scheduleInputFromFlags(name: string | undefined, flags: Flags): 
   if (roleFlags.length > 0 && cmdFlags.length > 0) {
     throw new UsageError(`a job sends a role a prompt or runs a command, not both: drop ${roleFlags.map((f) => `--${f}`).join(", ")} or ${cmdFlags.map((f) => `--${f}`).join(", ")}`);
   }
+  if (roleFlags.length === 0 && cmdFlags.length === 0) {
+    throw new UsageError("schedule add needs a target: --team <t> --role <r> --prompt <text>, or --cmd <shell>");
+  }
   const respect_good_night = flags["ignore-good-night"] !== true;
   if (cmdFlags.length > 0) {
-    if (flags.cmd === undefined || !flags.cmd.trim()) throw new UsageError("a command job needs --cmd <shell>");
-    return { name: jobName, schedule_kind: kind, schedule_expr: expr, target_kind: "command", command: flags.cmd, cwd: flags.cwd ?? null, host: flags.host ?? null, respect_good_night };
+    return { name: jobName, schedule_kind: kind, schedule_expr: expr, target_kind: "command", command: flags.cmd ?? null, cwd: flags.cwd ?? null, host: flags.host ?? null, respect_good_night };
   }
-  if (roleFlags.length === 0) throw new UsageError("schedule add needs a target: --team <t> --role <r> --prompt <text>, or --cmd <shell>");
-  if (!flags.team?.trim()) throw new UsageError("a role job needs --team <team>");
-  const role = parseTeamRole(flags.role, "--role");
-  if (flags.prompt === undefined || !flags.prompt.trim()) throw new UsageError("a role job needs --prompt <text>");
-  return { name: jobName, schedule_kind: kind, schedule_expr: expr, target_kind: "role", team: flags.team.trim(), role, prompt: flags.prompt, respect_good_night };
+  return { name: jobName, schedule_kind: kind, schedule_expr: expr, target_kind: "role", team: flags.team ?? null, role: flags.role ?? null, prompt: flags.prompt ?? null, respect_good_night };
 }
 
 function scheduleText(j: ScheduledJob): string {

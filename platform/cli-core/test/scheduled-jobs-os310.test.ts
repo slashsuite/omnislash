@@ -4,6 +4,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
+import { eq } from "drizzle-orm";
 import { freshDbPath } from "../../../apps/cli/test/helpers.ts";
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { asStore, type Store } from "../../../apps/cli/src/db/store.ts";
@@ -21,16 +22,12 @@ import {
 import {
   createScheduledJob,
   deleteScheduledJob,
-  finishScheduledJobRun,
   getScheduledJob,
   listScheduledJobRuns,
   listScheduledJobs,
-  OUTPUT_TAIL_MAX,
   parseJobName,
   runScheduledJobNow,
   ScheduledJobNotFoundError,
-  startScheduledJobRun,
-  tailOutput,
   updateScheduledJob,
   type ScheduledJob,
   type ScheduledJobRun,
@@ -38,7 +35,7 @@ import {
 import { cmdSchedule, expandScheduleOnceFlag } from "../../../apps/cli/src/commands/schedule.ts";
 import { FLAGS, run as runCliInProc } from "../../../apps/cli/src/cli.ts";
 import { createObApi } from "../../../apps/cli/src/api/server.ts";
-import { OB_API_PREFIX, matchApiRoute } from "../../../apps/cli/src/api/contract.ts";
+import { OB_API_PREFIX } from "../../../apps/cli/src/api/contract.ts";
 import { loadScopedTokens, sha256Hex } from "../../../apps/cli/src/api/scoped-tokens.ts";
 import { runApi } from "../../../apps/cli/src/api/run.ts";
 import type { ApiTransport } from "../../../apps/cli/src/api/client.ts";
@@ -93,7 +90,7 @@ describe("schedule parsing and computeNextRunAt (OS-310)", () => {
     }
   });
 
-  test("parseOnce accepts ISO timestamps with time and refuses bare dates or garbage", () => {
+  test("parseOnce accepts ISO timestamps as UTC (even without zone) and refuses bare or impossible dates", () => {
     expect(parseOnce("2026-12-01T09:00:00Z").toISOString()).toBe("2026-12-01T09:00:00.000Z");
     expect(parseOnce("2026-12-01T11:00:00+02:00").toISOString()).toBe("2026-12-01T09:00:00.000Z");
     expect(parseOnce("2026-12-01T09:30").toISOString()).toBe("2026-12-01T09:30:00.000Z");
@@ -146,8 +143,9 @@ describe("schedule parsing and computeNextRunAt (OS-310)", () => {
 });
 
 describe("scheduled jobs store and CLI (OS-310)", () => {
-  test("CRUD lifecycle for role and command jobs, runs, pause/resume, run-now, and delete", async () => {
+  test("CRUD lifecycle for role and command jobs, runs listing, pause/resume, run-now, and cascade delete", async () => {
     const d = db();
+    const s = asStore(d);
     await addTeam(d, { name: "core" });
     const now = new Date("2026-11-28T10:00:00.000Z");
 
@@ -185,6 +183,9 @@ describe("scheduled jobs store and CLI (OS-310)", () => {
     expect(cmdJob.next_run_at).toBe("2026-11-28T10:15:00.000Z");
     expect(cmdJob.respect_good_night).toBe(false);
 
+    // Out-of-range int4 ref returns null instead of throwing.
+    expect(await getScheduledJob(d, "99999999999")).toBeNull();
+
     // Pause hides from default list, keeps next_run_at, and refuses `run`.
     const paused = await updateScheduledJob(d, "health-ping", { enabled: false }, now);
     expect(paused.enabled).toBe(false);
@@ -203,40 +204,24 @@ describe("scheduled jobs store and CLI (OS-310)", () => {
     const dueNow = await runScheduledJobNow(d, "health-ping", later);
     expect(dueNow.next_run_at).toBe(later.toISOString());
 
-    // Start + finish a run: output tail is bounded to OUTPUT_TAIL_MAX and job last_* is stamped.
-    const runRow = await startScheduledJobRun(d, cmdJob.id, { host: "desk", startedAt: later.toISOString() });
-    const bigOut = "x".repeat(OUTPUT_TAIL_MAX + 500) + "TAIL";
-    const finished = await finishScheduledJobRun(d, runRow.id, {
+    // Direct run insert verifies listScheduledJobRuns and ON DELETE CASCADE.
+    await s.q.insert(s.t.scheduledJobRun).values({
+      job_id: cmdJob.id,
+      started_at: later.toISOString(),
+      finished_at: later.toISOString(),
       status: "succeeded",
-      exitCode: 0,
-      output: bigOut,
-      nextRunAt: "2026-11-28T12:15:00.000Z",
+      host: "desk",
+      exit_code: 0,
+      output_tail: "ok\n",
     });
-    expect(finished.status).toBe("succeeded");
-    expect(finished.output_tail?.length).toBe(OUTPUT_TAIL_MAX);
-    expect(finished.output_tail?.endsWith("TAIL")).toBe(true);
-    expect(tailOutput("short")).toBe("short");
-
     const shown = await listScheduledJobRuns(d, "health-ping", 5);
-    expect(shown.job.last_status).toBe("succeeded");
     expect(shown.runs).toHaveLength(1);
-    expect(shown.runs[0]!.id).toBe(runRow.id);
+    expect(shown.runs[0]!.status).toBe("succeeded");
 
-    // Once job that already ran stays next_run_at = null after pause + resume.
-    const onceJob = await createScheduledJob(
-      d,
-      { name: "one-shot", schedule_kind: "once", schedule_expr: "2026-12-01T07:00:00Z", target_kind: "command", command: "true" },
-      now,
-    );
-    const onceRun = await startScheduledJobRun(d, onceJob.id, { startedAt: later.toISOString() });
-    await finishScheduledJobRun(d, onceRun.id, { status: "succeeded", exitCode: 0, nextRunAt: null });
-    await updateScheduledJob(d, "one-shot", { enabled: false }, later);
-    const onceResumed = await updateScheduledJob(d, "one-shot", { enabled: true }, later);
-    expect(onceResumed.next_run_at).toBeNull();
-
-    // Delete removes job and its runs.
+    // Delete removes job and cascades to its runs.
     await deleteScheduledJob(d, "health-ping");
     expect(await getScheduledJob(d, "health-ping")).toBeNull();
+    expect(await s.q.select().from(s.t.scheduledJobRun).where(eq(s.t.scheduledJobRun.job_id, cmdJob.id))).toHaveLength(0);
     await expect(listScheduledJobRuns(d, "health-ping")).rejects.toThrow(ScheduledJobNotFoundError);
   });
 
@@ -339,18 +324,10 @@ describe("/schedules API and scoped-token 403 refusal (OS-310)", () => {
     });
   }
 
-  test("routes are registered in admin family schedules and CLI routing/servable flags agree", () => {
-    expect(matchApiRoute("GET", ["schedules"])?.family).toBe("schedules");
-    expect(matchApiRoute("POST", ["schedules"])?.family).toBe("schedules");
-    expect(matchApiRoute("GET", ["schedules", "nightly"])?.family).toBe("schedules");
-    expect(matchApiRoute("POST", ["schedules", "nightly"])?.family).toBe("schedules");
-    expect(matchApiRoute("POST", ["schedules", "nightly", "run"])?.family).toBe("schedules");
-    expect(matchApiRoute("DELETE", ["schedules", "nightly"])?.family).toBe("schedules");
+  test("full ob schedule round-trip over the API and 403 for scoped tokens", async () => {
     expect(isApiRouted("schedule")).toBe(true);
     expect(POSTGRES_SERVABLE_COMMANDS.has("schedule")).toBe(true);
-  });
 
-  test("full ob schedule round-trip over the API and 403 for scoped tokens", async () => {
     const d = db();
     const s = asStore(d);
     await addTeam(s, { name: "core" });

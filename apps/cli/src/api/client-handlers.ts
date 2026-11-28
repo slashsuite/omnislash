@@ -2592,7 +2592,7 @@ async function apiMachine(ctx: ApiCtx): Promise<void> {
 }
 
 /** `ob schedule` over the API (OS-310): the jobs live on the server. */
-export function apiScheduleBackend(ctx: ApiCtx): import("../commands/schedule.ts").ScheduleBackend {
+function apiScheduleBackend(ctx: ApiCtx): import("../commands/schedule.ts").ScheduleBackend {
 	const { client } = ctx;
 	return {
 		list: async (all) => (await client.schedules(all)).jobs,

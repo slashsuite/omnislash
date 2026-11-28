@@ -67,7 +67,7 @@ import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatc
 import type { BackfillRow, OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
 import type { MachineAudit } from "../machine-audit.ts";
-import type { ScheduledJob, ScheduledJobPatch, ScheduledJobRun } from "../scheduled-jobs.ts";
+import type { ScheduledJob, ScheduledJobInput, ScheduledJobPatch, ScheduledJobRun } from "../scheduled-jobs.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
 
 export type {
@@ -2006,20 +2006,7 @@ export interface RoleMessagesReadRequest {
 }
 
 // OS-310: scheduled jobs (`ob schedule`).
-export interface ScheduleCreateRequest {
-  name: string;
-  schedule_kind: string;
-  schedule_expr: string;
-  target_kind: string;
-  team?: string | null | undefined;
-  role?: string | null | undefined;
-  prompt?: string | null | undefined;
-  command?: string | null | undefined;
-  cwd?: string | null | undefined;
-  host?: string | null | undefined;
-  respect_good_night?: boolean | undefined;
-}
-
+export type ScheduleCreateRequest = ScheduledJobInput;
 export type ScheduleUpdateRequest = ScheduledJobPatch;
 
 export interface ScheduleResponse {
