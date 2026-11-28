@@ -25,6 +25,7 @@ function toneOf(rule: number): "danger" | "warn" | "positive" | "neutral" {
   // 219: a credential the provider has REJECTED is the same outage one layer down, so it reads as loud
   // as a dead job. The Tokens page is where it gets fixed.
   if (rule === 7 || rule === 9 || rule === 11) return "danger"; // job failing / job never ran / credential invalid
+  if (rule === 13) return "danger"; // OS-312: a scheduled job failing run after run
   if (rule === 2 || rule === 3 || rule === 6 || rule === 8) return "warn"; // aging / stale branch / overdue contact / job stale
   return "neutral"; // scope change
 }

@@ -67,7 +67,7 @@ import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatc
 import type { BackfillRow, OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
 import type { MachineAudit } from "../machine-audit.ts";
-import type { ScheduledJob, ScheduledJobInput, ScheduledJobPatch, ScheduledJobRun, ScheduleTickResult } from "../scheduled-jobs.ts";
+import type { ScheduledJob, ScheduledJobHealth, ScheduledJobInput, ScheduledJobPatch, ScheduledJobRun, ScheduleTickResult } from "../scheduled-jobs.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
 
 export type {
@@ -2084,6 +2084,8 @@ export interface LogCreateResponse {
 
 export interface JobsResponse {
   jobs: JobHealth[];
+  /** OS-312: the `ob schedule` jobs' health, shown under the daemon table. Absent from a host older than OS-312. */
+  scheduled?: ScheduledJobHealth[];
 }
 
 // 582: one row per deploy target (live omnislash-web on the API host, the 581 test/dev instance, ...).

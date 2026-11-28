@@ -115,6 +115,18 @@ export const MODELS_FILE_TEXT = `// e2e: this host's override
 { "profiles": { "claude": { "routes": { "sweep.first": { "chain": ["local-sweeper"] } } } } }
 `;
 
+/**
+ * OS-312: the Schedules page's world, two command jobs (a command needs no team or role on the store), created at
+ * SCHEDULE_AT. FAILING has failed its last two runs, the newest with an output tail, so it shows the streak;
+ * HEALTHY succeeded once. `bun e2e/seed.ts schedules empty` deletes every job instead.
+ */
+export const SCHEDULE_AT = "2026-11-24T08:00:00.000Z";
+export const SCHEDULES = {
+  failing: { name: "db-copy", schedule_kind: "interval", schedule_expr: "1h", target_kind: "command", command: "ob backup run", host: "desk", respect_good_night: false },
+  healthy: { name: "morning-sync", schedule_kind: "cron", schedule_expr: "0 9 * * 1-5", target_kind: "command", command: "ob sync" },
+} as const;
+export const SCHEDULE_FAILED_TAIL = "copying 3 files\nwrite failed: disk full";
+
 /** A CLI process on this world's store: SQLite at DB_PATH, this models file, and never the API. */
 export function cliEnv(): Record<string, string> {
   const env: Record<string, string> = {};

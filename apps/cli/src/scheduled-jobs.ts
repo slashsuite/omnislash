@@ -6,7 +6,7 @@
 // Every write is checked before anything is stored: the name, the schedule (an invalid one is refused and nothing
 // is written), one target, and for a role job the team and role by `ob send`'s rules.
 import type { Database } from "bun:sqlite";
-import { and, asc, desc, eq, isNotNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { asStore, type Store } from "./db/store.ts";
 import { AppError, UsageError } from "./errors.ts";
@@ -531,4 +531,86 @@ export async function finishScheduledJobRun(db: Database | Store, runId: number,
 function lastLine(text: string): string {
   const lines = text.trimEnd().split("\n");
   return lines[lines.length - 1] ?? "";
+}
+
+
+// --- OS-312: health, for the dashboard's /schedules page, alert rule 13 and `ob jobs` --------------------------
+
+/** How many failed finished runs in a row raise alert rule 13 for an enabled job. */
+export const SCHEDULE_FAILURE_ALERT = 2;
+
+/** How far back the failure streak is counted: a job failing longer than this reads as this many. */
+const STREAK_WINDOW = 20;
+
+/** A job's failure streak, read from its runs newest first. Pure. */
+export function failureStreak(runs: readonly ScheduledJobRun[]): { consecutive_failures: number; latest_failed_run_id: number | null } {
+  let count = 0;
+  let latest: number | null = null;
+  for (const r of runs) {
+    // A run still going, or one the good-night lock skipped, says nothing about whether the job works.
+    if (r.status === "running" || r.status === "skipped") continue;
+    if (r.status !== "failed") break;
+    count++;
+    latest ??= r.id;
+  }
+  return { consecutive_failures: count, latest_failed_run_id: latest };
+}
+
+/** A job with its newest runs and its failure streak: one card on /schedules. */
+export interface ScheduledJobWithRuns extends ScheduledJob {
+  runs: ScheduledJobRun[];
+  consecutive_failures: number;
+  latest_failed_run_id: number | null;
+}
+
+/** Every job, enabled and paused, by name, each with its newest `runsPerJob` runs and its failure streak. A read. */
+export async function listSchedulesWithRuns(db: Database | Store, runsPerJob = 5): Promise<ScheduledJobWithRuns[]> {
+  const s = asStore(db);
+  const jobs = await listScheduledJobs(s, { all: true });
+  const r = s.t.scheduledJobRun;
+  const limit = Math.max(runsPerJob, STREAK_WINDOW);
+  return Promise.all(
+    jobs.map(async (job) => {
+      const runs = (await s.q.select().from(r).where(eq(r.job_id, job.id)).orderBy(desc(r.id)).limit(limit)) as ScheduledJobRun[];
+      return { ...job, runs: runs.slice(0, runsPerJob), ...failureStreak(runs) };
+    }),
+  );
+}
+
+/** One scheduled job's health line in `ob jobs`. */
+export interface ScheduledJobHealth {
+  name: string;
+  enabled: boolean;
+  last_status: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  consecutive_failures: number;
+}
+
+/** Every scheduled job's health, by name. A read. */
+export async function scheduledJobHealth(db: Database | Store): Promise<ScheduledJobHealth[]> {
+  return (await listSchedulesWithRuns(db, 0)).map((j) => ({
+    name: j.name,
+    enabled: j.enabled,
+    last_status: j.last_status,
+    last_run_at: j.last_run_at,
+    next_run_at: j.next_run_at,
+    consecutive_failures: j.consecutive_failures,
+  }));
+}
+
+/**
+ * OS-312: the job count, the newest job `updated_at`, the newest run id and the finished run count, as
+ * `<count>@<time>@<run>:<finished>`. Two aggregate
+ * reads: the realtime snapshot carries it so /schedules re-reads when a job is written (add, pause, run now, a tick
+ * claiming it, a run finishing all stamp `updated_at`, which two writes in one millisecond can share), deleted (the
+ * count), gets a run (the run id) or a run finishes (the finished count).
+ */
+export async function schedulesStamp(db: Database | Store): Promise<string> {
+  const s = asStore(db);
+  const j = s.t.scheduledJob;
+  const r = s.t.scheduledJobRun;
+  const jobs = (await s.q.select({ n: sql<number | string>`count(*)`, at: sql<string | null>`max(${j.updated_at})` }).from(j)) as Array<{ n: number | string; at: string | null }>;
+  const runs = (await s.q.select({ last: sql<number | string | null>`max(${r.id})`, done: sql<number | string>`count(${r.finished_at})` }).from(r)) as Array<{ last: number | string | null; done: number | string }>;
+  return `${String(jobs[0]?.n ?? 0)}@${jobs[0]?.at ?? ""}@${String(runs[0]?.last ?? "")}:${String(runs[0]?.done ?? 0)}`;
 }

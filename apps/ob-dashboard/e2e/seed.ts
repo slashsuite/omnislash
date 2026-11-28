@@ -17,6 +17,7 @@ import { addTags, createItem, setDecidedAt } from "../../cli/src/items.ts";
 import { registerProject } from "../../cli/src/project.ts";
 import { addTeam } from "../../cli/src/team.ts";
 import { assignRef } from "../../cli/src/refs.ts";
+import { createScheduledJob } from "../../cli/src/scheduled-jobs.ts";
 import { registerAgent } from "../../../platform/cli-coord/src/agent.ts";
 import {
   BUSY_MOVES,
@@ -31,6 +32,9 @@ import {
   REVIEW_NOTE,
   REVIEW_REF,
   REVIEW_TITLE,
+  SCHEDULE_AT,
+  SCHEDULE_FAILED_TAIL,
+  SCHEDULES,
   SEED_FAVOURITES,
   SEED_CREDIT_AT,
   SEED_ROUTES,
@@ -230,6 +234,39 @@ export async function seedMachine(store: Store): Promise<void> {
   }
 }
 
+export type SchedulesSeed = "full" | "empty";
+
+/**
+ * OS-312: every scheduled job deleted, then (full) world.ts SCHEDULES created again with their runs written
+ * straight to the table at fixed times: a real run needs `ob role tick` on a machine.
+ */
+export async function seedSchedules(store: Store, state: SchedulesSeed): Promise<void> {
+  const t = store.t;
+  await store.q.delete(t.scheduledJobRun);
+  await store.q.delete(t.scheduledJob);
+  if (state === "empty") return;
+  const at = new Date(SCHEDULE_AT);
+  const failing = await createScheduledJob(store, { ...SCHEDULES.failing }, at);
+  const healthy = await createScheduledJob(store, { ...SCHEDULES.healthy }, at);
+  const run = (job_id: number, started_at: string, status: "failed" | "succeeded", exit_code: number, output_tail: string | null) => ({
+    job_id,
+    started_at,
+    finished_at: started_at,
+    status,
+    host: "desk",
+    exit_code,
+    output_tail,
+    role_message_id: null,
+  });
+  await store.q.insert(t.scheduledJobRun).values([
+    run(failing.id, "2026-11-24T06:00:00.000Z", "failed", 1, null),
+    run(failing.id, "2026-11-24T07:00:00.000Z", "failed", 1, SCHEDULE_FAILED_TAIL),
+    run(healthy.id, "2026-11-24T07:30:00.000Z", "succeeded", 0, null),
+  ]);
+  await store.q.update(t.scheduledJob).set({ last_run_at: "2026-11-24T07:00:00.000Z", last_status: "failed", last_error: "exit 1: write failed: disk full" }).where(eq(t.scheduledJob.id, failing.id));
+  await store.q.update(t.scheduledJob).set({ last_run_at: "2026-11-24T07:30:00.000Z", last_status: "succeeded" }).where(eq(t.scheduledJob.id, healthy.id));
+}
+
 export async function seed(store: Store): Promise<void> {
   await setConfig(store, MODEL_ROUTES_KEY, JSON.stringify(SEED_ROUTES));
   await saveFavorites(configIo(store), SEED_FAVOURITES, new Date(SEED_CREDIT_AT));
@@ -239,6 +276,7 @@ export async function seed(store: Store): Promise<void> {
   await seedTimeline(store);
   await seedMachine(store);
   await seedGroup(store);
+  await seedSchedules(store, "full");
 }
 
 if (import.meta.main) {
@@ -251,6 +289,9 @@ if (import.meta.main) {
   } else if (what === "home") {
     if (state !== "full" && state !== "empty") throw new Error(`seed home: full or empty, not ${state}`);
     await seedHome(store, state);
+  } else if (what === "schedules") {
+    if (state !== "full" && state !== "empty") throw new Error(`seed schedules: full or empty, not ${state}`);
+    await seedSchedules(store, state);
   }
   else await seed(store);
   db.close();

@@ -157,6 +157,15 @@ describe("MUST SERVE over a stub (416)", () => {
     expect(s.calls[0]!.url).toBe(`${BASE}${OB_API_PREFIX}/jobs`);
   });
 
+  test("OS-312: `ob jobs` text lists the host's scheduled jobs under the daemon table", async () => {
+    const jobs = [{ job: "sync", state: "ok", cadence_s: 300, threshold_s: 3600, quiet_s: 10, last_attempt_at: null, last_success_at: null, last_error: null, consecutive_failures: 0, consecutive_interruptions: 0, unresolved_for_s: null }];
+    const scheduled = [{ name: "db-copy", enabled: true, last_status: "failed", last_run_at: "2026-11-28T10:00:00.000Z", next_run_at: "2026-11-28T11:00:00.000Z", consecutive_failures: 2 }];
+    const s = stub({ "GET /jobs": { jobs, scheduled } });
+    const r = await runCli(freshDbPath(), ["jobs"], api(s));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("scheduled jobs (ob schedule)\ndb-copy          failed      last run 2026-11-28T10:00:00.000Z, next 2026-11-28T11:00:00.000Z\t2 fail(s) in a row");
+  });
+
   test("`ob alerts --quiet` prints keys", async () => {
     const s = stub({
       "GET /alerts": { alerts: [{ key: "7:sync", rule: 7, label: "job failing", entity: "sync", message: "failing", state_hash: "x" }] },

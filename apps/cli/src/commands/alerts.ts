@@ -6,6 +6,7 @@ import { settingNumFor } from "../settings.ts";
 import { getFocusProject } from "../config.ts";
 import { queryItems, type ItemRow } from "../items.ts";
 import { jobHealth } from "../jobs.ts";
+import { listSchedulesWithRuns, SCHEDULE_FAILURE_ALERT } from "../scheduled-jobs.ts";
 import { sendHaNotify } from "../notify.ts";
 import { CREDENTIALS, lastCredentialChecks } from "../credentials.ts";
 import { dependencyRaises, type Raises } from "../dep-priority.ts";
@@ -36,6 +37,7 @@ const LABELS: Record<number, string> = {
   10: "job interrupted",
   11: "credential invalid",
   12: "main red",
+  13: "schedule failing",
 };
 
 /** Critical (OS-108), urgent, flake (OB-2060, above high) or high: the levels worth surfacing. */
@@ -342,6 +344,22 @@ export async function computeAlerts(store: Store, opts: ComputeOpts): Promise<Al
     });
   }
 
+  // --- Rule 13: a scheduled job that keeps failing (OS-312) ------------------
+  // An enabled `ob schedule` job whose last two or more finished runs failed (running and skipped runs are passed
+  // over). One failure is a blip; two in a row is a job that is broken. A paused job is quiet on purpose. The hash is
+  // the latest failed run, so a snooze lasts until the job fails again.
+  for (const j of await listSchedulesWithRuns(store, 0)) {
+    if (!j.enabled || j.consecutive_failures < SCHEDULE_FAILURE_ALERT || j.latest_failed_run_id === null) continue;
+    alerts.push({
+      key: `schedule_failing:${j.name}`,
+      rule: 13,
+      label: LABELS[13]!,
+      entity: j.name,
+      message: `scheduled job ${j.name} has failed ${j.consecutive_failures} runs in a row${j.last_error ? `. Last error: ${j.last_error}` : ""}. See /schedules or \`ob schedule show ${j.name} --runs 10\``,
+      state_hash: `run:${j.latest_failed_run_id}`,
+    });
+  }
+
   alerts.sort((a, b) => a.rule - b.rule || a.key.localeCompare(b.key));
   return alerts;
 }
@@ -396,11 +414,11 @@ export function renderAlertDigest(alerts: Alert[]): string {
 
 /**
  * ob 1687: the rules that may reach his phone. A push has to be something he can act on today: a job that
- * failed, went stale or never ran (7/8/9/10), a credential the provider rejected (11), a blocked item with no
+ * failed, went stale or never ran (7/8/9/10), a scheduled job failing run after run (13, OS-312), a credential the provider rejected (11), a blocked item with no
  * movement (4). Everything else stays in the printed digest and `ob alerts`, never on the phone: aging (2),
  * and also PR unreviewed (1) and stale branch (3), which are nudges, not outages. There is no deadline rule yet; when one lands, add its number here.
  */
-export const PUSH_RULES: ReadonlySet<number> = new Set([4, 7, 8, 9, 10, 11]);
+export const PUSH_RULES: ReadonlySet<number> = new Set([4, 7, 8, 9, 10, 11, 13]);
 
 /** The alerts worth a push: `alerts` filtered to PUSH_RULES. */
 export function pushWorthy(alerts: Alert[]): Alert[] {

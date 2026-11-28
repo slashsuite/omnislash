@@ -36,9 +36,13 @@ const WRAPPERS: Record<string, (c: writes.WriteContext) => Promise<unknown>> = {
   saveReviewers: (c) => writes.saveReviewers(c, { medium: ["opus"] }),
   setQueueOrder: (c) => writes.setQueueOrder(c, { id: "1", move: { top: true } }),
   setPriority: (c) => writes.setPriority(c, { id: "1", priority: 2 }),
+  pauseSchedule: (c) => writes.pauseSchedule(c, "nightly"),
+  resumeSchedule: (c) => writes.resumeSchedule(c, "nightly"),
+  runScheduleNow: (c) => writes.runScheduleNow(c, "nightly"),
+  deleteSchedule: (c) => writes.deleteSchedule(c, "nightly"),
 };
 
-test("the ten ob writes are all here, and nothing else is exported as a write", () => {
+test("the fourteen ob writes are all here, and nothing else is exported as a write", () => {
   const exported = Object.keys(writes).sort();
   expect(exported).toEqual(Object.keys(WRAPPERS).sort());
 });
@@ -56,6 +60,30 @@ for (const [name, call] of Object.entries(WRAPPERS)) {
     test("a same-origin request gets past the guard to the store", async () => {
       const { c, calls } = ctx(sameOrigin());
       await expect(call(c)).rejects.toBeInstanceOf(StoreOpened);
+      expect(calls.store).toBe(1);
+    });
+  });
+}
+
+// OS-312: a scheduled job may run a shell command, so its writes also refuse plain HTTP to a host that is not this
+// machine, before the store is opened; loopback over HTTP gets through.
+// The four schedule wrappers share one guard, and the loop above proves each goes through it; one write shows it.
+{
+  const name = "pauseSchedule";
+  describe(`${name} over the network`, () => {
+    test("plain HTTP to a LAN host is refused with a reason, and the store is never opened", async () => {
+      const req = new Request("http://192.168.0.20:5197/_serverFn/write", { method: "POST", headers: { "sec-fetch-site": "same-origin" } });
+      const { c, calls } = ctx(req);
+      const res = (await WRAPPERS[name]!(c)) as { ok: boolean; error?: string };
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain("refusing to change a scheduled job over http://192.168.0.20");
+      expect(calls.store).toBe(0);
+    });
+
+    test("plain HTTP on loopback gets through to the store", async () => {
+      const req = new Request("http://127.0.0.1:5197/_serverFn/write", { method: "POST", headers: { "sec-fetch-site": "same-origin" } });
+      const { c, calls } = ctx(req);
+      await expect(WRAPPERS[name]!(c)).rejects.toBeInstanceOf(StoreOpened);
       expect(calls.store).toBe(1);
     });
   });

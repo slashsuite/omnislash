@@ -18,8 +18,18 @@ import {
   originFromRequest,
   runCredentialCheck,
   storeCredential,
+  writeGate,
   type CredentialStatus,
+  type RequestOrigin,
 } from "../../../../apps/cli/src/credentials.ts";
+import { AppError } from "../../../../apps/cli/src/errors.ts";
+import {
+  deleteScheduledJob,
+  listSchedulesWithRuns,
+  runScheduledJobNow,
+  updateScheduledJob,
+  type ScheduledJobWithRuns,
+} from "../../../../apps/cli/src/scheduled-jobs.ts";
 import { itemDetail } from "../../../../apps/cli/src/detail.ts";
 import { editItem } from "../../../../apps/cli/src/items.ts";
 import {
@@ -118,4 +128,52 @@ export async function setPriority(ctx: WriteContext, data: { id: string; priorit
 /** Store the review_readers setting after the CLI's own checks. */
 export async function saveReviewers(ctx: WriteContext, value: unknown): Promise<SaveResult> {
   return await saveReviewersValue(configIo(await open(ctx)), value);
+}
+
+// --- OS-312: the /schedules page's writes ---------------------------------------------------------------------
+
+/** What a schedule write returns: the fresh list of jobs, or why it was refused (shown on the card, not thrown). */
+export type ScheduleWriteResult = { ok: true; schedules: ScheduledJobWithRuns[] } | { ok: false; error: string };
+
+function scheduleRefusal(origin: RequestOrigin): string {
+  return `refusing to change a scheduled job over ${origin.proto}//${origin.hostname}: a job runs commands on your machines, so it is only changed over https or on the machine itself. Use \`ob schedule\` there`;
+}
+
+/**
+ * The guard, then the TLS-or-loopback gate, then the store: a scheduled job may run a shell command, so pausing or
+ * firing one is refused over plain HTTP to another host, as a credential paste is. A refusal never opens the store.
+ * An AppError from the core (no such job, a paused job run now) comes back as `ok: false`.
+ */
+async function scheduleWrite(ctx: WriteContext, change: (s: Store) => Promise<unknown>): Promise<ScheduleWriteResult> {
+  assertSameOrigin(ctx.request);
+  const gate = writeGate(originFromRequest(ctx.request), scheduleRefusal);
+  if (!gate.allowed) return { ok: false, error: gate.reason };
+  const s = await ctx.store();
+  try {
+    await change(s);
+  } catch (e) {
+    if (e instanceof AppError) return { ok: false, error: e.message };
+    throw e;
+  }
+  return { ok: true, schedules: await listSchedulesWithRuns(s) };
+}
+
+/** Pause a job (`ob schedule pause`): it keeps its next time but does not fire. */
+export function pauseSchedule(ctx: WriteContext, ref: string): Promise<ScheduleWriteResult> {
+  return scheduleWrite(ctx, (s) => updateScheduledJob(s, ref, { enabled: false }));
+}
+
+/** Resume a paused job (`ob schedule resume`): its next time is recomputed from now. */
+export function resumeSchedule(ctx: WriteContext, ref: string): Promise<ScheduleWriteResult> {
+  return scheduleWrite(ctx, (s) => updateScheduledJob(s, ref, { enabled: true }));
+}
+
+/** Make a job due now (`ob schedule run`): only its next time moves. The next `ob role tick` fires it; nothing runs here. */
+export function runScheduleNow(ctx: WriteContext, ref: string): Promise<ScheduleWriteResult> {
+  return scheduleWrite(ctx, (s) => runScheduledJobNow(s, ref));
+}
+
+/** Delete a job and its runs (`ob schedule delete`). */
+export function deleteSchedule(ctx: WriteContext, ref: string): Promise<ScheduleWriteResult> {
+  return scheduleWrite(ctx, (s) => deleteScheduledJob(s, ref));
 }

@@ -18,7 +18,7 @@ const drawer = (page: Page) => page.getByRole("dialog");
 test.beforeEach(() => reseed());
 
 // The ob-frame test checks every page's marking; this checks the nav a person sees, phone Menu included.
-const PAGES = ["Home", "Queue", "Alerts", "Tokens", "Models", "Timeline", "Machine", "Overview"];
+const PAGES = ["Home", "Queue", "Alerts", "Tokens", "Models", "Timeline", "Machine", "Overview", "Schedules"];
 
 test("the header nav lists every page and marks the current one", async ({ page }, info) => {
   await openPage(page, "/alerts");

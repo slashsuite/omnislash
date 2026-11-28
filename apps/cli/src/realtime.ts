@@ -18,6 +18,7 @@ import { transcribeWhatsappMessage } from "../../../platform/cli-whatsapp/src/wh
 import { AppError } from "./errors.ts";
 import { itemsStamp } from "./items.ts";
 import { decisionsStamp } from "./decisions.ts";
+import { schedulesStamp } from "./scheduled-jobs.ts";
 import { getStore, type Store } from "./db/store.ts";
 import { computeAlerts, filterSnoozed } from "./commands/alerts.ts";
 import { getFocusProject } from "./config.ts";
@@ -65,6 +66,7 @@ export interface Snapshot {
   branchAgeMax: number; // (QW6) the stale-branch threshold in days (alert rule 3 — `branch_age_days` setting); drives the PR "stale" chip
   itemsStamp: string; // (OS-25) the item count and latest updated_at: moves on any item write (an `ob order`, a priority, an add or rm), so a page that lists items re-reads on a push
   decisionsStamp: string; // (OS-241) the decision count and newest id: moves when a decision is recorded (an `ob spinoff check`), which touches no item
+  schedulesStamp: string; // (OS-312) the scheduled job count, newest job updated_at, newest run id and finished run count: moves on any job write or run, so /schedules re-reads
 }
 
 /**
@@ -105,6 +107,7 @@ export async function snapshotFrom(store: Store, fetchIssues?: IssueFetcher): Pr
     branchAgeMax: await settingNumFor(store, "branch_age_days"), // (QW6) same threshold alert rule 3 uses (default 3)
     itemsStamp: await itemsStamp(store),
     decisionsStamp: await decisionsStamp(store),
+    schedulesStamp: await schedulesStamp(store),
   };
 }
 
