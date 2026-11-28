@@ -161,7 +161,7 @@ import { flakeBoxPresent, noFlakeBoxWarning } from "../../../../platform/cli-coo
 import type { ApiCtx } from "./client-handlers.ts";
 import type { EnqueueSpinoffRequest, SpinoffConfig } from "./contract.ts";
 import { DEFAULT_COMPLEXITY, URGENT_COMPLEXITY, tierOfComplexity } from "../models-file.ts";
-import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type ReadyNoteOutcome } from "../t3/dispatch.ts";
+import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, threadForRow, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type ReadyNoteOutcome } from "../t3/dispatch.ts";
 
 // --- the refusals: they name THIS machine, never the API host ----------------
 //
@@ -553,6 +553,10 @@ async function apiReconcile(
       ...(await ctx.client.spinoffs({ status: "pending" })).spinoffs,
       ...(await ctx.client.spinoffs({ status: "launching" })).spinoffs,
     ];
+    // OS-300: a launching row settles only when GET /leases shows no live `spinoff:<id>` claim. A scoped token's
+    // read is complete for that key: the server admits a `spinoff:` lease by the same row scope GET /spinoffs
+    // lists by, so every row read here has its claim in the read. A failed read throws inside `claimLive`, and
+    // that row is skipped, never settled.
     let leases: Awaited<ReturnType<ApiClient["leases"]>>["leases"] | null = null;
     const stuck = await settleStuckSpinoffs(
       waiting,
@@ -566,6 +570,7 @@ async function apiReconcile(
           return !!hold && !hold.expired;
         },
         committed: async (row) => branchVerdictBase(row),
+        thread: async (row) => threadForRow(await t3Seam(), rowRepoPathIn(cfg, row.repo), row),
       },
       apiSpinoffSteps(ctx.client).stamp,
     );

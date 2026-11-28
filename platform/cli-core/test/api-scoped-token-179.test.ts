@@ -354,6 +354,21 @@ describe("agents, leases, teams and inbox through a scoped token (OS-179)", () =
   );
 
   test(
+    "leases: a spinoff row's claim lease is listed exactly when the row is, so a missing claim proves no launch (OS-300)",
+    async () => {
+      await withScopedApi(async ({ store, call, a1, b1 }) => {
+        const alpha = await enqueueSpinoff(store, { ticketRef: a1, repo: "alpha", branch: "a1", mode: "agent", brief: "alpha work" });
+        const beta = await enqueueSpinoff(store, { ticketRef: b1, repo: "beta", branch: "b1", mode: "agent", brief: "beta work" });
+        await acquireLease(store, `spinoff:${alpha.row.id}`, "launcher", 600);
+        await acquireLease(store, `spinoff:${beta.row.id}`, "launcher", 600);
+        expect((await call("/spinoffs")).body.spinoffs.map((r: any) => r.id)).toEqual([alpha.row.id]);
+        expect((await call("/leases")).body.leases.map((l: any) => l.resource)).toEqual([`spinoff:${alpha.row.id}`]);
+      });
+    },
+    BUDGET,
+  );
+
+  test(
     "teams: in scope only when all their projects are; out-of-scope teams are hidden and 404; inbox works as erin",
     async () => {
       await withScopedApi(async ({ store, call }) => {

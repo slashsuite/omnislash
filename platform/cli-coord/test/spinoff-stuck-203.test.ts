@@ -7,12 +7,16 @@ import { join } from "node:path";
 import { freshDb } from "../../../apps/cli/test/helpers.ts";
 import { addTags, createItem } from "../../../apps/cli/src/items.ts";
 import { __setSh, enqueueSpinoff, listSpinoffs, localSpinoffSteps, reconcileSpinoffs } from "../src/commands/spinoff.ts";
+import { installFakeT3 } from "../../../apps/cli/test/fake-t3.ts";
 
 let restoreSh: (() => void) | null = null;
+let restoreT3: (() => void) | null = null;
 const dirs: string[] = [];
 afterEach(() => {
   restoreSh?.();
   restoreSh = null;
+  restoreT3?.();
+  restoreT3 = null;
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
 
@@ -70,13 +74,17 @@ describe("stuck launching rows settle (OS-203)", () => {
     expect((await listSpinoffs(db, "merged")).map((r) => r.ticket_ref)).toEqual(["OB-1"]);
   });
 
-  test("a stuck row with a null base_sha whose builder committed State: on its branch is stamped launched, not relaunched", async () => {
+  test("a stuck row with a null base_sha whose builder committed State: on its branch is stamped launched with its thread, not relaunched", async () => {
     const db = freshDb();
     const open = await createItem(db, { type: "task", title: "built, not merged", status: "open" });
     const id = await seedLaunching(db, open, 900);
     const worktree = mkdtempSync(join(tmpdir(), "ob-stuck-203-"));
     dirs.push(worktree);
     db.query("UPDATE spinoff SET worktree = ? WHERE id = ?").run(worktree, id);
+    // OS-300: the builder's live thread on that worktree, which the stamp records so the row is never threadless.
+    const t3 = installFakeT3(["/r/omnislash"]);
+    restoreT3 = t3.restore;
+    t3.threads.push({ threadId: "thread-ob1", projectId: "proj-0", title: "OB-1 built", status: "running", worktreePath: worktree, branch: "OB-1", settled: false, archived: false, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: "run-1", latestRunId: "run-1" });
     // The branch's own log (`main..branch`) carries the builder's verdict, and the branch left main at fork1.
     restoreSh = __setSh((argv) => {
       if (argv.includes("log")) return { ok: true, err: "", out: "fix(OB-1): the build\n\nState: landable\n" };
@@ -92,9 +100,27 @@ describe("stuck launching rows settle (OS-203)", () => {
     const launched = await listSpinoffs(db, "launched");
     expect(launched.map((r) => r.id)).toEqual([id]);
     expect(launched[0]!.base_sha).toBe("fork1");
+    expect(launched[0]!.t3_thread_id).toBe("thread-ob1");
     expect(await listSpinoffs(db, "merged")).toEqual([]);
     expect(await listSpinoffs(db, "launching")).toEqual([]);
     expect(await listSpinoffs(db, "pending")).toEqual([]);
+  });
+
+  test("OS-300: a stuck row with a committed verdict is left launching when T3 cannot say which thread is its", async () => {
+    const db = freshDb();
+    const open = await createItem(db, { type: "task", title: "built, T3 unsure", status: "open" });
+    const id = await seedLaunching(db, open, 900);
+    const worktree = mkdtempSync(join(tmpdir(), "ob-stuck-300-"));
+    dirs.push(worktree);
+    db.query("UPDATE spinoff SET worktree = ? WHERE id = ?").run(worktree, id);
+    restoreT3 = installFakeT3([]).restore; // no T3 project for the checkout, so threadForRow throws
+    restoreSh = __setSh((argv) => {
+      if (argv.includes("log")) return { ok: true, err: "", out: "fix(OB-1): the build\n\nState: landable\n" };
+      if (argv.includes("merge-base")) return { ok: true, err: "", out: "fork1\n" };
+      return { ok: true, err: "", out: "" };
+    });
+    await reconcile(db);
+    expect((await listSpinoffs(db, "launching")).map((r) => r.id)).toEqual([id]);
   });
 
   test("a stuck spike row on a closed ticket ends failed with a reason", async () => {
