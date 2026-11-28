@@ -213,23 +213,63 @@ export async function findBranchConflicts(rows: OverlapRow[], deps: ConflictDeps
   return out;
 }
 
-/** OS-259: the pair's key, `conflict:<row a>:<row b>`: one report per pair, whatever its heads become. Pure. */
+/** OS-259: the pair's key, `conflict:<row a>:<row b>`: one report per pair while it is handled, whatever its heads become. Pure. */
 export function conflictPairKey(c: Pick<BranchConflict, "a" | "b">): string {
   return `conflict:${c.a.row}:${c.b.row}`;
 }
 
-/**
- * The sentinel message's dedupe key, `conflict:<row a>:<row b>:loser:<row>`. It is also the record of the pause: the
- * resume pass reads who yields to whom from it. A pair whose key is already in the inbox (any loser) is not reported
- * again. Pure.
- */
-export function conflictKey(c: Pick<BranchConflict, "a" | "b">, loser: number): string {
-  return `${conflictPairKey(c)}:loser:${loser}`;
+/** The two heads a pair was found at, `<head a>:<head b>` (12 characters each). Pure. */
+export function pairHeads(c: Pick<BranchConflict, "a" | "b">): string {
+  return `${c.a.head.slice(0, 12)}:${c.b.head.slice(0, 12)}`;
 }
 
-/** The resume notice's key: `resume:<loser row>:<winner rows, sorted, comma separated>`. Pure. */
-export function resumeKey(loser: number, winners: number[]): string {
-  return `resume:${loser}:${[...winners].sort((x, y) => x - y).join(",")}`;
+/**
+ * The sentinel message's dedupe key, `conflict:<row a>:<row b>:loser:<row>:<head a>:<head b>`. It is also the record of
+ * the pause: the resume pass reads who yields to whom from it. OS-263: the heads make a pair found again on new
+ * commits, after its loser was resumed, a new message; the same pair at the same heads never is. Pure.
+ */
+export function conflictKey(c: Pick<BranchConflict, "a" | "b">, loser: number): string {
+  return `${conflictPairKey(c)}:loser:${loser}:${pairHeads(c)}`;
+}
+
+/**
+ * The resume notice's key: `resume:<loser row>:<winner rows, sorted, comma separated>:<id of the pause it ends>`. The
+ * pause id (OS-263) keeps a second pause of the same rows from finding the first resume and never being told. Pure.
+ */
+export function resumeKey(loser: number, winners: number[], pause: number): string {
+  return `resume:${loser}:${[...winners].sort((x, y) => x - y).join(",")}:${pause}`;
+}
+
+const YIELD_KEY = /^conflict:(\d+):(\d+):loser:(\d+)(?::[0-9a-f]+:[0-9a-f]+)?$/;
+
+/** The id of a loser's latest pause message, 0 when it has none. Pure. */
+export function lastYieldId(messages: ReadonlyArray<{ id: number; client_key?: string | null }>, loser: number): number {
+  let last = 0;
+  for (const m of messages) {
+    const y = YIELD_KEY.exec(m.client_key ?? "");
+    if (y && Number(y[3]) === loser) last = Math.max(last, m.id);
+  }
+  return last;
+}
+
+/**
+ * OS-263: is the pair already handled, so the tick posts nothing: a message for it at these same heads exists, or its
+ * latest message's loser still yields to the other row (`open`, from openYields). A pair whose loser was resumed and
+ * that conflicts again on new commits is not handled, and is posted again. Pure.
+ */
+export function pairHandled(
+  c: Pick<BranchConflict, "a" | "b">,
+  messages: ReadonlyArray<{ id: number; client_key?: string | null }>,
+  open: ReadonlyMap<number, number[]>,
+): boolean {
+  const prefix = `${conflictPairKey(c)}:loser:`;
+  const mine = messages.filter((m) => (m.client_key ?? "").startsWith(prefix) && YIELD_KEY.test(m.client_key ?? ""));
+  if (mine.length === 0) return false;
+  if (mine.some((m) => m.client_key!.endsWith(`:${pairHeads(c)}`))) return true;
+  const latest = mine.reduce((x, y) => (y.id > x.id ? y : x));
+  const loser = Number(YIELD_KEY.exec(latest.client_key!)![3]);
+  const other = loser === c.a.row ? c.b.row : c.a.row;
+  return open.get(loser)?.includes(other) ?? false;
 }
 
 /** One side's priority as a rank, best first: no priority ranks with `none`. */
@@ -254,7 +294,7 @@ export function openYields(messages: ReadonlyArray<{ id: number; client_key?: st
   const lastResume = new Map<number, number>();
   for (const m of messages) {
     const key = m.client_key ?? "";
-    const y = /^conflict:(\d+):(\d+):loser:(\d+)$/.exec(key);
+    const y = YIELD_KEY.exec(key);
     if (y) {
       const [a, b, loser] = [Number(y[1]), Number(y[2]), Number(y[3])];
       if (loser === a || loser === b) yields.push({ id: m.id, loser, winner: loser === a ? b : a });
