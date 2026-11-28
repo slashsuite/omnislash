@@ -1835,6 +1835,30 @@ export async function mirrorT3Runs(rows: T3MirrorRow[], registry: AgentRegistry,
   return { mirrored, skipped };
 }
 
+/** OS-226: `endedThreadReason` for a thread T3 does not have. */
+export const THREAD_GONE = "is gone from T3";
+
+/**
+ * OS-226: why a builder's thread is over, or null while it may still run. Over means T3 no longer has it
+ * (`thread_not_found`), or it is archived, settled or cancelled with no run in flight. A run in flight is checked
+ * first, because `settled` is organisational and a settled thread can still be running (`liveRunReason`).
+ * Throws when T3 cannot say (unreachable, any other refusal), because "could not look" is not "ended".
+ */
+export async function endedThreadReason(seam: Pick<T3Seam, "read">, threadId: string): Promise<string | null> {
+  let thread: T3Thread;
+  try {
+    thread = await readThreadHeader(seam, threadId);
+  } catch (err) {
+    if (err instanceof T3Error && err.code === "thread_not_found") return THREAD_GONE;
+    throw err;
+  }
+  if (thread.activeRunId) return null;
+  if (thread.archived) return "was archived";
+  if (thread.settled) return "was settled";
+  if (thread.status === "cancelled") return "was cancelled";
+  return null;
+}
+
 /** The store-backed mirror: this machine's own `launched` and handed-off t3 rows, onto this machine's registry. */
 export async function reconcileT3Runs(db: Database | Store, seam?: T3Seam): Promise<T3MirrorResult> {
   const s = asStore(db);

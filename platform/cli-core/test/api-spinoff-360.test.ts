@@ -1367,7 +1367,8 @@ describe("reconcile and cleanup: this machine's git, the API's rows (360)", () =
       });
       const r = await runCli(freshDbPath(), ["spinoff", "reconcile"], api(s));
       expect(r.code).toBe(0);
-      expect(readThreads.sort()).toEqual(["mcp:t3-g", "mcp:t3-h"]); // merged is never read
+      // The OS-226 ended-builder pass reads a building row's thread again, so the set of threads read is what counts.
+      expect([...new Set(readThreads)].sort()).toEqual(["mcp:t3-g", "mcp:t3-h"]); // merged is never read
       expect(posted.every((b) => b.action === "set-run")).toBe(true); // never a register
       expect(posted).toContainEqual({ action: "set-run", id: "b-h", run: "running" });
       expect(r.out).toContain("1923: T3 run running");
