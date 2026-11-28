@@ -25,7 +25,7 @@ import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalLeg, retiredReviewMessage, splitTierModel } from "../../apps/cli/src/models-file.ts";
-import { creditErrorOf, parseAntigravityJson } from "../../apps/cli/src/models-credit.ts";
+import { creditErrorOf, parseAntigravityJson, recordCreditHit } from "../../apps/cli/src/models-credit.ts";
 import { parseReviewReaders, type ReviewReaders } from "../../apps/cli/src/review-readers.ts";
 import {
   antigravityUsageTokens,
@@ -175,6 +175,9 @@ function runObReaders(env: Record<string, string | undefined> = process.env): { 
   return { code: r.exitCode ?? 1, out: r.stdout.toString(), err: r.stderr.toString() };
 }
 
+/** The readers `ob review readers --json` printed, with the models profile they belong to (null when none is active). */
+export type LoadedReaders = ReviewReaders & { profile: string | null };
+
 /** The configured readers could not be read: the leg fails by name rather than run a model nobody configured (OS-238). */
 export class ReaderSettingError extends Error {}
 
@@ -187,7 +190,7 @@ export class ReaderSettingError extends Error {}
 export function loadReaderSetting(
   env: Record<string, string | undefined> = process.env,
   run: ReadersRunner = () => runObReaders(env),
-): ReviewReaders | null {
+): LoadedReaders | null {
   // The test preload sets this, so a spawned leg in a test never starts an `ob` of its own.
   if (env.OB_REVIEW_READERS_SKIP === "1") return null;
   let result: { code: number; out: string; err?: string };
@@ -201,9 +204,9 @@ export function loadReaderSetting(
     throw new ReaderSettingError(`ob review readers exited ${result.code}${first ? `: ${first}` : ""}`);
   }
   try {
-    const parsed = JSON.parse(result.out) as { readers?: unknown };
+    const parsed = JSON.parse(result.out) as { readers?: unknown; profile?: unknown };
     if (!parsed.readers || typeof parsed.readers !== "object" || Object.keys(parsed.readers).length === 0) return null;
-    return parseReviewReaders(result.out);
+    return { ...parseReviewReaders(result.out), profile: typeof parsed.profile === "string" && parsed.profile ? parsed.profile : null };
   } catch (e) {
     throw new ReaderSettingError(`ob review readers gave an unreadable answer: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -227,12 +230,13 @@ export function resolveLeg(leg: string, readers: ReviewReaders | null = null): R
 export function unknownLegMessage(leg: string, readers: ReviewReaders | null): string {
   const model = readerModel(readers, leg);
   const provider = unrunnableProvider(model ?? leg);
-  const runs = "review-leg.ts runs claude-*, claudeAgent:<model>, antigravity:<model> and opencode/<model>";
+  const runs = "review-leg.ts runs claude-*, claudeAgent:<model>, antigravity:<model> and opencode/<model>.";
+  const has = `reader '${leg}' in \`ob review readers\` has model '${model}'.`;
   if (provider !== undefined) {
-    const what = model !== undefined ? `reader '${leg}' in \`ob review readers\` has model '${model}'` : `model '${leg}'`;
-    return `${what} is on provider '${provider}', which no review leg runs: ${runs}`;
+    const what = model !== undefined ? `${has} That model` : `model '${leg}'`;
+    return `${what} is on provider '${provider}'. No review leg runs that provider. ${runs}`;
   }
-  if (model !== undefined) return `reader '${leg}' in \`ob review readers\` has model '${model}', which names no model to run`;
+  if (model !== undefined) return `${has} It names no model to run.`;
   const names = readers ? Object.keys(readers.readers) : [];
   const route = names.length
     ? `\`ob review readers\` has no reader '${leg}' (its readers: ${names.join(", ")})`
@@ -474,6 +478,10 @@ export interface RecordOptions {
   now?: () => Date;
   /** The stored review_readers setting, so the record names the model the leg ran on. */
   readers?: ReviewReaders | null;
+  /** The active models profile `ob review readers --json` names; a reader's credit hit is recorded against it (OS-299). */
+  profile?: string | null;
+  /** Where a credit hit goes (default: `recordCreditHit`, `models-state.json`'s hits, `credit_hits` in `ob models show --json`). */
+  creditHit?: (profile: string, at: Date) => void;
 }
 
 /** Write a record, never throwing: a record that cannot be written is one stderr line, the leg goes on. */
@@ -590,6 +598,15 @@ export async function runAcrossFallbacks(
     );
     inFlight = null;
     if (!credit) return { code: result.code, attempt };
+    // OS-299: a reader's credit error is a credit hit on the active models profile, as a spinoff's is on the profile
+    // it launched on (spinoff-credit.ts), whatever the provider. A model id given by hand belongs to no profile.
+    if (opts.profile && readerModel(opts.readers ?? null, attempt) !== undefined) {
+      try {
+        (opts.creditHit ?? ((p: string, at: Date) => recordCreditHit(p, at, env)))(opts.profile, now());
+      } catch (e) {
+        log(`review-leg: could not record the credit hit on profile ${opts.profile}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
     const next = attempts[i + 1];
     if (next !== undefined) {
       log(`review-leg: ${leg}: ${attempt} out of credits (${credit.match}), retrying on its fallback ${next}`);
@@ -773,7 +790,7 @@ if (import.meta.main) {
     process.exit(2);
   }
   // The readers the owner chose (review_readers), read once for this leg.
-  let readers: ReviewReaders | null;
+  let readers: LoadedReaders | null;
   try {
     readers = loadReaderSetting();
   } catch (e) {
@@ -856,7 +873,7 @@ if (import.meta.main) {
       },
       undefined,
       process.env,
-      { briefBytes: Buffer.byteLength(brief), readers },
+      { briefBytes: Buffer.byteLength(brief), readers, profile: readers?.profile ?? null },
     );
   } catch (e) {
     // A spawn that threw (the tool is not installed) is a failed leg too, and says why.

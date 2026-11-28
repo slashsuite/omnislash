@@ -29,11 +29,10 @@
       },
       // The skeptical-review legs. An antigravity: id runs through agy, an opencode/ or opencode-go/ id
       // runs through opencode, anything else through claude, so a profile may move a leg between
-      // providers. The default when review_readers is unset is `opus` alone, with `neon` on no range as its
-      // fallback (OS-238); `deepseek` and `luna` are retired (OS-206) and a profile naming either is refused. `opus` runs at its default effort; an older file's `sonnet`
+      // providers. The default when review_readers is unset is `opus` alone, with no
+      // fallback (OS-256, OS-299); a reader named here only changes the model of a reader the profile already has; `deepseek` and `luna` are retired (OS-206) and a profile naming either is refused. `opus` runs at its default effort; an older file's `sonnet`
       // key is read as `opus` (OB-2107).
       "review": {
-        "neon": "antigravity:gemini-4-neon",
         "opus": "claude-opus-5-5"
       }
     }

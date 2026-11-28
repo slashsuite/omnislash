@@ -212,12 +212,6 @@ export function parseTierModels(raw: string | null | undefined): { models: Recor
   return { models, error: null };
 }
 
-/** ob's default skeptical-review readers, which `ob review readers` prints when no profile sets any. `review-leg.ts` reads them from there, never from here (OS-295). */
-export const DEFAULT_REVIEW_MODELS = {
-  neon: "antigravity:gemini-4-neon",
-  opus: "claude-opus-5-5",
-} as const;
-
 /**
  * Review legs retired in OS-206: DeepSeek and Luna are no longer part of the review setup. A models profile,
  * `review_readers`, or a leg named on the command line that names one of them (or a model id that does) is refused.
@@ -239,12 +233,6 @@ export function retiredReviewMessage(leg: string, model?: string): string | null
   if (retired === undefined) return null;
   return `review reader '${retired}' is retired (OS-206): DeepSeek and Luna are no longer part of the review setup; use neon or opus`;
 }
-
-/**
- * The default skeptical-review leg set when `review_readers` is unset: Opus alone (OS-238, Jacobus 2026-11-25: the
- * Neon leg spent about 48 Antigravity sessions a day). Neon stays a default reader on no range, and no reader's fallback (OS-256).
- */
-export const DEFAULT_REVIEW_LEGS = ["opus"] as const satisfies readonly (keyof typeof DEFAULT_REVIEW_MODELS)[];
 
 /**
  * Old review-leg names still accepted (OB-2107): `sonnet` is the Claude leg, renamed `opus` when it moved to

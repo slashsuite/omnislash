@@ -162,11 +162,11 @@ describe("editModels range sets", () => {
 
   test("review ranges are replaced whole, and a gap is refused with the CLI's message", async () => {
     const w = await seeded();
-    const ok = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["neon"] }, { from: 6, to: 10, legs: ["neon", "opus"] }] }, null, "/nowhere");
+    const ok = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["opus"] }, { from: 6, to: 10, legs: ["opus"] }] }, null, "/nowhere");
     expect(ok.ok).toBe(true);
-    if (ok.ok) expect(ok.view.review.value.tiers.map((t) => [t.from, t.to, t.legs])).toEqual([[1, 5, ["neon"]], [6, 10, ["neon", "opus"]]]);
+    if (ok.ok) expect(ok.view.review.value.tiers.map((t) => [t.from, t.to, t.legs])).toEqual([[1, 5, ["opus"]], [6, 10, ["opus"]]]);
     const before = await w.stored();
-    const gap = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["neon"] }, { from: 7, to: 10, legs: ["opus"] }] }, null, "/nowhere");
+    const gap = await editModels(ctx(w), { op: "readerRanges", profile: "claude", ranges: [{ from: 1, to: 5, legs: ["opus"] }, { from: 7, to: 10, legs: ["opus"] }] }, null, "/nowhere");
     expect(gap).toEqual({ ok: false, error: "review ranges leave a gap at 6: the ranges must cover 1-10 with no gap" });
     expect(await w.stored()).toBe(before);
   });

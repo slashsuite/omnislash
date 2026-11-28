@@ -10,16 +10,16 @@
 // the ranges 1-3, 4-6 and 7-10, and is written back as the list.
 //
 // Unset means opus alone on every score and no fallback: readers are Opus only, so nothing stands in for an
-// unavailable Opus (OS-238, OS-256). Neon stays a reader on no range (kept but off). A reader may sit in no range (kept but off).
-// This module is PURE (no store, no ob imports beyond models-file's table) so review-leg.ts, a standalone bun
+// unavailable Opus (OS-238, OS-256). Its model is the default `builder.complex` model (OS-299). A reader may sit in no
+// range (kept but off).
+// This module is PURE (no store, no ob imports beyond models-file's helpers) so review-leg.ts, a standalone bun
 // script, and the dashboard can both import it cheaply. Reads and writes go through a `ConfigIO` the caller
 // supplies: the store locally and on the dashboard, the API client in API mode.
 
 import {
   COMPLEXITY_MAX,
   COMPLEXITY_MIN,
-  DEFAULT_REVIEW_LEGS,
-  DEFAULT_REVIEW_MODELS,
+  DEFAULT_TIER_MODELS,
   TIER_BANDS,
   isComplexity,
   isSpinoffTier,
@@ -51,18 +51,19 @@ export interface ReviewReaders {
 /** A leg name: lowercase letters, digits and dashes. */
 export const LEG_NAME = /^[a-z0-9-]+$/;
 
+/** The one reader an unset setting runs. */
+export const DEFAULT_READER = "opus";
+
 /**
- * The value an unset setting stands for: opus alone on every score (as the three old tier bands), no reader with a
- * fallback (readers are Opus only, OS-256), and neon kept as a reader on no range.
+ * The value an unset setting stands for: one reader, `opus`, on every score (as the three old tier bands), with no
+ * fallback (readers are Opus only, OS-256). Its model is the fixed default builder model `DEFAULT_TIER_MODELS.complex`,
+ * never a profile's `builder.complex` route (that could put the opus reader on a non-Opus model), so ob keeps no
+ * review model table of its own (OS-299).
  */
 export function defaultReviewReaders(): ReviewReaders {
-  const legs = [...DEFAULT_REVIEW_LEGS];
-  const readerLegs = Object.keys(DEFAULT_REVIEW_MODELS) as (keyof typeof DEFAULT_REVIEW_MODELS)[];
   return {
-    readers: Object.fromEntries(
-      readerLegs.map((leg) => [leg, { model: DEFAULT_REVIEW_MODELS[leg] }]),
-    ),
-    tiers: REVIEW_TIERS.map((t) => ({ ...TIER_BANDS[t], legs: [...legs] })),
+    readers: { [DEFAULT_READER]: { model: DEFAULT_TIER_MODELS.complex } },
+    tiers: REVIEW_TIERS.map((t) => ({ ...TIER_BANDS[t], legs: [DEFAULT_READER] })),
   };
 }
 
