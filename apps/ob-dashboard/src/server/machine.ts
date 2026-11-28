@@ -6,7 +6,7 @@ import { itemsStamp, tagsForItems } from "../../../cli/src/items.ts";
 import { nextWorklist } from "../../../cli/src/worklist.ts";
 import { listAgents } from "../../../../platform/cli-coord/src/agent.ts";
 import { builderIdOf, legRef, rowStateText } from "../../../../platform/cli-coord/src/clean-repo.ts";
-import { listSpinoffs, rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
+import { listSpinoffs, liveSpinoffs, rowVerdictState } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { currentCheckVerdicts } from "../../../../platform/cli-coord/src/spinoff-check.ts";
 import { isSpikeTagged, sectionItems } from "../../../../platform/cli-coord/src/spinoff-spike.ts";
 import { providedStore } from "../../provided-store.ts";
@@ -71,7 +71,7 @@ async function machineView(): Promise<MachineView> {
     title: i.title,
     state: placeOpen({ tags: openTags.get(i.id) ?? [], check: checks.get(i.id) ?? null, drilled: sectionItems(i.body, "Drilled").length > 0 }),
   }));
-  return { rows: [...rows, ...planning], stamp: machineStamp(spinoffs, agents, itemStamp, await decisionsStamp(store)) };
+  return { rows: [...rows, ...planning], stamp: machineStamp(liveSpinoffs(spinoffs), agents, itemStamp, await decisionsStamp(store)) };
 }
 
 export const getMachine = createServerFn({ method: "GET" }).handler(async (): Promise<MachineView> => await machineView());

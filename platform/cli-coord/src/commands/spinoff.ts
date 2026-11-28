@@ -1117,6 +1117,43 @@ export async function listSpinoffs(db: Database | Store, status?: string): Promi
   return ((await filtered.orderBy(desc(s.t.spinoff.id))) as SpinoffRow[]).map(readPhase);
 }
 
+/**
+ * OS-316: what the realtime snapshot carries per spinoff row. Only the fields a live page reads (the Machine page's
+ * stamp: id, status, phase, verdict; and the row's ticket), never the brief, the error or the token counts: the
+ * snapshot is pushed to every open dashboard and compared on every poll tick, and the full rows of every historical
+ * dispatch ran to 23 MB.
+ */
+export type LiveSpinoff = Pick<SpinoffRow, "id" | "ticket_ref" | "item_id" | "branch" | "status"> & {
+  phase: string | null;
+  verdict: string | null;
+};
+
+/** OS-316: the in-flight rows (IN_FLIGHT) of `rows`, newest first as given, cut to LiveSpinoff. Pure. */
+export function liveSpinoffs(rows: readonly SpinoffRow[]): LiveSpinoff[] {
+  return rows
+    .filter((r) => IN_FLIGHT.has(r.status))
+    .map((r) => ({
+      id: r.id,
+      ticket_ref: r.ticket_ref,
+      item_id: r.item_id,
+      branch: r.branch,
+      status: r.status,
+      phase: r.phase ?? null,
+      verdict: r.verdict ?? null,
+    }));
+}
+
+/** OS-316: the in-flight rows as the realtime snapshot carries them, newest first; history is never read. */
+export async function listLiveSpinoffs(db: Database | Store): Promise<LiveSpinoff[]> {
+  const s = asStore(db);
+  const rows = (await s.q
+    .select()
+    .from(s.t.spinoff)
+    .where(inArray(s.t.spinoff.status, [...IN_FLIGHT]))
+    .orderBy(desc(s.t.spinoff.id))) as SpinoffRow[];
+  return liveSpinoffs(rows.map(readPhase));
+}
+
 /** OS-285: a row as read, its phase null when its status does not hold it (heldPhase). */
 function readPhase(row: SpinoffRow): SpinoffRow {
   return row.phase == null || heldPhase(row.status, row.phase) !== null ? row : { ...row, phase: null };

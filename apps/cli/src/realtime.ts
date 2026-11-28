@@ -1,6 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import { nowIso } from "./db.ts";
-import { listSpinoffs, type SpinoffRow } from "../../../platform/cli-coord/src/commands/spinoff.ts";
+import { listLiveSpinoffs, type LiveSpinoff } from "../../../platform/cli-coord/src/commands/spinoff.ts";
 import type { AgentStatusRow } from "../../../platform/cli-coord/src/agent.ts";
 import { buildStatus, type StatusSnapshot } from "./commands/status.ts";
 import type { IssueFetcher } from "./wayfinder.ts";
@@ -55,10 +55,12 @@ const WHATSAPP_FEED_LIMIT = 50;
 
 export interface Snapshot {
   at: string;
-  status: StatusSnapshot;
+  // OS-316: no completed_spinoffs. Those are full rows, briefs included, and no dashboard page reads them; `ob status`
+  // and `GET /status` still carry them.
+  status: Omit<StatusSnapshot, "completed_spinoffs">;
   standupDoc: StandupDoc | null;
   lastStandupAt: string | null; // the since-last-standup boundary (088) — advanced only by "mark posted"
-  spinoffs: SpinoffRow[];
+  spinoffs: LiveSpinoff[]; // (OS-316) in-flight rows only, cut to the fields a page reads: never history, never a brief
   agents: AgentStatusRow[];
   whatsapp: WhatsappFeedItem[]; // read-only WhatsApp feed (102) — most-recent ingested messages
   whatsappStatus: StatusPerson[]; // current Status tray (629) — last 24h, others only; history is on-demand
@@ -83,7 +85,7 @@ export function sameSnapshot(a: Snapshot, b: Snapshot): boolean {
 /** A snapshot of the surfaces (079's pure readers) from the store. Never advances any cursor.
  *  `fetchIssues` is the wayfinder-frontier seam (221) — injectable so tests never hit GitHub. */
 export async function snapshotFrom(store: Store, fetchIssues?: IssueFetcher): Promise<Snapshot> {
-  const status = await buildStatus(store, fetchIssues);
+  const { completed_spinoffs: _done, ...status } = await buildStatus(store, fetchIssues);
   const doc = await latestStandup(store);
   const whatsapp: WhatsappFeedItem[] = await latestPerChat(store, {
     limit: WHATSAPP_FEED_LIMIT,
@@ -99,7 +101,7 @@ export async function snapshotFrom(store: Store, fetchIssues?: IssueFetcher): Pr
     status,
     standupDoc: doc ? { ...doc, effective_md: effectiveText(doc) } : null, // the stored standup for the editable surface (088)
     lastStandupAt: await lastStandupAt(store),
-    spinoffs: await listSpinoffs(store),
+    spinoffs: await listLiveSpinoffs(store),
     agents: status.agents,
     whatsapp,
     whatsappStatus,
