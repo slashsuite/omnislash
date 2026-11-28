@@ -1,14 +1,16 @@
 // OS-310: the scheduled job record (`ob schedule`). A job sends a prompt to a team role, or runs a shell command, on
-// a schedule (see ./schedule.ts). This module stores the jobs and their runs; running them is OS-311.
+// a schedule (see ./schedule.ts). This module stores the jobs and their runs, and (OS-311) claims the due ones:
+// `tickScheduledJobs` enqueues a due role job's prompt into `role_inbox` and hands a due command job to the caller,
+// which runs it on its own machine and records the outcome with `finishScheduledJobRun`. Nothing here runs a command.
 //
 // Every write is checked before anything is stored: the name, the schedule (an invalid one is refused and nothing
 // is written), one target, and for a role job the team and role by `ob send`'s rules.
 import type { Database } from "bun:sqlite";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lte } from "drizzle-orm";
 import { nowIso } from "./db.ts";
 import { asStore, type Store } from "./db/store.ts";
 import { AppError, UsageError } from "./errors.ts";
-import { requireRecipient } from "./inbox.ts";
+import { requireRecipient, sendRoleMessage } from "./inbox.ts";
 import { computeNextRunAt, normalizeScheduleExpr, parseScheduleKind, type ScheduleKind } from "./schedule.ts";
 import { parseTeamRole } from "./team-handoff.ts";
 import type { TeamRole } from "./team.ts";
@@ -91,10 +93,14 @@ export class ScheduledJobNotFoundError extends AppError {
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
 
+/** OS-311: names the API uses as literal path segments under /schedules, so no job may take them. */
+const RESERVED_NAMES = new Set(["tick", "runs"]);
+
 /** A job name: a lowercase slug that starts with a letter, so it is never read as an id. Pure. */
 export function parseJobName(raw: string): string {
   const name = raw.trim();
   if (!NAME_RE.test(name)) throw new UsageError(`job name '${raw}' must be a lowercase slug (a-z, 0-9, -) that starts with a letter, at most 64 characters`);
+  if (RESERVED_NAMES.has(name)) throw new UsageError(`job name '${name}' is reserved (the API serves /schedules/${name}); pick another`);
   return name;
 }
 
@@ -271,4 +277,258 @@ export async function listScheduledJobRuns(db: Database | Store, ref: string, li
   const t = s.t.scheduledJobRun;
   const runs = (await s.q.select().from(t).where(eq(t.job_id, job.id)).orderBy(desc(t.id)).limit(limit)) as ScheduledJobRun[];
   return { job, runs };
+}
+
+
+// --- OS-311: due evaluation and claim -------------------------------------------------------------------------
+
+/** The most of a command's output a run keeps: its last 4000 characters. */
+export const OUTPUT_TAIL_MAX = 4000;
+
+/** The last `max` characters of `text`. Pure. */
+export function boundTail(text: string, max: number = OUTPUT_TAIL_MAX): string {
+  return text.length > max ? text.slice(text.length - max) : text;
+}
+
+/** Who a scheduled role job's inbox message is from. */
+const SCHEDULE_FROM = "schedule";
+
+/** The inbox key a role job's firing for one due time is stored once under. Pure. */
+export function scheduleClientKey(jobId: number, dueAt: string): string {
+  return `schedule:${jobId}:${dueAt}`;
+}
+
+export interface ScheduleTickInput {
+  /** The calling machine: a command job with a `host` runs only on that host. */
+  host: string;
+  now?: Date | undefined;
+  /** The caller's good-night lock is on. */
+  night_locked?: boolean | undefined;
+}
+
+/** A command job handed to the caller to run, with the run row that records it. */
+export interface ClaimedCommand {
+  run_id: number;
+  job_id: number;
+  name: string;
+  command: string;
+  cwd: string | null;
+  due_at: string;
+}
+
+export interface ScheduleTickResult {
+  /** Role jobs fired: each prompt is one unread `role_inbox` message. */
+  fired: Array<{ job_id: number; name: string; team: string; role: TeamRole; due_at: string; run_id: number; message_id: number }>;
+  /** Command jobs claimed for the caller to run. */
+  commands: ClaimedCommand[];
+  /** Repeating jobs skipped under the good-night lock: their window is passed over, not fired at 07:00. */
+  skipped: Array<{ job_id: number; name: string; due_at: string; next_run_at: string | null }>;
+  /** `once` jobs held under the good-night lock: still due, they fire on the first pass after it. */
+  deferred: Array<{ job_id: number; name: string; due_at: string }>;
+  /** Jobs that could not fire (a role nobody can receive, a schedule with no next time); each recorded as a failed run. */
+  failed: Array<{ job_id: number; name: string; due_at: string; error: string }>;
+}
+
+/** The next due time after a firing at `now`: none for `once` (the job is done), else the schedule's next from now. */
+function nextAfter(job: ScheduledJob, now: Date): string | null {
+  if (job.schedule_kind === "once") return null;
+  return computeNextRunAt(job.schedule_kind, job.schedule_expr, now);
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Move a job past the window it was due in, only if nobody else has: the update matches the `next_run_at` this pass
+ * read, so of two concurrent callers exactly one wins (a compare-and-set, the same on SQLite and Postgres). A `once`
+ * job is disabled. Returns whether this caller won.
+ */
+async function advance(tx: Store, job: ScheduledJob, next: string | null, set: Record<string, unknown>): Promise<boolean> {
+  const t = tx.t.scheduledJob;
+  const rows = await tx.q
+    .update(t)
+    .set({ next_run_at: next, ...(job.schedule_kind === "once" ? { enabled: 0 } : {}), ...set, updated_at: nowIso() })
+    .where(and(eq(t.id, job.id), eq(t.enabled, 1), eq(t.next_run_at, job.next_run_at!)))
+    .returning({ id: t.id });
+  return rows.length === 1;
+}
+
+async function insertRun(tx: Store, values: Omit<ScheduledJobRun, "id">): Promise<ScheduledJobRun> {
+  const rows = (await tx.q.insert(tx.t.scheduledJobRun).values(values).returning()) as ScheduledJobRun[];
+  return rows[0]!;
+}
+
+/**
+ * One due-evaluation pass (OS-311), run by `ob role tick` on each machine: every enabled job whose `next_run_at` is
+ * at or before `now` is claimed once, however many callers race.
+ *
+ * - A role job enqueues its prompt into the team role's inbox (`from: schedule`, keyed `schedule:<id>:<due>`) and
+ *   records a `succeeded` run naming the message. Delivering it is the tick's existing `deliverToRole` pass.
+ * - A command job whose `host` is unset or the caller's is claimed: a `running` run on the caller's host, returned
+ *   for the caller to run and finish. Another host's job is left due for that host.
+ * - Under the good-night lock a job that respects it does not fire: a `once` job stays due and fires on the first
+ *   pass after the lock; an `interval` or `cron` job records a `skipped` run and moves to its next time after now,
+ *   so a night of missed windows is not a storm at 07:00. A job with `respect_good_night` off fires as usual (its
+ *   inbox message still waits for the lock to end, since the tick delivers nothing under it).
+ * - A repeating job's next time is computed from `now`, never from the missed due time: one firing per pass.
+ *
+ * Nothing here runs a command: the API server calls this and only ever returns the claim.
+ */
+export async function tickScheduledJobs(db: Database | Store, input: ScheduleTickInput): Promise<ScheduleTickResult> {
+  const s = asStore(db);
+  const now = input.now ?? new Date();
+  const stamp = now.toISOString();
+  const host = input.host.trim();
+  if (!host) throw new UsageError("the schedule tick needs the caller's host");
+  const t = s.t.scheduledJob;
+  const due = ((await s.q
+    .select()
+    .from(t)
+    .where(and(eq(t.enabled, 1), isNotNull(t.next_run_at), lte(t.next_run_at, stamp)))
+    .orderBy(asc(t.next_run_at), asc(t.id))) as Row[]).map(toJob);
+  const out: ScheduleTickResult = { fired: [], commands: [], skipped: [], deferred: [], failed: [] };
+  for (const job of due) {
+    try {
+      await tickJob(s, job, now, host, input.night_locked === true, out);
+    } catch (err) {      // A job whose own write failed (a database timeout) is left as it was, due for the next pass; the jobs already
+      // claimed in this pass are still returned, so none is claimed and then lost.
+      out.failed.push({ job_id: job.id, name: job.name, due_at: job.next_run_at!, error: errText(err) });
+    }
+  }
+  return out;
+}
+
+/** One due job of a tick pass: skip, hold, fire or claim it, recording the outcome on `out`. */
+async function tickJob(s: Store, job: ScheduledJob, now: Date, host: string, nightLocked: boolean, out: ScheduleTickResult): Promise<void> {
+  const stamp = now.toISOString();
+  const dueAt = job.next_run_at!;
+  if (job.target_kind === "command" && job.host !== null && job.host !== host) return;
+  if (nightLocked && job.respect_good_night) {
+    if (job.schedule_kind === "once") {
+      out.deferred.push({ job_id: job.id, name: job.name, due_at: dueAt });
+      return;
+    }
+    let next: string | null;
+    try {
+      next = nextAfter(job, now);
+    } catch (err) {
+      await failJob(s, job, now, errText(err), out);
+      return;
+    }
+    const won = await s.txn("schedule skip", async (tx) => {
+      if (!(await advance(tx, job, next, { last_status: "skipped" }))) return false;
+      await insertRun(tx, { job_id: job.id, started_at: stamp, finished_at: stamp, status: "skipped", host, exit_code: null, output_tail: "good night: skipped", role_message_id: null });
+      return true;
+    });
+    if (won) out.skipped.push({ job_id: job.id, name: job.name, due_at: dueAt, next_run_at: next });
+    return;
+  }
+  let next: string | null;
+  try {
+    next = nextAfter(job, now);
+  } catch (err) {
+    await failJob(s, job, now, errText(err), out);
+    return;
+  }
+  if (job.target_kind === "role") {
+    try {
+      const fired = await s.txn("schedule fire", async (tx) => {
+        if (!(await advance(tx, job, next, { last_run_at: stamp, last_status: "succeeded", last_error: null }))) return null;
+        const { message } = await sendRoleMessage(tx, {
+          team: job.team!,
+          role: job.role!,
+          from: SCHEDULE_FROM,
+          kind: "message",
+          // The prompt starts the first line: a role brief lists each unread message by its first line.
+          body: `Scheduled job '${job.name}' (due ${dueAt}): ${job.prompt}`,
+          clientKey: scheduleClientKey(job.id, dueAt),
+        });
+        const run = await insertRun(tx, { job_id: job.id, started_at: stamp, finished_at: stamp, status: "succeeded", host: null, exit_code: null, output_tail: null, role_message_id: message.id });
+        return { run_id: run.id, message_id: message.id };
+      });
+      if (fired) out.fired.push({ job_id: job.id, name: job.name, team: job.team!, role: job.role!, due_at: dueAt, ...fired });
+    } catch (err) {
+      // The firing rolled back. A refusal (a role nobody can receive, a team gone) is recorded as failed and moved
+      // on, so a bad job is one failed run per window, never an error on every pass. Anything else (a database
+      // timeout) goes to the pass's catch, which leaves the job due: a once job is never disabled by a hiccup.
+      if (!(err instanceof AppError)) throw err;
+      await failJob(s, job, now, errText(err), out, next);
+    }
+    return;
+  }
+  const claimed = await s.txn("schedule claim", async (tx) => {
+    if (!(await advance(tx, job, next, { last_run_at: stamp, last_status: "running", last_error: null }))) return null;
+    return insertRun(tx, { job_id: job.id, started_at: stamp, finished_at: null, status: "running", host, exit_code: null, output_tail: null, role_message_id: null });
+  });
+  if (claimed) out.commands.push({ run_id: claimed.id, job_id: job.id, name: job.name, command: job.command!, cwd: job.cwd, due_at: dueAt });
+}
+
+/**
+ * A job that cannot fire: one `failed` run, the error on the job, and the job moved past this window (to `next`, or
+ * disabled when there is none, as a cron with no next time is), so it fails once per window and not every pass.
+ */
+async function failJob(s: Store, job: ScheduledJob, now: Date, error: string, out: ScheduleTickResult, next: string | null = null): Promise<void> {
+  const stamp = now.toISOString();
+  const won = await s.txn("schedule fail", async (tx) => {
+    const t = tx.t.scheduledJob;
+    const rows = await tx.q
+      .update(t)
+      .set({ next_run_at: next, ...(next === null ? { enabled: 0 } : {}), last_run_at: stamp, last_status: "failed", last_error: error, updated_at: nowIso() })
+      .where(and(eq(t.id, job.id), eq(t.enabled, 1), eq(t.next_run_at, job.next_run_at!)))
+      .returning({ id: t.id });
+    if (rows.length !== 1) return false;
+    await insertRun(tx, { job_id: job.id, started_at: stamp, finished_at: stamp, status: "failed", host: null, exit_code: null, output_tail: boundTail(error), role_message_id: null });
+    return true;
+  });
+  if (won) out.failed.push({ job_id: job.id, name: job.name, due_at: job.next_run_at!, error });
+}
+
+export interface ScheduleRunFinish {
+  status: string;
+  exit_code?: number | null | undefined;
+  output_tail?: string | null | undefined;
+}
+
+/** No run by that id. 404 over the API. */
+export class ScheduledJobRunNotFoundError extends AppError {
+  constructor(readonly runId: number) {
+    super(`no scheduled job run ${runId}`);
+    this.name = "ScheduledJobRunNotFoundError";
+  }
+}
+
+/**
+ * Record how a claimed command run ended (OS-311): `succeeded` or `failed`, its exit code and the last 4000
+ * characters of its output, on the run and as the job's last run. Only a `running` run can finish, once.
+ */
+export async function finishScheduledJobRun(db: Database | Store, runId: number, input: ScheduleRunFinish, now: Date = new Date()): Promise<ScheduledJobRun> {
+  const s = asStore(db);
+  if (input.status !== "succeeded" && input.status !== "failed") throw new UsageError(`a run finishes as succeeded or failed (got '${input.status}')`);
+  const status = input.status;
+  if (!Number.isSafeInteger(runId) || runId < 1 || runId > MAX_INT4) throw new ScheduledJobRunNotFoundError(runId);
+  const exit = input.exit_code ?? null;
+  if (exit !== null && !Number.isSafeInteger(exit)) throw new UsageError("exit_code must be a whole number or null");
+  const tail = input.output_tail == null ? null : boundTail(input.output_tail);
+  const stamp = now.toISOString();
+  return s.txn("schedule finish", async (tx) => {
+    const r = tx.t.scheduledJobRun;
+    const cur = ((await tx.q.select().from(r).where(eq(r.id, runId)).limit(1)) as ScheduledJobRun[])[0];
+    if (!cur) throw new ScheduledJobRunNotFoundError(runId);
+    const rows = (await tx.q
+      .update(r)
+      .set({ status, finished_at: stamp, exit_code: exit, output_tail: tail })
+      .where(and(eq(r.id, runId), eq(r.status, "running")))
+      .returning()) as ScheduledJobRun[];
+    if (!rows[0]) throw new AppError(`scheduled job run ${runId} is already ${cur.status}`);
+    const lastError = status === "failed" ? boundTail(`exit ${exit ?? "none"}${tail ? `: ${lastLine(tail)}` : ""}`, 500) : null;
+    const t = tx.t.scheduledJob;
+    await tx.q.update(t).set({ last_run_at: cur.started_at, last_status: status, last_error: lastError, updated_at: nowIso() }).where(eq(t.id, cur.job_id));
+    return rows[0];
+  });
+}
+
+function lastLine(text: string): string {
+  const lines = text.trimEnd().split("\n");
+  return lines[lines.length - 1] ?? "";
 }

@@ -794,6 +794,11 @@ function apiTickBackend(ctx: ApiCtx): import("../commands/role-tick.ts").TickBac
 		checkouts: async () => launchConfig((await client.spinoffConfig()).config).repoCheckouts,
 		findings: async (team) => (await client.roleTick(team)).findings,
 		conflicts: async () => (await import("./spinoff-client.ts")).apiConflictSource(ctx),
+		// OS-311: the server claims the due jobs and fires the role ones; a claimed command runs here, never on the server.
+		schedules: {
+			tick: (input) => client.scheduleTick(input),
+			finish: (runId, outcome) => client.scheduleRunFinish(runId, outcome),
+		},
 	};
 }
 

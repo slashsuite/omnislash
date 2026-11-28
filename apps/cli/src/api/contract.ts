@@ -67,7 +67,7 @@ import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatc
 import type { BackfillRow, OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
 import type { MachineAudit } from "../machine-audit.ts";
-import type { ScheduledJob, ScheduledJobInput, ScheduledJobPatch, ScheduledJobRun } from "../scheduled-jobs.ts";
+import type { ScheduledJob, ScheduledJobInput, ScheduledJobPatch, ScheduledJobRun, ScheduleTickResult } from "../scheduled-jobs.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
 
 export type {
@@ -408,6 +408,8 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/schedules/:ref", family: "schedules", what: "edit a scheduled job: pause or resume ({enabled}) or change its schedule or target fields" },
   { method: "POST", path: "/schedules/:ref/run", family: "schedules", what: "make a scheduled job due now (next_run_at = now)" },
   { method: "DELETE", path: "/schedules/:ref", family: "schedules", what: "delete a scheduled job and its runs" },
+  { method: "POST", path: "/schedules/tick", family: "schedules", what: "claim the due jobs for {host, now?, night_locked?}: role jobs are enqueued into role_inbox, command jobs for the host returned to run; the server runs nothing (OS-311)" },
+  { method: "POST", path: "/schedules/runs/:runId/finish", family: "schedules", what: "record how a claimed command run ended: {status: succeeded|failed, exit_code, output_tail} (OS-311)" },
   { method: "GET", path: "/machine/audit", family: "machine", what: "rows the lifecycle machines cannot resolve, stale spinoff rows and would-refuse events (?since=&stale_days=; OS-170)" },
   { method: "GET", path: "/cursors", family: "cursors", what: "one skill_cursor value (?skill=&key=)" },
   { method: "POST", path: "/cursors", family: "cursors", what: "set a skill_cursor value" },
@@ -2020,6 +2022,25 @@ export interface SchedulesResponse {
 export interface ScheduleShowResponse {
   job: ScheduledJob;
   runs: ScheduledJobRun[];
+}
+
+/** OS-311: one due-evaluation pass for the calling machine. `now` is an ISO time (tests); absent, the server's clock. */
+export interface ScheduleTickRequest {
+  host: string;
+  now?: string | undefined;
+  night_locked?: boolean | undefined;
+}
+
+export type ScheduleTickResponse = ScheduleTickResult;
+
+export interface ScheduleRunFinishRequest {
+  status: "succeeded" | "failed";
+  exit_code: number | null;
+  output_tail: string | null;
+}
+
+export interface ScheduleRunFinishResponse {
+  run: ScheduledJobRun;
 }
 
 export interface TeamRemoveResponse {

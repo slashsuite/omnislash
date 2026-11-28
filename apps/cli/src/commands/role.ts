@@ -57,6 +57,7 @@ import { storeInboxBackend } from "./inbox.ts";
 import { tickFindings } from "../role-tick.ts";
 import { parseJsonMap, storeConflictSource } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
 import { settingFor } from "../settings.ts";
+import { finishScheduledJobRun, tickScheduledJobs } from "../scheduled-jobs.ts";
 
 /** Where the runs live: the store on this machine, or the API. The T3 half is the caller's. */
 export interface RoleBackend {
@@ -540,6 +541,11 @@ export function storeTickBackend(store: Database | Store): TickBackend {
     checkouts: async () => parseJsonMap(await settingFor(store, "repo_checkouts")),
     findings: (name) => tickFindings(store, name),
     conflicts: async () => storeConflictSource(store),
+    // OS-311: the scheduled jobs straight on the store.
+    schedules: {
+      tick: (input) => tickScheduledJobs(store, input),
+      finish: (runId, outcome) => finishScheduledJobRun(store, runId, outcome),
+    },
   };
 }
 

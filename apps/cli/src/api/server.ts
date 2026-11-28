@@ -2086,6 +2086,21 @@ async function route(
       });
       return json(res, 201);
     }
+    // OS-311: the due-evaluation claim and a command run's finish. "tick" and "runs" are reserved job names.
+    if (segments.length === 2 && second === "tick" && method === "POST") {
+      const body = await readJson(req);
+      return json(await h.scheduleTick(store, { host: reqString(body, "host"), now: optString(body, "now"), night_locked: optBool(body, "night_locked") }));
+    }
+    if (segments.length === 4 && second === "runs" && segments[3] === "finish" && method === "POST") {
+      const runId = Number(third);
+      if (!/^\d+$/.test(third ?? "") || !Number.isSafeInteger(runId)) throw new ApiFault("invalid_request", 400, `run id '${third}' is not a number`);
+      const body = await readJson(req);
+      const exit = body.exit_code;
+      if (exit !== undefined && exit !== null && (typeof exit !== "number" || !Number.isSafeInteger(exit))) throw new ApiFault("invalid_request", 400, "exit_code must be a whole number or null");
+      const tail = body.output_tail;
+      if (tail !== undefined && tail !== null && typeof tail !== "string") throw new ApiFault("invalid_request", 400, "output_tail must be a string or null");
+      return json(await h.scheduleRunFinish(store, runId, { status: reqString(body, "status") as "succeeded" | "failed", exit_code: (exit as number | null | undefined) ?? null, output_tail: (tail as string | null | undefined) ?? null }));
+    }
     const ref = second;
     if (ref === undefined) return null;
     if (segments.length === 2 && method === "GET") return json(await h.scheduleShow(store, ref, queryPositiveInt(url.searchParams, "runs") ?? 10));

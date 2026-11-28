@@ -108,10 +108,17 @@ that names a decision, a destructive step (back up first, and say so), or anythi
   (hold it in a variable; never echo it), titled with your architect slug and one line saying what to act on.
   Never pick another person's device by guessing.
 - **A watchdog, while a builder runs:** an idle architect only wakes on a handoff note, so a builder that dies
-  silently would stall the queue unseen. On the first dispatch of a queue, `schedule_task` an hourly interval
-  bound to this thread (stable `clientRequestId` per queue). Each run gates and merges any handed-off PR (`ob-land` architect steps) and dispatches
+  silently would stall the queue unseen. On the first dispatch of a queue, schedule an hourly prompt to your own
+  seat with `ob schedule add watchdog-<team> --every 1h --team <team> --role architect --prompt '<the watchdog run>'`
+  (see "Scheduled prompts" below). Use T3 `schedule_task` only where `ob schedule` cannot reach (no API, no tick on this machine). Each run gates and merges any handed-off PR (`ob-land` architect steps) and dispatches
   the next. When the builder is moving, it ends quietly. When the builder is stalled, blocked or needs the owner, it
-  pushes. When the queue is done, it `delete_scheduled_task`s itself quietly, with no push.
+  pushes. When the queue is done, it runs `ob schedule delete watchdog-<team>` quietly, with no push.
+- **Scheduled prompts are `ob schedule`, not T3 `schedule_task`.** A job lives in OmniSlash, not in a thread, so it
+  survives a restart and reaches whichever thread holds the seat. `ob schedule add <name> (--every 1h | --cron '0 7 * * 1-5' | --once <iso>) --team <t> --role architect|sentinel|muse --prompt '<text>'`
+  queues the prompt into that role's inbox when it falls due, and the next `ob role tick` (every 15 minutes) delivers it,
+  so a job fires up to 15 minutes late. `--cmd '<shell>' [--cwd <dir>] [--host <machine>]` runs a command on that machine's
+  tick instead. `ob schedule list`, `show <name>` (its runs), `pause`, `resume`, `run` (due now) and `delete` manage them.
+  Under the good-night lock a job is skipped to its next time (a `--once` job waits for the morning); `--ignore-good-night` is for a command that must run overnight.
 - **A builder can block on a harness permission prompt, with no note to you.** Once an `rm` with a relative glob was flagged as unresolvable and hours were lost. The row keeps reading `building` and the thread `running`. `t3_pending_request` neither lists nor approves these prompts. The signs are `pendingRequestCount` on `t3_thread_read` and a stale `updatedAt`. So when a builder goes quiet, read its thread (`view: activity`, last items) instead of waiting for a handoff. Do not approve for the human. `t3_thread_send mode:restart` fails on an active run, so call `t3_thread_interrupt`, then `t3_thread_send mode:queue` with a way that avoids the flagged action.
 
 Dispatch every build with **`ob spinoff <ref>`**. That opens a T3 thread: `ob spinoff` resolves to the `t3`
@@ -129,7 +136,7 @@ No planning thread should run to a thousand messages or more: past that, prompt 
 
 - **Check the length** on each queue pass: your thread's `itemCount` (`t3_thread_read` or `t3_thread_list` gives it). Past 1,000, the thread is due a relaunch. (Why: a long thread is slow to read; an architect thread at about 6,800 items timed out on reads from the start.)
 - **The relaunch is `ob t3 team restart <team>`** (`--role <r>` for one role, `--all` for every team). ob asks each role thread for its handoff, holds it, settles and unpins the old thread, opens a new one in its seat (bound, titled, pinned) and seeds it with `/ob-<role>` plus the handoff, so it carries on with the work. A thread mid-run, waiting on the owner or holding queued messages is skipped by name (`--force` interrupts it), and the thread running the command is always skipped, so it is never run from the thread being replaced: ask the owner with the question tool to run it from a terminal or another thread, at a quiet point (no handoff note queued, no gate half done).
-- **When the restart asks you for your handoff,** write what the new thread needs and does not keep: the work in flight with its refs, what you wait on, the open items for the owner, and the full prompt and schedule of each scheduled task you own (the hourly watchdog included: scheduled tasks cannot move, so the new thread re-creates them). Record it with `ob t3 team handoff <team> --role <role> --body-file <file>`, then delete your own scheduled tasks, then end your turn. `ob t3 team handoff <team> --role <role> --show` prints the last one.
+- **When the restart asks you for your handoff,** write what the new thread needs and does not keep: the work in flight with its refs, what you wait on, the open items for the owner, and the full prompt and schedule of each T3 scheduled task you own (T3 scheduled tasks cannot move, so the new thread re-creates them; an `ob schedule` job, the watchdog included, follows the seat and needs nothing). Record it with `ob t3 team handoff <team> --role <role> --body-file <file>`, then delete your own T3 scheduled tasks, then end your turn. `ob t3 team handoff <team> --role <role> --show` prints the last one.
 - **Any other thread past 1,000 items** is named to the owner as a problem: no builder or delegate should run that long. Read it before you say what is wrong.
 - Until `ob` prints this prompt by itself, the check is yours.
 

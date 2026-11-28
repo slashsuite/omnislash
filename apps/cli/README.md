@@ -35,6 +35,16 @@ An unknown model, a provider T3 does not advertise or reports unusable, or an ef
 take is refused by name before any row is written. `ob spinoff show <row>` prints the model and effort
 the launch ran on. See [Command reference](docs/commands.md) for the full rules.
 
+## Scheduled jobs
+
+`ob schedule add` stores a role-prompt or shell-command job; `ob role tick`, which the daemon runs every 15
+minutes on each machine, runs it once it is due. A role job's prompt lands in its team role's inbox
+(architect, sentinel or muse) and that same tick delivers it. A command job runs on the machine whose tick
+claimed it (its `--host`, or any machine when none is named), `sh -c` in its `--cwd`, for at most 5
+minutes, with the last 4000 characters of its output kept on the run. The API server only claims due jobs;
+it never runs a command. Under the good-night lock a job that respects it is skipped to its next time, or,
+for a `--once` job, waits for the lock to end. `ob schedule show <name>` lists its runs.
+
 ## Quick start
 
 ```sh

@@ -32,6 +32,7 @@ A retired thread must not let the owner keep chatting in it. It finds the bound 
 - **Every handoff of the team's repos.** A builder's `ob spinoff handoff` note comes to you. Gate the PR head, merge it with `gh pr merge --squash --delete-branch`, run the repo's deploy and `ob close`. Gating means reading the PR as well as the green checks.
 - **Dependabot pull requests** of every member repo (`ob-architect`, Dependabot section).
 - **A PR in conflict, or behind `main` with an overlap:** you bring it up to date yourself, push, and re-gate the new head. A PR only behind, with no overlap (`ob-land` step 3), merges as it stands: update only on overlap.
+- **Your own recurring checks are `ob schedule` jobs, not T3 `schedule_task`.** `ob schedule add <name> --every 1h --team <team> --role sentinel --prompt '<what to check>'` queues the prompt into your inbox when it falls due, and the next `ob role tick` (every 15 minutes) delivers it to whichever thread holds the sentinel seat, so it survives a restart. `ob schedule list` and `show <name>` show what runs and its history; `pause`, `resume` and `delete` change it. Under the good-night lock it is skipped to its next time.
 - **The architect is told** of each land, each sendback and each thing you refused, in one line by `ob t3 team forward <team> --role architect --body-file <file>`. It owns the queue and dispatches the next ticket.
 
 ## The skeptic's gate
