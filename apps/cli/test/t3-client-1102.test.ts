@@ -233,6 +233,39 @@ describe("T3Client error surfacing (1102)", () => {
     expect(err.remedy).toContain("T3");
   });
 
+  test("OS-203: a call T3 never answers raises 'timeout' naming the tool and the wait, not 'unreachable'", async () => {
+    // A fetch that never settles on its own, only on the client's abort: T3 took the connection and went quiet.
+    const fetchImpl: FetchLike = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.method === "initialize") return initOk();
+      if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")));
+      });
+    };
+    const client = new T3Client({ baseUrl: base, env: tmpEnv(), credential: cred(), fetchImpl, timeoutMs: 30 });
+    const err = await fails(client.callTool("t3_thread_launch", {}));
+    expect(err).toBeInstanceOf(T3Error);
+    expect(err.kind).toBe("timeout");
+    expect(err.message).toContain("T3 slow");
+    expect(err.message).toContain("t3_thread_launch");
+    expect(err.message).toMatch(/within 30ms \(gave up after \d+ms\)/);
+    expect(err.message).not.toContain("not reachable");
+  });
+
+  test("OS-203: a refused connection on a tool call still raises 'unreachable'", async () => {
+    const fetchImpl: FetchLike = async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (body.method === "initialize") return initOk();
+      if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+      throw new Error("connect ECONNREFUSED 127.0.0.1:3773");
+    };
+    const client = new T3Client({ baseUrl: base, env: tmpEnv(), credential: cred(), fetchImpl, timeoutMs: 30 });
+    const err = await fails(client.callTool("t3_thread_launch", {}));
+    expect(err.kind).toBe("unreachable");
+    expect(err.message).toContain("ECONNREFUSED");
+  });
+
   test("connected() refuses a missing credential by name", async () => {
     const err = await fails(T3Client.connected({ baseUrl: base, env: tmpEnv() }));
     expect(err.kind).toBe("credential_missing");

@@ -27,7 +27,7 @@
 //   the claim lease lapses so `ob spinoff reclaim` re-queues the row. Nothing half-runs silently.
 //
 // The launch decisions themselves are not re-implemented here. They come from the config-driven cores in
-// commands/spinoff.ts (`launchNotReadyIn`, `prepareLaunchIn`, `launchRowIn`), which are the same functions
+// commands/spinoff.ts (`prepareLaunchIn`, `launchRowIn`), which are the same functions
 // the store-backed drain reaches through `settingFor` -- one decision procedure, two ways in.
 import { stageIn } from "../stage.ts";
 import { parsePriority } from "../priority.ts";
@@ -48,6 +48,8 @@ import { abandonSpinoff, renderAbandon, type AbandonDeps } from "../../../../pla
 import { formatHold, leaseHolderId, ticketLeaseKey, worktreeLeaseKey, type LeaseHold } from "../../../../platform/cli-coord/src/lease.ts";
 import {
   cleanupWorktrees,
+  settleStuckSpinoffs,
+  branchVerdictBase,
   formatReadyReport,
   rejectAgentFlag,
   reportSpinoffCheck,
@@ -56,7 +58,6 @@ import {
   gitMergedChecker,
   gitUniqueCommitCount,
   isLauncherName,
-  launchNotReadyIn,
   launchRowIn,
   launcherRejection,
   launchedUrgentNote,
@@ -543,7 +544,40 @@ async function apiReconcile(
     warn(`  ⚠ team needs-human clear skipped: ${(e as Error).message}`);
   }
 
+  // OS-203: queued and stuck-launching rows whose ticket closed, settled before the landing pass. A stuck row
+  // stamped `launched` here joins `rows`, so the pass below lands it in this same reconcile when its work landed.
   const doneIds = await doneTicketIds(ctx);
+  let retired: Array<{ ticket: string; error: string }> = [];
+  try {
+    const waiting = [
+      ...(await ctx.client.spinoffs({ status: "pending" })).spinoffs,
+      ...(await ctx.client.spinoffs({ status: "launching" })).spinoffs,
+    ];
+    let leases: Awaited<ReturnType<ApiClient["leases"]>>["leases"] | null = null;
+    const stuck = await settleStuckSpinoffs(
+      waiting,
+      {
+        status: async (row) => (doneIds.has(row.ticket_ref) || (row.item_id !== null && doneIds.has(row.item_id)) ? "done" : null),
+        isSpike: async (row) => isSpikeTagged(await apiItemTags(ctx.client, row.item_id ?? row.ticket_ref)),
+        landed: (stuckRows) => apiLandedRefs(ctx, cfg, stuckRows, doneIds),
+        claimLive: async (row) => {
+          leases ??= (await ctx.client.leases()).leases;
+          const hold = leases.find((l) => l.resource === spinoffClaimKey(row.id));
+          return !!hold && !hold.expired;
+        },
+        committed: async (row) => branchVerdictBase(row),
+      },
+      apiSpinoffSteps(ctx.client).stamp,
+    );
+    retired = stuck.retired;
+    dbFailures.push(...stuck.db_failures);
+    if (stuck.stamped.length > 0) {
+      const ids = new Set(stuck.stamped);
+      rows.push(...(await ctx.client.spinoffs({ status: "launched" })).spinoffs.filter((r) => ids.has(r.id)));
+    }
+  } catch (e) {
+    warn(`  ⚠ stuck-row settle skipped: ${(e as Error).message}`);
+  }
   const originDone = await apiLandedRefs(ctx, cfg, rows, doneIds);
   for (const row of rows) {
     const repo = rowRepoPathIn(cfg, row.repo); // a slug row (217) names its checkout on THIS machine
@@ -578,7 +612,7 @@ async function apiReconcile(
     }
     merged.push(row.ticket_ref);
   }
-  return { result: { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped }, remoteError: null };
+  return { result: { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped, retired }, remoteError: null };
 }
 
 /**
@@ -760,13 +794,6 @@ async function drainOverApi(
     // OS-134: a paused or archived project's row stays pending, reported, unless --allow-paused released it.
     if (entry.paused) {
       notReady.push({ ticket: pending.ticket_ref, reason: entry.paused });
-      continue;
-    }
-    // Launcher-not-ready (#118/#161) went with the interactive app (ob 1109): this is the seam's
-    // always-null form, kept in case `t3` ever needs to defer a row.
-    const reason = launchNotReadyIn(cfg, pending, entry.tags);
-    if (reason) {
-      notReady.push({ ticket: pending.ticket_ref, reason });
       continue;
     }
     // THE CLAIM: atomic, on the server. Nothing local has happened yet, so losing the race costs nothing.
@@ -1217,8 +1244,6 @@ async function launchOverApi(ctx: ApiCtx, cfg: SpinoffLaunchConfig, queued: Spin
       if (!entry) return notLaunched("the queued row is no longer launchable");
       if (entry.hold) return notLaunched(`${entry.hold.resource} held by ${entry.hold.holder}`);
       if (entry.paused) return notLaunched(entry.paused); // OS-134
-      const reason = launchNotReadyIn(cfg, queued, entry.tags);
-      if (reason) return notLaunched(reason);
       const r = await launchEntryOverApi(ctx, cfg, entry, under, dbFailures);
       if (r.status === "unreachable") return notLaunched(r.error ?? "");
       return { ...r, row: r.status === "raced" ? queued : r.row };
@@ -1262,6 +1287,7 @@ export async function apiSpinoff(ctx: ApiCtx): Promise<void> {
       // 1120: the T3 mirror is a write, so it is reported here the same way the drain reports it.
       for (const m of rec.mirrored ?? []) print(`  ⟳ ${m.ticket}: T3 run ${m.status} (thread ${m.threadId})`);
       for (const b of rec.blocked) print(`  ⏸ ${b.ticket}: not landed, ${b.resource} held by ${b.holder}`);
+      for (const f of rec.retired ?? []) print(`  ✗ ${f.ticket}: ${f.error}`); // OS-203
     }
     reportDbFailures(ctx, rec.db_failures);
     if (reconciled.remoteError) {

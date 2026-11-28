@@ -134,6 +134,8 @@ export const T3_PAIRING_TTL = "10m";
 
 export type T3FailureKind =
   | "unreachable"
+  /** OS-203: T3 accepted the connection but did not answer inside the limit. Slow, not down. */
+  | "timeout"
   | "credential_missing"
   | "credential_expired"
   | "credential_rejected"
@@ -158,6 +160,20 @@ export class T3Error extends AppError {
     this.remedy = remedy;
     this.code = code;
   }
+}
+
+/** OS-203: the error for a T3 call we gave up waiting on: what was asked, and how long it waited. */
+export function t3Timeout(label: string, elapsedMs: number, limitMs: number): T3Error {
+  return new T3Error(
+    "timeout",
+    `T3 slow: ${label} did not answer within ${limitMs}ms (gave up after ${elapsedMs}ms)`,
+    "T3 is up but busy; retry once the load drops",
+  );
+}
+
+/** OS-203: is this a T3 call that timed out (T3 slow), rather than one that failed? */
+export function isT3Timeout(err: unknown): err is T3Error {
+  return err instanceof T3Error && err.kind === "timeout";
 }
 
 // ---------------------------------------------------------------------------
@@ -863,12 +879,19 @@ export class T3Client {
     return this.serverVersion;
   }
 
-  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * One HTTP request under the client's limit. OS-203: our own abort is a `timeout` naming what was asked
+   * (`label`: the tool, else the path) and how long it waited; only a request that never connected is
+   * `unreachable`. A slow T3 under load answered nothing yet, which is not the same as T3 being down.
+   */
+  private async request(path: string, init: RequestInit = {}, label: string = path): Promise<Response> {
     const controller = new AbortController();
+    const started = Date.now();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       return await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, signal: controller.signal });
     } catch (err) {
+      if (controller.signal.aborted) throw t3Timeout(label, Date.now() - started, this.timeoutMs);
       throw new T3Error(
         "unreachable",
         `T3 server not reachable at ${this.baseUrl}: ${(err as Error).message}`,
@@ -951,7 +974,7 @@ export class T3Client {
       method: "POST",
       headers: this.mcpHeaders(true),
       body: JSON.stringify({ jsonrpc: "2.0", id: 2 + Math.floor(Math.random() * 1000), method: "tools/call", params: { name, arguments: args } }),
-    });
+    }, name);
     if (res.status === 401) {
       throw new T3Error(
         "credential_rejected",
@@ -1201,9 +1224,12 @@ async function readAutoSettleDisabledAt(
 }
 
 async function orchestrationHttp(url: string, init: RequestInit, ctx: { fetchImpl: FetchLike; timeoutMs: number }): Promise<Response> {
+  const signal = AbortSignal.timeout(ctx.timeoutMs);
+  const started = Date.now();
   try {
-    return await ctx.fetchImpl(url, { ...init, signal: AbortSignal.timeout(ctx.timeoutMs) });
+    return await ctx.fetchImpl(url, { ...init, signal });
   } catch (err) {
+    if (signal.aborted) throw t3Timeout(new URL(url).pathname, Date.now() - started, ctx.timeoutMs);
     throw new T3Error("unreachable", `T3 server not reachable: ${(err as Error).message}`, "is T3 running? `t3 serve`, or set T3_BASE_URL");
   }
 }
@@ -1224,7 +1250,7 @@ function dispatchOverSocket(socket: T3CommandSocket, command: Record<string, unk
       if (error) reject(error);
       else resolve();
     };
-    const timer = setTimeout(() => finish(new T3Error("unreachable", `T3 did not answer the command within ${timeoutMs}ms`)), timeoutMs);
+    const timer = setTimeout(() => finish(t3Timeout(String(command.type ?? "the command"), timeoutMs, timeoutMs)), timeoutMs);
     socket.onopen = () => socket.send(JSON.stringify({ _tag: "Request", id: requestId, tag: "orchestration.dispatchCommand", payload: command, headers: [] }));
     socket.onerror = () => finish(new T3Error("unreachable", "the WebSocket to T3 failed"));
     socket.onclose = () => finish(new T3Error("protocol", "T3 closed the WebSocket before answering the command"));

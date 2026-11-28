@@ -6,7 +6,7 @@ import { freshDb, freshDbPath, psTable, runCli } from "../../../apps/cli/test/he
 import { openDb } from "../../../apps/cli/src/db.ts";
 import { getConfig, setConfig } from "../../../apps/cli/src/config.ts";
 import { storeConfigIo, teamRoleModelFrom } from "../../../apps/cli/src/model-routes-io.ts";
-import { T3Error, T3_THREAD_STATUSES, type T3Capabilities, type T3LaunchInput, type T3LaunchResult, type T3Project, type T3SendInput, type T3Thread, type T3ThreadListResult, type T3ThreadRead } from "../../../apps/cli/src/t3/client.ts";
+import { T3Error, T3_THREAD_STATUSES, t3Timeout, type T3Capabilities, type T3LaunchInput, type T3LaunchResult, type T3Project, type T3SendInput, type T3Thread, type T3ThreadListResult, type T3ThreadRead } from "../../../apps/cli/src/t3/client.ts";
 import {
   T3_DEFAULT_RUNTIME_MODE,
   T3_LAUNCHER,
@@ -34,6 +34,7 @@ import {
   t3ProjectFor,
   t3WorktreeHold,
   ticketFilePath,
+  titleNamesRef,
   unjoinedSettleWarning,
   worktreeRepoOf,
   type T3Seam,
@@ -56,7 +57,6 @@ import {
   cleanupWorktrees,
   drainSpinoffs,
   enqueueSpinoff,
-  launchNotReadyIn,
   launchRowIn,
   listSpinoffs,
   localSpinoffSteps,
@@ -482,14 +482,6 @@ describe("t3 dispatch — pure resolution (1120)", () => {
     expect(liveRunReason(threadOf({ settled: true }))).toContain("live run");
   });
 
-  test("the API-client drain runs a t3 row HERE: nothing is deferred (1120)", () => {
-    const cfg: SpinoffLaunchConfig = { repoCheckouts: {}, launcher: "t3", launcherByRepo: {}, engine: "claude" };
-    const t3Row = { repo: "/r", launcher: "t3" } as SpinoffRow;
-    // The machine running a client drain IS the machine with T3 (the map's split), so a t3 row is ready
-    // here. Deferring it would leave the row pending forever on the one machine that can launch it.
-    expect(launchNotReadyIn(cfg, t3Row, [])).toBeNull();
-  });
-
   test("the API-client drain's t3 launch opens a thread here, named from the wire, and hands the ids back (1120/1143)", async () => {
     const repo = trackedRepo();
     const worktree = trackedDir(`${repo}.1120`);
@@ -547,6 +539,60 @@ describe("t3 dispatch — launch + idempotent retry (1120)", () => {
     const agent = await getAgent(db, "1120");
     expect(agent?.launcher).toBe(T3_LAUNCHER);
     expect(agent?.session_id).toBe("t3-1");
+  });
+
+  test("a launch that times out after T3 made the thread is adopted, not failed (OS-203)", async () => {
+    const db = freshDb();
+    const repo = trackedRepo();
+    trackedDir(`${repo}.1120`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo });
+    const realLaunch = fake.seam.launch;
+    // T3 creates the thread, then the answer is too slow: the client gives up with a timeout.
+    fake.seam.launch = async (input) => {
+      await realLaunch(input);
+      throw t3Timeout("t3_thread_launch", 30_000, 30_000);
+    };
+    setT3Seam(fake.seam);
+    await enqueueSpinoff(db, { ticketRef: "1120", repo, branch: "1120", mode: "interactive", brief: "do the thing", launcher: "t3" });
+
+    const res = await drainSpinoffs(db);
+    expect(res.launched).toEqual(["1120"]);
+    expect(res.failed).toEqual([]);
+    const rows = await listSpinoffs(db);
+    expect(rows.map((r) => r.status)).toEqual(["launched"]);
+    expect(rows[0]!.t3_thread_id).toBe("t3-1");
+    expect(await listSpinoffs(db, "failed")).toEqual([]);
+    expect(fake.threads).toHaveLength(1);
+    expect(fake.calls.launch).toBe(1);
+  });
+
+  test("a launch that times out with no thread made still fails, naming T3 as slow (OS-203)", async () => {
+    const db = freshDb();
+    const repo = trackedRepo();
+    trackedDir(`${repo}.1120`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo });
+    fake.seam.launch = async () => {
+      throw t3Timeout("t3_thread_launch", 30_000, 30_000);
+    };
+    setT3Seam(fake.seam);
+    await enqueueSpinoff(db, { ticketRef: "1120", repo, branch: "1120", mode: "interactive", brief: "do the thing", launcher: "t3" });
+
+    const res = await drainSpinoffs(db);
+    expect(res.launched).toEqual([]);
+    expect(fake.threads).toHaveLength(0);
+    expect(JSON.stringify(res)).toContain("T3 slow");
+  });
+
+  test("the adoption scan reads only threads whose title names the ref as a whole token (OS-203)", () => {
+    const names = titleNamesRef("OS-12");
+    expect(names("OS-12")).toBe(true);
+    expect(names("os-12 · Spinoff slice 1")).toBe(true);
+    expect(names("🙋 OS-12 · a fix")).toBe(true);
+    expect(names("OS-120 · another ticket")).toBe(false);
+    expect(names("POS-12 · another")).toBe(false);
+    expect(names("an architect thread")).toBe(false);
   });
 
   test("a real dispatch names the thread after the ticket's own ob title (1143)", async () => {

@@ -2638,35 +2638,12 @@ export interface LaunchNotReady {
 }
 
 /**
- * Why a pending row cannot launch RIGHT NOW, or null when it can. Checked BEFORE the row is claimed, so
- * a not-ready row stays `pending` (like the lease pre-check) and a later drain launches it by itself,
- * strictly better than `failed`, which would need a manual re-enqueue.
- *
- * NOTHING IS NOT-READY ANY MORE (ob 1109). The one answer used to be about the interactive launcher: no
- * instance up (#118), or only the instance this row's agent would rebuild (#161), both of which deferred
- * rather than failed. With `t3` the only launcher left (1589), a row that cannot name a live launcher is a
- * bug that launches, never a wait. The seam is kept (like `launcherNameFrom`) because T3
- * can be down, and this is the one place that decision already lives.
- */
-export function launchNotReady(_db: Database, _row: SpinoffRow, _opts: LaunchOpts = {}): string | null {
-  return null;
-}
-
-/** The store-aware form of `launchNotReady()` (337): the same answer, both reads through the store. */
-export async function launchNotReadyFor(
-  _db: Database | Store,
-  _row: SpinoffRow,
-  _opts: LaunchOpts = {},
-): Promise<string | null> {
-  return null;
-}
-
-/**
  * Why a pending row must not launch because its work is already done (OB-1695): the ticket is `done`, or a
  * landing commit on `origin/main` names it after the row's `base_sha` (`workHasLanded`, the check reconcile
  * and `list --json` use). A drain once reclaimed a stale claimed-never-stamped row for a finished ticket and
- * launched a builder on it. A row with no `base_sha` yet is judged by the ticket's status alone. The row stays queued, not failed: reopening the ticket lets it launch, and
- * `ob spinoff abandon` retires it. Null when nothing says the work landed.
+ * launched a builder on it. A row with no `base_sha` yet is judged by the ticket's status alone. The drain only skips the row;
+ * reconcile retires a queued row whose ticket is done as "closed before launch" (OS-203, `settleStuckSpinoffs`), which frees the
+ * ref for a new enqueue. Null when nothing says the work landed.
  */
 export async function alreadyLandedReason(
   db: Database | Store,
@@ -2822,7 +2799,7 @@ export async function launchQueuedRow(
   // OS-134: a paused or archived project's row stays pending unless an --allow-paused released this row. A
   // dispatch that carries the override itself says so (`pausedReleased`): a split client's replica may not hold
   // the trail line the server just wrote.
-  const reason = (pausedReleased ? null : await pausedRowReason(db, pending)) ?? (await launchNotReadyFor(db, pending)) ?? (await alreadyLandedReason(db, pending, readCommits));
+  const reason = (pausedReleased ? null : await pausedRowReason(db, pending)) ?? (await alreadyLandedReason(db, pending, readCommits));
   if (reason) return { kind: "not-ready", reason };
   // THE CLAIM: atomic, and on the server once there is one. Nothing local has happened yet, so losing
   // the race costs nothing and a claim that cannot be taken leaves no residue at all.
@@ -3117,6 +3094,8 @@ export interface ReconcileResult {
   mirrored?: T3MirrorEntry[];
   /** 1120: live `t3` rows whose thread could not be read, or reported a status this build does not know. */
   mirror_skipped?: T3MirrorSkip[];
+  /** OS-203: queued or stuck rows this pass failed because their ticket closed (see `settleStuckSpinoffs`). */
+  retired?: Array<{ ticket: string; error: string }>;
 }
 
 // OB-1993: the row's reader lives beside `tokenSourceFor`, so reconcile, close and backfill share one expression.
@@ -3296,6 +3275,132 @@ export async function landedTicketRefs(
   });
 }
 
+/** OS-203: what `settleStuckSpinoffs` reads, so the store and the API client can each answer it their own way. */
+interface StuckRowReads {
+  /** The row's ticket status, or null when it cannot be read. */
+  status(row: SpinoffRow): Promise<string | null>;
+  isSpike(row: SpinoffRow): Promise<boolean>;
+  /** Row ids whose ticket is done or has a landing commit on origin/main past the row's `base_sha` (`landedTicketRefsVia`). */
+  landed(rows: SpinoffRow[]): Promise<Set<number>>;
+  /** Is the row's claim lease still held and fresh, that is, a launch is still running it? */
+  claimLive(row: SpinoffRow, nowMs: number): Promise<boolean>;
+  /**
+   * Where the row's branch began, when the builder committed a `State:` verdict on it (`readCommitState`); null otherwise.
+   * Needs no `base_sha`, and the stamp records it as one, so the landing pass cannot count an older commit as this row's land.
+   */
+  committed(row: SpinoffRow): Promise<string | null>;
+}
+
+interface StuckSettled {
+  /** Ids of stuck `launching` rows stamped `launched`: the landing pass that follows lands the ones whose work landed. */
+  stamped: number[];
+  /** Rows failed with the reason: a queued row whose ticket closed, or a stuck spike's end. */
+  retired: Array<{ ticket: string; error: string }>;
+  db_failures: DbHalfFailure[];
+}
+
+/** OS-203: the error a queued row gets when its ticket closed before anything launched it. */
+function closedBeforeLaunchError(ref: string): string {
+  return `${ref} closed before launch; nothing was launched, so the queued row is retired`;
+}
+
+/**
+ * Settle the rows reconcile used to skip (OS-203). Reconcile reads only `launched` and handed-off rows, so
+ * two kinds sat forever and held `idx_spinoff_active` (one live row per ticket), refusing every new enqueue:
+ *
+ * - a `pending` row whose ticket is `done`: failed with `closedBeforeLaunchError`, which frees the ref;
+ * - a `launching` row older than `CLAIM_TTL_S` with no live claim (the launch died or timed out after its
+ *   thread opened) whose work exists: its ticket is `done`, a landing commit names it on origin/main past its
+ *   `base_sha` (a row with none would match every old commit, as in `alreadyLandedReason`), or its builder
+ *   committed a `State:` verdict on the row's own branch (the usual case: a stuck row has no `base_sha`). It is
+ *   stamped `launched` (`launching` has no `land` edge), so it is never relaunched: the landing pass that follows
+ *   ends it `merged` when its work landed, and otherwise it is an ordinary building row. A spike has nothing to
+ *   land and ends failed with the spike end a close writes.
+ *
+ * A stuck row whose work has not landed is left to `reclaim` (retry or fail). Reports, never throws.
+ */
+export async function settleStuckSpinoffs(
+  rows: SpinoffRow[],
+  read: StuckRowReads,
+  stamp: SpinoffSteps["stamp"],
+  nowMs: number = Date.now(),
+): Promise<StuckSettled> {
+  const out: StuckSettled = { stamped: [], retired: [], db_failures: [] };
+  const fail = async (row: SpinoffRow, error: string) => {
+    const stampError = await stamp({ id: row.id, outcome: "failed", error });
+    if (stampError) out.db_failures.push({ ticket: row.ticket_ref, detail: `${row.ticket_ref}: could not retire row #${row.id} (${error}): ${stampError}` });
+    else out.retired.push({ ticket: row.ticket_ref, error });
+  };
+  const stuck: SpinoffRow[] = [];
+  for (const row of rows) {
+    try {
+      if (row.status === "pending") {
+        if ((await read.status(row)) === "done") await fail(row, closedBeforeLaunchError(row.ticket_ref));
+        continue;
+      }
+      if (row.status !== "launching") continue;
+      const sinceMs = new Date(row.launched_at ?? row.request_at).getTime();
+      if (Number.isFinite(sinceMs) && nowMs - sinceMs <= CLAIM_TTL_S * 1000) continue;
+      if (await read.claimLive(row, nowMs)) continue;
+      stuck.push(row);
+    } catch (e) {
+      warn(`  ⚠ ${row.ticket_ref}: stuck-row check skipped: ${(e as Error).message}`);
+    }
+  }
+  if (stuck.length === 0) return out;
+  let byCommit = new Set<number>();
+  try {
+    byCommit = await read.landed(stuck.filter((r) => r.base_sha));
+  } catch (e) {
+    warn(`  ⚠ landing-commit read skipped for stuck rows: ${(e as Error).message}`);
+  }
+  for (const row of stuck) {
+    try {
+      const done = (await read.status(row)) === "done";
+      let baseSha = row.base_sha ?? null;
+      if (!done && !byCommit.has(row.id)) {
+        const forkSha = await read.committed(row);
+        if (!forkSha) continue;
+        baseSha ??= forkSha;
+      }
+      if (await read.isSpike(row)) {
+        if (done) await fail(row, spikeEndError("closed"));
+        continue;
+      }
+      const stampError = await stamp({ id: row.id, outcome: "launched", t3_thread_id: row.t3_thread_id ?? null, t3_run_id: row.t3_run_id ?? null, base_sha: baseSha });
+      if (stampError) out.db_failures.push({ ticket: row.ticket_ref, detail: `${row.ticket_ref}: row #${row.id} is stuck launching and its work landed, but it could not be stamped: ${stampError}` });
+      else out.stamped.push(row.id);
+    } catch (e) {
+      warn(`  ⚠ ${row.ticket_ref}: stuck-row settle skipped: ${(e as Error).message}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * OS-203: where the row's branch left main (`git merge-base`), when its builder committed a `State:` verdict on it,
+ * read in its worktree. Null when the worktree is gone, no verdict was committed or git cannot say.
+ */
+export function branchVerdictBase(row: Pick<SpinoffRow, "worktree" | "branch">): string | null {
+  if (!row.worktree || !existsSync(row.worktree) || readCommitState(row.worktree, row.branch) === null) return null;
+  const fork = sh(["git", "-C", row.worktree, "merge-base", mainRefFor(row.worktree), row.branch]);
+  return fork.ok ? fork.out?.trim() || null : null;
+}
+
+/** OS-203: the store's answers for `settleStuckSpinoffs`. */
+function localStuckReads(db: Database | Store, readCommits: (repo: string) => Commit[] = originMainCommits): StuckRowReads {
+  return {
+    status: async (row) => (await getItem(db, row.ticket_ref))?.status ?? null,
+    isSpike: async (row) => isSpikeTagged(await spinoffTicketTagsFor(db, row.ticket_ref, row.item_id)),
+    landed: (rows) => landedTicketRefs(db, rows, readCommits),
+    claimLive: async (row, nowMs) => {
+      const hold = await recordedHold(db, spinoffClaimKey(row.id), nowMs);
+      return !!hold && !hold.expired;
+    },
+    committed: async (row) => branchVerdictBase(row),
+  };
+}
+
 /**
  * OB-1970: a t3 row whose FIRST turn the mirror just saw end `failed` on a credit or quota error is
  * relaunched on the next models profile, or failed by name when every profile is spent. Reports, never
@@ -3366,6 +3471,12 @@ export async function reconcileSpinoffs(
   const merged: string[] = [];
   const blocked: LeaseBlocked[] = [];
   const dbFailures: DbHalfFailure[] = [];
+  // OS-203: queued and stuck-launching rows whose ticket closed, BEFORE the landable read, so a stuck row
+  // stamped here is landed by the pass below.
+  const s = asStore(db);
+  const waiting = (await s.q.select().from(s.t.spinoff).where(inArray(s.t.spinoff.status, ["pending", "launching"]))) as SpinoffRow[];
+  const stuck = await settleStuckSpinoffs(waiting, localStuckReads(db, readOriginCommits), steps.stamp);
+  dbFailures.push(...stuck.db_failures);
   const rows = await landableSpinoffs(db);
   const landed = await landedTicketRefs(db, rows, readOriginCommits);
   for (const row of rows) {
@@ -3425,7 +3536,7 @@ export async function reconcileSpinoffs(
     }
     merged.push(row.ticket_ref);
   }
-  return { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped };
+  return { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped, retired: stuck.retired };
 }
 
 /**
@@ -5783,22 +5894,6 @@ export function rowLauncherNameIn(
   return launcherNameFrom(cfg.launcher, cfg.launcherByRepo, row.repo);
 }
 
-/**
- * `launchNotReady()` against a config: always null since ob 1109 -- `t3` is always ready (1120). Kept as the seam's config-taking form (see `launchNotReady`).
- *
- * A `t3` row is NOT deferred here, and that is the point: the machine running this API-CLIENT drain is
- * the machine that owns the worktree, the T3 server and the credential — the map's split ("the launch
- * runs HERE"). Deferring it would leave the row pending forever on the one machine that can launch it.
- */
-export function launchNotReadyIn(
-  _cfg: SpinoffLaunchConfig,
-  _row: SpinoffRow,
-  _tags: readonly string[],
-  _opts: LaunchOpts = {},
-): string | null {
-  return null;
-}
-
 /** `prepareLaunch()` against a config: the worktree and the base sha come off THIS machine's git. */
 export function prepareLaunchIn(cfg: SpinoffLaunchConfig, row: SpinoffRow): LaunchPrep {
   return prepareLaunchWith(rowRepoPathIn(cfg, row.repo), rowLauncherNameIn(cfg, row), cfg.engine, row);
@@ -5997,6 +6092,7 @@ export function renderDrainLines(r: DrainResult, rec: ReconcileResult): string[]
   // 1120: what the T3 mirror wrote onto agent rows (stderr-free, so a `--json` drain stays parseable).
   for (const m of rec.mirrored ?? []) lines.push(`  ⟳ ${m.ticket}: T3 run ${m.status} (thread ${m.threadId})`);
   for (const b of rec.blocked) lines.push(`  ⏸ ${b.ticket}: not landed, ${b.resource} held by ${b.holder}`);
+  for (const f of rec.retired ?? []) lines.push(`  ✗ ${f.ticket}: ${f.error}`); // OS-203
   for (const e of r.reclaimed) {
     lines.push(`  ↺ ${e.ticket}: reclaimed from an unfinished drain → ${spinoffStatusWord(e.status)} (attempt ${e.attempts})`);
   }
@@ -6280,6 +6376,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
       // 1120: the T3 mirror is a write, so it is reported here the same way the drain reports it.
       for (const m of rec.mirrored ?? []) print(`  ⟳ ${m.ticket}: T3 run ${m.status} (thread ${m.threadId})`);
       for (const b of rec.blocked) print(`  ⏸ ${b.ticket}: not landed, ${b.resource} held by ${b.holder}`);
+      for (const f of rec.retired ?? []) print(`  ✗ ${f.ticket}: ${f.error}`); // OS-203
     }
     reportDbFailures(ctx, rec.db_failures);
     return;
