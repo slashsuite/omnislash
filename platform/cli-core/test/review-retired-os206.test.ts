@@ -7,7 +7,7 @@ import { parseReviewReaders } from "../../../apps/cli/src/review-readers.ts";
 describe("retired review readers (OS-206)", () => {
   test("the retirement check names deepseek, luna and model ids that name them, and nothing else", () => {
     expect(retiredReviewMessage("deepseek")).toContain("retired (OS-206)");
-    expect(retiredReviewMessage("luna")).toContain("use neon or opus");
+    expect(retiredReviewMessage("luna")).toContain("use opus, or a reader `ob review readers` lists");
     expect(retiredReviewMessage("neon", "opencode-go/gpt-6-luna#high")).toContain("'luna'");
     expect(retiredReviewMessage("opus", "claude-opus-5-5")).toBeNull();
     expect(retiredReviewMessage("neon", "antigravity:gemini-4-neon")).toBeNull();
