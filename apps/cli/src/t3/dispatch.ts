@@ -829,8 +829,22 @@ export async function findThreadForWorktree(
   seam: T3Seam,
   projectId: string,
   row: T3DispatchRow,
-  opts: { includeSettled?: boolean } = {},
 ): Promise<T3Thread | null> {
+  for await (const thread of worktreeThreads(seam, projectId, row, { settled: false })) return thread;
+  return null;
+}
+
+/**
+ * Every thread T3 lists for this row's ticket that is bound to its worktree, as headers, in T3's list order.
+ * `settled: false` asks T3 for live threads only. A scan that runs past `ADOPTION_SCAN_MAX_PAGES` throws rather
+ * than ending: an unproven absence is not "nothing there".
+ */
+async function* worktreeThreads(
+  seam: T3Seam,
+  projectId: string,
+  row: T3DispatchRow,
+  filter: { settled?: false } = {},
+): AsyncGenerator<T3Thread> {
   const want = canonicalPath(row.worktree);
   const namesRef = titleNamesRef(row.ticket_ref);
   let cursor: number | undefined;
@@ -838,7 +852,7 @@ export async function findThreadForWorktree(
     const listed = await seam.list({
       projectId,
       titleContains: row.ticket_ref,
-      ...(opts.includeSettled ? {} : { settled: false }),
+      ...filter,
       includeSubagents: false,
       limit: 100,
       ...(cursor === undefined ? {} : { cursor }),
@@ -849,9 +863,9 @@ export async function findThreadForWorktree(
       // with the ref as a whole token (T3's titleContains is a substring, so "OS-20" also lists every "OS-203").
       if (!namesRef(summary.title)) continue;
       const thread = await readThreadHeader(seam, summary.threadId);
-      if (thread.worktreePath && canonicalPath(thread.worktreePath) === want) return thread;
+      if (thread.worktreePath && canonicalPath(thread.worktreePath) === want) yield thread;
     }
-    if (listed.nextCursor === null || listed.nextCursor === undefined) return null;
+    if (listed.nextCursor === null || listed.nextCursor === undefined) return;
     cursor = listed.nextCursor;
   }
   throw new T3Error(
@@ -861,22 +875,46 @@ export async function findThreadForWorktree(
   );
 }
 
+/** How far T3's clock may trail the queueing host's before a row's own thread reads as older than the row (OS-302). */
+const CLOCK_SKEW_MS = 60_000;
+
+/**
+ * OS-302: the settled thread that is this row's builder: of the threads bound to the row's worktree, the newest
+ * that is not archived and was created at or after the row was requested. Two attempts on one worktree leave two
+ * threads, and T3's list order says nothing about which is newer, so the first match could be the earlier failed
+ * attempt's. A thread with no `createdAt` cannot be shown to be this row's and is passed over. `request_at` is the
+ * queueing host's clock (the API server's, in API mode) and `createdAt` is T3's, so a minute of skew is allowed;
+ * an earlier attempt's thread predates the next row by far more than that.
+ */
+async function newestSettledThreadForRow(seam: T3Seam, projectId: string, row: T3DispatchRow & { request_at: string }): Promise<T3Thread | null> {
+  const since = Date.parse(row.request_at) - CLOCK_SKEW_MS;
+  let newest: { thread: T3Thread; at: number } | null = null;
+  for await (const thread of worktreeThreads(seam, projectId, row)) {
+    if (thread.archived) continue;
+    const at = thread.createdAt ? Date.parse(thread.createdAt) : Number.NaN;
+    if (Number.isNaN(at) || !(at >= since)) continue;
+    if (!newest || at > newest.at) newest = { thread, at };
+  }
+  return newest?.thread ?? null;
+}
+
 /**
  * OS-300: the T3 thread bound to this row's worktree, live first, else settled, as the ids a stamp records, or null
  * when T3 proves there is none. Settled threads count: a builder that committed its verdict is usually settled by the close
- * or the OS-288 sweep, and it is still the row's builder. Throws when it cannot say: T3 unreachable, no project
- * registered for the checkout, or a scan that gave up (`findThreadForWorktree`), because "could not look" is not
+ * or the OS-288 sweep, and it is still the row's builder. A settled one is the newest unarchived thread created after
+ * the row (OS-302), never an earlier attempt's. Throws when it cannot say: T3 unreachable, no project
+ * registered for the checkout, or a scan that gave up (`worktreeThreads`), because "could not look" is not
  * "nothing there".
  */
 export async function threadForRow(
   seam: T3Seam,
   repoPath: string,
-  row: T3DispatchRow,
+  row: T3DispatchRow & { request_at: string },
 ): Promise<{ threadId: string; runId: string | null } | null> {
   const project = t3ProjectFor(await seam.projects(), repoPath);
   if (!project) throw new T3Error("refused", `no T3 project is registered for ${repoPath}`, `register the checkout as a T3 project (\`t3 project add ${repoPath}\`)`);
-  // A live thread wins over a settled one from an earlier attempt on the same worktree.
-  const thread = (await findThreadForWorktree(seam, project.id, row)) ?? (await findThreadForWorktree(seam, project.id, row, { includeSettled: true }));
+  // A live thread wins over a settled one.
+  const thread = (await findThreadForWorktree(seam, project.id, row)) ?? (await newestSettledThreadForRow(seam, project.id, row));
   return thread ? { threadId: thread.threadId, runId: thread.activeRunId ?? thread.latestRunId } : null;
 }
 
