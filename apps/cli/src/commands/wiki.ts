@@ -8,7 +8,7 @@
 //
 // The pages are files on THIS machine (as `repos/` is for `project rules`), the facts come from the
 // tracker through `ctx.store ?? ctx.db` as `cmdProject` does, so it works local and over the API.
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -47,10 +47,9 @@ function gitCheckoutOf(start: string): string | null {
 }
 
 /**
- * The wiki directory. `OB_WIKI_DIR` overrides it (tests). Otherwise the `wiki/` of the git checkout containing the
- * current directory when that checkout is omnislash, so a builder's `ob wiki log` lands in its own worktree and ships in
- * its PR (the on-PATH `ob` runs the MAIN checkout's source, so the source-relative path would write into the architect's
- * tree). Anywhere else, the wiki next to the running source.
+ * The wiki directory the read commands use. `OB_WIKI_DIR` overrides it (tests). Otherwise the `wiki/` of the git
+ * checkout containing the current directory when that checkout carries the wiki and this command's source, else the
+ * wiki next to the running source.
  */
 export function wikiDir(): string {
   const override = process.env.OB_WIKI_DIR;
@@ -58,6 +57,21 @@ export function wikiDir(): string {
   const here = gitCheckoutOf(process.cwd());
   if (here && isOmnislashCheckout(here)) return join(here, "wiki");
   return resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "wiki");
+}
+
+/**
+ * The wiki `ob wiki log` writes (OS-133, OB-2007): `OB_WIKI_DIR`, else the `wiki/` of the git checkout you stand in,
+ * whatever it carries, never the one the core runs from (the core runs from omnislash, so the source check above sent
+ * an entry logged from omnibus into omnislash). Outside any checkout with a `wiki/` it refuses and writes nothing.
+ */
+function logWikiDir(): string {
+  const override = process.env.OB_WIKI_DIR;
+  if (override) return resolve(override);
+  const here = gitCheckoutOf(process.cwd());
+  const dir = here && join(here, "wiki");
+  if (dir && existsSync(dir) && statSync(dir).isDirectory()) return dir;
+  const where = here ? `${here} has no wiki/` : `${process.cwd()} is in no git checkout`;
+  throw new AppError(`ob wiki log writes into the checkout you stand in, and ${where}. Run it from the checkout whose wiki/incidents the entry belongs in (omnibus)`);
 }
 
 function pageFile(kind: "projects" | "topics", name: string): string {
@@ -439,13 +453,13 @@ export interface LogFlags {
   "new-area"?: boolean;
 }
 
-function incidentFile(area: string): string {
-  return join(wikiDir(), "incidents", `${area}.md`);
+function incidentFile(area: string, dir: string = wikiDir()): string {
+  return join(dir, "incidents", `${area}.md`);
 }
 
 /** Every area with a log file, plus the starter areas, sorted. */
-function incidentAreas(): string[] {
-  const dir = join(wikiDir(), "incidents");
+function incidentAreas(wiki: string = wikiDir()): string[] {
+  const dir = join(wiki, "incidents");
   const have = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3)) : [];
   return [...new Set([...STARTER_AREAS, ...have])].sort();
 }
@@ -544,8 +558,8 @@ function requireArea(area: string): void {
   if (!AREA.test(area)) throw new UsageError(`'${area}' is not an incident area (lowercase letters, digits and '-' only)`);
 }
 
-function unknownAreaMessage(area: string): string {
-  return `no incident log '${area}'. Nearest: ${nearestNames(area, incidentAreas()).join(", ")}. A genuinely new area needs --new-area`;
+function unknownAreaMessage(area: string, wiki?: string): string {
+  return `no incident log '${area}'. Nearest: ${nearestNames(area, incidentAreas(wiki)).join(", ")}. A genuinely new area needs --new-area`;
 }
 
 /** Today as a local YYYY-MM-DD. */
@@ -578,9 +592,10 @@ async function logIncident(ctx: WikiCtx): Promise<void> {
   const tickets = (f.ticket ?? "").split(/[\s,]+/).filter(Boolean);
   for (const t of tickets) if (!TICKET.test(t)) throw new UsageError(`--ticket '${t}' is not a ticket ref like OB-123`);
 
-  const file = incidentFile(area);
+  const wiki = logWikiDir();
+  const file = incidentFile(area, wiki);
   const exists = existsSync(file);
-  if (!exists && !STARTER_AREAS.includes(area) && !f["new-area"]) throw new AppError(unknownAreaMessage(area));
+  if (!exists && !STARTER_AREAS.includes(area) && !f["new-area"]) throw new AppError(unknownAreaMessage(area, wiki));
 
   const entry = [
     `## ${date}: ${title}`,
@@ -613,6 +628,6 @@ async function logIncident(ctx: WikiCtx): Promise<void> {
   }
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, next);
-  if (ctx.mode === "json") print(JSON.stringify({ area, date, title, file: `wiki/incidents/${area}.md` }, null, 2));
-  else print(`logged in wiki/incidents/${area}.md: ${date}: ${title}`);
+  if (ctx.mode === "json") print(JSON.stringify({ area, date, title, file }, null, 2));
+  else print(`logged in ${file}: ${date}: ${title}`);
 }

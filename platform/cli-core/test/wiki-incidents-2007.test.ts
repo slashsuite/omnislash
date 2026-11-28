@@ -1,4 +1,4 @@
-// OB-2007: the incident log. `ob wiki log` / `ob wiki incidents`, files in OB_WIKI_DIR (or the cwd's acme checkout).
+// OB-2007: the incident log. `ob wiki log` / `ob wiki incidents`, files in OB_WIKI_DIR (or the wiki/ of the checkout the cwd is in).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -200,8 +200,53 @@ describe("which checkout is written", () => {
     delete process.env.OB_WIKI_DIR;
     const other = join(tmp, "other");
     mkdirSync(join(other, ".git"), { recursive: true });
+    mkdirSync(join(other, "wiki"), { recursive: true }); // OS-133: a wiki/ of its own takes only `wiki log`, never the reads
     process.chdir(other);
     expect(wikiDir()).toBe(join(REPO, "wiki"));
+  });
+
+  // OS-133: the core runs from omnislash, but an entry logged from omnibus belongs in omnibus's wiki.
+  test("ob wiki log from a checkout with wiki/ writes that checkout's log, whatever checkout the core runs from", async () => {
+    delete process.env.OB_WIKI_DIR;
+    const omnibus = join(tmp, "omnibus");
+    mkdirSync(join(omnibus, ".git"), { recursive: true });
+    mkdirSync(join(omnibus, "wiki"), { recursive: true }); // no README, no ob source: any checkout with a wiki counts
+    mkdirSync(join(omnibus, "apps"), { recursive: true });
+    process.chdir(join(omnibus, "apps"));
+    const before = existsSync(join(REPO, "wiki", "incidents", "ops.md")) ? readFileSync(join(REPO, "wiki", "incidents", "ops.md"), "utf8") : null;
+    const r = await runCli(db, ["wiki", "log", "ops", "sentinel entry", "--what", "w", "--date", "2026-11-21"]);
+    expect(r.code).toBe(0);
+    const file = join(realpathSync(omnibus), "wiki", "incidents", "ops.md");
+    expect(readFileSync(file, "utf8")).toContain("## 2026-11-21: sentinel entry\n");
+    expect(r.out).toContain(file);
+    // the checkout the core runs from is untouched
+    const after = existsSync(join(REPO, "wiki", "incidents", "ops.md")) ? readFileSync(join(REPO, "wiki", "incidents", "ops.md"), "utf8") : null;
+    expect(after).toBe(before);
+  });
+
+  test("ob wiki log outside any checkout with wiki/ refuses by name and writes nothing", async () => {
+    delete process.env.OB_WIKI_DIR;
+    const sourceLog = join(REPO, "wiki", "incidents", "ops.md");
+    const before = existsSync(sourceLog) ? readFileSync(sourceLog, "utf8") : null;
+    // a git checkout with no wiki/
+    const bare = join(tmp, "nowiki");
+    mkdirSync(join(bare, ".git"), { recursive: true });
+    process.chdir(bare);
+    const inRepo = await runCli(db, ["wiki", "log", "ops", "t", "--what", "w"]);
+    expect(inRepo.code).toBe(1);
+    expect(inRepo.err).toContain("ob wiki log writes into the checkout you stand in");
+    expect(inRepo.err).toContain(`${realpathSync(bare)} has no wiki/`);
+    expect(existsSync(join(bare, "wiki"))).toBe(false);
+    // no git checkout at all
+    const loose = join(tmp, "loose");
+    mkdirSync(loose, { recursive: true });
+    process.chdir(loose);
+    const outside = await runCli(db, ["wiki", "log", "ops", "t", "--what", "w"]);
+    expect(outside.code).toBe(1);
+    expect(outside.err).toContain("is in no git checkout");
+    expect(existsSync(join(loose, "wiki"))).toBe(false);
+    const after = existsSync(sourceLog) ? readFileSync(sourceLog, "utf8") : null;
+    expect(after).toBe(before);
   });
 
 });
