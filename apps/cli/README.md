@@ -43,7 +43,10 @@ minutes on each machine, runs it once it is due. A role job's prompt lands in it
 claimed it (its `--host`, or any machine when none is named), `sh -c` in its `--cwd`, for at most 5
 minutes, with the last 4000 characters of its output kept on the run. The API server only claims due jobs;
 it never runs a command. Under the good-night lock a job that respects it is skipped to its next time, or,
-for a `--once` job, waits for the lock to end. `ob schedule show <name>` lists its runs.
+for a `--once` job, waits for the lock to end. `ob schedule show <name>` lists its runs, `ob jobs` lists every
+job's last status under the daemon jobs, and an enabled job that fails two runs in a row raises the
+`schedule failing` alert (rule 13, which can reach the phone). The OB dashboard's `/schedules` page shows the
+jobs and their runs, and pauses, resumes, runs now (it only makes the job due) and deletes them.
 
 ## Quick start
 

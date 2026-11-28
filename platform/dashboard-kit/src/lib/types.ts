@@ -229,4 +229,6 @@ export interface Snapshot {
   itemsStamp?: string;
   /** OS-241: the decision count and newest id; an `ob spinoff check` moves it, so the Machine page re-reads. Optional: an older API host sends none. */
   decisionsStamp?: string;
+  /** OS-312: the scheduled job count, newest job updated_at and newest run id; a job write or a run moves it, so /schedules re-reads. Optional: an older API host sends none. */
+  schedulesStamp?: string;
 }

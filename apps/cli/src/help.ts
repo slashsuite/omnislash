@@ -2074,6 +2074,10 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       },
     },
     examples: ["jobs", "jobs host"],
+    notes: [
+      "Below the daemon table: each `ob schedule` job, its last status, last and next run.",
+      "A job that failed 2+ runs in a row says so. --json stays the daemon jobs.",
+    ],
   },
 
   schedule: {

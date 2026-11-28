@@ -173,7 +173,7 @@ export async function apiJobs(ctx: ApiCtx): Promise<void> {
 	const res = await ctx.client.jobs();
 	if (ctx.mode === "json") print(JSON.stringify(res.jobs, null, 2));
 	else if (ctx.mode === "quiet") print(res.jobs.map((r) => r.job).join("\n"));
-	else print(renderJobs(res.jobs));
+	else print(renderJobs(res.jobs, res.scheduled ?? []));
 }
 
 async function apiJobsHost(ctx: ApiCtx): Promise<void> {

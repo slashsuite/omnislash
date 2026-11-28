@@ -402,6 +402,7 @@ import {
   deleteScheduledJob,
   listScheduledJobRuns,
   listScheduledJobs,
+  scheduledJobHealth,
   runScheduledJobNow,
   ScheduledJobNotFoundError,
   updateScheduledJob,
@@ -2190,7 +2191,7 @@ export async function logCreate(store: Store, req: LogCreateRequest): Promise<Lo
 }
 
 export async function jobsRead(store: Store): Promise<JobsResponse> {
-  return { jobs: await jobHealth(store) };
+  return { jobs: await jobHealth(store), scheduled: await scheduledJobHealth(store) };
 }
 
 export async function deploysRead(store: Store): Promise<DeploysResponse> {
