@@ -231,7 +231,7 @@ export function retiredReviewMessage(leg: string, model?: string): string | null
   const named = (text: string, r: string) => new RegExp(`\\b${r}\\b`, "i").test(text);
   const retired = RETIRED_REVIEW_LEGS.find((r) => named(leg, r) || (model !== undefined && named(model, r)));
   if (retired === undefined) return null;
-  return `review reader '${retired}' is retired (OS-206): DeepSeek and Luna are no longer part of the review setup; use neon or opus`;
+  return `review reader '${retired}' is retired (OS-206): DeepSeek and Luna are no longer part of the review setup; use opus, or a reader \`ob review readers\` lists`;
 }
 
 /**
@@ -327,7 +327,7 @@ export interface ModelsProfile {
   builder: Partial<Record<SpinoffTier, string>>;
   /** The old one-model `reviewer` key (`checker` before OS-243, still read). */
   reviewer?: string;
-  /** Review leg name (`neon`, `opus`; `sonnet` is read as `opus`; `deepseek` and `luna` are refused, OS-206) to model id. */
+  /** Review leg name (`opus`, or any reader the profile names; `sonnet` is read as `opus`; `deepseek` and `luna` are refused, OS-206) to model id. */
   review: Record<string, string>;
   /** OS-145: route overrides for this machine (`builder.medium`, `role.architect`, `job.<name>`, ...). */
   routes: Record<string, RouteSpec>;

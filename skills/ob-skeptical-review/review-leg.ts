@@ -182,6 +182,16 @@ export type LoadedReaders = ReviewReaders & { profile: string | null };
 export class ReaderSettingError extends Error {}
 
 /**
+ * The line of a failed `ob review readers` stderr that says why it failed (OS-304). Warnings come first (the
+ * dropped-reader lines of OS-303, `ob: warning: ...`) and ob prints its error last as `error: ...`, so the
+ * `error:` line wins, else the last line. The `ob: core from` banner is never the reason. Pure.
+ */
+function readersFailureLine(stderr: string): string | undefined {
+  const lines = stderr.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("ob: core from"));
+  return lines.find((l) => l.startsWith("error:")) ?? lines.at(-1);
+}
+
+/**
  * The readers in force, read once per leg run through `ob review readers --json` (the store or the API, whichever
  * this machine uses), stored or ob's own defaults: whatever ob prints is what runs (OS-295). Null when the answer
  * names no readers at all. When it cannot be read it throws ReaderSettingError: the leg fails, it never guesses
@@ -200,8 +210,8 @@ export function loadReaderSetting(
     throw new ReaderSettingError(`could not run ob review readers: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (result.code !== 0) {
-    const first = (result.err ?? "").split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("ob: core from"));
-    throw new ReaderSettingError(`ob review readers exited ${result.code}${first ? `: ${first}` : ""}`);
+    const reason = readersFailureLine(result.err ?? "");
+    throw new ReaderSettingError(`ob review readers exited ${result.code}${reason ? `: ${reason}` : ""}`);
   }
   try {
     const parsed = JSON.parse(result.out) as { readers?: unknown; profile?: unknown };
