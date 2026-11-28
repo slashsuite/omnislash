@@ -177,12 +177,30 @@ describe("a stuck row settled from a committed verdict never reads building with
 
   test("an archived thread is passed over even when it is the newest on the worktree (OS-302)", async () => {
     const worktree = verdictRow(
-      (wt) => ({ threadId: "thread-kept", projectId: "proj-0", title: "OS-1 a fix", status: "idle", worktreePath: wt, branch: "os-1", settled: true, archived: false, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: null, latestRunId: "run-k", createdAt: "2026-08-19T00:05:00.000Z" }),
+      // T3 lists the archived newest thread first, so taking the first listed would record it.
       (wt) => ({ threadId: "thread-archived", projectId: "proj-0", title: "OS-1 a fix", status: "idle", worktreePath: wt, branch: "os-1", settled: true, archived: true, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: null, latestRunId: "run-x", createdAt: "2026-08-19T00:09:00.000Z" }),
+      (wt) => ({ threadId: "thread-kept", projectId: "proj-0", title: "OS-1 a fix", status: "idle", worktreePath: wt, branch: "os-1", settled: true, archived: false, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: null, latestRunId: "run-k", createdAt: "2026-08-19T00:05:00.000Z" }),
     );
     const s = server([row({ worktree })], { leases: [] });
     await reconcile(s);
     expect(s.stamps).toEqual([expect.objectContaining({ id: 7, outcome: "launched", t3_thread_id: "thread-kept", t3_run_id: "run-k" })]);
+  }, spawnBudget(4));
+
+  test("a thread T3 dates more than a minute before the row is an earlier attempt's, so the row ends failed (OS-302)", async () => {
+    // 61s before request_at: just outside the skew window, so a widened or dropped lower bound would record it.
+    const worktree = verdictRow((wt) => ({ threadId: "thread-too-early", projectId: "proj-0", title: "OS-1 a fix", status: "idle", worktreePath: wt, branch: "os-1", settled: true, archived: false, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: null, latestRunId: "run-e", createdAt: "2026-08-18T23:58:59.000Z" }));
+    const s = server([row({ worktree })], { leases: [] });
+    await reconcile(s);
+    expect(s.stamps.map((b) => [b.id, b.outcome])).toEqual([[7, "failed"]]);
+    expect(String(s.stamps[0]!.error)).toContain("T3 holds no thread");
+  }, spawnBudget(4));
+
+  test("a settled thread with no createdAt alone on the worktree is not this row's builder, so the row ends failed (OS-302)", async () => {
+    const worktree = verdictRow((wt) => ({ threadId: "thread-undated", projectId: "proj-0", title: "OS-1 a fix", status: "idle", worktreePath: wt, branch: "os-1", settled: true, archived: false, model: "claude-opus-5-5", providerInstanceId: "claudeAgent", activeRunId: null, latestRunId: "run-u" }));
+    const s = server([row({ worktree })], { leases: [] });
+    await reconcile(s);
+    expect(s.stamps.map((b) => [b.id, b.outcome])).toEqual([[7, "failed"]]);
+    expect(String(s.stamps[0]!.error)).toContain("T3 holds no thread");
   }, spawnBudget(4));
 
   test("only an earlier attempt's settled thread on the worktree is not this row's builder, so the row ends failed (OS-302)", async () => {
