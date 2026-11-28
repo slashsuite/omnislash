@@ -39,7 +39,6 @@ import {
   __setSh,
   drainSpinoffs,
   enqueueSpinoff,
-  launchNotReadyFor,
   listSpinoffs,
   renderSpinoffShow,
   resolveRepoFor,
@@ -47,7 +46,6 @@ import {
   rowRepoPathFor,
   selectLauncherNameFor,
   spinoffTicketTagsFor,
-  type SpinoffRow,
 } from "../../cli-coord/src/commands/spinoff.ts";
 
 const PG_BUDGET = spawnBudget(3);
@@ -126,44 +124,6 @@ async function exercise(store: Store, machine: Machine, captured: Captured): Pro
   out.tagsPlain = await spinoffTicketTagsFor(store, plainItem);
   out.tagsTargeting = await spinoffTicketTagsFor(store, taggedItem);
   out.tagsUnknownRef = await spinoffTicketTagsFor(store, "no-such-item"); // never throws: [] instead
-
-  // --- the launcher-not-ready seam: always ready now, identical on both engines (ob 1109) ---------
-  const retiredRow: SpinoffRow = {
-    id: -1,
-    ticket_ref: taggedItem,
-    repo: machine.repo,
-    branch: "build-93",
-    worktree: machine.worktrees["build-93"]!,
-    mode: "agent",
-    brief: "rebuild it",
-    status: "pending",
-    error: null,
-    agent_id: null,
-    request_at: "2026-08-18T00:00:00.000Z",
-    launched_at: null,
-    input_tokens: null,
-    output_tokens: null,
-    cache_creation_tokens: null,
-    cache_read_tokens: null,
-    total_tokens: null,
-    base_sha: null,
-    reported_at: null,
-    launcher: "warp",
-    launch_attempts: null,
-    session_id: null,
-    engine: null,
-    t3_thread_id: null,
-    t3_run_id: null,
-    item_id: null,
-    tier: null,
-    model: null,
-    effort: null,
-    verdict: null,
-    verdict_reason: null,
-    gate_line: null,
-  };
-  // A row recorded under a retired launcher is a warning, not a wait: nothing defers any more.
-  out.notReadyRetired = await launchNotReadyFor(store, retiredRow);
 
   // --- THE DRAIN, end to end -----------------------------------------------------------------------
   // Two pending rows in ONE repo: both launch (ob 767: agent count is not a limiter). Both are
@@ -305,7 +265,6 @@ describe("ob spinoff agrees across the two engines (337 pass 5)", () => {
         expect(fromSqlite.tagsPlain).toEqual(["cutover", "postgres"]); // asc(tag.name), both engines
         expect(fromSqlite.tagsTargeting).toEqual(["cutover", "dashboard"]);
         expect(fromSqlite.tagsUnknownRef).toEqual([]);
-        expect(fromSqlite.notReadyRetired).toBeNull(); // nothing defers any more (ob 1109)
         expect(fromSqlite.pendingOrder).toEqual(["338", "337"]); // desc(id) on the PK
         expect(fromSqlite.drained).toEqual({
           launched: ["337", "338"], // asc(id): FIFO, both launch (ob 767)

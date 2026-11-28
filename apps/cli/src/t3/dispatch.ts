@@ -52,6 +52,7 @@ import {
   T3Error,
   T3_LIVE_STATUSES,
   isT3ThreadStatus,
+  isT3Timeout,
   turnAutoSettleOff,
   type T3Capabilities,
   type T3LaunchInput,
@@ -830,16 +831,22 @@ export async function findThreadForWorktree(
   row: T3DispatchRow,
 ): Promise<T3Thread | null> {
   const want = canonicalPath(row.worktree);
+  const namesRef = titleNamesRef(row.ticket_ref);
   let cursor: number | undefined;
   for (let page = 0; page < ADOPTION_SCAN_MAX_PAGES; page++) {
     const listed = await seam.list({
       projectId,
       titleContains: row.ticket_ref,
       settled: false,
+      includeSubagents: false,
       limit: 100,
       ...(cursor === undefined ? {} : { cursor }),
     });
     for (const summary of listed.threads) {
+      // OS-203: each header read is the one scan cost that grows with T3's load (about 4ms idle, up to 135ms
+      // under a read burst), so read only a thread that can be this row's (T3 leaves subagents out), titled
+      // with the ref as a whole token (T3's titleContains is a substring, so "OS-20" also lists every "OS-203").
+      if (!namesRef(summary.title)) continue;
       const thread = await readThreadHeader(seam, summary.threadId);
       if (thread.worktreePath && canonicalPath(thread.worktreePath) === want) return thread;
     }
@@ -851,6 +858,16 @@ export async function findThreadForWorktree(
     `gave up looking for an existing T3 thread for ${row.worktree} after ${ADOPTION_SCAN_MAX_PAGES} pages — settle the finished threads in this project, then re-run the drain`,
     "settle the finished threads in this project, then re-run the drain",
   );
+}
+
+/**
+ * Does a thread title carry this ticket ref as a whole token (OS-203)? Case-insensitive, and the ref may not
+ * run on into more of a ref (`OS-20` does not match `OS-203` or `OS-20a`). Pure.
+ */
+export function titleNamesRef(ticketRef: string): (title: string) => boolean {
+  const ref = ticketRef.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${ref}(?![\\p{L}\\p{N}])`, "iu");
+  return (title) => re.test(title);
 }
 
 /**
@@ -1146,7 +1163,19 @@ export async function launchT3Spinoff(
     runtimeMode: runtimeModeForTicket(repoPath, row.ticket_ref),
     ticketTitle: ticketTitle ?? null,
   });
-  const result = await seam.launch(plan);
+  let result: { threadId: string; runId?: string | null };
+  try {
+    result = await seam.launch(plan);
+  } catch (err) {
+    // OS-203: a launch that timed out may still have opened the thread (T3 slow, not down). Look once
+    // more by worktree before calling it failed: a found thread is this launch's, and stamping the row
+    // failed would orphan a running builder and let the next drain open a second one in the same checkout.
+    if (!isT3Timeout(err)) throw err;
+    const opened = await findThreadForWorktree(seam, project.id, row).catch(() => null);
+    if (!opened) throw err;
+    warn(`  ↳ ${row.ticket_ref}: ${err.message}, but the thread opened; stamping ${opened.threadId}`);
+    return { threadId: opened.threadId, runId: opened.activeRunId ?? opened.latestRunId, adopted: false, model: stamp, effort: effort.stamp };
+  }
   return { threadId: result.threadId, runId: result.runId ?? null, adopted: false, model: stamp, effort: effort.stamp };
 }
 
