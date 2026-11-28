@@ -22,19 +22,17 @@ function Machine() {
       title="Machine"
       description="Every spinoff in flight, and every open ticket still being planned, on the state of the role machine it is in. It moves as builders and the architect hand work on. Click a state to list its tickets."
       drawing={({ openState }) => (
-        <>
-          {/* A click in a box opens its list below; the keyboard reaches the same lists there. */}
-          {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-          <div
-            onClick={(e) => {
-              const state = boxOfClick(e.target);
-              if (state) openState(state);
-            }}
-            className="[&_[data-measure^='n:']]:cursor-pointer [&_div:has(>[data-measure^='l:'])]:cursor-pointer"
-          >
-            <RoleMachine tickets={view.rows} />
-          </div>
-        </>
+        // A click in a box opens its list below; the keyboard reaches the same lists there.
+        // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+        <div
+          onClick={(e) => {
+            const state = boxOfClick(e.target);
+            if (state) openState(state);
+          }}
+          className="[&_[data-measure^='n:']]:cursor-pointer [&_div:has(>[data-measure^='l:'])]:cursor-pointer"
+        >
+          <RoleMachine tickets={view.rows} />
+        </div>
       )}
     />
   );

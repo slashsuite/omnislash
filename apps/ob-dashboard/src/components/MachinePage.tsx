@@ -20,7 +20,7 @@ const DEFINITION = roleDefinition();
 const NEEDS_PERSON = new Set<string>(DEFINITION.states.filter((s) => s.kind === "human" || s.kind === "failed").map((s) => s.id));
 
 /** What the drawing may do on the page: open a state's list (and scroll to it), or open a ticket by ref. */
-export type MachineActions = { openState: (state: string) => void; openTicket: (ref: string) => void };
+type MachineActions = { openState: (state: string) => void; openTicket: (ref: string) => void };
 
 export function MachinePage({
   view,

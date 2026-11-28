@@ -1,7 +1,8 @@
 // OS-165, OS-308: the Machine page (the role machine as uislash's StateMachine graph), from a reseeded store, against
 // the built app (e2e/serve.ts). The world is e2e/world.ts MACHINE_*: three open tickets, one queued (pending), one
-// handed to the architect (ready-for-gate), one failed. The same world on the swimlanes is overview.spec.ts. Each dot is named "<ref> <title>, in <state label>" by uislash's StateMachine, so the spec asks for a dot
-// by its title and the state it must sit in.
+// handed to the architect (ready-for-gate), one failed. The same world on the swimlanes is overview.spec.ts. Each dot
+// is named "<ref> <title>, in <state label>" by uislash's StateMachine, so the spec asks for a dot by its title and the
+// state it must sit in.
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";

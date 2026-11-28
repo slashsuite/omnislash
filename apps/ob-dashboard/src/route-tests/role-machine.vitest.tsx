@@ -16,15 +16,17 @@ describe("RoleMachine (OS-187, OS-308)", () => {
     render(<RoleMachine tickets={[]} />);
     const drawn = screen.getByRole("group", { name: "Role state machine" });
     expect(states).toHaveLength(21);
-    // Exact and case-sensitive. No arrow label equals a state label, so a match here is the state's own box.
-    for (const s of states) expect(within(drawn).getAllByText(s.label).length, s.id).toBeGreaterThan(0);
+    // The drawn box's own label (ui-react keys it `l:<id>`), not the visually hidden list that also names every state.
+    for (const s of states) expect(drawn.querySelector(`[data-measure="l:${s.id}"]`)?.textContent, s.id).toBe(s.label);
   });
 
   it("draws an arrow for every move, named by its plain move label", () => {
     render(<RoleMachine tickets={[]} />);
     const drawn = screen.getByRole("group", { name: "Role state machine" });
     expect(transitions.length).toBeGreaterThan(0);
-    for (const t of transitions) expect(within(drawn).getAllByText(t.event!).length, `${t.from}->${t.to}`).toBeGreaterThan(0);
+    // The arrow labels drawn on the graph (ui-react keys each `e:<index>`), not the hidden list's.
+    const arrows = [...drawn.querySelectorAll('[data-measure^="e:"]')].map((el) => el.textContent);
+    for (const t of transitions) expect(arrows, `${t.from}->${t.to}`).toContain(t.event);
   });
 
   it("puts a ticket's dot in its state", () => {
