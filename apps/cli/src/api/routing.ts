@@ -126,6 +126,8 @@ export const API_ROUTED_COMMANDS: ReadonlySet<string> = new Set([
 	"review-miss",
 	// OS-170: `machine audit` reads rows and events, served under /machine/audit (an admin family).
 	"machine",
+	// OS-310: `ob schedule` is data, served under /schedules (an admin family).
+	"schedule",
 	// OB-2173: `review readers` is the review_readers row of the config table.
 	"review",
 	"cursor",

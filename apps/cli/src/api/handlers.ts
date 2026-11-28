@@ -386,6 +386,17 @@ import {
   type GmailMessageRead,
 } from "../../../../platform/cli-sources/src/gmail-message.ts";
 import { ApiFault } from "./fault.ts";
+import type { ScheduleCreateRequest, ScheduleResponse, ScheduleShowResponse, SchedulesResponse, ScheduleUpdateRequest } from "./contract.ts";
+import {
+  createScheduledJob,
+  deleteScheduledJob,
+  listScheduledJobRuns,
+  listScheduledJobs,
+  runScheduledJobNow,
+  ScheduledJobNotFoundError,
+  updateScheduledJob,
+} from "../scheduled-jobs.ts";
+import { InvalidScheduleError } from "../schedule.ts";
 import { inScope, type ProjectScope } from "../project-scope.ts";
 
 /**
@@ -2805,4 +2816,42 @@ export async function githubHooksRead(store: Store, secrets: SecretDeps | undefi
 export async function githubHooksApply(store: Store, secrets: SecretDeps | undefined): Promise<GithubHooksResponse> {
   const secret = await requireWebhookSecret(store, keyOf(secrets));
   return { rows: await hooksApply(store, lazyGithubRest(store, secrets), secret), dry_run: false };
+}
+
+// --- scheduled jobs (`ob schedule`, OS-310) --------------------------------------------------------------
+
+/** An invalid schedule or input is a 400 that wrote nothing; an unknown job or team a 404; any other refusal a 409. */
+async function scheduleFault<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof InvalidScheduleError || e instanceof UsageError) throw new ApiFault("invalid_request", 400, e.message);
+    if (e instanceof ScheduledJobNotFoundError || e instanceof UnknownTeamError) throw new ApiFault("not_found", 404, e.message);
+    if (e instanceof AppError) throw new ApiFault("refused", 409, e.message);
+    throw e;
+  }
+}
+
+export async function schedulesList(store: Store, all: boolean): Promise<SchedulesResponse> {
+  return { jobs: await listScheduledJobs(store, { all }) };
+}
+
+export async function scheduleCreate(store: Store, req: ScheduleCreateRequest): Promise<ScheduleResponse> {
+  return { job: await scheduleFault(() => createScheduledJob(store, req)) };
+}
+
+export async function scheduleShow(store: Store, ref: string, runs: number): Promise<ScheduleShowResponse> {
+  return scheduleFault(() => listScheduledJobRuns(store, ref, runs));
+}
+
+export async function scheduleUpdate(store: Store, ref: string, req: ScheduleUpdateRequest): Promise<ScheduleResponse> {
+  return { job: await scheduleFault(() => updateScheduledJob(store, ref, req)) };
+}
+
+export async function scheduleRun(store: Store, ref: string): Promise<ScheduleResponse> {
+  return { job: await scheduleFault(() => runScheduledJobNow(store, ref)) };
+}
+
+export async function scheduleDelete(store: Store, ref: string): Promise<ScheduleResponse> {
+  return { job: await scheduleFault(() => deleteScheduledJob(store, ref)) };
 }

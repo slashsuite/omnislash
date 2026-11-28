@@ -48,6 +48,16 @@ export interface Flags {
   "updated-after"?: string;
   /** OS-170: `ob machine audit`. */
   "stale-days"?: string;
+  /** OS-310: `ob schedule add`; `--once <iso>` arrives as `once-at` (expandScheduleOnceFlag). */
+  "once-at"?: string;
+  every?: string;
+  cron?: string;
+  prompt?: string;
+  cmd?: string;
+  cwd?: string;
+  "ignore-good-night"?: boolean;
+  /** OS-310: `ob schedule show --runs <n>`. */
+  runs?: string;
   by?: string;
   /** `ob inbox --read <id>`: the first message id to mark read. */
   read?: string;

@@ -2591,6 +2591,24 @@ async function apiMachine(ctx: ApiCtx): Promise<void> {
 	printMachineAudit(audit, ctx.mode);
 }
 
+/** `ob schedule` over the API (OS-310): the jobs live on the server. */
+function apiScheduleBackend(ctx: ApiCtx): import("../commands/schedule.ts").ScheduleBackend {
+	const { client } = ctx;
+	return {
+		list: async (all) => (await client.schedules(all)).jobs,
+		create: async (input) => (await client.scheduleCreate(input)).job,
+		show: (ref, runs) => client.scheduleShow(ref, runs),
+		update: async (ref, patch) => (await client.scheduleUpdate(ref, patch)).job,
+		run: async (ref) => (await client.scheduleRun(ref)).job,
+		delete: async (ref) => (await client.scheduleDelete(ref)).job,
+	};
+}
+
+async function apiSchedule(ctx: ApiCtx): Promise<void> {
+	const { runSchedule } = await import("../commands/schedule.ts");
+	await runSchedule(ctx, apiScheduleBackend(ctx));
+}
+
 async function apiCursor(ctx: ApiCtx): Promise<void> {
 	const sub = ctx.args[0];
 	if (sub === "get") {
@@ -2771,6 +2789,7 @@ export const API_HANDLERS: Record<string, (ctx: ApiCtx) => Promise<void>> = {
 	overnight: apiOvernight,
 	"review-miss": apiReviewMiss,
 	machine: apiMachine,
+	schedule: apiSchedule,
 	review: apiReview,
 	cursor: apiCursor,
 	"test-user": apiTestUser,

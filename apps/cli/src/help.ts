@@ -2073,6 +2073,83 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     examples: ["jobs", "jobs host"],
   },
 
+  schedule: {
+    section: "Deploy & Ops",
+    summary: "Create, list, inspect, pause, resume, run, and delete scheduled jobs",
+    usage: [
+      "schedule add <name> (--once|--every|--cron) (--team --role --prompt | --cmd)",
+      "schedule list [--all]",
+      "schedule show <name|id> [--runs <n>]",
+      "schedule pause|resume|run|delete <name|id>",
+    ],
+    subcommands: {
+      add: {
+        summary: "Create a scheduled role-prompt or shell-command job",
+        usage: [
+          "schedule add <name> --once|--every|--cron <v> --team <t> --role <r> --prompt <p>",
+          "schedule add <name> --once|--every|--cron <v> --cmd <shell> [--cwd <p>] [--host <h>]",
+        ],
+        flags: [
+          { flag: "--once <iso>", description: "Run once at an ISO-8601 UTC timestamp" },
+          { flag: "--every <dur>", description: "Repeat on an interval (e.g. 90s, 15m, 1h, 6h, 1d; min 60s)" },
+          { flag: "--cron <expr>", description: "Repeat on a 5-field UTC cron expression" },
+          { flag: "--team <name>", description: "Target team for a role job" },
+          { flag: "--role <role>", description: "Target role: architect, sentinel, or muse" },
+          { flag: "--prompt <text>", description: "Prompt delivered to the target role" },
+          { flag: "--cmd <shell>", description: "Shell command for a command job" },
+          { flag: "--cwd <path>", description: "Working directory for a command job" },
+          { flag: "--host <name>", description: "Client hostname filter for a command job" },
+          { flag: "--ignore-good-night", description: "Run even while the good-night lock is active" },
+        ],
+        examples: [
+          'schedule add sweep --cron "0 3 * * *" --team core --role architect --prompt "Sweep"',
+          'schedule add health-ping --every 15m --cmd "echo ok" --host desk',
+        ],
+      },
+      list: {
+        summary: "List enabled scheduled jobs (or all jobs with --all)",
+        usage: ["schedule list [--all]"],
+        flags: [{ flag: "--all", description: "Include paused scheduled jobs" }],
+        examples: ["schedule list", "schedule list --all --json"],
+      },
+      show: {
+        summary: "Show a scheduled job and its recent runs",
+        usage: ["schedule show <name|id> [--runs <n>]"],
+        flags: [{ flag: "--runs <n>", description: "Number of recent runs to include (1-500, default 10)" }],
+        examples: ["schedule show nightly-sweep", "schedule show 1 --runs 20 --json"],
+      },
+      pause: {
+        summary: "Pause a scheduled job without deleting it",
+        usage: ["schedule pause <name|id>"],
+        examples: ["schedule pause nightly-sweep"],
+      },
+      resume: {
+        summary: "Resume a paused scheduled job and recompute its next run",
+        usage: ["schedule resume <name|id>"],
+        examples: ["schedule resume nightly-sweep"],
+      },
+      run: {
+        summary: "Mark an enabled job due now (sets next_run_at to now)",
+        usage: ["schedule run <name|id>"],
+        examples: ["schedule run nightly-sweep"],
+      },
+      delete: {
+        summary: "Delete a scheduled job and its recorded runs",
+        usage: ["schedule delete <name|id>"],
+        examples: ["schedule delete nightly-sweep"],
+      },
+    },
+    examples: [
+      'schedule add sweep --cron "0 3 * * *" --team core --role architect --prompt "Check PRs"',
+      "schedule list --all",
+      "schedule show sweep",
+    ],
+    notes: [
+      "Pass one of --once, --every, or --cron and one target (--team/--role/--prompt or --cmd).",
+      "Admin-only over the API (/schedules): scoped API tokens are refused with 403.",
+    ],
+  },
+
   alerts: {
     section: "Deploy & Ops",
     summary: "List proactive alerts, print morning digest, or snooze an alert",

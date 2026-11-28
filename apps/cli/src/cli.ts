@@ -82,6 +82,7 @@ import { cmdSecret } from "./commands/secret.ts";
 import { cmdCreds } from "./commands/creds.ts";
 import { cmdSkills, expandSkillsFixFlag } from "./commands/skills.ts";
 import { cmdVision, expandVisionPairFlags } from "./commands/vision.ts";
+import { cmdSchedule, expandScheduleOnceFlag } from "./commands/schedule.ts";
 import { cmdT3 } from "./commands/t3.ts";
 import { cmdRole } from "./commands/role.ts";
 import { cmdInbox, cmdSend } from "./commands/inbox.ts";
@@ -451,6 +452,16 @@ export const FLAGS = {
   peek: { type: "boolean" },
   // `ob inbox <team> <role> --read <id>... --by <run|agent id>`: the first id; more follow as positionals.
   read: { type: "string" },
+  // OS-310: `ob schedule add`. `--once <iso>` reaches parseArgs as `--once-at` (expandScheduleOnceFlag), since the
+  // global `--once` is `spinoff watch`'s boolean. `--host` is shared with deploy record, `--team`/`--role` with send.
+  "once-at": { type: "string" },
+  every: { type: "string" },
+  cron: { type: "string" },
+  prompt: { type: "string" },
+  cmd: { type: "string" },
+  cwd: { type: "string" },
+  "ignore-good-night": { type: "boolean" },
+  runs: { type: "string" },
 } as const;
 
 export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
@@ -509,6 +520,7 @@ export const HANDLERS: Record<string, (ctx: Ctx) => void | Promise<void>> = {
   "test-user": cmdTestUser,
   "review-miss": cmdReviewMiss,
   machine: cmdMachine,
+  schedule: cmdSchedule,
   review: cmdReview,
   gate: cmdGate,
   person: cmdPerson,
@@ -582,7 +594,7 @@ function openForPathResolution(dbPath: string): Database {
 export async function run(argv: string[], deps: RunDeps = {}): Promise<number> {
   let parsed;
   try {
-    parsed = parseArgs({ args: expandSkillsFixFlag(expandVisionPairFlags(argv), FLAGS), options: FLAGS, allowPositionals: true, strict: true });
+    parsed = parseArgs({ args: expandSkillsFixFlag(expandVisionPairFlags(expandScheduleOnceFlag(argv, FLAGS)), FLAGS), options: FLAGS, allowPositionals: true, strict: true });
   } catch (err) {
     process.stderr.write(`error: ${(err as Error).message}\n`);
     return 2;
