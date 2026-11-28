@@ -21,8 +21,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { AppError, UsageError } from "./errors.ts";
 import { runGate, type GateOutcome } from "./commands/gate.ts";
-import { loadRouteInputs } from "./model-routes-io.ts";
-import { resolveReview } from "./model-routes.ts";
+import { loadReview } from "./model-routes-io.ts";
 import { parseComplexity } from "./models-file.ts";
 import { print, type Mode } from "./output.ts";
 import { readersForComplexity, type ConfigIO, type ReviewReaders } from "./review-readers.ts";
@@ -254,7 +253,7 @@ function liveDeps(cwd: string, io: ConfigIO, env: Env = process.env): ReviewRunD
       return { code: await proc.exited, err };
     },
     skill: () => readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8"),
-    readers: async () => resolveReview(await loadRouteInputs(io)).value,
+    readers: async () => (await loadReview(io)).value,
   };
 }
 

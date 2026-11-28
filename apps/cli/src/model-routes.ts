@@ -465,10 +465,12 @@ export interface ResolvedReview {
   /** True when anything but the defaults stands (review-leg.ts then uses these legs). */
   stored: boolean;
   value: ReviewReaders;
+  /** OS-303: legs the local file's `review` names that the profile has no reader for, so they were dropped. */
+  dropped: string[];
 }
 
 /** The readers `profile` runs on the server, before any local overlay. Pure. */
-export function serverReview(inputs: RouteInputs, profile: string | null): Omit<ResolvedReview, "profile"> {
+export function serverReview(inputs: RouteInputs, profile: string | null): Omit<ResolvedReview, "profile" | "dropped"> {
   const own = profile !== null ? inputs.server.profiles[profile]?.review : undefined;
   if (own) return { source: "server", stored: true, value: own };
   if (inputs.legacyReaders) return { source: "legacy", stored: true, value: inputs.legacyReaders };
@@ -480,11 +482,22 @@ export function resolveReview(inputs: RouteInputs, profile: string | null = acti
   const base = serverReview(inputs, profile);
   const local = profile !== null ? inputs.file?.profiles[profile]?.review : undefined;
   const readers = { ...base.value.readers };
+  const dropped: string[] = [];
   for (const [leg, model] of Object.entries(local ?? {})) {
     const canonical = canonicalLeg(leg);
     if (readers[canonical]) readers[canonical] = { ...readers[canonical], model };
+    else dropped.push(leg);
   }
-  return { profile, ...base, value: { readers, tiers: base.value.tiers } };
+  return { profile, ...base, value: { readers, tiers: base.value.tiers }, dropped };
+}
+
+/** OS-303: one stderr line per local `review` leg that resolveReview dropped. Pure. */
+export function droppedReaderWarnings(r: ResolvedReview, filePath: string | null): string[] {
+  const readers = Object.keys(r.value.readers).join(", ");
+  return r.dropped.map((leg) => {
+    const reader = canonicalLeg(leg);
+    return `${filePath ?? "the models file"}: review.${leg} is ignored: profile '${r.profile}' has no '${reader}' reader (its readers: ${readers}); add it with 'ob review readers set ${reader} --model <id>'`;
+  });
 }
 
 // --- writes (all go to model_routes; each returns the new, validated value) ---------------------------------
