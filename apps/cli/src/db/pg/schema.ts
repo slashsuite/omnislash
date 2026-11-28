@@ -235,6 +235,54 @@ export const roleMessage = pgTable("role_message", {
 	index("idx_role_message_unread").on(table.team, table.role, table.read_at, table.id),
 ]);
 
+// OS-310: scheduled jobs. A job runs a role prompt (`ob send` to a team role) or a shell command on a schedule:
+// `once` at an ISO time, `interval` every `15m`/`1h`/`1d`, or a five-field UTC `cron`. `next_run_at` is when it is
+// next due (null once a `once` job has run); `enabled` (0/1) pauses it; `respect_good_night` (0/1) holds it while
+// the good-night lock is on. A command job's `host` names the machine that runs it. The runner is OS-311; slice 1
+// stores the jobs and their runs. Removing a team drops its role jobs.
+export const scheduledJob = pgTable("scheduled_job", {
+	id: integer().primaryKey().generatedByDefaultAsIdentity(),
+	name: text().notNull(),
+	enabled: integer().notNull().default(1),
+	schedule_kind: text("schedule_kind").notNull(),     // once | interval | cron
+	schedule_expr: text("schedule_expr").notNull(),
+	target_kind: text("target_kind").notNull(),         // role | command
+	team: text().references(() => team.name, { onDelete: "cascade" }),
+	role: text(),                                       // architect | sentinel | muse
+	prompt: text(),
+	command: text(),
+	cwd: text(),
+	host: text(),
+	respect_good_night: integer("respect_good_night").notNull().default(1),
+	next_run_at: text("next_run_at"),
+	last_run_at: text("last_run_at"),
+	last_status: text("last_status"),
+	last_error: text("last_error"),
+	created_at: text("created_at").notNull(),
+	updated_at: text("updated_at").notNull(),
+},
+(table) => [
+	uniqueIndex("idx_scheduled_job_name").on(table.name),
+	index("idx_scheduled_job_due").on(table.enabled, table.next_run_at),
+]);
+
+// OS-310: one row per run of a scheduled job. `status` is running | succeeded | failed | skipped; `output_tail`
+// keeps the last 4000 characters of a command's output; `role_message_id` is the message a role job stored.
+export const scheduledJobRun = pgTable("scheduled_job_run", {
+	id: integer().primaryKey().generatedByDefaultAsIdentity(),
+	job_id: integer("job_id").notNull().references(() => scheduledJob.id, { onDelete: "cascade" }),
+	started_at: text("started_at").notNull(),
+	finished_at: text("finished_at"),
+	status: text().notNull(),
+	host: text(),
+	exit_code: integer("exit_code"),
+	output_tail: text("output_tail"),
+	role_message_id: integer("role_message_id"),
+},
+(table) => [
+	index("idx_scheduled_job_run_job").on(table.job_id, table.id),
+]);
+
 // OB-2271: persona tournaments. A tournament compares candidates (themes, grounds, designs) by matches; each
 // match is a set of reader calls (a persona on a model, in one order) scoring both sides 1 to 5 per criterion.
 // The runner (OB-2273, or a repo's own script) writes a match file and `ob tournament record` stores it; ob

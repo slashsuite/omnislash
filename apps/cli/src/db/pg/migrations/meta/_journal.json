@@ -57,6 +57,13 @@
       "when": 1795837449869,
       "tag": "0007_spinoff_model_ask",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795861124111,
+      "tag": "0008_scheduled_job",
+      "breakpoints": true
     }
   ]
 }

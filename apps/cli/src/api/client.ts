@@ -231,6 +231,11 @@ type SpinoffsQuery,
   type ReviewMissAddResponse,
   type ReviewMissTopResponse,
   type MachineAuditResponse,
+  type ScheduleCreateRequest,
+  type ScheduleResponse,
+  type ScheduleShowResponse,
+  type SchedulesResponse,
+  type ScheduleUpdateRequest,
   type CursorGetResponse,
   type CursorSetRequest,
   type CursorSetResponse,
@@ -539,6 +544,7 @@ const path = {
 	reviewMisses: "/review-misses",
 	reviewMissesTop: "/review-misses/top",
 	machineAudit: "/machine/audit",
+	schedules: "/schedules",
 	cursors: "/cursors",
 	testUsers: "/test-users",
 	testUsersShow: "/test-users/show",
@@ -1521,6 +1527,32 @@ export class ApiClient {
 	reviewMissAdd(body: ReviewMissAddRequest): Promise<ReviewMissAddResponse> {
 		return this.call("POST", path.reviewMisses, body);
 	}
+	// --- scheduled jobs (`ob schedule`, OS-310) ---
+
+	schedules(all: boolean): Promise<SchedulesResponse> {
+		return this.call("GET", `${path.schedules}${queryString({ all: all ? "true" : undefined })}`);
+	}
+
+	scheduleCreate(body: ScheduleCreateRequest): Promise<ScheduleResponse> {
+		return this.call("POST", path.schedules, body);
+	}
+
+	scheduleShow(ref: string, runs: number): Promise<ScheduleShowResponse> {
+		return this.call("GET", `${path.schedules}/${encodeURIComponent(ref)}${queryString({ runs: String(runs) })}`);
+	}
+
+	scheduleUpdate(ref: string, body: ScheduleUpdateRequest): Promise<ScheduleResponse> {
+		return this.call("POST", `${path.schedules}/${encodeURIComponent(ref)}`, body);
+	}
+
+	scheduleRun(ref: string): Promise<ScheduleResponse> {
+		return this.call("POST", `${path.schedules}/${encodeURIComponent(ref)}/run`, {});
+	}
+
+	scheduleDelete(ref: string): Promise<ScheduleResponse> {
+		return this.call("DELETE", `${path.schedules}/${encodeURIComponent(ref)}`);
+	}
+
 	/** OS-170: `ob machine audit`. */
 	machineAudit(query: { since?: string | undefined; stale_days?: number | undefined } = {}): Promise<MachineAuditResponse> {
 		return this.call("GET", `${path.machineAudit}${queryString(query)}`);

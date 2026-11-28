@@ -47,7 +47,7 @@ export interface RoleMessageInput {
  * A role that may receive: the architect, the sentinel (OS-181: every team has one, started on delivery when it has
  * no thread), or a role with a thread bound on the team. Refused by name otherwise.
  */
-async function requireRecipient(s: Store, team: string, role: TeamRole): Promise<void> {
+export async function requireRecipient(s: Store, team: string, role: TeamRole): Promise<void> {
   const t = await getTeam(s, team);
   if (!t) throw new UnknownTeamError(team);
   if (role === "architect" || role === "sentinel") return;

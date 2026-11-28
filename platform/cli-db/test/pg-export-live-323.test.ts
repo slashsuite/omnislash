@@ -95,14 +95,14 @@ describe("the export against a real Postgres 17 (323)", () => {
 		const tables = await pg.query(
 			`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
 		);
-		expect(tables[0]!.n).toBe(44);
+		expect(tables[0]!.n).toBe(46);
 	}, 60_000);
 
-	test("every one of the 44 ported tables is planned, loaded and verified on both sides", async () => {
+	test("every one of the 46 ported tables is planned, loaded and verified on both sides", async () => {
 		const report = await load();
 		expect(report.failures).toEqual([]);
 		expect(report.ok).toBe(true);
-		expect(report.tables).toHaveLength(44);
+		expect(report.tables).toHaveLength(46);
 		for (const table of report.tables) {
 			expect({ table: table.table, rows: table.sourceRows, hash: table.sourceHash }).toEqual({
 				table: table.table,
@@ -153,7 +153,7 @@ describe("the export against a real Postgres 17 (323)", () => {
 			 WHERE n.nspname = 'public' AND c.relkind = 'r'
 			   AND pg_get_serial_sequence(c.relname, a.attname) IS NOT NULL`,
 		);
-		expect(identities).toHaveLength(15);
+		expect(identities).toHaveLength(17);
 		const collisions: string[] = [];
 		for (const row of identities) {
 			const table = String(row.table_name);
@@ -209,7 +209,7 @@ describe("the export against a real Postgres 17 (323)", () => {
 	test("a dry run against a real target reads everything and leaves it empty", async () => {
 		const report = await load({ dryRun: true });
 		expect(report.ok).toBe(true);
-		expect(report.tables).toHaveLength(44);
+		expect(report.tables).toHaveLength(46);
 		const counted = await pg.query(`SELECT count(*)::int AS n FROM item`);
 		expect(counted[0]!.n).toBe(0);
 	}, 60_000);

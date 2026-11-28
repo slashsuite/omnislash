@@ -292,6 +292,8 @@ export const POSTGRES_SERVABLE_COMMANDS: ReadonlySet<string> = new Set([
 	"review-miss",
 	// OS-170: `ob machine audit` reads items, spinoff rows and events through the store seam only.
 	"machine",
+	// OS-310: `ob schedule` reads and writes scheduled_job rows through the store seam only.
+	"schedule",
 	"review",
 	"audit",
 	"cursor",

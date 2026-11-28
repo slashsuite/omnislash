@@ -67,6 +67,7 @@ import type { Tournament, TournamentCandidate, TournamentListRow, TournamentMatc
 import type { BackfillRow, OvernightDecision, OvernightNight, OvernightRun, OvernightRunRow } from "../overnight.ts";
 import type { RankedClass } from "../commands/reviewmiss.ts";
 import type { MachineAudit } from "../machine-audit.ts";
+import type { ScheduledJob, ScheduledJobPatch, ScheduledJobRun } from "../scheduled-jobs.ts";
 import type { TestUserRow } from "../commands/testuser.ts";
 
 export type {
@@ -400,6 +401,13 @@ export const OB_API_ROUTES: readonly ObApiRoute[] = [
   { method: "POST", path: "/overnight/backfill", family: "overnight", what: "set each imported wayfinder decision's decided_at to its night; dry_run only reports (OS-216)" },
   { method: "POST", path: "/review-misses", family: "review-misses", what: "record a review-miss class" },
   { method: "GET", path: "/review-misses/top", family: "review-misses", what: "ranked review-miss classes (?scope=&limit=)" },
+  // OS-310: scheduled jobs (`ob schedule`). Admin only: a job runs a prompt or a shell command later.
+  { method: "GET", path: "/schedules", family: "schedules", what: "the enabled scheduled jobs by name (?all=true includes paused ones; OS-310)" },
+  { method: "POST", path: "/schedules", family: "schedules", what: "create a scheduled job; next_run_at is computed, and an invalid schedule is a 400 that writes nothing" },
+  { method: "GET", path: "/schedules/:ref", family: "schedules", what: "one scheduled job by name or id, with its newest runs (?runs=)" },
+  { method: "POST", path: "/schedules/:ref", family: "schedules", what: "edit a scheduled job: pause or resume ({enabled}) or change its schedule or target fields" },
+  { method: "POST", path: "/schedules/:ref/run", family: "schedules", what: "make a scheduled job due now (next_run_at = now)" },
+  { method: "DELETE", path: "/schedules/:ref", family: "schedules", what: "delete a scheduled job and its runs" },
   { method: "GET", path: "/machine/audit", family: "machine", what: "rows the lifecycle machines cannot resolve, stale spinoff rows and would-refuse events (?since=&stale_days=; OS-170)" },
   { method: "GET", path: "/cursors", family: "cursors", what: "one skill_cursor value (?skill=&key=)" },
   { method: "POST", path: "/cursors", family: "cursors", what: "set a skill_cursor value" },
@@ -423,7 +431,7 @@ export const OB_API_SCOPABLE_FAMILIES: readonly string[] = ["items", "next", "se
 export const OB_API_ADMIN_FAMILIES: readonly string[] = [
   "alerts", "brief", "cal", "ci", "config", "creds", "cursors", "db", "deploys", "docs",
   "focus", "github", "gmail", "google", "health", "host-jobs", "issues", "jobs", "learnings", "log", "machine",
-  "overnight", "people", "review-misses", "roadmaps", "secrets", "slack", "snapshot", "standup",
+  "overnight", "people", "review-misses", "roadmaps", "schedules", "secrets", "slack", "snapshot", "standup",
   "status", "sync", "test-users", "today", "tournaments", "triage", "whatsapp", "whois",
 ];
 
@@ -1995,6 +2003,36 @@ export interface RoleMessagesReadRequest {
   role: string;
   ids: number[];
   by: string;
+}
+
+// OS-310: scheduled jobs (`ob schedule`).
+export interface ScheduleCreateRequest {
+  name: string;
+  schedule_kind: string;
+  schedule_expr: string;
+  target_kind: string;
+  team?: string | null | undefined;
+  role?: string | null | undefined;
+  prompt?: string | null | undefined;
+  command?: string | null | undefined;
+  cwd?: string | null | undefined;
+  host?: string | null | undefined;
+  respect_good_night?: boolean | undefined;
+}
+
+export type ScheduleUpdateRequest = ScheduledJobPatch;
+
+export interface ScheduleResponse {
+  job: ScheduledJob;
+}
+
+export interface SchedulesResponse {
+  jobs: ScheduledJob[];
+}
+
+export interface ScheduleShowResponse {
+  job: ScheduledJob;
+  runs: ScheduledJobRun[];
 }
 
 export interface TeamRemoveResponse {

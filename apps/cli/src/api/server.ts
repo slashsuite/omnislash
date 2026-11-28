@@ -2066,6 +2066,46 @@ async function route(
     return null;
   }
 
+  // OS-310: scheduled jobs. A job is addressed by its name or id in the path.
+  if (head === "schedules") {
+    if (segments.length === 1 && method === "GET") return json(await h.schedulesList(store, queryBool(url.searchParams, "all") === true));
+    if (segments.length === 1 && method === "POST") {
+      const body = await readJson(req);
+      const res = await h.scheduleCreate(store, {
+        name: reqString(body, "name"),
+        schedule_kind: reqString(body, "schedule_kind"),
+        schedule_expr: reqString(body, "schedule_expr"),
+        target_kind: reqString(body, "target_kind"),
+        team: optString(body, "team") ?? null,
+        role: optString(body, "role") ?? null,
+        prompt: optString(body, "prompt") ?? null,
+        command: optString(body, "command") ?? null,
+        cwd: optString(body, "cwd") ?? null,
+        host: optString(body, "host") ?? null,
+        respect_good_night: optBool(body, "respect_good_night"),
+      });
+      return json(res, 201);
+    }
+    const ref = second;
+    if (ref === undefined) return null;
+    if (segments.length === 2 && method === "GET") return json(await h.scheduleShow(store, ref, queryPositiveInt(url.searchParams, "runs") ?? 10));
+    if (segments.length === 2 && method === "DELETE") return json(await h.scheduleDelete(store, ref));
+    if (segments.length === 2 && method === "POST") {
+      const body = await readJson(req);
+      const patch: Record<string, unknown> = {};
+      for (const key of ["schedule_kind", "schedule_expr", "team", "role", "prompt", "command", "cwd", "host"] as const) {
+        if (key in body) patch[key] = body[key] === null ? null : optString(body, key);
+      }
+      for (const key of ["enabled", "respect_good_night"] as const) {
+        const v = optBool(body, key);
+        if (v !== undefined) patch[key] = v;
+      }
+      return json(await h.scheduleUpdate(store, ref, patch));
+    }
+    if (segments.length === 3 && third === "run" && method === "POST") return json(await h.scheduleRun(store, ref));
+    return null;
+  }
+
   if (head === "machine") {
     if (second === "audit" && segments.length === 2 && method === "GET") {
       const sinceRaw = url.searchParams.get("since")?.trim();
