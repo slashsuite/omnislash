@@ -98,6 +98,7 @@ import {
   tierFitOf,
   frontmatterField,
   launchT3Spinoff,
+  threadForRow,
   reconcileT3Runs,
   renderReadyNoteOutcome,
   storeAgentRegistry,
@@ -3289,6 +3290,11 @@ interface StuckRowReads {
    * Needs no `base_sha`, and the stamp records it as one, so the landing pass cannot count an older commit as this row's land.
    */
   committed(row: SpinoffRow): Promise<string | null>;
+  /**
+   * OS-300: the T3 thread bound to the row's worktree, settled or not (`threadForRow`), or null when T3 shows none.
+   * Throws when it cannot say, which leaves the row as it is.
+   */
+  thread(row: SpinoffRow): Promise<{ threadId: string; runId: string | null } | null>;
 }
 
 interface StuckSettled {
@@ -3304,6 +3310,11 @@ function closedBeforeLaunchError(ref: string): string {
   return `${ref} closed before launch; nothing was launched, so the queued row is retired`;
 }
 
+/** OS-300: the error a stuck row gets when its builder committed a verdict and T3 holds no thread for its worktree. */
+function threadlessVerdictError(row: Pick<SpinoffRow, "ticket_ref" | "branch" | "worktree">): string {
+  return `${row.ticket_ref}: a State: verdict is committed on ${row.branch}, but T3 holds no thread for ${row.worktree}, so no builder is claimed; the work stays on ${row.branch} for the architect to gate or re-dispatch`;
+}
+
 /**
  * Settle the rows reconcile used to skip (OS-203). Reconcile reads only `launched` and handed-off rows, so
  * two kinds sat forever and held `idx_spinoff_active` (one live row per ticket), refusing every new enqueue:
@@ -3316,6 +3327,13 @@ function closedBeforeLaunchError(ref: string): string {
  *   stamped `launched` (`launching` has no `land` edge), so it is never relaunched: the landing pass that follows
  *   ends it `merged` when its work landed, and otherwise it is an ordinary building row. A spike has nothing to
  *   land and ends failed with the spike end a close writes.
+ *
+ * OS-300: a row stamped `launched` reads "building", which claims a builder. A row whose work landed is stamped as it
+ * is (the landing pass ends it this same reconcile). A row with only a committed verdict is stamped with the thread
+ * bound to its worktree, settled or not (a finished builder's thread is usually settled by the close or the OS-288
+ * sweep, and is still the row's builder). With no thread at all it ends failed (`threadlessVerdictError`), which
+ * claims no builder; it is not handed off, because a reconcile handoff would skip the CI and clean-repo guards a
+ * builder's own handoff runs. When T3 cannot say, the row is left for the next pass.
  *
  * A stuck row whose work has not landed is left to `reclaim` (retry or fail). Reports, never throws.
  */
@@ -3358,7 +3376,8 @@ export async function settleStuckSpinoffs(
     try {
       const done = (await read.status(row)) === "done";
       let baseSha = row.base_sha ?? null;
-      if (!done && !byCommit.has(row.id)) {
+      const landedNow = done || byCommit.has(row.id);
+      if (!landedNow) {
         const forkSha = await read.committed(row);
         if (!forkSha) continue;
         baseSha ??= forkSha;
@@ -3367,7 +3386,17 @@ export async function settleStuckSpinoffs(
         if (done) await fail(row, spikeEndError("closed"));
         continue;
       }
-      const stampError = await stamp({ id: row.id, outcome: "launched", t3_thread_id: row.t3_thread_id ?? null, t3_run_id: row.t3_run_id ?? null, base_sha: baseSha });
+      // A landed row is stamped as it is: the landing pass ends it merged this same reconcile. A verdict row is
+      // stamped only with its thread; a throw (T3 cannot say) leaves it for the next pass.
+      let thread = row.t3_thread_id ? { threadId: row.t3_thread_id, runId: row.t3_run_id ?? null } : null;
+      if (!landedNow && !thread) {
+        thread = await read.thread(row);
+        if (!thread) {
+          await fail(row, threadlessVerdictError(row));
+          continue;
+        }
+      }
+      const stampError = await stamp({ id: row.id, outcome: "launched", t3_thread_id: thread?.threadId ?? null, t3_run_id: thread?.runId ?? null, base_sha: baseSha });
       if (stampError) out.db_failures.push({ ticket: row.ticket_ref, detail: `${row.ticket_ref}: row #${row.id} is stuck launching and its work landed, but it could not be stamped: ${stampError}` });
       else out.stamped.push(row.id);
     } catch (e) {
@@ -3398,6 +3427,7 @@ function localStuckReads(db: Database | Store, readCommits: (repo: string) => Co
       return !!hold && !hold.expired;
     },
     committed: async (row) => branchVerdictBase(row),
+    thread: async (row) => threadForRow(await t3Seam(), await rowRepoPathFor(db, row.repo), row),
   };
 }
 

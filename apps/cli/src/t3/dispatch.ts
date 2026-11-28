@@ -829,6 +829,7 @@ export async function findThreadForWorktree(
   seam: T3Seam,
   projectId: string,
   row: T3DispatchRow,
+  opts: { includeSettled?: boolean } = {},
 ): Promise<T3Thread | null> {
   const want = canonicalPath(row.worktree);
   const namesRef = titleNamesRef(row.ticket_ref);
@@ -837,7 +838,7 @@ export async function findThreadForWorktree(
     const listed = await seam.list({
       projectId,
       titleContains: row.ticket_ref,
-      settled: false,
+      ...(opts.includeSettled ? {} : { settled: false }),
       includeSubagents: false,
       limit: 100,
       ...(cursor === undefined ? {} : { cursor }),
@@ -858,6 +859,25 @@ export async function findThreadForWorktree(
     `gave up looking for an existing T3 thread for ${row.worktree} after ${ADOPTION_SCAN_MAX_PAGES} pages — settle the finished threads in this project, then re-run the drain`,
     "settle the finished threads in this project, then re-run the drain",
   );
+}
+
+/**
+ * OS-300: the T3 thread bound to this row's worktree, live first, else settled, as the ids a stamp records, or null
+ * when T3 proves there is none. Settled threads count: a builder that committed its verdict is usually settled by the close
+ * or the OS-288 sweep, and it is still the row's builder. Throws when it cannot say: T3 unreachable, no project
+ * registered for the checkout, or a scan that gave up (`findThreadForWorktree`), because "could not look" is not
+ * "nothing there".
+ */
+export async function threadForRow(
+  seam: T3Seam,
+  repoPath: string,
+  row: T3DispatchRow,
+): Promise<{ threadId: string; runId: string | null } | null> {
+  const project = t3ProjectFor(await seam.projects(), repoPath);
+  if (!project) throw new T3Error("refused", `no T3 project is registered for ${repoPath}`, `register the checkout as a T3 project (\`t3 project add ${repoPath}\`)`);
+  // A live thread wins over a settled one from an earlier attempt on the same worktree.
+  const thread = (await findThreadForWorktree(seam, project.id, row)) ?? (await findThreadForWorktree(seam, project.id, row, { includeSettled: true }));
+  return thread ? { threadId: thread.threadId, runId: thread.activeRunId ?? thread.latestRunId } : null;
 }
 
 /**
