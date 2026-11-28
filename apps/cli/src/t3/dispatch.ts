@@ -677,10 +677,16 @@ function effortFor(model: T3ProviderModel | undefined, modelId: string, requeste
  * run that dies later inside T3's activity view. `tierModel` absent keeps the project's own model (the
  * pre-1480 behaviour, kept for callers that have no tier). Pure.
  */
-export function modelSelectionFor(project: T3Project, capabilities: T3Capabilities, tierModel?: string): ModelResolution {
+export function modelSelectionFor(
+  project: T3Project,
+  capabilities: T3Capabilities,
+  tierModel?: string,
+  /** OS-132: what named `tierModel`, for the refusal: the profile's band (`tier model`) or the dispatch's `--model`. */
+  source = "tier model",
+): ModelResolution {
   const split = tierModel === undefined ? null : splitTierModel(tierModel);
   if (tierModel !== undefined && !split) {
-    return { selection: null, error: `tier model '${tierModel}' has an empty ${emptyHalfOf(tierModel)} — a qualified value needs a provider AND a model around the first colon`, tierConfig: true };
+    return { selection: null, error: `${source} '${tierModel}' has an empty ${emptyHalfOf(tierModel)} — a qualified value needs a provider AND a model around the first colon`, tierConfig: true };
   }
   const named = split?.providerInstanceId ?? null;
   const selection = project.defaultModelSelection ?? null;
@@ -694,7 +700,7 @@ export function modelSelectionFor(project: T3Project, capabilities: T3Capabiliti
   const instance = capabilities.providers.find((p) => p.providerInstanceId === instanceId);
   if (!instance) {
     return named
-      ? { selection: null, error: `T3 does not advertise the provider instance '${instanceId}' the tier model '${tierModel}' names`, tierConfig: true }
+      ? { selection: null, error: `T3 does not advertise the provider instance '${instanceId}' the ${source} '${tierModel}' names`, tierConfig: true }
       : { selection: null, error: `T3 does not advertise the provider instance '${instanceId}' the project's default model names` };
   }
   const constraints = instance.constraints ?? [];
@@ -709,7 +715,7 @@ export function modelSelectionFor(project: T3Project, capabilities: T3Capabiliti
   if (split && !(instance.models ?? []).some((m) => m.id === model)) {
     return {
       selection: null,
-      error: `T3's catalog does not list model '${model}' on provider '${instanceId}'`,
+      error: `T3's catalog does not list ${source === "tier model" ? "model" : source} '${model}' on provider '${instanceId}'`,
       tierConfig: true,
     };
   }
@@ -798,6 +804,8 @@ export interface T3DispatchRow {
   effort?: string | null;
   /** OB-1991: a model trial leg's own model, which beats the tier's (and any profile's). */
   trial_model?: string | null;
+  /** OS-132: the model `--model` named for this row, which beats the band's (and any profile's); a trial leg's beats it. */
+  model_ask?: string | null;
   /** OS-145: the route's effort, used when the row names none and the model lists that level. */
   route_effort?: string | null;
 }
@@ -965,13 +973,17 @@ export async function resolveModelAndEffort(
   complexity: number,
   models: BuilderModels,
   requested: SpinoffEffort | undefined,
+  /** OS-132: the `--model` the row asked for, already in `models`; a refusal then points at the flag, not the profile. */
+  asked?: string | null,
 ): Promise<{ model: ModelResolution & { selection: T3ModelSelection }; effort: EffortResolution } | { refusal: LaunchRefusal }> {
   const bandModel = modelForComplexity(models, complexity);
   const caps = await capabilitiesWithModel(seam, project, bandModel);
-  const model = modelSelectionFor(project, caps, bandModel);
+  const model = modelSelectionFor(project, caps, bandModel, asked ? "--model" : undefined);
   if (!model.selection) {
     // Two different remedies: a band model T3 cannot serve is ob's config; everything else is the T3 project's.
-    const remedy = model.tierConfig
+    const remedy = model.tierConfig && asked
+      ? `re-dispatch with a --model T3 lists for this project (\`<provider>:<model>\`, as \`ob models show\` names them), or without --model`
+      : model.tierConfig
       ? `set ${rangeRoute(bandFor(models, complexity))}, the builder range covering ${complexity}, to a model T3 lists (\`ob models show\`, \`ob models set ${rangeRoute(bandFor(models, complexity))} <model>\`, \`ob models use <profile>\`; an older spinoff_tier_models setting also feeds the 1-3, 4-6 and 7-10 bands), or re-dispatch with another --complexity`
       : `set ${project.title}'s default model in T3 Code (Project settings → model)`;
     return { refusal: { reason: `${model.error ?? "no model resolved"} (complexity ${complexity})`, remedy } };
@@ -1010,11 +1022,13 @@ export function opusHighRefusal(model: string, complexity: number, effort: Spino
  * never launched, because his ask (if any) was not for this model. Throws a T3 refusal; no-op otherwise.
  */
 export function refuseRaisedOpusHigh(
-  row: { ticket_ref: string; tier: string | null; complexity?: number | null; effort: string | null },
+  row: { ticket_ref: string; tier: string | null; complexity?: number | null; effort: string | null; model_ask?: string | null },
   models: BuilderModels,
   raisedFrom: number | null,
 ): void {
   if (raisedFrom === null) return;
+  // OS-132: an explicit --model is what launches, raised or not, and it was checked against the ask at dispatch.
+  if (row.model_ask) return;
   const c = rowComplexity(row);
   const bandModel = modelForComplexity(models, c);
   if (!opusHighRefusal(bandModel, c, rowEffort(row.effort), undefined)) return;
@@ -1065,22 +1079,25 @@ export function withOpusHighNote<N extends string | null | undefined>(note: N, a
 }
 
 /**
- * Refuse a `--effort` the band's model cannot take, BEFORE the row is queued (OB-1815): the launch resolves
- * the model after the enqueue, which is too late to leave no pending row. Runs on the machine with T3, only
- * when `--effort` is named, and throws a refusal that says nothing was queued.
+ * Refuse a `--effort` the band's model cannot take, or a `--model` T3 cannot serve (OS-132), BEFORE the row is
+ * queued (OB-1815): the launch resolves the model after the enqueue, which is too late to leave no pending row.
+ * Runs on the machine with T3, only when `--effort` or `--model` is named, and throws a refusal that says
+ * nothing was queued. A `--model` replaces the band's model for this check exactly as it does at launch.
  */
 export async function refuseUnusableEffort(
   seam: T3Seam,
   repoPath: string,
   complexity: number,
-  models: BuilderModels,
-  effort: SpinoffEffort,
+  bandModels: BuilderModels,
+  effort: SpinoffEffort | undefined,
   opusHighAsk?: string,
+  model?: string,
 ): Promise<void> {
+  const models = model ? withModelAt(bandModels, complexity, model) : bandModels;
   // OB-2107: Opus above its default needs his ask, checked before T3 is asked anything.
   refuseOpusHigh(models, complexity, effort, opusHighAsk);
   const project = await refuseUnregisteredT3Project(seam, repoPath);
-  const resolved = await resolveModelAndEffort(seam, project, complexity, models, effort);
+  const resolved = await resolveModelAndEffort(seam, project, complexity, models, effort, model ?? null);
   if ("refusal" in resolved) {
     throw new UsageError(`not dispatched: ${resolved.refusal.reason} — ${resolved.refusal.remedy}. Nothing was queued.`);
   }
@@ -1161,13 +1178,17 @@ export async function launchT3Spinoff(
     );
   }
   // OB-1991: a trial leg launches on the trial's model for its leg, whatever the band (or a profile) says.
-  const models = row.trial_model ? withModelAt(tierModels, complexity, row.trial_model) : tierModels;
+  // OS-132: a row that named --model launches on it the same way, for this row only; the profile is untouched.
+  const asked = row.model_ask ?? null;
+  const override = row.trial_model ?? asked;
+  const models = override ? withModelAt(tierModels, complexity, override) : tierModels;
   const own = rowEffort(row.effort);
-  const routeEffort = own === undefined && row.route_effort && isSpinoffEffort(row.route_effort) ? row.route_effort : undefined;
-  let resolved = await resolveModelAndEffort(seam, project, complexity, models, own ?? routeEffort);
+  // OS-132: a route's effort was set for the band's model, so a --model row with no --effort runs at its model's default.
+  const routeEffort = own === undefined && !asked && row.route_effort && isSpinoffEffort(row.route_effort) ? row.route_effort : undefined;
+  let resolved = await resolveModelAndEffort(seam, project, complexity, models, own ?? routeEffort, asked);
   if ("refusal" in resolved && routeEffort !== undefined) {
     // OS-145: the route's effort is a preference across its chain; a model that does not take it runs at its default.
-    const plain = await resolveModelAndEffort(seam, project, complexity, models, undefined);
+    const plain = await resolveModelAndEffort(seam, project, complexity, models, undefined, asked);
     if (!("refusal" in plain)) {
       warn(`  ↳ ${row.ticket_ref}: ${modelForComplexity(models, complexity)} does not take the route's effort ${routeEffort}; it runs at its default`);
       resolved = plain;

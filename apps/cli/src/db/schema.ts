@@ -637,6 +637,11 @@ export const spinoff = sqliteTable("spinoff", {
 	// updating_pr while launched, gating | owner_merge_call while ready-for-gate. NULL in every other status, and
 	// on every row from before this migration (no backfill: a guessed phase is worse than none).
 	phase: text(),
+	// appended by migration 0007_spinoff_model_ask (OS-132, ADD COLUMN lands last): the model `--model` named at
+	// dispatch (`[provider:]model`), which the launch uses in place of the complexity band's model for THIS row only.
+	// The models profile and `spinoff_tier_models` are not touched. `model` stays what the launch actually ran on.
+	// NULL = none named (the band's model), and every row from before this migration.
+	model_ask: text("model_ask"),
 },
 (table) => [
 	// PARTIAL, as 0000 created it: one ACTIVE spinoff per ticket, any number of finished ones. The

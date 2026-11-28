@@ -80,7 +80,7 @@ import { assertSpikeDocsOnly, formatSpikeReport, isSpikeTagged, spikeClaimsRevie
 import { renderSendBack, sendBackSpinoff, type SendBackDeps } from "../spinoff-sendback.ts";
 import { renderReopen, reopenSpinoff, type ReopenDeps } from "../spinoff-reopen.ts";
 import { isLandable, noteErrorLine, reportGateable, type GateableFacts, type GateableSource, type PlannedFiles } from "../spinoff-gateable.ts";
-import { DEFAULT_COMPLEXITY, TIER_COMPLEXITY, URGENT_COMPLEXITY, complexityLabel, complexityOf, tierOfComplexity, type RangeModel } from "../../../../apps/cli/src/models-file.ts";
+import { DEFAULT_COMPLEXITY, TIER_COMPLEXITY, URGENT_COMPLEXITY, complexityLabel, complexityOf, emptyHalfOf, splitTierModel, tierOfComplexity, withModelAt, type RangeModel } from "../../../../apps/cli/src/models-file.ts";
 import {
   T3_LAUNCHER,
   dispatchComplexityFlags,
@@ -704,6 +704,8 @@ export interface SpinoffRow {
   // null = not a trial leg
   trial_leg?: string | null;
   trial_model?: string | null;
+  // OS-132 (0007): the model --model named at dispatch, which the launch uses over the band's; null = none named
+  model_ask?: string | null;
   // OB-2172 (0044): why the last readying note did not reach the architect, `<iso time> <reason>`; null = it went
   note_error?: string | null;
   // OS-177 (0004): the architect's 1-10 score, the routing key; null = queued before OS-177 (reads as its tier's value)
@@ -726,6 +728,7 @@ export interface EnqueueInput {
   decision?: DecisionOpts | undefined; // --note/-m (1515): why this was dispatched at this tier; recorded on the item's trail
   trialLeg?: "a" | "b" | null | undefined; // OB-1991: a trial leg; b's worktree and builder id carry `-b`
   trialModel?: string | null | undefined; // OB-1991: the model the trial launches this leg on, over the tier's model
+  model?: string | null | undefined; // --model (OS-132): this row's model over the band's; absent = the band's, nothing recorded
 }
 
 /**
@@ -1016,9 +1019,12 @@ export async function enqueueSpinoff(
     // OB-2107: a re-rate moves a pending row onto another tier's model at the effort it already carries, so
     // Opus above its default needs his ask here too (a dispatch with no --effort skipped the check upstream).
     // The ask is the quote the dispatch's own note carries, so the API's enqueue is checked the same way.
-    if (active.status === "pending" && !isTrialRow(active) && ((want !== undefined && want !== activeC) || (input.effort && input.effort !== active.effort))) {
+    const newModel = input.model && input.model !== active.model_ask ? input.model : undefined; // OS-132
+    if (active.status === "pending" && !isTrialRow(active) && ((want !== undefined && want !== activeC) || (input.effort && input.effort !== active.effort) || newModel)) {
       const c = want ?? priorC ?? DEFAULT_COMPLEXITY;
-      refuseOpusHigh(await tierModelsOrRefuse(s), c, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
+      const asked = input.model ?? active.model_ask ?? null;
+      const bands = await tierModelsOrRefuse(s);
+      refuseOpusHigh(asked ? withModelAt(bands, c, asked) : bands, c, (input.effort ?? rowEffortOf(active.effort)) as SpinoffEffort | undefined, opusHighAskOf(input.decision?.note));
     }
     if (want !== undefined && want !== activeC && active.status === "pending") {
       const tier = tierOfComplexity(want);
@@ -1031,6 +1037,11 @@ export async function enqueueSpinoff(
     if (input.effort && input.effort !== active.effort && active.status === "pending") {
       await s.q.update(s.t.spinoff).set({ effort: input.effort }).where(eq(s.t.spinoff.id, active.id));
       active.effort = input.effort;
+    }
+    // OS-132: --model follows --effort: a still-PENDING row takes the newer model; no --model leaves it alone.
+    if (newModel && active.status === "pending" && !isTrialRow(active)) {
+      await s.q.update(s.t.spinoff).set({ model_ask: newModel }).where(eq(s.t.spinoff.id, active.id));
+      active.model_ask = newModel;
     }
     return {
       row: active,
@@ -1069,6 +1080,8 @@ export async function enqueueSpinoff(
       effort: input.effort ?? null,
       trial_leg: input.trialLeg ?? null,
       trial_model: input.trialModel ?? null,
+      // OS-132: only a model that was NAMED is recorded; the launch stamps `model` with what it ran on.
+      model_ask: input.model ?? null, // OS-132: a --model dispatch runs no trial, so a trial row never carries one
       status: "pending",
       request_at: nowIso(),
     })
@@ -1449,8 +1462,9 @@ export interface LaunchEffect {
 }
 
 /** The one stderr line an urgent launch owes: the raise, or that an adopted thread kept its model (OB-2075). */
-export function warnUrgentTier(ticketRef: string, raisedFrom: number | null, adopted: boolean | undefined): void {
+export function warnUrgentTier(ticketRef: string, raisedFrom: number | null, adopted: boolean | undefined, modelAsk?: string | null): void {
   if (adopted) warn(`  ↳ ${ticketRef} is urgent, but its adopted T3 thread keeps its model`);
+  else if (modelAsk) warn(`  ↳ ${ticketRef} is urgent, but it runs on the --model it named (${modelAsk})${raisedFrom !== null ? `; its score is still raised from ${raisedFrom}` : ""}`);
   else if (raisedFrom !== null) warn(`  ↳ ${ticketRef} ${complexityLabel(URGENT_COMPLEXITY)} (urgent, raised from ${raisedFrom})`);
 }
 
@@ -1487,7 +1501,7 @@ export async function t3LauncherFor(db: Database | Store, row: SpinoffRow): Prom
     refuseRaisedOpusHigh(r, models, raisedFrom); // OB-2107
     return launchT3Spinoff(seam, r, repoPath, title, models, urgent);
   }, [], routeMoveRecorder(db, row));
-  if (urgent) warnUrgentTier(row.ticket_ref, raisedFrom, outcome.adopted);
+  if (urgent) warnUrgentTier(row.ticket_ref, raisedFrom, outcome.adopted, row.model_ask);
   warn(
     outcome.adopted
       ? `  ↳ ${row.ticket_ref} adopted T3 thread ${outcome.threadId} (a previous attempt opened it)`
@@ -1505,6 +1519,23 @@ export function effortFlag(raw: string | undefined): SpinoffEffort | undefined {
   const v = raw.trim();
   if (!isSpinoffEffort(v)) throw new UsageError(effortRejection("spinoff --effort", raw));
   return v;
+}
+
+/**
+ * `--model <[provider:]model>` (OS-132): undefined when absent, the trimmed value otherwise, and a UsageError for
+ * an empty value or an empty half around the colon. Whether T3 serves it is checked before the enqueue. Pure.
+ */
+export function modelFlag(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const v = raw.trim();
+  if (v === "") throw new UsageError("spinoff --model needs a model id, as `<model>` or `<provider>:<model>` (no --model = the complexity band's model)");
+  if (!splitTierModel(v)) throw new UsageError(`spinoff --model '${raw}' has an empty ${emptyHalfOf(v)}: use \`<model>\` or \`<provider>:<model>\``);
+  return v;
+}
+
+/** The asked-model half of a queue line (OS-132): `; model: <id> (--model)`, or nothing. Pure. */
+function modelAskNote(row: { model_ask?: string | null }): string {
+  return row.model_ask ? `; model: ${row.model_ask} (--model)` : "";
 }
 
 /** The effort half of a queue or launch line (OB-1815): `; effort: high`, or nothing when no text is known. Pure. */
@@ -1540,8 +1571,8 @@ function tierNote(row: { complexity?: number | null; tier?: string | null }, def
  */
 export function renderQueuedLine(row: SpinoffRow, deduped: boolean, tierNamed: boolean, urgent?: UrgentTierNote | null): string {
   const tier = tierNote(row, !tierNamed && !deduped, urgent);
-  if (deduped) return `already ${spinoffStatusWord(row.status)}: ${row.ticket_ref} (#${row.id})${threadNote(row.t3_thread_id)}; ${tier}${effortNote(row.effort)}`;
-  return `queued ${row.ticket_ref} → ${row.branch} (#${row.id})${row.launcher ? ` via ${row.launcher}` : ""}; ${tier}${effortNote(row.effort)}; 'ob spinoff drain' launches it`;
+  if (deduped) return `already ${spinoffStatusWord(row.status)}: ${row.ticket_ref} (#${row.id})${threadNote(row.t3_thread_id)}; ${tier}${modelAskNote(row)}${effortNote(row.effort)}`;
+  return `queued ${row.ticket_ref} → ${row.branch} (#${row.id})${row.launcher ? ` via ${row.launcher}` : ""}; ${tier}${modelAskNote(row)}${effortNote(row.effort)}; 'ob spinoff drain' launches it`;
 }
 
 /** ` in T3 thread <id>` when the row has opened one, so a re-dispatch is pointed at the live builder; else empty. */
@@ -1560,7 +1591,20 @@ export function renderAlreadyLine(row: SpinoffRow, statusWord: string): string {
 /** The line a bare `ob spinoff <ref>` prints once its thread is open (1589), local, split and API alike. */
 export function renderLaunchedLine(row: SpinoffRow, threadId: string | null, model: string | null, deduped: boolean, tierNamed: boolean, effort?: string | null, urgent?: UrgentTierNote | null): string {
   const tier = tierNote(row, !tierNamed && !deduped, urgent);
-  return `launched ${row.ticket_ref} → ${row.branch} (#${row.id}) in T3 thread ${threadId ?? "(no id)"}${model ? ` on ${model}` : ""}; ${tier}${effortNote(effort)}`;
+  return `launched ${row.ticket_ref} → ${row.branch} (#${row.id}) in T3 thread ${threadId ?? "(no id)"}${model ? ` on ${model}${ranModelAsk(row, model) ? " (--model)" : ""}` : ""}; ${tier}${effortNote(effort)}`;
+}
+
+/**
+ * OS-132: the row named --model and the model it ran on is that model. An adopted thread keeps its own model, so
+ * the stamp then names another one and the line must not say --model took effect. The provider is compared too
+ * when the ask names one (the stamp is always qualified). Pure.
+ */
+export function ranModelAsk(row: { model_ask?: string | null }, ran: string | null): boolean {
+  if (!row.model_ask || !ran) return false;
+  const split = (m: string) => (m.includes(":") ? [m.slice(0, m.indexOf(":")), m.slice(m.indexOf(":") + 1)] : [null, m]);
+  const [askP, askM] = split(row.model_ask);
+  const [ranP, ranM] = split(ran.split(" ")[0]!); // a stamp may carry " (profile X)"
+  return askM === ranM && (askP === null || askP === ranP);
 }
 
 /**
@@ -5964,7 +6008,7 @@ export async function launchRowIn(
     [],
     recordMove,
   );
-  if (urgent) warnUrgentTier(row.ticket_ref, urgent.raisedFrom, outcome.adopted);
+  if (urgent) warnUrgentTier(row.ticket_ref, urgent.raisedFrom, outcome.adopted, row.model_ask);
   warn(
     outcome.adopted
       ? `  ↳ ${row.ticket_ref} adopted T3 thread ${outcome.threadId} (a previous attempt opened it)`
@@ -6065,7 +6109,8 @@ export function renderSpinoffShow(row: SpinoffRow, json: boolean, state?: string
     // launch actually ran on, stamped — never re-derived from today's tier map.
     // OS-177: the score; a row queued before OS-177 reads as its tier's value, and says so.
     `  rated:     ${showComplexity(row)}`,
-    `  model:     ${row.model ?? "-"}`,
+    // OS-132: a row that named --model says so; a pending one shows the model it will launch on.
+    `  model:     ${row.model ? `${row.model}${ranModelAsk(row, row.model) ? " (--model)" : row.model_ask ? ` (asked --model ${row.model_ask}; adopted thread kept its own)` : ""}` : row.model_ask ? `${row.model_ask} (--model, not launched yet)` : "-"}`,
     // OB-1815: the stamped effort text; a row with none (not launched, or queued before 0039) says `default`.
     `  effort:    ${row.effort ?? "default"}`,
     `  agent:     ${row.agent_id ?? "-"}`,
@@ -6830,6 +6875,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   }
   const complexity = dispatchComplexityFlags(flag(ctx, "complexity"), flag(ctx, "tier")); // OS-177: refused before anything is read or written
   const effort = effortFlag(flag(ctx, "effort")); // OB-1815: the same, at the flag
+  const model = modelFlag(flag(ctx, "model")); // OS-132: this row's model over the band's, the profile untouched
   let custom = flag(ctx, "brief");
   if (custom === "-") custom = await readStdin();
   const under = flag(ctx, "holder") ?? "";
@@ -6838,7 +6884,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   const allowPaused = flag(ctx, "allow-paused"); // OS-134
 
   if (!queueOnly && ctx.remote) {
-    await enqueueAndLaunchSplit(ctx, ctx.remote, rawRef, { launcher: launcherFlag, complexity, effort, brief: custom, under });
+    await enqueueAndLaunchSplit(ctx, ctx.remote, rawRef, { launcher: launcherFlag, complexity, effort, model, brief: custom, under });
     return;
   }
 
@@ -6871,12 +6917,15 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // OB-1815: a level the tier's model cannot take is refused here, before the row exists, for the same reason.
   // `queue` skips it: that is the server's DB half and T3 is on the caller's machine, which ran the check.
   // OB-2075: the check reads the tier the build will run on, and an urgent ticket runs on complex whatever was named.
-  if (effort !== undefined) {
+  // OS-132: a --model T3 cannot serve (unknown, its provider not advertised or unusable) is refused here the same way.
+  if (effort !== undefined || model !== undefined) {
     const named = complexity ?? DEFAULT_COMPLEXITY;
     const effortTier = (await itemIsUrgent(store, await ticketItemIdFor(store, ticketRef))) ? Math.max(named, URGENT_COMPLEXITY) : named;
     // OB-2107: the Opus-high check needs no T3, so `queue` runs it too (the split client forwards --opus-high).
-    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(store), effortTier, effort, flag(ctx, "opus-high"));
-    else await refuseUnusableEffortFor(store, repo, effortTier, effort, flag(ctx, "opus-high"));
+    if (queueOnly) {
+      const bands = await tierModelsOrRefuse(store);
+      refuseOpusHigh(model ? withModelAt(bands, effortTier, model) : bands, effortTier, effort, flag(ctx, "opus-high"));
+    } else await refuseUnusableEffortFor(store, repo, effortTier, effort, flag(ctx, "opus-high"), model);
   }
   // The thread's FIRST item is the work order itself (1162): the ticket's title + what to build +
   // acceptance + do not, read off `repo`'s checkout, then the directive to run the spinoff skill. Still
@@ -6893,7 +6942,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
   // OB-1991: while a model trial is active, a dispatch at its tier runs twice, same brief, one row per leg.
   // `queue` is the split client's DB half and stays single; so does `--no-trial`.
   // OB-2230: a flake ticket runs no trial either: two legs would be two flake fixes on one machine.
-  if (!queueOnly && ctx.flags["no-trial"] !== true && !flake) {
+  // OS-132: nor does a --model dispatch: the model was named, so there is nothing to trial.
+  if (!queueOnly && ctx.flags["no-trial"] !== true && !flake && model === undefined) {
     const paired = await dispatchTrialPair({
       plan: async () => refuseOpusHighTrial(await trialPlanFor(store, complexity ?? DEFAULT_COMPLEXITY), complexity ?? DEFAULT_COMPLEXITY, flag(ctx, "opus-high")),
       open: (plan) => openPair(store, { trial_id: plan.trial.id, ticket_ref: ticketRef, repo }),
@@ -6953,6 +7003,7 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
     launcher: launcherFlag,
     complexity,
     effort,
+    model,
     decision: dispatchDecisionOf(ctx), // OB-2107: carries the --opus-high quote
   });
   // 1226: a ref two sequences both claim — the mirror whose ticket path names it, and the item whose id it
@@ -6978,8 +7029,8 @@ export async function cmdSpinoff(ctx: Ctx): Promise<void> {
  * The pre-enqueue check of `--effort` (OB-1815), run where T3 is (this machine). The repo path and the tier →
  * model map are the ones a launch from here would read, so the check and the launch agree.
  */
-async function refuseUnusableEffortFor(db: Database | Store, repo: string, complexity: number, effort: SpinoffEffort, opusHighAsk?: string): Promise<void> {
-  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), complexity, await tierModelsOrRefuse(db), effort, opusHighAsk);
+async function refuseUnusableEffortFor(db: Database | Store, repo: string, complexity: number, effort: SpinoffEffort | undefined, opusHighAsk?: string, model?: string): Promise<void> {
+  await refuseUnusableEffort(await t3Seam(), await rowRepoPathFor(db, repo), complexity, await tierModelsOrRefuse(db), effort, opusHighAsk, model);
 }
 
 /** A pending row's recorded effort, or undefined when it names none (or one no longer known). */
@@ -7017,7 +7068,7 @@ async function enqueueAndLaunchSplit(
   ctx: Ctx,
   remote: RemoteWriter,
   rawRef: string,
-  opts: { launcher?: string | undefined; complexity?: number | undefined; effort?: SpinoffEffort | undefined; brief?: string | undefined; under: string },
+  opts: { launcher?: string | undefined; complexity?: number | undefined; effort?: SpinoffEffort | undefined; model?: string | undefined; brief?: string | undefined; under: string },
 ): Promise<void> {
   const argv = ["spinoff", "queue", rawRef];
   const repoFlag = flag(ctx, "repo");
@@ -7032,11 +7083,11 @@ async function enqueueAndLaunchSplit(
   await refuseOverUsage({ ref: rawRef, critical: async () => itemIsCritical(ctx.db, await ticketItemIdFor(ctx.db, rawRef)), overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   // OB-2230: the builder launches HERE, so the box is checked here; the server's `queue` takes and refuses the slot.
   if (!flakeBoxPresent() && (await ticketIsFlake(ctx.db, rawRef))) warn(noFlakeBoxWarning(rawRef));
-  // OB-1815: T3 is on THIS machine, so the check of --effort runs here, before anything crosses the wire.
-  if (opts.effort !== undefined) {
+  // OB-1815: T3 is on THIS machine, so the check of --effort (and OS-132's --model) runs here, before anything crosses the wire.
+  if (opts.effort !== undefined || opts.model !== undefined) {
     const urgent = await itemIsUrgent(ctx.db, await ticketItemIdFor(ctx.db, rawRef)); // OB-2075
     const named = opts.complexity ?? DEFAULT_COMPLEXITY;
-    await refuseUnusableEffortFor(ctx.db, repo, urgent ? Math.max(named, URGENT_COMPLEXITY) : named, opts.effort, flag(ctx, "opus-high"));
+    await refuseUnusableEffortFor(ctx.db, repo, urgent ? Math.max(named, URGENT_COMPLEXITY) : named, opts.effort, flag(ctx, "opus-high"), opts.model);
   }
   if (repoFlag !== undefined) argv.push("--repo", repoFlag);
   // OB-2107: --opus-high crosses too: the server's `queue` re-checks it and puts the quote on the trail note.
@@ -7047,6 +7098,7 @@ async function enqueueAndLaunchSplit(
   if (opts.launcher !== undefined) argv.push("--launcher", opts.launcher);
   if (opts.complexity !== undefined) argv.push("--complexity", String(opts.complexity));
   if (opts.effort !== undefined) argv.push("--effort", opts.effort);
+  if (opts.model !== undefined) argv.push("--model", opts.model); // OS-132
   if (opts.brief !== undefined) argv.push("--brief", opts.brief);
   // --repo crosses the wire as a SLUG (217), resolved here against this machine's checkouts.
   const rewrite = rewriteSpinoffRepoArgv({ argv, command: "spinoff", args: ["queue", rawRef], flags: ctx.flags as unknown as Record<string, unknown>, db: ctx.db, ticketRepo: fromProject?.repo });

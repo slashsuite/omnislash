@@ -67,6 +67,7 @@ import {
   type UrgentTierNote,
   tierModelsOrRefuse,
   effortFlag,
+  modelFlag,
   prepareLaunchIn,
   renderCleanupLines,
   renderDrainLines,
@@ -160,7 +161,7 @@ import { ApiError, usageOn400, type ApiClient } from "./client.ts";
 import { flakeBoxPresent, noFlakeBoxWarning } from "../../../../platform/cli-coord/src/spinoff-flake.ts";
 import type { ApiCtx } from "./client-handlers.ts";
 import type { EnqueueSpinoffRequest, SpinoffConfig } from "./contract.ts";
-import { DEFAULT_COMPLEXITY, URGENT_COMPLEXITY, tierOfComplexity } from "../models-file.ts";
+import { DEFAULT_COMPLEXITY, URGENT_COMPLEXITY, tierOfComplexity, withModelAt } from "../models-file.ts";
 import { dispatchComplexityFlags, refuseUnregisteredT3Project, refuseUnusableEffort, refuseOpusHigh, refuseOpusHighTrial, withOpusHighNote, T3_LAUNCHER, t3Seam, announceReadyNote, canonicalPath, clearTeamNeedsHuman, threadForRow, mirrorT3Runs, stopThreadOverT3, renderReadyNoteOutcome, t3ThreadHold, tierFitOf, worktreeRepoOf, type AgentRegistry, type ReadyNoteOutcome } from "../t3/dispatch.ts";
 
 // --- the refusals: they name THIS machine, never the API host ----------------
@@ -1000,6 +1001,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   // OS-177: `--complexity` is the routing key; `--tier` is its alias, with one stderr note. Both: exit 2.
   const complexity = dispatchComplexityFlags(flag(ctx, "complexity"), flag(ctx, "tier"));
   const effort = effortFlag(flag(ctx, "effort")); // OB-1815
+  const model = modelFlag(flag(ctx, "model")); // OS-132: this row's model over the band's, the profile untouched
   const under = flag(ctx, "holder") ?? "";
   // 1589: a foreign hold is refused BEFORE the enqueue, so a refused dispatch leaves no pending row behind.
   if (!queueOnly) {
@@ -1010,13 +1012,16 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   // the server records --over-usage on the trail and does not check (it has no cache).
   await refuseOverUsage({ ref: ticketRef, critical: async () => (await apiItemPriority(ctx.client, ticketRef)) === "critical", overUsage: flag(ctx, "over-usage"), verb: "dispatched" });
   // OB-1815: and an effort the tier's model cannot take, for the same reason. T3 is on this machine.
-  if (effort !== undefined) {
+  // OS-132: and a --model T3 cannot serve (unknown, its provider not advertised or unusable).
+  if (effort !== undefined || model !== undefined) {
     // OB-2075, OS-177: an urgent ticket runs at complexity 7 or more, so the level is checked against that band's model.
     const named = complexity ?? DEFAULT_COMPLEXITY;
     const effortC = (await apiItemUrgent(ctx.client, ticketRef)) ? Math.max(named, URGENT_COMPLEXITY) : named;
     // OB-2107: `queue` skips the T3 half (the launch checks it) but not the Opus-high check, which needs no T3.
-    if (queueOnly) refuseOpusHigh(await tierModelsOrRefuse(), effortC, effort, flag(ctx, "opus-high"));
-    else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortC, await tierModelsOrRefuse(), effort, flag(ctx, "opus-high"));
+    if (queueOnly) {
+      const bands = await tierModelsOrRefuse();
+      refuseOpusHigh(model ? withModelAt(bands, effortC, model) : bands, effortC, effort, flag(ctx, "opus-high"));
+    } else await refuseUnusableEffort(await t3Seam(), rowRepoPathIn(cfg, repo), effortC, await tierModelsOrRefuse(), effort, flag(ctx, "opus-high"), model);
   }
   const mode: SpinoffMode = "interactive";
   let custom = flag(ctx, "brief");
@@ -1043,6 +1048,7 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
     complexity: complexity ?? null,
     tier: complexity !== undefined ? tierOfComplexity(complexity) : null,
     effort: effort ?? null,
+    model: model ?? null, // OS-132
     note: withOpusHighNote(flag(ctx, "note"), flag(ctx, "opus-high")) ?? null, // OB-2107
     no_check: flag(ctx, "no-check") ?? null,
     no_flake_slot: flag(ctx, "no-flake-slot") ?? null,
@@ -1055,7 +1061,8 @@ async function apiEnqueue(ctx: ApiCtx, sub: string, queueOnly: boolean): Promise
   };
   // OB-1991: while a model trial is active, a dispatch at its tier runs twice, same brief, one row per leg.
   // The pair's store work is the server's (POST /spinoffs/trial); each leg launches HERE, like any dispatch.
-  if (!queueOnly && ctx.flags["no-trial"] !== true) {
+  // OS-132: a --model dispatch runs no trial: the model was named, so there is nothing to trial.
+  if (!queueOnly && ctx.flags["no-trial"] !== true && model === undefined) {
     const paired = await dispatchTrialPair({
       plan: async () => {
         // an older server without the trial route has no trial: a single build

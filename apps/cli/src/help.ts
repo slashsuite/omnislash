@@ -885,7 +885,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     section: "Spinoffs & Agents",
     summary: "Dispatch, inspect, hand off, and clean up builder worktrees",
     usage: [
-      "spinoff <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--effort <e>] [flags]",
+      "spinoff <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--model <m>] [--effort <e>] [flags]",
       "spinoff <subcommand> [args]",
     ],
     acceptsPositional: true,
@@ -893,7 +893,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     subcommands: {
       queue: {
         summary: "Enqueue a spinoff row without launching it immediately",
-        usage: ["spinoff queue <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--effort <e>]"],
+        usage: ["spinoff queue <ticket|#issue> [--repo <slug|path>] [--complexity <1-10>] [--model <m>] [--effort <e>]"],
         flags: [
           { flag: "--repo <p>", description: "Target repo path or org/name slug" },
           { flag: "--branch <name>", description: "Explicit git branch name" },
@@ -901,6 +901,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
           { flag: "--launcher <l>", description: "Launcher (t3)" },
           { flag: "--complexity <n>", description: "Score 1-10 that picks the builder model (default 5)" },
           { flag: "--tier <tier>", description: "Old alias: simple=2, medium=5, complex=8" },
+          { flag: "--model <m>", description: "[provider:]model for this row only; the profile is untouched" },
           { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
           { flag: "--opus-high <q>", description: "Owner ask quote required for Opus high+ effort" },
           { flag: "--brief <path>", description: "Brief file or '-' for stdin" },
@@ -1202,7 +1203,8 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
       { flag: "--launcher <l>", description: "Launcher override (only t3 is routable)" },
       { flag: "--complexity <n>", description: "Score 1-10 that picks the builder model (default 5; urgent raises it to 7)" },
       { flag: "--tier <tier>", description: "Old alias: simple=2, medium=5, complex=8; not with --complexity" },
-      { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max" },
+      { flag: "--model <m>", description: "[provider:]model for this dispatch only, over the profile; urgent keeps it" },
+      { flag: "--effort <lvl>", description: "low, medium, high, xhigh, or max; refused when the model can't take it" },
       { flag: "--opus-high <q>", description: "Owner ask quote required for Opus at high+ effort" },
       { flag: "--brief <path>", description: "Custom brief file or '-' for stdin" },
       { flag: "-m, --note <why>", description: "Complexity rationale recorded on the Decisions trail" },
@@ -1215,12 +1217,14 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
     ],
     examples: [
       "spinoff APP-12 --complexity 5",
+      "spinoff APP-12 --model claude-haiku-5-5 --effort high",
       "spinoff gateable --team core",
       "spinoff handoff APP-12 --tier-fit right --tier-fit-why 'Clean fit'",
     ],
     notes: [
       "Enqueues, claims, opens/adopts a T3 thread, and stamps in one command.",
       "Flake tickets take the machine-wide flake:slot lease unless --no-flake-slot is passed.",
+      "--model is for that row only and skips a trial; a model T3 can't serve is refused before any row.",
     ],
   },
 

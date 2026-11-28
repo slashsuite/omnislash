@@ -2386,6 +2386,13 @@ exports[`DB migration safety-net (097) schema fingerprint is stable (golden the 
       "pk": 0,
       "type": "TEXT",
     },
+    {
+      "dflt": null,
+      "name": "model_ask",
+      "notnull": 0,
+      "pk": 0,
+      "type": "TEXT",
+    },
   ],
   "spinoff_trial": [
     {

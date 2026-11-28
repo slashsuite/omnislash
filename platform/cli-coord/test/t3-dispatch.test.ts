@@ -60,6 +60,8 @@ import {
   launchRowIn,
   listSpinoffs,
   localSpinoffSteps,
+  modelFlag,
+  ranModelAsk,
   reclaimSpinoffs,
   relaunchCreditFailures,
   stampArgv,
@@ -2089,7 +2091,7 @@ describe("credit error → next models profile (OB-1970)", () => {
   }
 
   /** Dispatch ticket 999 at medium; `refuse(model)` decides whether T3 refuses a launch on that model. */
-  async function dispatch(refuse: (model: string) => Error | null) {
+  async function dispatch(refuse: (model: string) => Error | null, extra: string[] = []) {
     const dbPath = freshDbPath();
     const db = openDb(dbPath);
     const repo = trackedRepo();
@@ -2108,7 +2110,7 @@ describe("credit error → next models profile (OB-1970)", () => {
       },
     };
     setT3Seam(fake.seam);
-    const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", "--tier", "medium"]);
+    const queued = await runCli(dbPath, ["spinoff", "queue", "--no-check", "a test fixture", "999", "--repo", repo, "--launcher", "t3", "--brief", "do it", "--tier", "medium", ...extra]);
     expect(queued.code).toBe(0);
     captureStderr();
     const drained = await drainSpinoffs(db);
@@ -2117,6 +2119,28 @@ describe("credit error → next models profile (OB-1970)", () => {
     const row = (await listSpinoffs(db))[0]!;
     return { db, dbPath, fake, attempts, drained, row };
   }
+
+  test("OS-132: a --model row out of credits fails on that model alone: no chain walked, no move, no profile marked", async () => {
+    modelsFile(PROFILES);
+    const { db, attempts, drained, row } = await dispatch((m) => (m === "claude-opus-5-5" ? CREDIT() : null), ["--model", "claude-opus-5-5"]);
+    expect(attempts).toEqual(["claude-opus-5-5"]);
+    expect(drained.failed).toHaveLength(1);
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain("credit balance");
+    expect(recentCreditHits()).not.toHaveProperty("other");
+    expect(recentCreditHits()).not.toHaveProperty("third");
+    expect(rowProfiles(row.id)).toEqual([]);
+    expect(stderr).not.toContain("route builder");
+    db.close();
+  });
+
+  test("OS-132: a --model row with no --effort runs at its model's default, not the route's effort", async () => {
+    modelsFile(`{"active": "p", "profiles": {"p": {"routes": {"builder.medium": {"chain": ["claudeAgent:claude-sonnet-5-5"], "effort": "low"}}}}}`);
+    const { db, fake, row } = await dispatch(() => null, ["--model", "claude-haiku-5-5"]);
+    expect(row.status).toBe("launched");
+    expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: "claude-haiku-5-5" });
+    db.close();
+  });
 
   test("a credit error on profile A relaunches on B, prints the named line and stamps B", async () => {
     modelsFile(PROFILES);
@@ -2523,5 +2547,157 @@ describe("OS-177: a 1-10 complexity score picks the builder range", () => {
 describe("t3 dispatch leaves the shell runner as it found it (OB-2145)", () => {
   test("after every test above, the real runner is installed", () => {
     expect(__shIsReal()).toBe(true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// OS-132: --model runs one dispatch on a model of its own, the models profile untouched
+// ---------------------------------------------------------------------------
+
+describe("spinoff --model for one dispatch (OS-132)", () => {
+  const OPUS = "claude-opus-5-5";
+  const HAIKU = "claude-haiku-5-5";
+  const PROFILE = `{"active":"claude","profiles":{"claude":{"builder":{"medium":"claudeAgent:${OPUS}"}}}}`;
+  let savedEnv: string | undefined;
+  let hadEnv = false;
+  afterEach(() => {
+    if (!hadEnv) return;
+    if (savedEnv === undefined) delete process.env.OB_MODELS_FILE;
+    else process.env.OB_MODELS_FILE = savedEnv;
+    hadEnv = false;
+  });
+
+  function profileFile(): string {
+    savedEnv = process.env.OB_MODELS_FILE;
+    hadEnv = true;
+    const dir = trackedDir(mkdtempSync(join(tmpdir(), "ob-models-os132-")));
+    const path = join(dir, "models.jsonc");
+    writeFileSync(path, PROFILE);
+    process.env.OB_MODELS_FILE = path;
+    return path;
+  }
+
+  /** The whole `ob spinoff <ref>` (or `sub`, such as `queue`) on a real item, with T3 and git faked. */
+  async function dispatchItem(args: string[], opts: { priority?: number; sub?: string[]; options?: Record<string, Array<{ id: string; values: string[]; default?: string }>> } = {}) {
+    const dbPath = freshDbPath();
+    const db = openDb(dbPath);
+    const ref = await createItem(db, { type: "task", title: "a model ask" });
+    if (opts.priority !== undefined) await editItem(db, ref, { priority: opts.priority });
+    const repo = trackedRepo();
+    const worktree = trackedDir(`${repo}.model-ask`);
+    stubGit();
+    const fake = fakeT3({ repoPath: repo, options: opts.options ?? { [OPUS]: [CLAUDE_EFFORT_OPTION], [HAIKU]: [CLAUDE_EFFORT_OPTION] } });
+    setT3Seam(fake.seam);
+    const run = (more: string[], sub = opts.sub ?? []) =>
+      runCli(dbPath, ["spinoff", ...sub, "--no-check", "a test fixture", ref, "--repo", repo, "--worktree", worktree, "--launcher", "t3", "--brief", "do it", ...more]);
+    const r = await run(args);
+    const row = (await listSpinoffs(db))[0] ?? null;
+    return { db, dbPath, fake, r, row, ref, run };
+  }
+
+  test("--model claude-haiku-5-5 launches on Haiku while the profile names Opus, and the profile file is unchanged", async () => {
+    const path = profileFile();
+    const before = readFileSync(path, "utf8");
+    const { db, dbPath, fake, r, row } = await dispatchItem(["--complexity", "5", "--model", HAIKU]);
+    expect(r.code).toBe(0);
+    expect(fake.launches).toHaveLength(1);
+    expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: HAIKU });
+    expect(row!.model_ask).toBe(HAIKU);
+    expect(row!.model).toContain(HAIKU);
+    expect(row!.complexity).toBe(5); // the score and its tier are still recorded
+    expect(row!.tier).toBe("medium");
+    expect(readFileSync(path, "utf8")).toBe(before);
+    const show = (await runCli(dbPath, ["spinoff", "show", String(row!.id)])).out;
+    expect(show).toMatch(/model:\s+\S*claude-haiku-5-5 \(--model\)/);
+    db.close();
+  });
+
+  test("without --model the same profile launches on Opus (the control)", async () => {
+    profileFile();
+    const { db, fake, r, row } = await dispatchItem(["--complexity", "5"]);
+    expect(r.code).toBe(0);
+    expect(fake.launches[0]!.modelSelection.model).toBe(OPUS);
+    expect(row!.model_ask).toBeNull();
+    db.close();
+  });
+
+  test("--model with --effort high launches with high effort, and show prints both", async () => {
+    const { db, dbPath, fake, r, row } = await dispatchItem(["--model", HAIKU, "--effort", "high"]);
+    expect(r.code).toBe(0);
+    expect(fake.launches[0]!.modelSelection).toEqual({ instanceId: "claudeAgent", model: HAIKU, options: [{ id: "effort", value: "high" }] });
+    const show = (await runCli(dbPath, ["spinoff", "show", String(row!.id)])).out;
+    expect(show).toContain("effort:    high");
+    expect(show).toContain(`${HAIKU} (--model)`);
+    db.close();
+  });
+
+  test.each([
+    ["an unknown model", "claude-nope-1", "claude-nope-1"],
+    ["a provider T3 does not advertise", "nosuch:some-model", "nosuch"],
+  ])("%s is refused by name, exits non-zero and leaves no row", async (_what, model, named) => {
+    const { db, fake, r, row } = await dispatchItem(["--model", model]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain(named);
+    expect(r.err).toContain("--model");
+    expect(r.err).toContain("Nothing was queued");
+    expect(row).toBeNull();
+    expect(fake.launches).toHaveLength(0);
+    db.close();
+  });
+
+  test("an effort the named model does not take is refused by name, with no row", async () => {
+    const { db, fake, r, row } = await dispatchItem(["--model", HAIKU, "--effort", "high"], { options: { [OPUS]: [CLAUDE_EFFORT_OPTION] } });
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain(`model '${HAIKU}' lists no effort or variant option`);
+    expect(row).toBeNull();
+    expect(fake.launches).toHaveLength(0);
+    db.close();
+  });
+
+  test("the Opus-high rule reads the named model: --model Opus --effort high on a Haiku score needs --opus-high", async () => {
+    const { db, r, row } = await dispatchItem(["--complexity", "2", "--model", OPUS, "--effort", "high"]);
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("--opus-high");
+    expect(row).toBeNull();
+    db.close();
+  });
+
+  test("urgent: the score is still raised to 7 and recorded, but the launch runs on the named model", async () => {
+    const { db, fake, r, row } = await dispatchItem(["--complexity", "3", "--model", HAIKU], { priority: PRIORITY_URGENT });
+    expect(r.code).toBe(0);
+    expect(row!.complexity).toBe(7);
+    expect(fake.launches[0]!.modelSelection.model).toBe(HAIKU);
+    expect(r.out + r.err).toContain("--model");
+    db.close();
+  });
+
+  test("a queued row keeps --model until launch, and a re-dispatch with a new --model re-rates it", async () => {
+    const { db, fake, r, row, run } = await dispatchItem(["--model", OPUS], { sub: ["queue"] });
+    expect(r.code).toBe(0);
+    expect(row!.model_ask).toBe(OPUS);
+    expect(r.out).toContain(`model: ${OPUS} (--model)`);
+    const again = await run(["--model", HAIKU], ["queue"]);
+    expect(again.code).toBe(0);
+    const rows = await listSpinoffs(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.model_ask).toBe(HAIKU);
+    expect((await drainSpinoffs(db)).failed).toEqual([]);
+    expect(fake.launches[0]!.modelSelection.model).toBe(HAIKU);
+    db.close();
+  });
+
+  test("an empty --model, or one with an empty half, is a usage error", () => {
+    // an adopted thread keeps its own model, so the launched line and show must not credit --model with it
+    expect(ranModelAsk({ model_ask: "claude-haiku-5-5" }, "claudeAgent:claude-haiku-5-5")).toBe(true);
+    expect(ranModelAsk({ model_ask: "claude-haiku-5-5" }, "claudeAgent:claude-opus-5-5")).toBe(false);
+    expect(ranModelAsk({ model_ask: null }, "claudeAgent:claude-haiku-5-5")).toBe(false);
+    expect(ranModelAsk({ model_ask: "codex:claude-haiku-5-5" }, "claudeAgent:claude-haiku-5-5")).toBe(false);
+    expect(ranModelAsk({ model_ask: "claudeAgent:claude-haiku-5-5" }, "claudeAgent:claude-haiku-5-5")).toBe(true);
+    expect(() => modelFlag("")).toThrow(/--model/);
+    expect(() => modelFlag(":x")).toThrow(/--model/);
+    expect(() => modelFlag("claudeAgent:")).toThrow(/--model/);
+    expect(modelFlag(" claude-haiku-5-5 ")).toBe(HAIKU);
+    expect(modelFlag(undefined)).toBeUndefined();
   });
 });

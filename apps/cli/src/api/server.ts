@@ -23,7 +23,7 @@ import {
   type LauncherName,
   type SpinoffMode,
 } from "../../../../platform/cli-coord/src/commands/spinoff.ts";
-import { SPINOFF_EFFORTS, SPINOFF_TIERS, type SpinoffEffort, type SpinoffTier } from "../t3/dispatch.ts";
+import { SPINOFF_EFFORTS, SPINOFF_TIERS, splitTierModel, type SpinoffEffort, type SpinoffTier } from "../t3/dispatch.ts";
 import type { TokenUsage } from "../../../../platform/cli-coord/src/spinoff-tokens.ts";
 import { VALID_TYPES, isValidStatus, statusVocab } from "../status.ts";
 import {
@@ -227,6 +227,14 @@ function unauthorized(): Response {
 // Each endpoint validates its OWN inputs (D1). These are the primitives, and they all fail the same way:
 // an `invalid_request` naming the field, never a coercion. `Boolean("0")` is true and `"10" >= 3` is
 // false, so a value that arrives as the wrong type is refused rather than quietly reinterpreted.
+
+/** OS-132: a `model` in a spinoff body, as `[provider:]model` with no empty half, or a 400 (never a row that fails at drain). */
+function modelAskOf(raw: string | undefined): string | null {
+  const model = raw?.trim();
+  if (!model) return null;
+  if (!splitTierModel(model)) bad(`'model' must be [provider:]model with both halves set, got '${model}'`);
+  return model;
+}
 
 function bad(message: string): never {
   throw new ApiFault("invalid_request", 400, message);
@@ -1348,6 +1356,7 @@ async function route(
       // OB-1815: and an unknown effort level, by name.
       const effort = optString(body, "effort")?.trim();
       if (effort) oneOf<SpinoffEffort>(effort, SPINOFF_EFFORTS, "effort");
+      const model = modelAskOf(optString(body, "model")); // OS-132: its shape here; T3's catalog by the client, on its machine
       return json(
         await h.enqueue(store, {
           ticket_ref: reqString(body, "ticket_ref"),
@@ -1369,6 +1378,7 @@ async function route(
           actor: optString(body, "actor") ?? null,
           trial_leg: trialLegOf(optString(body, "trial_leg")),
           trial_model: optString(body, "trial_model")?.trim() || null,
+          model,
         }),
         201,
       );
