@@ -49,6 +49,8 @@ import { formatHold, leaseHolderId, ticketLeaseKey, worktreeLeaseKey, type Lease
 import {
   cleanupWorktrees,
   settleStuckSpinoffs,
+  settleEndedBuilders,
+  endedBuilderReads,
   branchVerdictBase,
   formatReadyReport,
   rejectAgentFlag,
@@ -585,11 +587,13 @@ async function apiReconcile(
     warn(`  ⚠ stuck-row settle skipped: ${(e as Error).message}`);
   }
   const originDone = await apiLandedRefs(ctx, cfg, rows, doneIds);
+  const landing = new Set<number>(); // OS-226: rows the land pass acted on are not judged for an ended builder
   for (const row of rows) {
     const repo = rowRepoPathIn(cfg, row.repo); // a slug row (217) names its checkout on THIS machine
     const branchDone = isMerged(repo, row.branch) && countUnique(repo, row.base_sha, row.branch) > 0;
     const signalled = row.status === READY_FOR_GATE ? doneIds.has(row.ticket_ref) : originDone.has(row.id);
     if (!branchDone && !signalled) continue;
+    landing.add(row.id);
     // This machine's transcript, and only this machine's; OB-1991: the reader the row's model names.
     const usage = readRowTokens(row);
     const prUrl = mergedPrUrlFor(repo, row.branch); // OS-163: read HERE, where gh and the checkout are
@@ -618,6 +622,17 @@ async function apiReconcile(
     }
     merged.push(row.ticket_ref);
   }
+  // OS-226: a building row whose builder thread ended without a handoff is abandoned; the thread is read on this
+  // machine's T3, the stamp and the agent finish go over the API.
+  const steps = apiSpinoffSteps(ctx.client);
+  const ended = await settleEndedBuilders(
+    rows.filter((r) => !landing.has(r.id)),
+    endedBuilderReads(async (row) => isSpikeTagged(await apiItemTags(ctx.client, row.item_id ?? row.ticket_ref))),
+    steps.stamp,
+    steps.agentDone,
+  );
+  dbFailures.push(...ended.db_failures);
+  retired = [...retired, ...ended.retired];
   return { result: { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped, retired }, remoteError: null };
 }
 

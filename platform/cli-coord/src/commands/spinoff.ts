@@ -99,6 +99,8 @@ import {
   frontmatterField,
   launchT3Spinoff,
   threadForRow,
+  endedThreadReason,
+  THREAD_GONE,
   reconcileT3Runs,
   renderReadyNoteOutcome,
   storeAgentRegistry,
@@ -3139,7 +3141,10 @@ export interface ReconcileResult {
   mirrored?: T3MirrorEntry[];
   /** 1120: live `t3` rows whose thread could not be read, or reported a status this build does not know. */
   mirror_skipped?: T3MirrorSkip[];
-  /** OS-203: queued or stuck rows this pass failed because their ticket closed (see `settleStuckSpinoffs`). */
+  /**
+   * OS-203: queued or stuck rows this pass failed because their ticket closed (see `settleStuckSpinoffs`), and
+   * OS-226: building rows abandoned because their builder thread ended without a handoff (`settleEndedBuilders`).
+   */
   retired?: Array<{ ticket: string; error: string }>;
 }
 
@@ -3455,7 +3460,7 @@ export async function settleStuckSpinoffs(
  * read in its worktree. Null when the worktree is gone, no verdict was committed or git cannot say.
  */
 export function branchVerdictBase(row: Pick<SpinoffRow, "worktree" | "branch">): string | null {
-  if (!row.worktree || !existsSync(row.worktree) || readCommitState(row.worktree, row.branch) === null) return null;
+  if (!hasCommittedVerdict(row)) return null;
   const fork = sh(["git", "-C", row.worktree, "merge-base", mainRefFor(row.worktree), row.branch]);
   return fork.ok ? fork.out?.trim() || null : null;
 }
@@ -3472,6 +3477,83 @@ function localStuckReads(db: Database | Store, readCommits: (repo: string) => Co
     },
     committed: async (row) => branchVerdictBase(row),
     thread: async (row) => threadForRow(await t3Seam(), await rowRepoPathFor(db, row.repo), row),
+  };
+}
+
+/** OS-226: the reads `settleEndedBuilders` needs, so the store and the API client decide one way. */
+interface EndedBuilderReads {
+  /** Why the row's builder thread is over (`endedThreadReason`), or null while it may still run. Throws when T3 cannot say. */
+  ended(row: SpinoffRow): Promise<string | null>;
+  /** Did the builder commit a `State:` verdict on the row's branch? Such a row waits on a gate or a human, not a builder. */
+  committed(row: SpinoffRow): Promise<boolean>;
+  isSpike(row: SpinoffRow): Promise<boolean>;
+}
+
+/** OS-226: the error an ended builder's row is retired with. An `abandoned:` error, so `spinoff mix` reads it as retired. */
+function endedBuilderError(row: Pick<SpinoffRow, "ticket_ref" | "branch" | "t3_thread_id">, why: string): string {
+  return abandonedError(
+    `${row.ticket_ref}'s builder thread ${row.t3_thread_id} ${why} with no handoff and no State: verdict on ${row.branch}; reconcile retired the row (the branch and worktree are kept)`,
+  );
+}
+
+/**
+ * OS-226: abandon the building rows whose builder is over. A `launched` t3 row reads "building", which claims a live
+ * builder, so a row whose thread is gone, archived, settled or cancelled with no run in flight, and that was never
+ * handed off, kept the /machine count wrong for ever (130 such rows on 2026-11-25). Each is failed with an
+ * `abandoned:` error and its agent row is finished, which releases only the builder's own leases.
+ *
+ * Kept: a row whose builder committed a `State:` verdict (it waits on the architect or Jacobus, and OS-300 stamps
+ * such a row with its settled thread on purpose), a spike (it stays building until `ob close`), and any row T3
+ * cannot speak for. The caller passes only the rows that did not land this pass. Reports, never throws.
+ */
+export async function settleEndedBuilders(
+  rows: SpinoffRow[],
+  read: EndedBuilderReads,
+  stamp: SpinoffSteps["stamp"],
+  agentDone: SpinoffSteps["agentDone"],
+): Promise<{ retired: Array<{ ticket: string; error: string }>; db_failures: DbHalfFailure[] }> {
+  const out: { retired: Array<{ ticket: string; error: string }>; db_failures: DbHalfFailure[] } = { retired: [], db_failures: [] };
+  for (const row of rows) {
+    if (row.status !== "launched" || row.launcher !== T3_LAUNCHER || !row.t3_thread_id) continue;
+    try {
+      if (await read.committed(row)) continue;
+      const why = await read.ended(row);
+      if (!why || (await read.isSpike(row))) continue;
+      const error = endedBuilderError(row, why);
+      const stampError = await stamp({ id: row.id, outcome: "failed", error });
+      if (stampError) {
+        out.db_failures.push({ ticket: row.ticket_ref, detail: `${row.ticket_ref}: could not retire row #${row.id} (${error}): ${stampError}` });
+        continue;
+      }
+      out.retired.push({ ticket: row.ticket_ref, error });
+      const done = await agentDone(builderIdOf(row));
+      if (done.error) warn(`  ⚠ ${row.ticket_ref}: agent ${builderIdOf(row)} was not marked done: ${done.error} (retry: ob agent done ${builderIdOf(row)})`);
+    } catch (e) {
+      warn(`  ⚠ ${row.ticket_ref}: ended-builder check skipped: ${(e as Error).message}`);
+    }
+  }
+  return out;
+}
+
+/** OS-226: does the row's own worktree carry a committed `State:` verdict on its branch? */
+function hasCommittedVerdict(row: Pick<SpinoffRow, "worktree" | "branch">): boolean {
+  return !!row.worktree && existsSync(row.worktree) && readCommitState(row.worktree, row.branch) !== null;
+}
+
+/**
+ * OS-226: this machine's answers for `settleEndedBuilders`; T3 is connected once, on the first row that needs it.
+ * A thread this machine's T3 does not have is only gone when the row's worktree is on this machine: the API serves
+ * every machine's rows, and a builder launched elsewhere lives on that machine's T3, never on this one.
+ */
+export function endedBuilderReads(isSpike: (row: SpinoffRow) => Promise<boolean>): EndedBuilderReads {
+  let seam: ReturnType<typeof t3Seam> | null = null;
+  return {
+    ended: async (row) => {
+      const why = await endedThreadReason(await (seam ??= t3Seam()), row.t3_thread_id!);
+      return why === THREAD_GONE && !(row.worktree && existsSync(row.worktree)) ? null : why;
+    },
+    committed: async (row) => hasCommittedVerdict(row),
+    isSpike,
   };
 }
 
@@ -3553,6 +3635,7 @@ export async function reconcileSpinoffs(
   dbFailures.push(...stuck.db_failures);
   const rows = await landableSpinoffs(db);
   const landed = await landedTicketRefs(db, rows, readOriginCommits);
+  const landing = new Set<number>(); // OS-226: rows the land pass acted on are not judged for an ended builder
   for (const row of rows) {
     const repo = await rowRepoPathFor(db, row.repo); // a slug row (217) names its checkout on this machine
     const branchDone = isMerged(repo, row.branch) && countUnique(repo, row.base_sha, row.branch) > 0;
@@ -3564,6 +3647,7 @@ export async function reconcileSpinoffs(
     const originDone =
       row.status === READY_FOR_GATE ? (await getItem(db, row.ticket_ref))?.status === "done" : landed.has(row.id);
     if (!branchDone && !originDone) continue;
+    landing.add(row.id);
     // OB-1826: a closed spike's ticket reads `done`, which is a landing for any other row. A spike has nothing
     // to land, so a reconcile that runs between the close and its stamp retires it as the spike end the close
     // would have, never as `merged`.
@@ -3610,7 +3694,15 @@ export async function reconcileSpinoffs(
     }
     merged.push(row.ticket_ref);
   }
-  return { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped, retired: stuck.retired };
+  // OS-226: a building row whose builder thread ended without a handoff is abandoned, so "building" counts live builders.
+  const ended = await settleEndedBuilders(
+    rows.filter((r) => !landing.has(r.id)),
+    endedBuilderReads(async (row) => isSpikeTagged(await spinoffTicketTagsFor(db, row.ticket_ref, row.item_id))),
+    steps.stamp,
+    steps.agentDone,
+  );
+  dbFailures.push(...ended.db_failures);
+  return { merged, blocked, db_failures: dbFailures, mirrored: mirror.mirrored, mirror_skipped: mirror.skipped, retired: [...stuck.retired, ...ended.retired] };
 }
 
 /**
