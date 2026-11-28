@@ -1579,6 +1579,7 @@ export async function enqueue(store: Store, req: EnqueueSpinoffRequest): Promise
     decision: { note: req.note, actor: req.actor },
     trialLeg: (req.trial_leg ?? null) as "a" | "b" | null,
     trialModel: req.trial_model ?? null,
+    model: req.model ?? null, // OS-132
   });
   if (flake && req.no_flake_slot) await recordNoFlakeSlot(store, row, req.no_flake_slot, req.actor);
   if (paused && req.allow_paused) await recordAllowPaused(store, row, paused, req.allow_paused, req.actor);

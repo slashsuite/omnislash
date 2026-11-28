@@ -1,0 +1,1 @@
+ALTER TABLE `spinoff` ADD `model_ask` text;

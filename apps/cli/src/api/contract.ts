@@ -1304,6 +1304,8 @@ export interface EnqueueSpinoffRequest {  ticket_ref: string;
   trial_leg?: string | null | undefined;
   /** OB-1991: the model the trial launches this leg on, over the tier's model. */
   trial_model?: string | null | undefined;
+  /** OS-132: `--model`, this row's model over the band's, the profile untouched. */
+  model?: string | null | undefined;
 }
 
 /** OB-1991: `ob spinoff trial ...`, one store operation per call (the shapes live in cli-coord's spinoff-trial.ts). */

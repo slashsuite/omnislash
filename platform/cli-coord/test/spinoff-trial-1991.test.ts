@@ -181,6 +181,16 @@ describe("Done when 2: one row when there is no pairing (OB-1991)", () => {
     expect(rows.length).toBe(1);
     expect(rows[0]!.trial_leg).toBeNull();
   });
+  test("OS-132: a --model dispatch runs no trial, and launches on the model it named", async () => {
+    const { dbPath, id } = await ticket();
+    await start(dbPath, "--target", "20");
+    const r = await dispatch(dbPath, id, fakeRepoDir(), ["--model", "claude-haiku-5-5"]);
+    expect(r.code).toBe(0);
+    const rows = await rowsOf(dbPath);
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.trial_leg).toBeNull();
+    expect(r.launches.map((l) => l.modelSelection.model)).toEqual(["claude-haiku-5-5"]);
+  });
   test("a flake ticket (OB-2230: two legs would be two flake fixes on one machine)", async () => {
     const { dbPath, id } = await ticket();
     const db = openDb(dbPath);

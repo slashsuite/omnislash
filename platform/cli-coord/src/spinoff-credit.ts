@@ -99,7 +99,7 @@ export type RouteLaunch = (models: BuilderModels, routeEffort: string | undefine
  * anywhere there is one attempt and its error is thrown as it came, as before.
  */
 export async function launchAcrossProfiles(
-  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null },
+  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null; model_ask?: string | null },
   inputs: RouteInputs,
   launch: RouteLaunch,
   prior: readonly AttemptTry[] = [],
@@ -107,6 +107,9 @@ export async function launchAcrossProfiles(
 ): Promise<T3LaunchOutcome & { profile: string | null }> {
   const c = rowComplexity(row);
   const base = builderModelsOf(inputs);
+  // OS-132: a row that named --model runs on that model once, outside the route: no chain to walk, no move to
+  // record and no route effort (that was set for the band's model). A credit error on it fails the row by name.
+  if (row.model_ask) return { ...(await launch(base, undefined)), profile: null }; // launchT3Spinoff applies the ask
   const active = activeProfileOf(inputs).name;
   const attempts = builderAttempts(inputs, c);
   const route = attempts[0]!.route;
@@ -187,10 +190,11 @@ export type CreditRelaunch = { kind: "none" } | { kind: "relaunched"; profile: s
  * recorded the failed run, which is the old behaviour.
  */
 export async function relaunchOnCreditFailure(
-  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null },
+  row: { id: number; ticket_ref: string; tier?: string | null; complexity?: number | null; model_ask?: string | null },
   threadId: string,
   deps: CreditRelaunchDeps,
 ): Promise<CreditRelaunch> {
+  if (row.model_ask) return { kind: "none" }; // OS-132: a --model row has no route to move along
   const attempts = builderAttempts(deps.inputs, rowComplexity(row));
   if (attempts.length === 1 && attempts[0]!.profile === null) return { kind: "none" }; // no route set anywhere: as before OB-1970
   const read = await deps.seam.read(threadId, { afterPosition: 0, limit: FIRST_TURN_ITEMS });
