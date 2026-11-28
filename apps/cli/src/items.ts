@@ -452,7 +452,8 @@ async function lockReference(s: Store, id: string): Promise<ItemRow | null> {
  * Keep what a reference is about to lose. Called inside the write's own transaction with the PREVIOUS
  * row still in place, so a failed write keeps no version and a kept version always has its write. Does
  * nothing for any other type, and nothing when the title and body come out unchanged. The payload carries
- * the item id because `recordEventFor` dedupes on source, type, ts and payload but not `item_id`.
+ * the item id: it was written while `recordEventFor` deduped without `item_id` (OS-298 added it), and stored
+ * versions keep it.
  */
 async function keepReferenceVersion(
   s: Store,
