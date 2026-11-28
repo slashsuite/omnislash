@@ -10,14 +10,17 @@ import { commandStore, getStore, type Store } from "./db/store.ts";
 import { loadModelsFile } from "./models-file.ts";
 import {
   ModelRoutesError,
+  droppedReaderWarnings,
   emptyRouteInputs,
   hasProfile,
   loadServerRoutes,
   profileOrderOf,
+  resolveReview,
   resolveRoute,
   saveModelRoutes,
   type ModelRoutes,
   writeRoutesCache,
+  type ResolvedReview,
   type RouteInputs,
 } from "./model-routes.ts";
 import { warn } from "./output.ts";
@@ -78,6 +81,14 @@ export async function loadRouteInputs(io: ConfigIO | null, opts: { quiet?: boole
     }
   }
   return { ...inputs, serverError: null };
+}
+
+/** The active profile's review readers, with one stderr line per local `review` leg it dropped (OS-303). */
+export async function loadReview(io: ConfigIO | null): Promise<ResolvedReview> {
+  const inputs = await loadRouteInputs(io);
+  const review = resolveReview(inputs);
+  for (const line of droppedReaderWarnings(review, inputs.file?.path ?? null)) warn(line);
+  return review;
 }
 
 /**

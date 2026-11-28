@@ -136,7 +136,7 @@ describe("OS-130: antigravity (agy) skeptical-review leg", () => {
   });
 
   test("default review readers run opus alone with no fallback (OS-256); deepseek and luna are refused when named (OS-206, OS-238)", async () => {
-    // OS-299: the one default reader runs on the default `builder.complex` route's model; ob keeps no review model table.
+    // OS-299: the one default reader runs on the fixed DEFAULT_TIER_MODELS.complex, never a profile's builder.complex route; ob keeps no review model table.
     const defaults = defaultReviewReaders();
     expect(defaults.readers).toEqual({ opus: { model: "claude-opus-5-5" } });
     expect(defaults.tiers.map((r) => r.legs)).toEqual([["opus"], ["opus"], ["opus"]]);

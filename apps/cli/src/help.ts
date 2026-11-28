@@ -1615,7 +1615,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         examples: [
           "review readers --complexity 7 -q",
           "review readers set opus --model claude-opus-5-5",
-          "review readers range 4-6 neon opus",
+          "review readers range 4-6 opus",
         ],
         notes: [
           "The ranges cover 1-10 with no gap and no overlap; a range you set is carved out of the ones it overlaps.",

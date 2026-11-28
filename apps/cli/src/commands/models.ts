@@ -185,7 +185,7 @@ async function show(ctx: Ctx): Promise<void> {
           // builder.simple|medium|complex stay here as the bands covering 2, 5 and 8, so a script reading the old names keeps working while --tier is an alias.
           routes: routes.map((r) => ({ route: r.route, profile: r.profile, chain: r.chain, effort: r.effort ?? null, source: r.source, label: sourceLabel(r) })),
           builder_ranges: bands.map((b) => ({ route: b.route, from: b.from, to: b.to, chain: b.chain, effort: b.effort ?? null, source: b.source })),
-          review: { profile: review.profile, source: review.source, ...review.value },
+          review: { profile: review.profile, source: review.source, ...review.value, dropped: review.dropped },
           bare_routes: bare,
         },
         null,

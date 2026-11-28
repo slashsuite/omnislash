@@ -1,7 +1,7 @@
 import type { Ctx } from "../ctx.ts";
 import type { Flags } from "../ctx.ts";
-import { editModelRoutes, loadRouteInputs, storeConfigIo } from "../model-routes-io.ts";
-import { ModelRoutesError, resolveReview, serverReview, setReaderFallback, withProfileReview, writeProfile } from "../model-routes.ts";
+import { editModelRoutes, loadReview, storeConfigIo } from "../model-routes-io.ts";
+import { ModelRoutesError, serverReview, setReaderFallback, withProfileReview, writeProfile } from "../model-routes.ts";
 import { AppError, UsageError } from "../errors.ts";
 import { print, type Mode } from "../output.ts";
 import { cmdReviewRun } from "../review-run.ts";
@@ -77,7 +77,7 @@ export async function runReview(args: string[], flags: Flags, mode: Mode, io: Co
   try {
     if (sub === undefined) {
       // OS-145: the active models profile's readers (`model_routes`), the local file's legs laid over them.
-      const { stored, value, profile } = resolveReview(await loadRouteInputs(io));
+      const { stored, value, profile } = await loadReview(io);
       const c = scoreOf(flags);
       if (c !== null) {
         const range = rangeText(reviewRangeAt(value, c));
