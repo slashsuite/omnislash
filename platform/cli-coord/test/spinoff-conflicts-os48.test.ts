@@ -116,9 +116,9 @@ describe("findBranchConflicts on a fixture repo (OS-48)", () => {
     expect(hit.conflicts).toEqual([
       { repo: clone, a: { row: 1, ref: "OS-1", item_id: null, branch: "a", head: headA, thread: null }, b: { row: 3, ref: "OS-3", item_id: null, branch: "c", head: headC, thread: null }, files: ["f.txt"] },
     ]);
-    // OS-259: the key is the pair of rows, never their heads.
+    // OS-259: the pair key is the rows; OS-263: the message key adds the heads it was found at.
     expect(conflictPairKey(hit.conflicts[0]!)).toBe("conflict:1:3");
-    expect(conflictKey(hit.conflicts[0]!, 3)).toBe("conflict:1:3:loser:3");
+    expect(conflictKey(hit.conflicts[0]!, 3)).toBe(`conflict:1:3:loser:3:${headA.slice(0, 12)}:${headC.slice(0, 12)}`);
   }, spawnBudget(12));
 
   test("a lockfile-only conflict, an unpushed branch, a landed row and one ticket's two legs report nothing", async () => {
@@ -313,7 +313,7 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     expect(first.out).toContain("role tick t sentinel: run 1 opened");
     const rows = await messages(w.store);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ role: "sentinel", from_actor: "tick", ref: "CF-1", client_key: "conflict:1:2:loser:2" });
+    expect(rows[0]).toMatchObject({ role: "sentinel", from_actor: "tick", ref: "CF-1", client_key: `conflict:1:2:loser:2:${headA.slice(0, 12)}:${headB.slice(0, 12)}` });
     // Neither row has a T3 thread: the message says to pause it by hand, and nothing is interrupted.
     expect(rows[0]!.body).toContain("CF-1 (none) wins over CF-2 (none, equal priority and row 1 queued first); CF-2 (row 2) has no builder thread ob could tell: pause it by hand");
     expect(f.interrupts).toEqual([]);
@@ -346,8 +346,7 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     const w = await world({ priorities: [2, 1], threads: true });
     const f = installFakeT3([w.clone]);
     cleanup.push(() => f.restore());
-    push(w.clone, "a", { "f.txt": fWith(1, "a") });
-    push(w.clone, "b", { "f.txt": fWith(1, "b") });
+    const heads = `${push(w.clone, "a", { "f.txt": fWith(1, "a") }).slice(0, 12)}:${push(w.clone, "b", { "f.txt": fWith(1, "b") }).slice(0, 12)}`;
     const toLoser = () => f.sends.filter((s) => s.threadId === "bt-1");
 
     const first = await runCli(w.dbPath, ["role", "tick"]);
@@ -355,13 +354,13 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     expect(first.out).toContain("CF-1 gives way to CF-2");
     expect(f.interrupts).toEqual(["bt-1"]);
     expect(toLoser()).toHaveLength(1);
-    expect(toLoser()[0]).toMatchObject({ mode: "queue", clientRequestId: "ob-yield-bt-1-1-2" });
+    expect(toLoser()[0]).toMatchObject({ mode: "queue", clientRequestId: `ob-yield-bt-1-1-2-${heads.replace(":", "-")}` });
     expect(toLoser()[0]!.message).toContain('--status blocked --note "yielding to CF-2"');
     expect(toLoser()[0]!.message).toContain("CF-2 (urgent) wins over CF-1 (high)");
     expect(f.sends.some((s) => s.threadId === "bt-2")).toBe(false);
     let rows = await messages(w.store);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.client_key).toBe("conflict:1:2:loser:1");
+    expect(rows[0]!.client_key).toBe(`conflict:1:2:loser:1:${heads}`);
     expect(rows[0]!.body).toContain("CF-2 (urgent) wins over CF-1 (high); CF-1 (row 1) is paused and resumes by itself after CF-2 lands.");
 
     // The winner moves on: the pair is not posted again and the loser is not told twice.
@@ -382,12 +381,12 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     expect(third.err).toBe("");
     expect(third.code).toBe(0);
     rows = await messages(w.store);
-    const resume = rows.find((m) => m.client_key === "resume:1:2");
+    const resume = rows.find((m) => m.client_key === `resume:1:2:${rows[0]!.id}`);
     expect(resume).toBeDefined();
     expect(third.out).toContain(`role tick t: wrote #${resume!.id} resume: CF-1 after CF-2`);
     expect(resume!.body).toContain("resume: CF-1 (row 1) goes on; CF-2 no longer running");
     expect(toLoser()).toHaveLength(2);
-    expect(toLoser()[1]).toMatchObject({ mode: "queue", clientRequestId: "ob-resume-bt-1-1-2" });
+    expect(toLoser()[1]).toMatchObject({ mode: "queue", clientRequestId: `ob-resume-bt-1-1-2-${rows[0]!.id}` });
     expect(toLoser()[1]!.message).toContain("git fetch origin && git rebase origin/main");
     expect(toLoser()[1]!.message).toContain("needs-human");
     expect(f.interrupts).toEqual(["bt-1"]);
@@ -408,14 +407,67 @@ describe("role tick posts branch conflicts to the sentinel (OS-48)", () => {
     push(w.clone, "b", { "f.txt": fWith(1, "b") });
     expect((await runCli(w.dbPath, ["role", "tick"])).code).toBe(0);
     expect(f.interrupts).toEqual(["bt-2"]);
-    expect((await messages(w.store))[0]!.client_key).toBe("conflict:1:2:loser:2");
+    const first = (await messages(w.store))[0]!;
+    expect(first.client_key).toMatch(/^conflict:1:2:loser:2:[0-9a-f]{12}:[0-9a-f]{12}$/);
 
     await w.store.q.update(w.store.t.spinoff).set({ status: "merged" }).where(eq(w.store.t.spinoff.ticket_ref, "CF-1"));
     const r = await runCli(w.dbPath, ["role", "tick"]);
     expect(r.code).toBe(0);
     expect(r.out).toContain("resume: CF-2 after CF-1");
-    expect(f.sends.filter((s) => s.threadId === "bt-2").map((s) => s.clientRequestId)).toEqual(["ob-yield-bt-2-2-1", "ob-resume-bt-2-2-1"]);
+    expect(f.sends.filter((s) => s.threadId === "bt-2").map((s) => s.clientRequestId)).toEqual([`ob-yield-bt-2-2-1-${first.client_key!.split(":").slice(5).join("-")}`, `ob-resume-bt-2-2-1-${first.id}`]);
   }, spawnBudget(30));
+
+  // OS-263: the pair key never expired, so a pair resolved by a resume and conflicting again was never posted again.
+  test("a pair resolved by a resume is posted again when it conflicts on new commits, never while it is unchanged", async () => {
+    const w = await world({ priorities: [3, 3], threads: true });
+    const f = installFakeT3([w.clone]);
+    cleanup.push(() => f.restore());
+    const toLoser = () => f.sends.filter((s) => s.threadId === "bt-2");
+    const conflictsPosted = async () => (await messages(w.store)).filter((m) => m.client_key?.startsWith("conflict:"));
+    const setCf1 = (status: string) => w.store.q.update(w.store.t.spinoff).set({ status }).where(eq(w.store.t.spinoff.ticket_ref, "CF-1"));
+    push(w.clone, "a", { "f.txt": fWith(1, "a") });
+    push(w.clone, "b", { "f.txt": fWith(1, "b") });
+    expect((await runCli(w.dbPath, ["role", "tick"])).code).toBe(0);
+    await setCf1("merged");
+    expect((await runCli(w.dbPath, ["role", "tick"])).out).toContain("resume: CF-2 after CF-1");
+    expect(toLoser()).toHaveLength(2);
+
+    // CF-1 runs again at the heads the pair was posted at: unchanged, so nothing is posted and CF-2 is not paused.
+    await setCf1("launched");
+    const same = await runCli(w.dbPath, ["role", "tick"]);
+    expect(same.code).toBe(0);
+    expect(same.out).not.toContain("wrote #");
+    expect(await conflictsPosted()).toHaveLength(1);
+    expect(toLoser()).toHaveLength(2);
+
+    // New commits on CF-1 that still conflict: the pair is posted again and CF-2 is paused again.
+    const headA = push(w.clone, "a", { "f.txt": fWith(1, "a again") }, "a");
+    const again = await runCli(w.dbPath, ["role", "tick"]);
+    expect(again.err).toBe("");
+    expect(again.code).toBe(0);
+    expect(again.out).toContain(`conflict: CF-1 (${headA.slice(0, 7)})`);
+    expect(again.out).toContain("CF-2 gives way to CF-1");
+    const posted = await conflictsPosted();
+    expect(posted).toHaveLength(2);
+    expect(posted[1]!.client_key).toStartWith(`conflict:1:2:loser:2:${headA.slice(0, 12)}:`);
+    expect(f.interrupts).toEqual(["bt-2", "bt-2"]);
+    expect(toLoser()).toHaveLength(3);
+    expect(toLoser()[2]!.message).toContain("you give way until it lands");
+    expect(new Set(toLoser().map((s) => s.clientRequestId)).size).toBe(3);
+    expect(await noteLines(w.store, w.ids[0]!)).toHaveLength(2);
+
+    // Still unchanged on the next tick: no repost.
+    const quiet = await runCli(w.dbPath, ["role", "tick"]);
+    expect(quiet.out).not.toContain("wrote #");
+    expect(await conflictsPosted()).toHaveLength(2);
+
+    // The second pause ends with its own resume, not swallowed by the first one's key.
+    await setCf1("merged");
+    const resumed = await runCli(w.dbPath, ["role", "tick"]);
+    expect(resumed.out).toContain("resume: CF-2 after CF-1");
+    expect(toLoser()).toHaveLength(4);
+    expect(toLoser()[3]!.clientRequestId).toBe(`ob-resume-bt-2-2-1-${posted[1]!.id}`);
+  }, spawnBudget(60));
 
   test("under the night lock the tick posts, pauses and resumes nothing", async () => {
     const w = await world({ threads: true });

@@ -19,9 +19,11 @@ import {
   conflictKey,
   conflictMessage,
   conflictNote,
-  conflictPairKey,
   findBranchConflicts,
+  lastYieldId,
   openYields,
+  pairHandled,
+  pairHeads,
   pickLoser,
   renderConflict,
   resumeKey,
@@ -112,7 +114,8 @@ function oneLine(err: unknown): string {
 
 /**
  * OS-48: test-merge the team's running branches in this machine's checkouts and write one sentinel message per
- * conflicting pair, keyed by its rows, so a pair is reported once however its heads move. A new message also notes
+ * conflicting pair, reported once while it is handled however its heads move, and again (OS-263) only when it conflicts on
+ * new heads after its loser was resumed. A new message also notes
  * both tickets. Git failures are warnings on the result, never a failed tick.
  *
  * OS-259: first, every paused row whose winners have all landed or stopped is told to rebase and go on (one resume
@@ -124,7 +127,6 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
   const check = await findBranchConflicts(rows, source);
   result.conflict_warnings.push(...check.warnings);
   const sentinel = await backend.inbox.list(team, CONFLICT_ROLE, true);
-  const keys = sentinel.map((m) => m.client_key ?? "");
   const open = openYields(sentinel);
   const byId = new Map(rows.map((r) => [r.id, r]));
   const warnOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -137,17 +139,14 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
     const row = byId.get(loser);
     if (!row || !IN_FLIGHT.has(row.status) || winners.some(stillRunning)) continue;
     const refs = winners.map((w) => byId.get(w)?.ticket_ref ?? `row ${w}`);
-    const key = resumeKey(loser, winners);
-    if (keys.includes(key)) {
-      open.delete(loser);
-      continue;
-    }
+    const pause = lastYieldId(sentinel, loser);
+    const key = resumeKey(loser, winners, pause);
     const thread = rowThread(row);
     let told = false;
     if (thread) {
       try {
         // The request id names the thread: T3 dedups ids across every thread, and row ids restart in each store (OS-212).
-        await (await seam()).send({ threadId: thread, message: resumeMessage(row.ticket_ref, refs), mode: "queue", clientRequestId: `ob-resume-${thread}-${loser}-${[...winners].sort((x, y) => x - y).join("-")}` });
+        await (await seam()).send({ threadId: thread, message: resumeMessage(row.ticket_ref, refs), mode: "queue", clientRequestId: `ob-resume-${thread}-${loser}-${[...winners].sort((x, y) => x - y).join("-")}-${pause}` });
         told = true;
       } catch (e) {
         // The notice says to resume it by hand, so a thread that never takes the message is not retried forever.
@@ -159,8 +158,8 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
     if (created) result.resumed.push({ id: message.id, line: `resume: ${row.ticket_ref} after ${refs.join(", ")}` });
   }
   for (const c of check.conflicts) {
-    const pair = `${conflictPairKey(c)}:`;
-    if (keys.some((k) => k.startsWith(pair))) continue;
+    // OS-263: a pair still being handled, or unchanged since it was posted, is not posted again.
+    if (pairHandled(c, sentinel, open)) continue;
     // A priority that cannot be read decides nothing: the pair waits for the next tick rather than rank it as none.
     let pa: number | null, pb: number | null;
     try {
@@ -178,7 +177,7 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
         const s = await seam();
         // Stop the turn it is in, best effort: an idle thread has nothing to stop. The message is what pauses it.
         await s.interrupt(loser.thread).catch(() => {});
-        await s.send({ threadId: loser.thread, message: yieldMessage(c, winner, loser, pw, pl), mode: "queue", clientRequestId: `ob-yield-${loser.thread}-${loser.row}-${winner.row}` });
+        await s.send({ threadId: loser.thread, message: yieldMessage(c, winner, loser, pw, pl), mode: "queue", clientRequestId: `ob-yield-${loser.thread}-${loser.row}-${winner.row}-${pairHeads(c).replace(":", "-")}` });
         pause = "paused";
       } catch (e) {
         // The pair is still posted, saying the pause did not reach the thread, so someone is told to pause it by hand.
@@ -196,7 +195,6 @@ async function tickConflicts(backend: TickBackend, result: TickTeamResult, sourc
       clientKey: conflictKey(c, loser.row),
     });
     if (!created) continue;
-    keys.push(conflictKey(c, loser.row));
     open.set(loser.row, [...(open.get(loser.row) ?? []), winner.row]);
     result.conflicts.push({ id: message.id, line: `${renderConflict(c)}; ${loser.ref} gives way to ${winner.ref}` });
     // The message is the record; a note that cannot be written (no such item) is a warning, never a lost second note.

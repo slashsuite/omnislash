@@ -1542,6 +1542,7 @@ export const COMMAND_HELP: Readonly<Record<string, CommandHelp>> = {
         notes: [
           "A conflicting pair's loser (lower priority; at equal priority the later row) is stopped and told to wait.",
           "Once every ticket it yields to has landed or stopped, it is told to rebase onto origin/main and go on.",
+          "A resumed pair that conflicts again on new commits is posted and paused again; an unchanged pair is not.",
         ],
       },
     },
