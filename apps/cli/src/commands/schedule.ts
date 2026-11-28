@@ -38,7 +38,7 @@ export interface ScheduleCtx {
   args: string[];
 }
 
-export const SCHEDULE_USAGE = [
+const SCHEDULE_USAGE = [
   "ob schedule add <name> (--once <iso> | --every <dur> | --cron <expr>)",
   "    (--team <t> --role <r> --prompt <text> | --cmd <shell> [--cwd <path>] [--host <name>]) [--ignore-good-night] [--json]",
   "ob schedule list [--all] [--json]",
@@ -82,7 +82,7 @@ function parseRuns(raw: string | undefined): number {
 }
 
 /** The new job from `add`'s flags: checks flag shape (one schedule, one target); field rules live in `checkJob`. Pure. */
-export function scheduleInputFromFlags(name: string | undefined, flags: Flags): ScheduledJobInput {
+function scheduleInputFromFlags(name: string | undefined, flags: Flags): ScheduledJobInput {
   if (!name) throw new UsageError(`schedule add needs a <name>\n${SCHEDULE_USAGE}`);
   const jobName = parseJobName(name);
   const schedules: Array<[string, string, string | undefined]> = [
@@ -205,7 +205,7 @@ export async function runSchedule(ctx: ScheduleCtx, backend: ScheduleBackend): P
 }
 
 /** The jobs on this machine's store. */
-export function storeScheduleBackend(store: Database | Store): ScheduleBackend {
+function storeScheduleBackend(store: Database | Store): ScheduleBackend {
   return {
     list: (all) => listScheduledJobs(store, { all }),
     create: (input) => createScheduledJob(store, input),

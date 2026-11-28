@@ -149,7 +149,7 @@ function cronDayMatches(spec: CronSpec, d: Date): boolean {
 }
 
 /** The first minute strictly after `from` that the cron matches, in UTC, or null when none comes within 5 years. Pure. */
-export function nextCronAfter(spec: CronSpec, from: Date): Date | null {
+function nextCronAfter(spec: CronSpec, from: Date): Date | null {
   const start = new Date(from.getTime());
   start.setUTCSeconds(0, 0);
   start.setUTCMinutes(start.getUTCMinutes() + 1);

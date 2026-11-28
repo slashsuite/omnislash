@@ -13,7 +13,7 @@ import { computeNextRunAt, normalizeScheduleExpr, parseScheduleKind, type Schedu
 import { parseTeamRole } from "./team-handoff.ts";
 import type { TeamRole } from "./team.ts";
 
-export const JOB_TARGET_KINDS = ["role", "command"] as const;
+const JOB_TARGET_KINDS = ["role", "command"] as const;
 export type JobTargetKind = (typeof JOB_TARGET_KINDS)[number];
 
 export type JobRunStatus = "running" | "succeeded" | "failed" | "skipped";
@@ -175,7 +175,7 @@ export async function getScheduledJob(db: Database | Store, ref: string): Promis
 }
 
 /** A job by id or name, or ScheduledJobNotFoundError. */
-export async function requireScheduledJob(db: Database | Store, ref: string): Promise<ScheduledJob> {
+async function requireScheduledJob(db: Database | Store, ref: string): Promise<ScheduledJob> {
   const job = await getScheduledJob(db, ref);
   if (!job) throw new ScheduledJobNotFoundError(ref);
   return job;
@@ -197,7 +197,6 @@ export async function createScheduledJob(db: Database | Store, input: ScheduledJ
   const job = checkJob(input);
   const nextRunAt = computeNextRunAt(job.schedule_kind, job.schedule_expr, now);
   if (job.team !== null && job.role !== null) await requireRecipient(s, job.team, job.role);
-  if (await getScheduledJob(s, name)) throw new AppError(`a scheduled job named '${name}' already exists (see \`ob schedule show ${name}\`)`);
   const stamp = nowIso();
   const t = s.t.scheduledJob;
   try {
